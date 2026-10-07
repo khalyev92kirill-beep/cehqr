@@ -783,16 +783,18 @@ function mountAssembly(canvas, parts, opt){
   withBox.forEach(p=>{
     const b=p.box, w=Math.max(b[3]-b[0],0.5)*K, h=Math.max(b[4]-b[1],0.5)*K, d=Math.max(b[5]-b[2],0.5)*K;
     const geo=new THREE.BoxGeometry(w,h,d);
-    const tex=texFor(p.material);
+    const glass=/стекл/i.test((p.material||"")+" "+(p.name||""))&&!/зеркал/i.test((p.material||"")+" "+(p.name||""));   // стекло — прозрачное
+    const tex=glass?null:texFor(p.material);
     if(tex) texUV(geo,{x:b[3]-b[0],y:b[4]-b[1],z:b[5]-b[2]},grainAxis(p));
     const mat=tex? new THREE.MeshLambertMaterial({map:tex,color:0xffffff,transparent:true,opacity:1})
-                 : new THREE.MeshLambertMaterial({color:matColor(p.material),transparent:true,opacity:1});
+                 : new THREE.MeshLambertMaterial({color:glass?0xbfe3ea:matColor(p.material),transparent:true,opacity:1});
     const mesh=new THREE.Mesh(geo,mat);
     const cx=((b[0]+b[3])/2-C[0])*K, cy=((b[1]+b[4])/2-C[1])*K, cz=((b[2]+b[5])/2-C[2])*K;
     mesh.position.set(cx,cy,cz);
     const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:lineC,transparent:true,opacity:0.8}));
     mesh.add(edges);
-    mesh.userData={code:p.code,home:new THREE.Vector3(cx,cy,cz),facade:/фасад|дверь/i.test(p.name),dims:`${fmt(p.L)}×${fmt(p.W)}`,art:String(p.art||"").trim()};
+    if(glass){ mesh.renderOrder=2; edges.material.color=new THREE.Color(0x6f9aa6); }
+    mesh.userData={code:p.code,glass,home:new THREE.Vector3(cx,cy,cz),facade:/фасад|дверь/i.test(p.name),dims:`${fmt(p.L)}×${fmt(p.W)}`,art:String(p.art||"").trim()};
     scene.add(mesh); items.push(mesh);
   });
   // отверстия на деталях (как в Базисе): там, где крепёж входит в деталь, — отверстие точного диаметра и глубины.
@@ -944,7 +946,7 @@ function mountAssembly(canvas, parts, opt){
       m.material.emissiveIntensity=sel?0.5:hov?0.18:0;
       m.children[0].material.color=sel?hiC:lineC;
       const wire=!!st.wire;
-      m.material.opacity=wire?(sel?0.55:0.07):dim?0.18:1; m.material.depthWrite=!(dim||wire);
+      m.material.opacity=wire?(sel?0.55:0.07):dim?(u.glass?0.1:0.18):u.glass?(sel?0.45:0.22):1; m.material.depthWrite=!(dim||wire||u.glass);
       m.children[0].material.opacity=wire?0.95:dim?0.25:0.8;
       if(wire&&!sel) m.children[0].material.color=wireC;
       if(m.children[1]) m.children[1].visible=!wire&&!dim&&st.holes!==false;
@@ -975,7 +977,7 @@ function mountAssembly(canvas, parts, opt){
       if(behind) return;
       const pw=(x1-x0)/2*W, ph=(y1-y0)/2*H;
       const c=m.position.clone(); lray.set(cam.position, c.clone().sub(cam.position).normalize());
-      const hit=lray.intersectObjects(vis,false)[0];
+      const hit=lray.intersectObjects(vis,false).find(h=>h.object===m||!h.object.userData.glass);   // сквозь стекло подписи видно
       if(!sel&&!st.wire&&hit&&hit.object!==m) return;
       const sp=c.project(cam), sx=(sp.x+1)/2*W, sy=(1-sp.y)/2*H;
       let dimShown=false;
