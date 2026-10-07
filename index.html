@@ -438,16 +438,17 @@ function demoLoad(){
   S._demoParts={[o.id]:parts};
 }
 function openOrder(oid){
-  if(S.current.orderId===oid) return;
+  if(S.current.orderId===oid&&!S.current.missing) return;
   S.current={orderId:oid, parts:[], loading:true};
-  fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"}).then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); }).then(txt=>{
+  fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"}).then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); }).then(t=>siteOrderText(oid,t)).then(txt=>{
     if(S.current.orderId!==oid) return;
     const res=parseJSON(txt);
+    siteRememberOrder(oid,res,res.parts.length);
     S.current.parts=expandParts(oid,res.parts); S.current.fasteners=res.fasteners||[]; S.current.furnMesh=res.furnMesh||null;
     Object.keys(res.textures||{}).forEach(m=>{ const t=res.textures[m]; S.textures[m]=t.url||t.data; });
     if(!S.orders[oid]) S.orders[oid]={id:oid,name:res.order||oid,count:S.current.parts.length};
     S.current.loading=false; render(); siteAfterOrderLoad&&siteAfterOrderLoad(oid);
-  }).catch(()=>{ S.current.loading=false; S.current.missing=true; render(); });
+  }).catch(e=>{ S.current.loading=false; S.current.missing=true; S.current.locked=!!(e&&e.locked); render(); });
 }
 function texId(name){ let h=2166136261; for(const ch of String(name)){ h^=ch.codePointAt(0); h=Math.imul(h,16777619); } return "t"+(h>>>0).toString(36); }
 function saveFileReq(o){ return saveFile(o.filename,o.data); }
@@ -502,7 +503,9 @@ async function setStage(code, n){
 }
 
 /* ---------- QR ---------- */
-function partUrl(code){ const base=(S.config.url||"").split("#")[0]; return base? base+"#"+code : code; }
+// ключ закрытого проекта (на сайте); в приложении внутри Claude ключей нет
+let keyFor=code=>"", hashHook=h=>h;
+function partUrl(code){ const base=(S.config.url||"").split("#")[0], k=keyFor(code); return base? base+"#"+code+(k?"~"+k:"") : code; }
 function qrMatrix(text){ const q=qrcode(0,"M"); q.addData(unescape(encodeURIComponent(text))); q.make(); return q; }
 function qrSvg(text){
   if(typeof qrcode!=="function") return "";
@@ -1691,6 +1694,7 @@ function viewOrders(){
 function viewOrder(){
   const oid=S.current.orderId, o=S.orders[oid];
   if(!o&&S.current.loading) return `<p class="muted">Загружаю заказ ${esc(oid)}…</p>`;
+  if(S.current.locked) return `<div class="empty"><h2>Проект закрыт</h2><p class="muted">Этот заказ открывается только по своему QR-коду. Попросите QR у технолога.</p><button class="btn" data-act="home">На главную</button></div>`;
   if(!o||S.current.missing) return `<div class="empty"><h2>Заказ ${esc(oid)} не найден</h2><p class="muted">Проверьте, что файл заказа загружен на сайт.</p><button class="btn" data-act="home">К заказам</button></div>`;
   const sb=stageBar(oid,o.count||1);
   let h=`<div class="head"><div><div class="eyebrow mono">${esc(oid)} · ${o.count} деталей</div><h1>${esc(o.name)}</h1><div class="muted">${esc(o.client||"")}</div></div>
@@ -1896,6 +1900,60 @@ async function siteSetStage(code, n){
   }catch(e){ S.progress[oid].stages[code]=prev; render(); toast("Нет связи с таблицей. Отметка не сохранилась."); }
 }
 
+/* ---------- закрытые проекты: заказ открывается только по своей QR-ссылке (ключ в ссылке после «~») ---------- */
+const T3K="t3d-keys";
+const _ks=(()=>{ try{ return JSON.parse(localStorage.getItem(T3K)||"{}")||{}; }catch(_){ return {}; } })();
+if(!_ks.orders) _ks.orders={};
+function keySave(){ try{ localStorage.setItem(T3K,JSON.stringify(_ks)); }catch(_){} }
+function siteIsAdmin(){ return !!_ks.master; }
+keyFor=code=>{ const c=String(code||"").toUpperCase(), oid=/-\d+$/.test(c)?orderIdOf(c):c; const o=_ks.orders[oid]; return (o&&o.k)||""; };
+// «#4444~ключ», «#4444-012~ключ», «#admin~ключ»: ключ запоминаем на этом телефоне, из адресной строки убираем
+hashHook=h=>{ h=String(h||""); const m=/^(.*?)~([A-Za-z0-9_-]{20,})$/.exec(h); if(!m) return h;
+  const id=m[1].toUpperCase(), k=m[2];
+  if(id==="ADMIN"){ _ks.master=k; keySave(); history.replaceState(null,"",location.pathname+location.search); return ""; }
+  const oid=/-\d+$/.test(id)?orderIdOf(id):id; _ks.orders[oid]=Object.assign(_ks.orders[oid]||{},{k}); keySave();
+  history.replaceState(null,"","#"+m[1]); return m[1]; };
+const b64u=s=>{ s=String(s).replace(/-/g,"+").replace(/_/g,"/"); s+="=".repeat((4-s.length%4)%4); return Uint8Array.from(atob(s),c=>c.charCodeAt(0)); };
+async function decryptText(obj,key){
+  const k=await crypto.subtle.importKey("raw",b64u(key),"AES-GCM",false,["decrypt"]);
+  const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:b64u(obj.iv)},k,b64u(obj.ct));
+  return new TextDecoder().decode(pt).replace(/^﻿/,"");
+}
+// список заказов: технолог видит все, мастер или клиент — только те, что открывал по QR
+async function siteLoadIndex(){
+  let j=null;
+  try{ const r=await fetch("orders/index.json",{cache:"no-cache"}); if(r.ok) j=await r.json(); }catch(_){}
+  if(j&&j.ct){
+    if(_ks.master){ try{ j=JSON.parse(await decryptText(j,_ks.master)); }catch(_){ j=null; toast("Ссылка технолога устарела — откройте новую из файла «Технолог 3D — ссылки.txt»"); } }
+    else j=null;
+    if(j) (j.orders||[]).forEach(o=>{ if(o&&o.id&&o.k){ const id=String(o.id).toUpperCase(); _ks.orders[id]=Object.assign(_ks.orders[id]||{},{k:o.k,name:o.name,count:o.count}); } });
+    keySave();
+  }
+  S.orders={};
+  if(j) (j.orders||[]).forEach(o=>{ if(o&&o.id){ const c={...o}; delete c.k; S.orders[o.id]={...c, createdAt:o.exportedAt||o.createdAt||""}; } });
+  else Object.keys(_ks.orders).forEach(id=>{ const o=_ks.orders[id]; if(o&&o.k&&o.name) S.orders[id]={id,name:o.name,count:o.count||0,createdAt:o.at||""}; });
+}
+// чужой заказ без ключа не открыть
+async function siteOrderText(oid,txt){
+  let obj=null; try{ obj=JSON.parse(txt.replace(/^﻿/,"")); }catch(_){ return txt; }
+  if(!obj||!obj.ct) return txt;
+  const k=keyFor(oid); if(!k){ const e=new Error("locked"); e.locked=true; throw e; }
+  try{ return await decryptText(obj,k); }catch(_){ const e=new Error("locked"); e.locked=true; throw e; }
+}
+function siteRememberOrder(oid,res,count){
+  const o=_ks.orders[oid]; if(!o) return;
+  o.name=res.order||o.name||oid; o.count=count; if(!o.at) o.at=new Date().toISOString(); keySave();
+}
+// главная: технологу — все заказы, остальным — «Мои проекты» или подсказка про QR
+const _viewOrders=viewOrders;
+viewOrders=function(){
+  if(siteIsAdmin()) return _viewOrders();
+  const ids=Object.keys(S.orders);
+  if(!ids.length) return `<div class="empty" style="padding:48px 16px"><h2>Проекты открываются по QR-коду</h2>
+    <p class="muted" style="max-width:420px;margin:8px auto 0">Отсканируйте QR-код проекта, который дал технолог, — откроется 3D и чертежи вашего заказа. Другие заказы здесь не видны.</p></div>`;
+  return _viewOrders().replace("<div class=\"eyebrow\">Производство</div><h1>Заказы в работе</h1>","<div class=\"eyebrow\">Открыты по QR-коду</div><h1>Мои проекты</h1>");
+};
+
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
   const t=ev.target.closest("[data-act],[data-view]"); if(!t) return;
@@ -2004,7 +2062,7 @@ function goOrder(oid){
   setView("order");
 }
 function goPart(code){
-  code=String(code||"").trim().toUpperCase().replace(/^.*#/,"");
+  code=hashHook(String(code||"").trim().replace(/^.*#/,"")).toUpperCase();
   const oid=orderIdOf(code); if(!oid){ toast("Код детали выглядит так: Z0001-012"); return; }
   S.partCode=code; openOrder(oid);
   if(location.hash!=="#"+code) history.replaceState(null,"","#"+code);
@@ -2014,7 +2072,7 @@ $("#findForm").addEventListener("submit", ev=>{ ev.preventDefault(); const v=$("
 $("#home").addEventListener("click", ()=>{ history.replaceState(null,"",location.pathname+location.search); setView("orders"); });
 document.addEventListener("click", ev=>{ if(ev.target.classList&&ev.target.classList.contains("modal")) ev.target.remove(); });
 document.addEventListener("keydown", ev=>{ if(ev.key==="Escape"){ const fb=document.querySelector(".fv-box.full"); if(fb){ fb.classList.remove("full"); document.body.classList.remove("has-full"); const b=fb.querySelector('[data-z="full"]'); if(b) b.textContent="⛶"; } const qm=document.getElementById("qrModal"); if(qm) qm.remove(); const f=document.querySelector(".asm.full"); if(f){ f.classList.remove("full"); document.body.classList.remove("has-full"); } } });
-window.addEventListener("hashchange", ()=>{ const h=location.hash.slice(1); if(!h) return; if(/-\d+$/.test(h)){ if(h!==S.partCode) goPart(h); } else if(/^[A-Za-z0-9]{2,12}$/.test(h)&&(S.view!=="order"||h.toUpperCase()!==S.current.orderId)) goOrder(h); });
+window.addEventListener("hashchange", ()=>{ const raw=location.hash.slice(1), h=hashHook(raw); if(!h) return; if(raw.indexOf("~")>0){ S.current.orderId=null; S.partCode=null; }   /* пришла ссылка с ключом — открыть заново */ if(/-\d+$/.test(h)){ if(h!==S.partCode) goPart(h); } else if(/^[A-Za-z0-9]{2,12}$/.test(h)&&(S.view!=="order"||h.toUpperCase()!==S.current.orderId||S.current.missing)) goOrder(h); });
 
 /* ---------- запуск ---------- */
 render();
@@ -2025,10 +2083,8 @@ render();
   try{ const r=await fetch("config.json",{cache:"no-cache"}); if(r.ok) S.site=(await r.json())||{}; }catch(e){}
   S.canWrite=!!S.site.stagesUrl;
   try{ S.who=localStorage.getItem("cehqr-who")||""; S.pin=localStorage.getItem("cehqr-pin")||""; }catch(e){ S.who=""; S.pin=""; }
-  try{
-    const r=await fetch("orders/index.json",{cache:"no-cache"});
-    if(r.ok){ const j=await r.json(); (j.orders||[]).forEach(o=>{ if(o&&o.id) S.orders[o.id]={...o, createdAt:o.exportedAt||o.createdAt||""}; }); }
-  }catch(e){ /* список заказов не обязателен — заказ откроется по ссылке */ }
+  const h0=hashHook(location.hash.slice(1));   // ключ из QR-ссылки запоминаем до загрузки списка
+  try{ await siteLoadIndex(); }catch(e){ /* список заказов не обязателен — заказ откроется по ссылке */ }
   siteLoadProgress(null);
   setInterval(()=>{ if(document.visibilityState==="visible") siteLoadProgress(S.view==="orders"?null:S.current.orderId); }, 30000);
   const h=location.hash.slice(1);
