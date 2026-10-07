@@ -240,6 +240,13 @@ body.has-full{overflow:hidden}
 .asm-pick.tag.dock .hole-info{top:calc(100% + 4px)}
 .asm-pick.tag~.asm-hint{display:block}
 .asm-pick .hole-info{flex:1 1 100%;font-size:13px;padding-top:6px;border-top:1px solid var(--line)}
+.asm-pick.meas{width:auto;max-width:calc(100% - 16px);flex-wrap:nowrap;gap:6px;padding:6px;border-radius:12px;justify-content:center}
+.asm-pick.meas .ms-t{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;white-space:nowrap;padding:0 4px}
+.asm-pick.meas .ms-t i{font-style:normal;display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#d9480f;color:#fff;font-size:12px}
+.asm-pick.meas .seg button{padding:7px 9px;font-size:13px}
+.asm-pick.meas .btn.sm{padding:7px 10px}
+.asm-pick.meas .ms-i{min-width:36px;font-size:16px;line-height:1}
+@media (max-width:420px){.asm-pick.meas .ms-t{display:none}.asm-pick.meas{flex-wrap:wrap}}
 .asm-pick .multi-list{display:flex;flex-wrap:wrap;gap:4px;max-height:76px;overflow:auto}
 .asm-pick .multi-list .chip{cursor:pointer;border:0;font:inherit;font-size:12px}
 .chip{display:inline-block;font-family:var(--f-mono);font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;background:var(--accent-soft);color:var(--ink);letter-spacing:.02em}
@@ -1162,8 +1169,31 @@ function mountAssembly(canvas, parts, opt){
       el.style.left=((q.x+1)/2*canvas.clientWidth)+"px"; el.style.top=((1-q.y)/2*canvas.clientHeight)+"px"; });
     placeDot(pend, st.mA?toW(st.mA):null); placeDot(dot, st.measure&&hoverPt?hoverPt:null); }
   function measPanel(){ const el=document.getElementById("asmPick"); if(!el||!st.measure) return; el.hidden=false;
-    el.innerHTML=`<span class="pc"><b>Размер: ${st.mA?"нажмите вторую точку":"нажмите первую точку"}</b><small>Точка прилипает к углу или ребру детали${S.measMid!==false?", на полке и стойке — к середине толщины":""}. Размер ставится по главной оси — по высоте, ширине или глубине.</small></span><span style="display:flex;gap:6px;flex-wrap:wrap"><span class="seg" role="group" aria-label="Куда прилипает точка на полке"><button type="button" data-act="asm-meas-mode" data-m="edge" aria-pressed="${S.measMid===false}">Край полки</button><button type="button" data-act="asm-meas-mode" data-m="mid" aria-pressed="${S.measMid!==false}">Середина полки</button></span>${st.meas.length?`<button class="btn sm" data-act="asm-meas-undo">↶ Убрать последний</button><button class="btn sm" data-act="asm-meas-clear">Убрать все (${st.meas.length})</button>`:""}<button class="btn sm primary" data-act="asm-measure">Готово</button></span>`; }
-  function measClick(e){ snapR=e.pointerType==="touch"?30:18; const sp=snapAt(e.clientX,e.clientY); if(!sp) return;
+    el.className="asm-pick meas";   // компактная полоска внизу — не закрывает модель
+    el.innerHTML=`<span class="seg" role="group" aria-label="Что мерить"><button type="button" data-act="asm-gap" data-g="0" aria-pressed="${!st.gapMode}" title="Две точки — любой размер">2 точки</button><button type="button" data-act="asm-gap" data-g="1" aria-pressed="${!!st.gapMode}" title="Нажмите между полками — размер в свету">Просвет</button></span>`
+      +(st.gapMode?"":`<span class="ms-t" title="Точка прилипает к углу или ребру детали; размер ставится по высоте, ширине или глубине"><i>${st.mA?2:1}</i>${st.mA?"вторая точка":"первая точка"}</span>`)
+      +(st.gapMode?"":`<span class="seg" role="group" aria-label="Куда прилипает точка на полке"><button type="button" data-act="asm-meas-mode" data-m="edge" aria-pressed="${S.measMid===false}">Край</button><button type="button" data-act="asm-meas-mode" data-m="mid" aria-pressed="${S.measMid!==false}">Середина</button></span>`)
+      +`<button class="btn sm ms-i" data-act="asm-meas-undo" title="Убрать последний размер" aria-label="Убрать последний размер" ${st.meas.length||st.mA?"":"disabled"}>↶</button>`
+      +(st.meas.length>1?`<button class="btn sm ms-i" data-act="asm-meas-clear" title="Убрать все размеры (${st.meas.length})" aria-label="Убрать все размеры">✕</button>`:"")
+      +`<button class="btn sm primary" data-act="asm-measure">Готово</button>`; }
+  // «Просвет»: нажали между полками — размер от верха нижней полки до низа верхней (по месту нажатия)
+  function gapAt(cx,cy){
+    const r=canvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1), cam);
+    const hit=ray.intersectObjects(items.filter(m=>m.visible),false)[0]; if(!hit) return null;
+    const P=toMM(hit.point), T=3;
+    let lo=null, hi=null;
+    withBox.forEach((p,i)=>{ const b=p.box; if(b[4]-b[1]>40||b[3]-b[0]<60) return; if(items[i]&&!items[i].visible) return;
+      if(P[0]<b[0]-T||P[0]>b[3]+T||P[2]<b[2]-T||P[2]>b[5]+T) return;
+      if(b[4]<=P[1]+2){ if(!lo||b[4]>lo) lo=b[4]; }
+      else if(b[1]>=P[1]-2){ if(hi==null||b[1]<hi) hi=b[1]; } });
+    if(lo==null||hi==null||hi-lo<5) return null;
+    return {a:[P[0],lo,P[2]],b:[P[0],hi,P[2]]};
+  }
+  function measClick(e){
+    if(st.gapMode){ if(st.explode){ toast("Выключите «Разбор» — просвет меряется на собранном изделии"); return; }
+      const g=gapAt(e.clientX,e.clientY); if(!g){ toast("Нажмите между двумя полками — на заднюю стенку внутри секции (фасады можно скрыть кнопкой «Без фасадов»)"); return; }
+      st.meas.push(g); st.mA=null; preview=null; rebuildMeas(); measPanel(); return; }
+    snapR=e.pointerType==="touch"?30:18; const sp=snapAt(e.clientX,e.clientY); if(!sp) return;
     const pt=toMM(sp.p);
     if(!st.mA){ st.mA=pt; }
     else { if(Math.max(...[0,1,2].map(i=>Math.abs(pt[i]-st.mA[i])))>=0.5) st.meas.push({a:st.mA,b:pt}); st.mA=null; }
@@ -2170,6 +2200,7 @@ document.addEventListener("click", async ev=>{
       document.querySelectorAll('[data-act="asm-measure"]').forEach(b=>{ if(b.closest(".asm-tools")) b.setAttribute("aria-pressed",String(on)); });
       asm.rebuildMeas(); if(on) asm.measPanel(); else showPick(asm.st.selected); } }
   else if(a==="asm-meas-mode"){ S.measMid=t.dataset.m?t.dataset.m==="mid":S.measMid===false; try{ localStorage.setItem("cehqr-mmid",S.measMid?"1":"0"); }catch(_){} if(asm) asm.measPanel(); }
+  else if(a==="asm-gap"){ if(asm){ asm.st.gapMode=t.dataset.g==="1"; asm.st.mA=null; asm.rebuildMeas(); asm.measPanel(); if(asm.st.gapMode) toast("Нажмите между полками — появится просвет"); } }
   else if(a==="asm-meas-undo"){ if(asm){ if(asm.st.mA) asm.st.mA=null; else asm.st.meas.pop(); asm.rebuildMeas(); asm.measPanel(); } }
   else if(a==="asm-meas-clear"){ if(asm){ asm.st.meas=[]; asm.st.mA=null; asm.rebuildMeas(); asm.measPanel(); } }
   else if(a==="asm-multi"){ if(asm){ asm.st.multiMode=!asm.st.multiMode; t.setAttribute("aria-pressed",String(asm.st.multiMode)); toast(asm.st.multiMode?"Нажимайте на детали — они добавятся к выделению":"Выделение по одной детали"); } }
