@@ -281,7 +281,16 @@ body.has-full{overflow:hidden}
 .fv-box.full .fv-zoom{top:calc(10px + env(safe-area-inset-top,0px));z-index:2}
 .fv-zoom button{min-width:40px;height:38px}
 .fv-zoom button[aria-pressed="true"]{background:#d9480f;color:#fff}
-.fv-box.measuring svg{cursor:crosshair}
+.fv-box.measuring svg{cursor:crosshair;touch-action:none}
+.fv-loupe{position:absolute;width:130px;height:130px;border-radius:50%;overflow:hidden;border:3px solid #d9480f;background:var(--surface);box-shadow:var(--shadow-lg);pointer-events:none;z-index:6;display:none}
+.fv-loupe svg{width:100%;height:100%;display:block}
+.fv-mbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;padding:6px;border-top:1px solid var(--line);background:var(--surface)}
+.fv-mbar .fv-mt{flex:1 1 100%;text-align:center;font-size:13px;line-height:1.3}
+.fv-mbar .fv-mt small{color:var(--muted);font-size:11.5px;margin-left:6px}
+.fv-mbar .seg button{padding:6px 9px;font-size:13px}
+.fv-mbar .btn.sm{padding:6px 10px;font-size:13px}
+.fv-box.full .fv-mbar{position:absolute;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:5;border:0;border-radius:12px;background:var(--glass,rgba(255,255,255,.94));box-shadow:var(--shadow)}
+.fv-box.full.measuring::after{display:none}
 .fv-zoom button.mmode{font-size:12.5px;font-weight:600;padding:0 10px;background:#fbe3d6;color:#a63a08;white-space:nowrap}
 @media (orientation:portrait) and (max-width:720px){.fv-box.full::after{content:"Двумя пальцами — приблизить, одним — сдвинуть, двойное касание — весь чертёж";position:absolute;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));font-size:13px;color:var(--muted);text-align:center;pointer-events:none}}
 
@@ -500,7 +509,7 @@ const S = {
   db:null, user:null, downloads:null, demo:false, canEdit:false, canWrite:false,
   orders:{}, progress:{}, config:{}, textures:{},
   current:{orderId:null, parts:[], unsub:null},
-  view:"orders", fvMode:__fv||"mid", fvWire:__fvw!=="0", fvPos:__fvp!=="0", fvGap:__fvg==="1", partCode:null, mapMode:"base", importDraft:null, confirmDelete:false
+  view:"orders", fvMode:__fv||"mid", fvWire:__fvw!=="0", fvPos:__fvp!=="0", measMid:(()=>{ try{ return localStorage.getItem("cehqr-mmid")!=="0"; }catch(_){ return true; } })(), fvGap:__fvg==="1", partCode:null, mapMode:"base", importDraft:null, confirmDelete:false
 };
 const $ = s => document.querySelector(s);
 const esc = v => String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1145,7 +1154,7 @@ function mountAssembly(canvas, parts, opt){
       el.style.left=((q.x+1)/2*canvas.clientWidth)+"px"; el.style.top=((1-q.y)/2*canvas.clientHeight)+"px"; });
     placeDot(pend, st.mA?toW(st.mA):null); placeDot(dot, st.measure&&hoverPt?hoverPt:null); }
   function measPanel(){ const el=document.getElementById("asmPick"); if(!el||!st.measure) return; el.hidden=false;
-    el.innerHTML=`<span class="pc"><b>Размер: ${st.mA?"нажмите вторую точку":"нажмите первую точку"}</b><small>Точка прилипает к углу или ребру детали${S.measMid!==false?", на полке и стойке — к середине толщины":""}. Размер ставится по главной оси — по высоте, ширине или глубине.</small></span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-act="asm-meas-mode">${S.measMid!==false?"К середине полки":"К краю полки"}</button>${st.meas.length?`<button class="btn sm" data-act="asm-meas-undo">↶ Убрать последний</button><button class="btn sm" data-act="asm-meas-clear">Убрать все (${st.meas.length})</button>`:""}<button class="btn sm primary" data-act="asm-measure">Готово</button></span>`; }
+    el.innerHTML=`<span class="pc"><b>Размер: ${st.mA?"нажмите вторую точку":"нажмите первую точку"}</b><small>Точка прилипает к углу или ребру детали${S.measMid!==false?", на полке и стойке — к середине толщины":""}. Размер ставится по главной оси — по высоте, ширине или глубине.</small></span><span style="display:flex;gap:6px;flex-wrap:wrap"><span class="seg" role="group" aria-label="Куда прилипает точка на полке"><button type="button" data-act="asm-meas-mode" data-m="edge" aria-pressed="${S.measMid===false}">Край полки</button><button type="button" data-act="asm-meas-mode" data-m="mid" aria-pressed="${S.measMid!==false}">Середина полки</button></span>${st.meas.length?`<button class="btn sm" data-act="asm-meas-undo">↶ Убрать последний</button><button class="btn sm" data-act="asm-meas-clear">Убрать все (${st.meas.length})</button>`:""}<button class="btn sm primary" data-act="asm-measure">Готово</button></span>`; }
   function measClick(e){ snapR=e.pointerType==="touch"?30:18; const sp=snapAt(e.clientX,e.clientY); if(!sp) return;
     const pt=toMM(sp.p);
     if(!st.mA){ st.mA=pt; }
@@ -1225,39 +1234,77 @@ function svgZoom(box){
     else if(!n&&clr) clr.remove();
   }
   if(MD&&ud().length) drawUD();
+  // панель размера внизу чертежа: куда прилипает точка (край / середина полки), убрать последний, готово
+  function syncBar(){
+    let bar=box.querySelector(".fv-mbar"); const on=box.classList.contains("measuring");
+    if(!on){ if(bar) bar.remove(); return; }
+    if(!bar){ bar=document.createElement("div"); bar.className="fv-mbar"; box.appendChild(bar);
+      bar.addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; ev.stopPropagation();
+        if(b.dataset.m){ S.measMid=b.dataset.m==="mid"; try{ localStorage.setItem("cehqr-mmid",S.measMid?"1":"0"); }catch(_){} syncBar(); }
+        else if(b.dataset.u==="undo"){ if(mA) mA=null; else ud().pop(); drawUD(); syncBar(); }
+        else if(b.dataset.u==="done"){ const mb=box.querySelector('[data-z="meas"]'); if(mb) mb.click(); } }); }
+    const mid=S.measMid!==false, n=ud().length;
+    bar.innerHTML=`<div class="fv-mt"><b>${mA?"Вторая точка":"Первая точка"}</b><small>${matchMedia("(pointer:coarse)").matches?"палец — лупа, отпустили — точка":"щёлкните по чертежу"}</small></div>
+      <div class="seg" role="group" aria-label="Куда прилипает точка на полке"><button type="button" data-m="edge" aria-pressed="${!mid}">Край полки</button><button type="button" data-m="mid" aria-pressed="${mid}">Середина полки</button></div>
+      <button type="button" class="btn sm" data-u="undo" ${n||mA?"":"disabled"}>↶ Последний</button><button type="button" class="btn sm primary" data-u="done">Готово</button>`;
+  }
+  const snapAtScreen=(cx,cy,touch)=>{ const p=toSvg(cx,cy), r=svg.getBoundingClientRect(), tol=(touch?22:14)*(w/r.width)/MD.s; return snapPt(toMMx(p.x),toMMy(p.y),tol); };
+  function placeAt(cx,cy,touch){
+    const pt=snapAtScreen(cx,cy,touch);
+    if(!mA){ mA=pt; drawUD(); syncBar(); return; }
+    const dx=pt[0]-mA[0], dy=pt[1]-mA[1], hor=Math.abs(dx)>=Math.abs(dy), v=Math.round(Math.abs(hor?dx:dy)*2)/2;
+    if(v>0) ud().push({a:mA,b:pt,hor,v}); mA=null; drawUD(); syncBar();
+  }
+  // лупа: в режиме размера палец закрывает точку — показываем увеличенный кусок чертежа над пальцем, точка ставится, когда палец отпущен
+  let loupe=null, lSvg=null, lMark=null, lPos=null, skipClick=false;
+  function loupeShow(cx,cy){
+    if(!loupe){ loupe=document.createElement("div"); loupe.className="fv-loupe"; box.appendChild(loupe); }
+    loupe.innerHTML=`<svg xmlns="http://www.w3.org/2000/svg">${svg.innerHTML}<g class="lm"></g></svg>`; lSvg=loupe.firstChild; lMark=lSvg.querySelector("g.lm");
+    loupe.style.display="block"; loupeMove(cx,cy);
+  }
+  function loupeMove(cx,cy){
+    if(!lSvg) return; lPos=[cx,cy];
+    const pt=snapAtScreen(cx,cy,true), sx=Xs(pt[0]), sy=Ys(pt[1]), lw=Math.max(W0/14,w/4.5);
+    lSvg.setAttribute("viewBox",`${sx-lw/2} ${sy-lw/2} ${lw} ${lw}`);
+    const k=lw/130;
+    lMark.innerHTML=`<line x1="${sx-14*k}" y1="${sy}" x2="${sx+14*k}" y2="${sy}" stroke="#d9480f" stroke-width="${1.5*k}"/><line x1="${sx}" y1="${sy-14*k}" x2="${sx}" y2="${sy+14*k}" stroke="#d9480f" stroke-width="${1.5*k}"/><circle cx="${sx}" cy="${sy}" r="${4*k}" fill="none" stroke="#d9480f" stroke-width="${1.5*k}"/>`;
+    const br=box.getBoundingClientRect(), L=130, lx=Math.max(4,Math.min(br.width-L-4,cx-br.left-L/2)), ly=cy-br.top-L-46;
+    loupe.style.left=lx+"px"; loupe.style.top=(ly<4?cy-br.top+46:ly)+"px";
+  }
+  function loupeHide(){ if(loupe) loupe.style.display="none"; lSvg=null; lPos=null; }
   svg.addEventListener("click",e=>{
     if(!MD||!box.classList.contains("measuring")) return;
     e.stopPropagation();   // в режиме размера номер позиции не открывает карточку
+    if(skipClick){ skipClick=false; return; }
     if(down&&Math.hypot(e.clientX-down.x,e.clientY-down.y)>6) return;   // это был сдвиг, а не нажатие
-    const p=toSvg(e.clientX,e.clientY), r=svg.getBoundingClientRect(), tol=(e.pointerType==="touch"?22:14)*(w/r.width)/MD.s;
-    const pt=snapPt(toMMx(p.x),toMMy(p.y),tol);
-    if(!mA){ mA=pt; drawUD(); return; }
-    const dx=pt[0]-mA[0], dy=pt[1]-mA[1], hor=Math.abs(dx)>=Math.abs(dy), v=Math.round(Math.abs(hor?dx:dy)*2)/2;
-    if(v>0) ud().push({a:mA,b:pt,hor,v}); mA=null; drawUD();
+    placeAt(e.clientX,e.clientY,e.pointerType==="touch");
   });
   svg.addEventListener("pointerdown",e=>{
     const ux=e.target.closest&&e.target.closest(".udim-x");
     if(ux){ e.preventDefault(); ud().splice(+ux.dataset.i,1); drawUD(); return; }   // нажатие на свой размер — убрать его
     if(e.target.closest&&e.target.closest(".fv-pos")) return;   // номер позиции / удаление размера — не тянуть чертёж
     down={x:e.clientX,y:e.clientY};
+    if(MD&&e.pointerType==="touch"&&box.classList.contains("measuring")){
+      ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); svg.setPointerCapture(e.pointerId); e.preventDefault();
+      if(ptrs.size===1){ loupeShow(e.clientX,e.clientY); return; }
+      loupeHide(); const [a,c]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-c.x,a.y-c.y)||1,mx:(a.x+c.x)/2,my:(a.y+c.y)/2}; drag=null; box.classList.add("zoomed"); return; }
     if(e.pointerType==="touch"&&w>=W0-0.01&&ptrs.size===0&&!box.classList.contains("full")){ ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); return; } // один палец на целом чертеже — прокрутка страницы
     ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); svg.setPointerCapture(e.pointerId);
     if(ptrs.size===1){ drag={cx:e.clientX,cy:e.clientY,x,y,k:1/svg.getScreenCTM().a}; svg.classList.add("grab"); }
     if(ptrs.size===2){ const [a,c]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-c.x,a.y-c.y)||1,mx:(a.x+c.x)/2,my:(a.y+c.y)/2}; drag=null; box.classList.add("zoomed"); }
   });
   svg.addEventListener("pointermove",e=>{ if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(lSvg&&ptrs.size===1){ loupeMove(e.clientX,e.clientY); e.preventDefault(); return; }
     if(pinch&&ptrs.size===2){ const [a,c]=[...ptrs.values()], d=Math.hypot(a.x-c.x,a.y-c.y)||1, mx=(a.x+c.x)/2, my=(a.y+c.y)/2;
       const k=1/svg.getScreenCTM().a; x-=(mx-pinch.mx)*k; y-=(my-pinch.my)*k; zoom(mx,my,pinch.d/d); pinch={d,mx,my}; e.preventDefault(); return; }
     if(drag){ x=drag.x-(e.clientX-drag.cx)*drag.k; y=drag.y-(e.clientY-drag.cy)*drag.k; set(); } });
-  const up=e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null; if(!ptrs.size){ drag=null; svg.classList.remove("grab"); set(); } };
+  const up=e=>{
+    if(lSvg&&ptrs.size===1&&ptrs.has(e.pointerId)){ const lp=lPos; loupeHide(); if(e.type==="pointerup"&&lp){ placeAt(lp[0],lp[1],true); skipClick=true; setTimeout(()=>skipClick=false,400); } }
+    ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null; if(!ptrs.size){ drag=null; svg.classList.remove("grab"); set(); } };
   svg.addEventListener("pointerup",up); svg.addEventListener("pointercancel",up);
   box.querySelector(".fv-zoom").addEventListener("click",e=>{ const z=e.target.closest("button"); if(!z) return; const [cx,cy]=mid();
     if(z.dataset.z==="meas"){ const on=!box.classList.contains("measuring"); box.classList.toggle("measuring",on); z.setAttribute("aria-pressed",String(on)); mA=null; drawUD();
-      let mm=box.querySelector('[data-z="mmode"]');
-      if(on&&!mm){ mm=document.createElement("button"); mm.type="button"; mm.dataset.z="mmode"; mm.className="mmode"; z.after(mm); }
-      if(mm){ mm.hidden=!on; mm.textContent=S.measMid!==false?"к середине полки":"к краю полки"; mm.title="Куда прилипает точка на полке или стойке"; }
-      if(on) toast("Нажмите две точки — появится размер. На полке и стойке точка встаёт на середину (кнопка рядом переключает на край)."); return; }
-    if(z.dataset.z==="mmode"){ S.measMid=S.measMid===false; document.querySelectorAll('[data-z="mmode"]').forEach(b=>b.textContent=S.measMid!==false?"к середине полки":"к краю полки"); return; }
+      if(!on) loupeHide(); syncBar(); return; }
     if(z.dataset.z==="clr"){ if(mA) mA=null; else ud().pop(); drawUD(); return; }   // по одному: последний поставленный
     if(z.dataset.z==="full"){ const on=!box.classList.contains("full"); box.classList.toggle("full",on); document.body.classList.toggle("has-full",on); z.textContent=on?"✕":"⛶"; z.title=on?"Закрыть":"Во весь экран"; x=X0;y=Y0;w=W0;h=H0; set(); return; }
     if(z.dataset.z==="in") zoom(cx,cy,0.6); else if(z.dataset.z==="out") zoom(cx,cy,1/0.6); else { x=X0;y=Y0;w=W0;h=H0; set(); } });
@@ -2110,7 +2157,7 @@ document.addEventListener("click", async ev=>{
   else if(a==="asm-measure"){ if(asm){ const on=!asm.st.measure; asm.st.measure=on; asm.st.mA=null; if(on){ asm.st.multiMode=false; }
       document.querySelectorAll('[data-act="asm-measure"]').forEach(b=>{ if(b.closest(".asm-tools")) b.setAttribute("aria-pressed",String(on)); });
       asm.rebuildMeas(); if(on) asm.measPanel(); else showPick(asm.st.selected); } }
-  else if(a==="asm-meas-mode"){ S.measMid=S.measMid===false; if(asm) asm.measPanel(); }
+  else if(a==="asm-meas-mode"){ S.measMid=t.dataset.m?t.dataset.m==="mid":S.measMid===false; try{ localStorage.setItem("cehqr-mmid",S.measMid?"1":"0"); }catch(_){} if(asm) asm.measPanel(); }
   else if(a==="asm-meas-undo"){ if(asm){ if(asm.st.mA) asm.st.mA=null; else asm.st.meas.pop(); asm.rebuildMeas(); asm.measPanel(); } }
   else if(a==="asm-meas-clear"){ if(asm){ asm.st.meas=[]; asm.st.mA=null; asm.rebuildMeas(); asm.measPanel(); } }
   else if(a==="asm-multi"){ if(asm){ asm.st.multiMode=!asm.st.multiMode; t.setAttribute("aria-pressed",String(asm.st.multiMode)); toast(asm.st.multiMode?"Нажимайте на детали — они добавятся к выделению":"Выделение по одной детали"); } }
