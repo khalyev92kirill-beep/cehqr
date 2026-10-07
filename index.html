@@ -225,6 +225,10 @@ body.has-full{overflow:hidden}
 .asm-pick.tag .tg-t{display:grid;gap:1px;min-width:0;padding-right:2px}
 .asm-pick.tag .tg-t b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .asm-pick.tag .tg-t small{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.asm-pick.tag .tg-t{flex:1 1 auto;min-width:150px}
+.asm-pick.tag .tg-t small{overflow:hidden}
+.asm-pick.tag .tg-t small.tg-m{display:block;text-overflow:ellipsis;color:var(--ink)}
+.asm-pick.tag .tg-m b{font-weight:600;font-size:12px}
 .asm-pick.tag .tg-st{display:inline-block;width:8px;height:8px;border-radius:50%}
 .asm-pick.tag .tg-b{flex:none;display:inline-flex;align-items:center;gap:4px;height:30px;min-width:30px;padding:0 7px;border:0;border-radius:9px;background:transparent;color:var(--ink);cursor:pointer;font:600 12.5px var(--f-sans,inherit)}
 .asm-pick.tag .tg-b:hover{background:var(--sunk)}
@@ -386,7 +390,7 @@ h1{font-weight:700;letter-spacing:-.01em}
       <span class="brand-word">Технолог <b>3D</b></span>
     </button>
     <form class="find" id="findForm" autocomplete="off">
-      <input id="findInput" placeholder="Код детали или сканер: P0001-003" aria-label="Код детали">
+      <input id="findInput" placeholder="Номер позиции, например 116" aria-label="Номер позиции" inputmode="numeric" enterkeyhint="search">
       <button class="btn" type="submit">Найти</button>
     </form>
     <span class="role" id="role">…</span>
@@ -489,12 +493,12 @@ const EXAMPLE = {
 };
 
 /* ---------- состояние ---------- */
-try{ var __fv=localStorage.getItem("cehqr-fv"), __fvw=localStorage.getItem("cehqr-fvw"), __fvp=localStorage.getItem("cehqr-fvp"); }catch(_){ var __fv=null, __fvw=null, __fvp=null; }
+try{ var __fv=localStorage.getItem("cehqr-fv"), __fvw=localStorage.getItem("cehqr-fvw"), __fvp=localStorage.getItem("cehqr-fvp"), __fvg=localStorage.getItem("cehqr-fvg"); }catch(_){ var __fv=null, __fvw=null, __fvp=null, __fvg=null; }
 const S = {
   db:null, user:null, downloads:null, demo:false, canEdit:false, canWrite:false,
   orders:{}, progress:{}, config:{}, textures:{},
   current:{orderId:null, parts:[], unsub:null},
-  view:"orders", fvMode:__fv||"mid", fvWire:__fvw!=="0", fvPos:__fvp!=="0", partCode:null, mapMode:"base", importDraft:null, confirmDelete:false
+  view:"orders", fvMode:__fv||"mid", fvWire:__fvw!=="0", fvPos:__fvp!=="0", fvGap:__fvg==="1", partCode:null, mapMode:"base", importDraft:null, confirmDelete:false
 };
 const $ = s => document.querySelector(s);
 const esc = v => String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -912,6 +916,8 @@ function mountAssembly(canvas, parts, opt){
   if(!st.multi) st.multi={};
   if(st.labels===undefined&&matchMedia("(pointer:coarse)").matches) st.labels=false;   // на телефоне размеры по умолчанию выключены — не загораживают модель
   const isSel=c=>!!c&&(c===st.selected||!!st.multi[c]);
+  const nMulti=()=>{ let n=0; for(const k in st.multi) if(st.multi[k]) n++; return n; };
+  const foc=()=>opt.focus||nMulti()>1;   // несколько выделенных — остальные полупрозрачные, как у одной детали
   if(!st.target) st.target=new THREE.Vector3(0,0,0); else st.target=new THREE.Vector3(st.target.x,st.target.y,st.target.z);
   if(opt.highlight!==undefined) st.selected=opt.highlight;
   function place(){
@@ -930,7 +936,7 @@ function mountAssembly(canvas, parts, opt){
     if(p) st.target.add(p.sub(st.target).multiplyScalar(1-f)); st.dist=nd; place2(); }
   function apply(){
     items.forEach(m=>{
-      const u=m.userData, sel=isSel(u.code), dim=st.selected&&!sel&&opt.focus;
+      const u=m.userData, sel=isSel(u.code), dim=st.selected&&!sel&&foc();
       m.position.copy(u.home).multiplyScalar(1+st.explode*0.9);
       m.visible=!(st.hidden&&st.hidden[u.code]&&!(opt.focus&&sel)) && !(st.hideFacades&&u.facade&&!sel);
       const hov=!sel&&st.hover&&u.code===st.hover;
@@ -942,7 +948,7 @@ function mountAssembly(canvas, parts, opt){
       m.children[0].material.opacity=wire?0.95:dim?0.25:0.8;
       if(wire&&!sel) m.children[0].material.color=wireC;
       if(m.children[1]) m.children[1].visible=!wire&&!dim&&st.holes!==false;
-      if(m.children[2]) m.children[2].visible=wire&&st.holes!==false&&(!st.selected||sel||!opt.focus);
+      if(m.children[2]) m.children[2].visible=wire&&st.holes!==false&&(!st.selected||sel||!foc());
     });
   }
   // подписи размеров поверх 3D
@@ -955,12 +961,13 @@ function mountAssembly(canvas, parts, opt){
   function updateLabels(){
     dirty=false; if(!layer) return;
     layer.style.top=canvas.offsetTop+"px"; layer.style.height=canvas.clientHeight+"px"; layer.style.bottom="auto";
-    const show=st.labels!==false, showPos=st.pos!==false, W=canvas.clientWidth, H=canvas.clientHeight, vis=items.filter(m=>m.visible);
+    const FOC=foc(), MULTI=nMulti()>1;
+    const show=st.labels!==false&&!MULTI, showPos=st.pos!==false, W=canvas.clientWidth, H=canvas.clientHeight, vis=items.filter(m=>m.visible);
     const cand=[];
     items.forEach((m,i)=>{
       const el=labels[i], pe=posEls[i], u=m.userData, sel=isSel(u.code);
       el.hidden=true; if(pe) pe.hidden=true;
-      if((!show&&!showPos)||!m.visible||(opt.focus&&!sel)) return;
+      if((!show&&!showPos)||!m.visible||(FOC&&!sel)) return;
       if(!m.geometry.boundingBox) m.geometry.computeBoundingBox(); const bb=m.geometry.boundingBox;
       let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,behind=false;
       for(let k=0;k<8;k++){ corner.set(k&1?bb.max.x:bb.min.x,k&2?bb.max.y:bb.min.y,k&4?bb.max.z:bb.min.z).add(m.position).project(cam);
@@ -1312,6 +1319,13 @@ function furnList(fs){
   fs.forEach(f=>{ const k=f.g||f.n; if(!k) return; if(!m.has(k)) m.set(k,{name:k,ids:new Set(),n:0}); const r=m.get(k); if(f.g) r.ids.add(f.gi); else r.n++; });
   return [...m.values()].map(r=>({name:r.name,qty:r.ids.size||r.n})).sort((a,b)=>a.name.localeCompare(b.name,"ru"));
 }
+// материал коротко: «ЛДСП, 16 мм, Орех Полдао» → «ЛДСП 16 мм» + «Орех Полдао»
+function matShort(m){
+  m=String(m||"").split(/[\r\n]/)[0].trim(); if(!m) return null;
+  const a=m.split(/\s*,\s*/); let t=a[0], d="", th="";
+  a.slice(1).forEach(x=>{ const n=x.match(/^(?:\d+\s*[хx×]\s*)*(\d+(?:[.,]\d+)?)\s*мм$/i); if(n&&!th) th=n[1]+" мм"; else d+=(d?", ":"")+x; });
+  return {t:th?t+" "+th:t, d};
+}
 function showPick(code){
   const el=$("#asmPick"); if(!el) return;
   const multi=asm&&asm.st&&asm.st.multi?Object.keys(asm.st.multi).filter(c=>asm.st.multi[c]):[];
@@ -1320,7 +1334,7 @@ function showPick(code){
     el.hidden=false; el.className="asm-pick";
     el.innerHTML=`<span class="pc" style="flex:1 1 100%"><b>Выбрано деталей: ${ps.length}</b><small class="multi-list">${ps.slice(0,12).map(p=>`<button type="button" class="chip" data-act="part" data-code="${esc(p.code)}" title="${esc(p.name)} ${fmt(p.L)}×${fmt(p.W)}×${fmt(p.T)}">${p.art?`поз. ${esc(p.art)} · `:""}${esc(p.name)} ${fmt(p.L)}×${fmt(p.W)}</button>`).join(" ")}${ps.length>12?` и ещё ${ps.length-12}`:""}</small></span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-act="asm-sel-only">Показать только их</button><button class="btn sm" data-act="asm-sel-hide">Скрыть выбранные</button><button class="btn sm" data-act="asm-sel-clear">Снять выделение</button></span>`;
     return; }
-  // одна деталь — маленькая метка прямо над деталью (не закрывает модель); подробности — по кнопке «Карточка»
+  // одна деталь — маленькая метка прямо над деталью: позиция, название, размер и коротко материал
   const IC={open:'<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
     hide:'<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6A17 17 0 0 0 2 12s4 6 10 6a9.6 9.6 0 0 0 4.3-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
     x:'<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>'};
@@ -1335,8 +1349,8 @@ function showPick(code){
   if(!p){ el.hidden=true; el.className="asm-pick"; return; }
   const stg=STAGES[stageOf(p.code)], inPart=S.view==="part"&&p.code===S.partCode;
   el.hidden=false; el.className="asm-pick tag"; el.dataset.code=code;
-  el.innerHTML=`${p.art?`<span class="tg-pos" title="Позиция в Базисе">${esc(p.art)}</span>`:""}<span class="tg-t"><b>${esc(p.name)}</b><small><span class="mono">${fmt(p.L)}×${fmt(p.W)}×${fmt(p.T)}</span> <i class="tg-st" style="background:${stg.color}" title="${esc(stg.name)}"></i></small></span>`
-    +(inPart?"":`<button type="button" class="tg-b main" data-act="part" data-code="${esc(p.code)}" title="Открыть карточку детали">${IC.open}<span>Карточка</span></button>`)
+  el.innerHTML=`${p.art?`<span class="tg-pos" title="Позиция в Базисе">${esc(p.art)}</span>`:""}<span class="tg-t"><b>${esc(p.name)}</b><small><span class="mono">${fmt(p.L)}×${fmt(p.W)}×${fmt(p.T)}</span> <i class="tg-st" style="background:${stg.color}" title="${esc(stg.name)}"></i></small>`
+    +(()=>{ const m=matShort(p.material); return m?`<small class="tg-m" title="${esc(String(p.material).split(/[\r\n]/)[0])}"><b>${esc(m.t)}</b>${m.d?` · ${esc(m.d)}`:""}</small>`:""; })()+`</span>`
     +`<button type="button" class="tg-b" data-act="asm-hide" data-code="${esc(p.code)}" title="Скрыть деталь" aria-label="Скрыть деталь">${IC.hide}</button>${inPart?"":closeB}`;
 }
 function asmBlock(hint){
@@ -1384,10 +1398,10 @@ function asmTools(extra){
 //  • высоты направляющих ящиков от низа перегородок блока (если в выгрузке есть крепёж).
 const RUNNER_OFF=22;
 // отдельный чертёж на каждый модуль (кухня): модуль поворачиваем так, чтобы смотреть на него спереди
-function moduleViews(parts, fasteners, mode, wire, hinges, pos){
+function moduleViews(parts, fasteners, mode, wire, hinges, pos, gaps){
   const withBox=parts.filter(p=>p.box), groups=new Map();
   withBox.forEach(p=>{ if(!p.mod) return; if(!groups.has(p.mod)) groups.set(p.mod,[]); groups.get(p.mod).push(p); });
-  const one=()=>{ const fv=frontView(parts,{mode,fasteners,wire,hinges,pos}); return fv&&fv.sections?[{title:"",size:"",svg:fv.svg}]:[]; };
+  const one=()=>{ const fv=frontView(parts,{mode,fasteners,wire,hinges,pos,gaps}); return fv&&fv.sections?[{title:"",size:"",svg:fv.svg}]:[]; };
   if(groups.size<2) return one();
   const bb=ps=>{ const lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9]; ps.forEach(p=>{ for(let i=0;i<3;i++){ lo[i]=Math.min(lo[i],p.box[i]); hi[i]=Math.max(hi[i],p.box[i+3]); } }); return {lo,hi,c:[0,1,2].map(i=>(lo[i]+hi[i])/2)}; };
   const all=bb(withBox), out=[];
@@ -1408,7 +1422,7 @@ function moduleViews(parts, fasteners, mode, wire, hinges, pos){
     const loose=ps.map(p=>Object.assign({},p,{box:tf(p.box)}));
     const fs=(fasteners||[]).filter(f=>f.b[0]>=m.lo[0]-5&&f.b[3]<=m.hi[0]+5&&f.b[1]>=m.lo[1]-5&&f.b[4]<=m.hi[1]+5&&f.b[2]>=m.lo[2]-5&&f.b[5]<=m.hi[2]+5).map(f=>{ const r=Object.assign({},f,{b:tf(f.b)}); if(f.o) r.o=tf(f.o.concat(f.o)).slice(0,3); return r; });
     if(Math.min(m.hi[0]-m.lo[0],m.hi[2]-m.lo[2])>720) return;   // угловой модуль или каркас из длинных планок — спереди его не нарисовать
-    const fv=frontView(loose,{mode,fasteners:fs,wire,hinges,pos}); if(!fv||!fv.sections) return;
+    const fv=frontView(loose,{mode,fasteners:fs,wire,hinges,pos,gaps}); if(!fv||!fv.sections) return;
     const w=Math.round(ax===2?m.hi[0]-m.lo[0]:m.hi[2]-m.lo[2]), h=Math.round(m.hi[1]-m.lo[1]), d=Math.round(m.hi[ax]-m.lo[ax]);
     out.push({title:mod.replace(/#\d+$/,""), size:`${w}×${h}×${d}`, svg:fv.svg});
   });
@@ -1508,6 +1522,7 @@ function frontView(parts, opt){
       });
     });
   }
+  const gapsDone=[];
   DC.forEach(c=>{
     const wpx=(c.xr-c.xl)*s;
     // внутренние перегородки контейнера
@@ -1522,7 +1537,7 @@ function frontView(parts, opt){
         if((h.x1-h.x0)<(r-l)*0.6) return;
         const k=Math.round(l)+"_"+Math.round(r); if(!bays.has(k)) bays.set(k,{l,r,ys:new Set()});
         bays.get(k).ys.add(r1((opt.mode==="top"?h.y1:opt.mode==="bottom"?h.y0:(h.y0+h.y1)/2)-c.base)); });
-      bays.forEach(b=>{
+      [...bays.values()].sort((a,c2)=>(a.r-a.l)-(c2.r-c2.l)).forEach(b=>{
         const ys=[...b.ys].sort((a,c2)=>a-c2), bw=(b.r-b.l)*s;
         const step=Math.min(11,Math.max(6,(bw*0.45)/Math.max(1,ys.length)));
         ys.forEach((v,i)=>{
@@ -1531,6 +1546,18 @@ function frontView(parts, opt){
           g+=arrowV(x,yb,yt)+label(x-3,yt+6+String(v).length*4,fmtv(v),true);
         });
         if(ys.length) g+=`<line x1="${X(b.l)}" y1="${Y(c.base)}" x2="${X(b.l)+10+ys.length*step}" y2="${Y(c.base)}" stroke="${A}" stroke-width="0.9"/>`;
+        // просветы: от верха нижней полки до низа верхней — цепочкой у правого края проёма (как в Базисе)
+        if(opt.gaps===true){
+          const cx=(b.l+b.r)/2, col=hor.filter(h=>h.x0<cx&&h.x1>cx&&h.y1>=c.base-1&&h.y0<=c.top+1).sort((a,c2)=>a.y0-c2.y0);
+          const x=X(b.r)-10;
+          for(let i=0;i+1<col.length;i++){ const lo=col[i].y1, hi=col[i+1].y0, v=r1(hi-lo); if(v<20) continue;
+            if(gapsDone.some(d=>Math.abs(d.x-x)<6&&d.lo<hi-1&&d.hi>lo+1)) continue; gapsDone.push({x,lo,hi});
+            const ya=Y(lo), yb=Y(hi), len=String(fmtv(v)).length*7;
+            g+=`<g class="fv-gap"><line x1="${x}" y1="${ya}" x2="${x}" y2="${yb}" stroke="${A}" stroke-width="0.9"/>`+
+               `<path d="M${x-2.5} ${yb+5} L${x} ${yb} L${x+2.5} ${yb+5} M${x-2.5} ${ya-5} L${x} ${ya} L${x+2.5} ${ya-5}" fill="none" stroke="${A}" stroke-width="0.9"/>`+
+               `<line x1="${x-5}" y1="${ya}" x2="${x+5}" y2="${ya}" stroke="${A}" stroke-width="0.6"/><line x1="${x-5}" y1="${yb}" x2="${x+5}" y2="${yb}" stroke="${A}" stroke-width="0.6"/>`+
+               (ya-yb>len+8?label(x-3,(ya+yb)/2+len/2,fmtv(v),true):label(x-5,(ya+yb)/2+4,fmtv(v),false,"end"))+`</g>`; }
+        }
       });
     }
     // 2) оси внутренних перегородок от внутренней грани левой стойки — над каждой группой перегородок
@@ -1800,13 +1827,13 @@ function viewOrder(){
   if(S.current.loading) return h+`<p class="muted">Загружаю детали…</p>`;
   if(S.current.parts.some(p=>p.box)) h+=asmBlock(matchMedia("(pointer:fine)").matches?"левая кнопка — вращать · колесо — приблизить к курсору · правая кнопка — сдвинуть · двойной щелчок — центр сюда · Ctrl + щелчок — выделить несколько":"один палец — вращать · двумя — приблизить и сдвинуть · нажмите на деталь");
   else if(S.current.parts.length) h+=`<div class="banner">3D всего изделия появится после выгрузки новой версией скрипта: в этом заказе нет положения деталей.</div>`;
-  if(S.current.parts.some(p=>p.box)){ const fvm=S.fvMode||"mid", fvw=S.fvWire!==false, views=moduleViews(S.current.parts, curFasteners(), fvm, fvw, !!S.fvHinge, S.fvPos!==false);
+  if(S.current.parts.some(p=>p.box)){ const fvm=S.fvMode||"mid", fvw=S.fvWire!==false, views=moduleViews(S.current.parts, curFasteners(), fvm, fvw, !!S.fvHinge, S.fvPos!==false, S.fvGap===true);
     const tip=matchMedia("(pointer:fine)").matches?"Колесо мыши — приблизить к курсору, зажать и тянуть — сдвинуть, двойной щелчок — весь чертёж.":"Двумя пальцами — приблизить, потом одним — сдвинуть. Кнопка ⤢ — весь чертёж.";
     const box=v=>`<div class="mapbox fv-box" data-key="${esc(S.current.orderId+"|"+v.title+"|"+(S.fvHinge?"h":"n"))}">${v.svg}<div class="fv-zoom"><button type="button" data-z="meas" title="Поставить свой размер: две точки" aria-label="Поставить размер" aria-pressed="false">📏</button><button type="button" data-z="in" title="Приблизить" aria-label="Приблизить">+</button><button type="button" data-z="out" title="Отдалить" aria-label="Отдалить">−</button><button type="button" data-z="reset" title="Весь чертёж" aria-label="Весь чертёж">⤢</button><button type="button" data-z="full" title="Во весь экран" aria-label="Во весь экран">⛶</button></div></div>`;
     if(views.length) h+=`<details class="card fv" ${S.fvOpen===false?"":"open"} style="margin-bottom:18px"><summary><h2 style="display:inline;margin:0">Вид спереди с размерами${views.length>1?` · ${views.length} модул${views.length<5?"я":"ей"}`:""}</h2></summary><div class="card-head" style="margin:8px 0"><span class="note">Фасады и задняя стенка скрыты. Высоты — от низа стойки, по горизонтали — от внутренней стороны стойки до оси перегородки, мм. Высоты полок:</span>
       <div class="seg" role="group" aria-label="До какой грани полки"><button type="button" data-act="fv-mode" data-m="bottom" aria-pressed="${fvm==="bottom"}">до низа полки</button><button type="button" data-act="fv-mode" data-m="mid" aria-pressed="${fvm==="mid"}">до середины</button><button type="button" data-act="fv-mode" data-m="top" aria-pressed="${fvm==="top"}">до верха</button></div>
       <div class="seg" role="group" aria-label="Вид чертежа"><button type="button" data-act="fv-wire" data-w="1" aria-pressed="${fvw&&!S.fvHinge}">Каркас</button><button type="button" data-act="fv-wire" data-w="0" aria-pressed="${!fvw&&!S.fvHinge}">Заливка</button><button type="button" data-act="fv-hinge" aria-pressed="${!!S.fvHinge}">Петли на фасадах</button></div>
-      <div class="seg" role="group" aria-label="Номера деталей"><button type="button" data-act="fv-pos" aria-pressed="${S.fvPos!==false}">Позиции</button></div></div>
+      <div class="seg" role="group" aria-label="Подписи на чертеже"><button type="button" data-act="fv-pos" aria-pressed="${S.fvPos!==false}">Позиции</button><button type="button" data-act="fv-gap" aria-pressed="${S.fvGap===true}">Просветы</button></div></div>
       ${views.length===1?box(views[0]):views.map((v,i)=>`<details class="fv-mod" ${i===0?"open":""}><summary><b>${esc(v.title)}</b> <span class="muted mono">${v.size}</span></summary>${box(v)}</details>`).join("")}
       <div class="fv-tip">${tip}</div></details>`; }
   const fl=furnList(curFasteners());
@@ -2082,6 +2109,7 @@ document.addEventListener("click", async ev=>{
   else if(a==="asm-sel-hide"){ if(asm){ const m=asm.st.multi; Object.keys(m).forEach(c=>asm.st.hidden[c]=true); asm.st.multi={}; asm.st.selected=null; asm.st.apply(); showPick(null); syncShowAll(); } }
   else if(a==="asm-sel-only"){ if(asm){ const m=asm.st.multi; S.current.parts.forEach(p=>{ if(!m[p.code]) asm.st.hidden[p.code]=true; }); asm.st.apply(); syncShowAll(); } }
   else if(a==="asm-showall"){ if(asm){ asm.st.hidden={}; asm.st.apply(); syncShowAll(); } }
+  else if(a==="fv-gap"){ S.fvGap=S.fvGap!==true; try{ localStorage.setItem("cehqr-fvg",S.fvGap?"1":"0"); }catch(_){} render(); }
   else if(a==="fv-pos"){ S.fvPos=S.fvPos===false; try{ localStorage.setItem("cehqr-fvp",S.fvPos?"1":"0"); }catch(_){} render(); }
   else if(a==="fv-hinge"){ S.fvHinge=true; render(); }
   else if(a==="fv-wire"){ S.fvHinge=false; S.fvWire=t.dataset.w==="1"; try{ localStorage.setItem("cehqr-fvw",S.fvWire?"1":"0"); }catch(_){} render(); }
@@ -2164,7 +2192,22 @@ function goPart(code){
   if(location.hash!=="#"+code) history.replaceState(null,"","#"+code);
   setView("part");
 }
-$("#findForm").addEventListener("submit", ev=>{ ev.preventDefault(); const v=$("#findInput").value; if(v.trim()){ goPart(v); $("#findInput").value=""; } });
+function findPos(v){
+  v=String(v||"").trim(); if(!v) return;
+  if(/[A-Za-zА-Яа-я].*-\d+|#/.test(v)){ goPart(v); return; }   /* ссылка или код со сканера — как раньше */
+  if(!S.current.orderId||S.current.missing){ toast("Сначала откройте заказ — поиск идёт по номерам позиций в нём"); return; }
+  if(S.current.loading){ toast("Заказ ещё загружается, попробуйте через секунду"); return; }
+  const n=v.replace(/^поз\.?\s*/i,""), hit=S.current.parts.filter(p=>String(p.art||"").trim()===n);
+  if(!hit.length){ toast(`Позиции ${n} в этом заказе нет`); return; }
+  if(hit.length===1){ goPart(hit[0].code); return; }
+  /* одинаковые детали — все сразу выделены в 3D заказа, внизу их список */
+  const oid=S.current.orderId, st=S.asmOrder&&S.asmOrder.oid===oid?S.asmOrder:{oid};
+  st.multi={}; hit.forEach(p=>st.multi[p.code]=true); st.selected=hit[0].code; st.hidden={}; S.asmOrder=st;
+  goOrder(oid);
+  requestAnimationFrame(()=>{ const el=$("#asm"); if(el){ el.style.scrollMarginTop="84px"; el.scrollIntoView({behavior:"smooth",block:"start"}); } });
+  toast(`Позиция ${n}: ${hit.length} ${hit.length%10>=2&&hit.length%10<=4&&(hit.length%100<12||hit.length%100>14)?"детали":"деталей"} выделены`);
+}
+$("#findForm").addEventListener("submit", ev=>{ ev.preventDefault(); const v=$("#findInput").value; if(v.trim()){ findPos(v); $("#findInput").value=""; $("#findInput").blur(); } });
 $("#home").addEventListener("click", ()=>{ history.replaceState(null,"",location.pathname+location.search); setView("orders"); });
 document.addEventListener("click", ev=>{ if(ev.target.classList&&ev.target.classList.contains("modal")) ev.target.remove(); });
 document.addEventListener("keydown", ev=>{ if(ev.key==="Escape"){ const fb=document.querySelector(".fv-box.full"); if(fb){ fb.classList.remove("full"); document.body.classList.remove("has-full"); const b=fb.querySelector('[data-z="full"]'); if(b) b.textContent="⛶"; } const qm=document.getElementById("qrModal"); if(qm) qm.remove(); const f=document.querySelector(".asm.full"); if(f){ f.classList.remove("full"); document.body.classList.remove("has-full"); } } });
