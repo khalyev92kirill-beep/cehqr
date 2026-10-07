@@ -605,6 +605,8 @@ async function setStage(code, n){
 let keyFor=code=>"", hashHook=h=>h;
 function partUrl(code){ const base=(S.config.url||"").split("#")[0], k=keyFor(code); return base? base+"#"+code+(k?"~"+k:"") : code; }
 function qrMatrix(text){ const q=qrcode(0,"M"); q.addData(unescape(encodeURIComponent(text))); q.make(); return q; }
+// этапы показываем тем, кто может их отмечать: технолог, мастер с PIN цеха, демо. Клиенту по QR — нет.
+function stagesOn(){ return !!(S.canWrite||S.demo||!S.site); }
 function qrSvg(text){
   if(typeof qrcode!=="function") return "";
   const q=qrMatrix(text), n=q.getModuleCount(); let p="";
@@ -1810,8 +1812,8 @@ function viewOrders(){
   ids.forEach(id=>{ const o=S.orders[id], sb=stageBar(id,o.count||1);
     h+=`<button class="order" data-act="order" data-id="${esc(id)}">
       <div class="order-name">${esc(o.name)} ${o.example?'<span class="tag">пример</span>':""}<div class="order-meta"><span class="mono">${esc(id)}</span> · ${esc(o.client||"без клиента")} · ${o.count} дет.</div></div>
-      <div class="order-meta mono">${sb.done}/${o.count} упак.</div>${sb.bar}</button>`; });
-  h+=`</div><div class="legend">${STAGES.map(s=>`<span><i style="background:${s.color}"></i>${s.name}</span>`).join("")}</div>`;
+      ${stagesOn()?`<div class="order-meta mono">${sb.done}/${o.count} упак.</div>${sb.bar}`:""}</button>`; });
+  h+=`</div>`+(stagesOn()?`<div class="legend">${STAGES.map(s=>`<span><i style="background:${s.color}"></i>${s.name}</span>`).join("")}</div>`:"");
   return h;
 }
 function viewOrder(){
@@ -1825,7 +1827,7 @@ function viewOrder(){
     <div class="tb-c tb-client"><span class="tb-l">Клиент</span><b>${esc(o.client||"не указан")}</b></div>
     <div class="head-actions tb-act"><button class="btn primary" data-act="order-qr">QR проекта для мастеров</button>
     ${S.canEdit? (S.confirmDelete? `<button class="btn danger" data-act="del-yes">Удалить навсегда</button><button class="btn" data-act="del-no">Отмена</button>` : `<button class="btn danger" data-act="del">Удалить</button>`):""}</div></div>`;
-  h+=`<div style="margin-bottom:16px">${sb.bar}<div class="legend">${STAGES.map((s,i)=>`<span><i style="background:${s.color}"></i>${s.name} · ${sb.cnt[i]}</span>`).join("")}</div></div>`;
+  if(stagesOn()) h+=`<div style="margin-bottom:16px">${sb.bar}<div class="legend">${STAGES.map((s,i)=>`<span><i style="background:${s.color}"></i>${s.name} · ${sb.cnt[i]}</span>`).join("")}</div></div>`;
   if(S.current.loading) return h+`<p class="muted">Загружаю детали…</p>`;
   if(S.current.parts.some(p=>p.box)) h+=asmBlock(matchMedia("(pointer:fine)").matches?"левая кнопка — вращать · колесо — приблизить к курсору · правая кнопка — сдвинуть · двойной щелчок — центр сюда · Ctrl + щелчок — выделить несколько":"один палец — вращать · двумя — приблизить и сдвинуть · нажмите на деталь");
   else if(S.current.parts.length) h+=`<div class="banner">3D всего изделия появится после выгрузки новой версией скрипта: в этом заказе нет положения деталей.</div>`;
@@ -1858,7 +1860,7 @@ function viewPart(){
   const area=(p.L*p.W/1e6).toFixed(3).replace(".",",");
   let h=`<div class="part-view"><div class="part-top"><div><div class="eyebrow"><button class="btn sm" data-act="order" data-id="${esc(oid)}">← ${esc(o.name||oid)}</button></div>
     <div class="code" style="margin-top:12px">${esc(p.code)}</div><div class="part-name">${esc(p.name)}${p.copy?` <span class="muted">· ${esc(p.copy)}</span>`:""}</div></div>
-    <div class="qr-box">${qrSvg(partUrl(p.code))}</div></div>`;
+    ${(q=>q?`<div class="qr-box">${q}</div>`:"")(qrSvg(partUrl(p.code)))}</div>`;
   if(S.current.parts.some(x=>x.box)&&p.box) h+=`<h2 style="margin-top:4px">Где стоит в изделии</h2>`+asmBlock("деталь подсвечена · нажмите на соседнюю, чтобы открыть");
   h+=`<div class="facts">
     <div class="fact"><b>Длина × ширина</b><span class="mono">${fmt(p.L)} × ${fmt(p.W)}</span></div>
@@ -1867,7 +1869,7 @@ function viewPart(){
     <div class="fact"><b>Позиция в Базисе</b><span class="mono">${esc(p.art||"—")}</span></div>
     <div class="fact"><b>Площадь</b><span class="mono">${area} м²</span></div>
     <div class="fact"><b>Отверстий</b><span class="mono">${(p.holes||[]).length}</span></div></div>`;
-  h+=`<h2>Этап</h2><div class="stages" role="group" aria-label="Этап производства">${STAGES.map((s,i)=>`<button type="button" data-act="stage" data-n="${i}" aria-pressed="${i===stage}" ${S.canWrite||S.demo?"":"disabled"}><i style="background:${s.color}"></i>${s.name}</button>`).join("")}</div>`;
+  if(stagesOn()) h+=`<h2>Этап</h2><div class="stages" role="group" aria-label="Этап производства">${STAGES.map((s,i)=>`<button type="button" data-act="stage" data-n="${i}" aria-pressed="${i===stage}" ${S.canWrite||S.demo?"":"disabled"}><i style="background:${s.color}"></i>${s.name}</button>`).join("")}</div>`;
   h+=`<div class="panels"><div class="card"><div class="card-head"><h2 style="margin:0">Присадка · вид на пласть A</h2>
       <div class="seg" role="group" aria-label="Способ простановки размеров"><button type="button" data-act="mode" data-m="base" aria-pressed="${S.mapMode==="base"}">От базы</button><button type="button" data-act="mode" data-m="chain" aria-pressed="${S.mapMode==="chain"}">Цепочкой</button></div></div>
       <div class="mapbox">${drillMap(p,S.mapMode)}</div>
