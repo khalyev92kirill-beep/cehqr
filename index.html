@@ -251,6 +251,7 @@ body.has-full{overflow:hidden}
 .part-sheet .ps-f{display:grid;gap:8px;font-size:14px}.part-sheet .ps-f small{display:block;color:var(--muted);font-size:12px}
 .part-sheet .tg-st{display:inline-block;width:9px;height:9px;border-radius:50%}
 @media (prefers-reduced-motion:reduce){.part-sheet{transition:none}}
+.fs-steps{list-style:none;counter-reset:fs;padding:0;margin:0;display:grid;gap:10px}.fs-steps li{counter-increment:fs;display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px}.fs-steps li>div>b::before{content:counter(fs) ". "}.fs-steps p{margin:4px 0 0;line-height:1.45}.fs-pic{width:150px;height:auto;background:var(--sunk);border-radius:8px}@media(max-width:520px){.fs-steps li{grid-template-columns:96px 1fr}.fs-pic{width:96px}}@media print{.fs-steps li{break-inside:avoid}}
 .fr-add{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.fr-add input,.gl-in{width:84px;height:36px;padding:0 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:14px var(--f-mono)}
 .spec-t{border-collapse:collapse;width:100%;margin:6px 0;font-size:14px}.spec-t th,.spec-t td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}.spec-t th{color:var(--muted);font-weight:600;font-size:12.5px}
 .facts-line{margin:8px 0;font-size:14px}
@@ -1777,16 +1778,46 @@ function barSvg(b){ const VW=600, k=VW/FRAME.bar, H=26; let x=FRAME.trim*k, g=`<
     g+=`<polygon points="${up?x+bv:x},1 ${up?x+w-bv:x+w},1 ${up?x+w:x+w-bv},${H-1} ${up?x:x+bv},${H-1}" fill="${pc.sideH?"#c9ced3":"#dde1e4"}" stroke="var(--ink)" stroke-width="0.6"/>`;
     if(w>22) g+=`<text x="${x+w/2}" y="${H/2+4}" text-anchor="middle" font-size="${w>40?11:9}" font-weight="700" font-family="var(--f-mono)" fill="var(--ink)">${fmt(pc.len)}</text>`; x+=w; });
   return `<svg viewBox="0 0 ${VW} ${H}" style="width:100%;height:auto;display:block">${g}</svg>`; }
+function glassKind(p){ const m=String(p.mat||"").toLowerCase(); return /зеркал/.test(m)?"Зеркало":(p.frame?"Стекло 4 мм в рамку":"Стекло"); }
+function glassOrder(panes){ const m=new Map(); panes.forEach(p=>{ const kind=glassKind(p), k=fmt(Math.max(p.L,p.W))+" × "+fmt(Math.min(p.L,p.W)), key=kind+"|"+k;
+  const g=m.get(key)||{kind,k,n:0,a:0}; g.n++; g.a+=p.L*p.W/1e6; m.set(key,g); }); return m; }
+function glassText(){ const {frames,loose}=frameData(), panes=framePanes(frames,loose), gl=[...glassOrder(panes).values()];
+  const o=S.orders[S.current.orderId]||{};
+  return `Заказ стекла — ${o.name||""} (${S.current.orderId})\n`+gl.map(g=>`${g.kind}: ${g.k} мм — ${g.n} шт`).join("\n")+`\nВсего: ${panes.length} шт, ${gl.reduce((a,g)=>a+g.a,0).toFixed(2).replace(".",",")} м²`; }
+function framePanes(frames,loose){ return frames.map(f=>({L:f.glass.H,W:f.glass.W,frame:true,mat:f.glass.p?f.glass.p.material:"",name:"Стекло рамки "+fmt(f.H)+"×"+fmt(f.W),code:f.glass.p?f.glass.p.code:"",art:f.glass.p?f.glass.p.art:""}))
+    .concat(loose.map(p=>({L:p.L,W:p.W,mat:p.material,name:p.name+" · "+String(p.material||"").split(/[\r\n]/)[0],code:p.code,art:p.art}))); }
+/* пошаговая сборка рамочного фасада MZ-01: картинки рисуются сами, размеры — с первого фасада заказа */
+function frameSteps(frames){
+  const f=frames[0], H=f.H, W=f.W, gH=f.glass.H, gW=f.glass.W;
+  const ink='stroke="var(--ink)" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round"', al='fill="#c9ced3" stroke="var(--ink)" stroke-width="1.5"';
+  const sv=b=>`<svg viewBox="0 0 160 110" class="fs-pic" aria-hidden="true">${b}</svg>`;
+  const T=(x,y,t,a="middle")=>`<text x="${x}" y="${y}" font-size="10" font-weight="700" text-anchor="${a}" fill="var(--ink)" font-family="var(--f-mono)">${t}</text>`;
+  const steps=[
+    ["Отпилите профиль под 45°",`2 шт по <b>${fmt(H)}</b> мм и 2 шт по <b>${fmt(W)}</b> мм на каждый фасад. Размер — по наружной стороне, длина куска = сторона фасада. Пилите усами навстречу, как на схеме хлыста.`,
+      sv(`<polygon points="10,20 150,20 136,36 24,36" ${al}/><polygon points="24,58 136,58 150,74 10,74" ${al}/>${T(80,31,fmt(H))}${T(80,69,fmt(W))}<path d="M10 90h140" ${ink} stroke-dasharray="4 3"/>${T(80,104,"45°   ×2 + ×2")}`)],
+    ["Проверьте торцы",`Срез ровный, без заусенцев. Снимите заусенец напильником, сдуйте стружку из пазов — иначе уголок не сядет и будет щель.`,
+      sv(`<polygon points="20,40 120,40 104,62 20,62" ${al}/><path d="M104 62l16-22" stroke="#d9480f" stroke-width="3"/><circle cx="112" cy="51" r="20" ${ink}/><path d="M126 66l18 18" ${ink}/>`)],
+    ["Вставьте уголки",`В пазы двух соседних профилей вставьте стяжной уголок MZ (на широкую или узкую сторону — по комплекту). Винты пока не затягивайте.`,
+      sv(`<polygon points="20,80 20,20 34,34 34,80" ${al}/><polygon points="20,80 140,80 126,66 34,66" ${al}/><path d="M27 72v-26M27 73h26" stroke="#d9480f" stroke-width="5" stroke-linecap="round"/>${T(70,102,"уголок в паз")}`)],
+    ["Соберите три стороны «П»",`Соедините обе стойки ${fmt(H)} и одну перемычку ${fmt(W)}. Стыки прижмите, усы должны сойтись без щели. Затяните винты уголков.`,
+      sv(`<path d="M30 15v80h100V15" stroke="#9aa1a8" stroke-width="12" fill="none" stroke-linejoin="miter"/><path d="M30 15v80h100V15" ${ink}/>${T(80,108,fmt(W))}${T(80,58,fmt(H))}`)],
+    ["Уплотнитель и стекло",`Вставьте уплотнитель MZ в паз (или наденьте на кромку стекла). Заведите стекло <b>${fmt(gH)}×${fmt(gW)}</b> мм сверху в пазы до упора. Стекло — в перчатках.`,
+      sv(`<path d="M30 30v65h100V30" stroke="#9aa1a8" stroke-width="12" fill="none"/><rect x="38" y="8" width="84" height="80" fill="#cfe6ee" stroke="#5a8fa3" stroke-width="1.5" opacity=".9"/><path d="M80 2v14M74 10l6 6 6-6" ${ink}/>${T(80,56,fmt(gH)+"×"+fmt(gW))}`)],
+    ["Закройте четвёртой стороной",`Наденьте верхнюю перемычку с уголками, затяните. Проверьте диагонали рулеткой — разница не больше 1 мм. Если больше — ослабьте винты и выровняйте.`,
+      sv(`<rect x="30" y="15" width="100" height="80" fill="#cfe6ee" stroke="#9aa1a8" stroke-width="12"/><rect x="30" y="15" width="100" height="80" ${ink}/><path d="M30 15l100 80M130 15L30 95" stroke="#d9480f" stroke-width="1.5" stroke-dasharray="5 3"/>${T(80,108,"диагонали равны")}`)],
+    ["Петли и ручка",`Петли — для алюминиевой рамки (MZF 63 или ваши), крепятся в паз профиля, чашку в стекле не сверлят. Отверстия под ручку — по чертежу фасада. Протрите стекло, снимите плёнку.`,
+      sv(`<rect x="50" y="10" width="60" height="90" fill="#cfe6ee" stroke="#9aa1a8" stroke-width="10"/><rect x="50" y="10" width="60" height="90" ${ink}/><rect x="40" y="22" width="16" height="12" rx="2" fill="#d9480f"/><rect x="40" y="76" width="16" height="12" rx="2" fill="#d9480f"/><path d="M100 45v20" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/>`)]
+  ];
+  return `<h3 style="margin:16px 0 6px">Как собрать рамку ${esc(FRAME.name)}</h3><p class="note">Размеры на шагах — для фасада ${fmt(H)}×${fmt(W)}. Общая схема; тонкости — по инструкции к вашему комплекту уголков.</p>
+    <ol class="fs-steps">${steps.map(([t,d,pic])=>`<li>${pic}<div><b>${t}</b><p>${d}</p></div></li>`).join("")}</ol>`;
+}
 function frameBlock(){
   const {frames,loose}=frameData();
   const pieces=[]; frames.forEach((f,i)=>{ pieces.push({len:f.H,sideH:true,i},{len:f.H,sideH:true,i},{len:f.W,sideH:false,i},{len:f.W,sideH:false,i}); });
   const bars=barPlan(pieces), metres=pieces.reduce((a,p)=>a+p.len,0)/1000;
   const seal=frames.reduce((a,f)=>a+2*(f.glass.H+f.glass.W),0)/1000;
-  const panes=frames.map(f=>({L:f.glass.H,W:f.glass.W,name:"Стекло рамки "+fmt(f.H)+"×"+fmt(f.W),code:f.glass.p?f.glass.p.code:"",art:f.glass.p?f.glass.p.art:""}))
-    .concat(loose.map(p=>({L:p.L,W:p.W,name:p.name+" · "+String(p.material||"").split(/[\r\n]/)[0],code:p.code,art:p.art})));
-  const gsh={w:+(S.glassW||3210),h:+(S.glassH||2250),rot:true}, gm={sh:gsh,...nest(panes,gsh)};
+  const panes=framePanes(frames,loose);
   const grp=new Map(); frames.forEach(f=>{ const k=f.H+"×"+f.W+"|"+f.prof; const g=grp.get(k)||{f,n:0}; g.n++; grp.set(k,g); });
-  const pg=new Map(); panes.forEach(p=>{ const k=fmt(Math.max(p.L,p.W))+" × "+fmt(Math.min(p.L,p.W)); pg.set(k,(pg.get(k)||0)+1); });
   let h=`<details class="plist" ${S.frameOpen?"open":""} data-k="frame"><summary>Рамочные фасады и стекло · ${frames.length} фас. · ${panes.length} стёкол</summary>
     <p class="note">Профиль ${esc(FRAME.name)}: рез под 45°, длина детали = сторона фасада. Стекло 4 мм = фасад −${FRAME.glassDed} мм. Хлыст ${FRAME.bar/1000} м, пропил ${FRAME.kerf} мм, торцы по ${FRAME.trim} мм.</p>`;
   if(frames.length){
@@ -1795,10 +1826,12 @@ function frameBlock(){
       <h3 style="margin:14px 0 6px">Раскрой профиля</h3>${bars.map((b,i)=>`<div class="cut-sheet"><div class="cut-h">Хлыст ${i+1} · остаток ${fmt(Math.round(b.left))} мм</div>${barSvg(b)}</div>`).join("")}`;
   }
   if(panes.length){
-    h+=`<h3 style="margin:14px 0 6px">Стекло и зеркало</h3><table class="spec-t"><thead><tr><th>Размер В×Ш</th><th>шт</th></tr></thead><tbody>${[...pg.entries()].map(([k,n])=>`<tr><td class="mono">${k}</td><td>${n}</td></tr>`).join("")}</tbody></table>
-      <p class="note">Лист стекла <input class="gl-in" data-k="glassW" value="${gsh.w}" inputmode="numeric" aria-label="Длина листа стекла"> × <input class="gl-in" data-k="glassH" value="${gsh.h}" inputmode="numeric" aria-label="Ширина листа стекла"> мм · листов: <b>${gm.sheets.length}</b>${gm.tooBig.length?` · <span style="color:#b3261e">не влезают: ${gm.tooBig.length}</span>`:""}</p>
-      ${gm.sheets.map((sh,i)=>`<div class="cut-sheet"><div class="cut-h">Лист стекла ${i+1} · заполнен на ${Math.round(sh.used*100)}%</div>${cutSvg(gm,sh)}</div>`).join("")}`;
+    const gl=[...glassOrder(panes).values()], tot=gl.reduce((a,g)=>a+g.a,0);
+    h+=`<h3 style="margin:14px 0 6px">Стекло и зеркало — заказ</h3><table class="spec-t"><thead><tr><th>Что</th><th>Размер В×Ш</th><th>шт</th><th>м²</th></tr></thead><tbody>${gl.map(g=>`<tr><td>${esc(g.kind)}</td><td class="mono">${g.k}</td><td>${g.n}</td><td class="mono">${g.a.toFixed(2).replace(".",",")}</td></tr>`).join("")}</tbody></table>
+      <p class="facts-line"><b>Всего:</b> ${panes.length} шт · <b>${tot.toFixed(2).replace(".",",")} м²</b></p>
+      <div class="spec-act"><button class="btn sm" data-act="gl-copy">Скопировать для поставщика</button></div>`;
   }
+  if(frames.length) h+=frameSteps(frames);
   const man=frameManual();
   h+=`<h3 style="margin:14px 0 6px">Добавить рамочный фасад вручную</h3>
     <form class="fr-add"><input name="H" inputmode="numeric" placeholder="Высота" required> × <input name="W" inputmode="numeric" placeholder="Ширина" required> <input name="q" inputmode="numeric" value="1" aria-label="Количество" style="width:52px"> шт <button class="btn sm primary" type="submit">Добавить</button></form>
@@ -1809,7 +1842,7 @@ function frameBlock(){
 function framePrint(){
   const {frames}=frameData(), w=window.open("","_blank"); if(!w){ toast("Разрешите всплывающие окна для печати"); return; }
   const tmp=document.createElement("div"); S.frameOpen=true; tmp.innerHTML=frameBlock(); tmp.querySelectorAll("form,.iss-l,.spec-act,input").forEach(e=>{ if(e.tagName==="INPUT"){ e.replaceWith(document.createTextNode(e.value)); } else e.remove(); });
-  w.document.write(`<!doctype html><meta charset="utf-8"><title>Рамочные фасады ${esc(S.current.orderId)}</title><style>:root{--sunk:#f1f1f1;--ink:#111;--board:#e8f1f3;--board-line:#7aa;--f-mono:ui-monospace,Consolas,monospace}body{font:12px system-ui,sans-serif;margin:12mm}table{border-collapse:collapse;margin:6px 0}th,td{border:1px solid #999;padding:3px 8px;text-align:left}.cut-sheet{break-inside:avoid;margin:6px 0}.cut-h{font-weight:600;margin-bottom:2px}summary{font-size:16px;font-weight:700;list-style:none}</style>
+  w.document.write(`<!doctype html><meta charset="utf-8"><title>Рамочные фасады ${esc(S.current.orderId)}</title><style>:root{--sunk:#f1f1f1;--ink:#111;--board:#e8f1f3;--board-line:#7aa;--f-mono:ui-monospace,Consolas,monospace}body{font:12px system-ui,sans-serif;margin:12mm}table{border-collapse:collapse;margin:6px 0}th,td{border:1px solid #999;padding:3px 8px;text-align:left}.cut-sheet{break-inside:avoid;margin:6px 0}.cut-h{font-weight:600;margin-bottom:2px}summary{font-size:16px;font-weight:700;list-style:none}.fs-steps{list-style:none;counter-reset:fs;padding:0}.fs-steps li{counter-increment:fs;display:grid;grid-template-columns:120px 1fr;gap:10px;break-inside:avoid;border:1px solid #bbb;border-radius:6px;padding:6px;margin:5px 0}.fs-steps li>div>b::before{content:counter(fs) ". "}.fs-steps p{margin:2px 0 0}.fs-pic{width:120px;background:#f1f1f1}</style>
     <h1 style="font-size:17px">${esc((S.orders[S.current.orderId]||{}).name||"")} — заказ ${esc(S.current.orderId)}</h1>${tmp.innerHTML.replace(/<details[^>]*>/,"<div>").replace(/<\/details>/,"</div>")}`);
   w.document.close(); setTimeout(()=>{ try{ w.print(); }catch(_){} },400);
 }
@@ -2713,6 +2746,7 @@ document.addEventListener("click", async ev=>{
   else if(a==="spec-print"){ specPrint(); }
   else if(a==="fac-print"){ facadePrint(); }
   else if(a==="fr-print"){ framePrint(); }
+  else if(a==="gl-copy"){ const tx=glassText(); (navigator.clipboard?navigator.clipboard.writeText(tx):Promise.reject()).then(()=>toast("Список стекла скопирован — вставьте в WhatsApp или почту")).catch(()=>{ prompt("Скопируйте список:",tx); }); }
   else if(a==="fr-del"){ const L=frameManual(); L.splice(+t.dataset.i,1); frameManualSave(L); S.frameOpen=true; render(); }
   else if(a==="asm-multi"){ if(asm){ asm.st.multiMode=!asm.st.multiMode; t.setAttribute("aria-pressed",String(asm.st.multiMode)); toast(asm.st.multiMode?"Нажимайте на детали — они добавятся к выделению":"Выделение по одной детали"); } }
   else if(a==="asm-sel-clear"){ if(asm){ asm.st.multi={}; asm.st.selected=null; asm.st.apply(); showPick(null); } }
@@ -2883,9 +2917,19 @@ render();
   btn.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Установить</span>';
   btn.title="Установить «Технолог 3D» на телефон как приложение";
   const role=document.getElementById("role"); if(role) role.before(btn);
-  window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); deferred=e; btn.hidden=false; });
+  /* плашка внизу на телефоне: один раз предложить поставить приложение */
+  const phone=matchMedia("(max-width: 820px)").matches||/android|iphone|ipad/i.test(navigator.userAgent);
+  let banShown=false;
+  function banner(){ if(banShown||!phone) return; try{ if(localStorage.getItem("cehqr-inst-off")) return; }catch(_){}
+    banShown=true; const b=document.createElement("div"); b.className="inst-ban";
+    b.innerHTML='<img src="icon-192.png" alt="" width="40" height="40"><div><b>Поставьте «Технолог 3D» на телефон</b><span>Значок на экране, открывается на весь экран, заказы видны без интернета</span></div><button class="btn sm primary" type="button">Установить</button><button class="inst-x" type="button" aria-label="Закрыть">✕</button>';
+    b.querySelector(".primary").onclick=()=>{ b.remove(); btn.click(); };
+    b.querySelector(".inst-x").onclick=()=>{ b.remove(); try{ localStorage.setItem("cehqr-inst-off","1"); }catch(_){} };
+    document.body.appendChild(b); }
+  window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); deferred=e; btn.hidden=false; setTimeout(banner,2500); });
   window.addEventListener("appinstalled",()=>{ btn.hidden=true; toast("Готово: «Технолог 3D» на главном экране"); });
-  if(ios) btn.hidden=false;
+  if(ios){ btn.hidden=false; setTimeout(banner,2500); }
+  const st=document.createElement("style"); st.textContent=".inst-ban{position:fixed;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:70;display:flex;gap:10px;align-items:center;background:var(--surface,#fff);color:var(--ink,#111);border:1px solid var(--line,#ccc);border-radius:14px;padding:10px 10px 10px 12px;box-shadow:0 6px 24px rgba(0,0,0,.18)}.inst-ban img{border-radius:9px;flex:none}.inst-ban div{flex:1;min-width:0;font:13px/1.3 var(--f-body,system-ui)}.inst-ban b{display:block;font-size:14px}.inst-ban span{color:var(--muted,#666)}.inst-x{border:0;background:none;font-size:18px;padding:6px;color:inherit;cursor:pointer}"; document.head.appendChild(st);
   btn.addEventListener("click",async()=>{
     if(deferred){ deferred.prompt(); try{ await deferred.userChoice; }catch(_){} deferred=null; btn.hidden=true; return; }
     const m=document.createElement("div"); m.className="modal"; m.id="qrModal";
