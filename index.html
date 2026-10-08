@@ -1156,12 +1156,22 @@ function mountAssembly(canvas, parts, opt){
     while(measGroup.children.length){ const c=measGroup.children.pop(); c.geometry.dispose(); }
     measEls.forEach(el=>el.remove()); measEls=[];
     const list=st.meas.slice(); if(preview) list.push(preview);
-    list.forEach((M,i)=>{ const D=dimOf(M.a,M.b), A=toW(D.a), B2=toW(D.b2), B=toW(D.b);
+    // как в чертежах (AutoCAD/SolidWorks «от базы»): размеры из одной точки по одной оси разносим ступеньками в сторону,
+    // каждый со своей выносной линией, цифра — посередине своей размерной линии; короткий — ближе к детали
+    const Ds=list.map(M=>dimOf(M.a,M.b)), off=Ds.map(()=>0), STEP=70;
+    Ds.forEach((D,i)=>{ if(off[i]) return;
+      const grp=Ds.map((E,j)=>j).filter(j=>Ds[j].ax===D.ax&&[0,1,2].every(k=>Math.abs(Ds[j].a[k]-D.a[k])<4)&&Math.sign(Ds[j].b2[D.ax]-Ds[j].a[D.ax])===Math.sign(D.b2[D.ax]-D.a[D.ax]));
+      if(grp.length<2) return; grp.sort((x,y)=>Ds[x].len-Ds[y].len).forEach((j,k)=>off[j]=k||0.0001); });
+    list.forEach((M,i)=>{ const D=Ds[i], oa=D.ax===0?1:0, k=Math.round(off[i]);
+      const sh=[0,0,0]; sh[oa]=k*STEP;
+      const a2=D.a.map((v,q)=>v+sh[q]), e2=D.b2.map((v,q)=>v+sh[q]);
+      const A=toW(a2), B2=toW(e2), B=toW(D.b), A0=toW(D.a), E0=toW(D.b2);
       const g=new THREE.BufferGeometry().setFromPoints([A,B2]); const ln=new THREE.Line(g,mLine); ln.renderOrder=10; measGroup.add(ln);
-      if(B.distanceTo(B2)>1e-6){ const g2=new THREE.BufferGeometry().setFromPoints([B2,B]); const l2=new THREE.Line(g2,mExt); l2.computeLineDistances(); l2.renderOrder=10; measGroup.add(l2); }
+      const ext=(p,q)=>{ if(p.distanceTo(q)<1e-6) return; const g2=new THREE.BufferGeometry().setFromPoints([p,q]); const l2=new THREE.Line(g2,mExt); l2.computeLineDistances(); l2.renderOrder=10; measGroup.add(l2); };
+      ext(A0,A); ext(E0,B2); if(B.distanceTo(E0)>1e-6) ext(B,E0);
       const el=document.createElement("span"); el.className="meas"+(M===preview?" pre":"");
       el.innerHTML=`${fmt(Math.round(D.len*2)/2)}${M===preview?"":`<button type="button" aria-label="Убрать размер" title="Убрать размер">×</button>`}`;
-      el._mid=A.clone().lerp(B2, D.len>200?1-Math.min(0.14,70/D.len):0.5);   // цифра ближе к концу размера — длинные размеры от одной точки не налезают друг на друга
+      el._mid=A.clone().lerp(B2, off[i]&&D.len>200?1-Math.min(0.14,70/D.len):0.5);   // в группе «от базы» цифра у конца своего размера, одиночный — посередине
       if(M!==preview) el.querySelector("button").onclick=ev=>{ ev.stopPropagation(); st.meas.splice(i,1); rebuildMeas(); measPanel(); };
       layer&&layer.appendChild(el); measEls.push(el); });
     dirty=true;
