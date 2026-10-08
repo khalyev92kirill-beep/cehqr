@@ -204,7 +204,7 @@ code{font-family:var(--f-mono);font-size:13px;background:var(--sunk);padding:1px
 .find input::placeholder{color:var(--muted);opacity:.8}
 
 /* 3D */
-.asm{border:0;border-radius:16px;box-shadow:var(--shadow);background:radial-gradient(120% 90% at 50% 35%,var(--surface) 0%,var(--sunk) 70%,var(--bg) 100%)}
+.asm{border:0;border-radius:16px;box-shadow:var(--shadow);background:radial-gradient(120% 90% at 50% 35%,#eceeeb 0%,var(--sunk) 70%,#cdd0cc 100%)}
 .asm canvas{height:min(66vh,620px)}
 .asm.full{position:fixed;inset:0;z-index:40;margin:0;border-radius:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 .asm.full canvas{height:100%}
@@ -240,6 +240,17 @@ body.has-full{overflow:hidden}
 .tg-stg button{min-width:0;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:32px;padding:0 6px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font:600 12px var(--f-sans,inherit);cursor:pointer;white-space:nowrap}
 .gest-hint{pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:grid;gap:6px;padding:14px 16px;border-radius:14px;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:var(--shadow-lg);font-size:14px;max-width:calc(100% - 32px)}
 .gest-hint b{font-size:15px}.gest-hint i{font-size:12px;color:var(--muted)}
+.part-sheet{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--surface);border-radius:18px 18px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.18);padding:12px 14px calc(14px + env(safe-area-inset-bottom));transform:translateY(100%);transition:transform .22s ease-out;max-width:720px;margin:0 auto}
+.part-sheet.on{transform:none}
+.part-sheet .ps-h{display:flex;align-items:center;gap:10px}
+.part-sheet .ps-t{display:grid;flex:1;min-width:0}.part-sheet .ps-t b{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.part-sheet .ps-t span{color:var(--muted);font-size:14px}
+.part-sheet .tg-pos{flex:none;min-width:30px;height:30px;padding:0 6px;border-radius:15px;display:flex;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-ink);font:700 13px/1 var(--f-mono)}
+.part-sheet .ps-x{flex:none;width:44px;height:44px;border:0;border-radius:12px;background:var(--sunk);color:var(--ink);font-size:20px;cursor:pointer}
+.part-sheet .ps-b{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;align-items:start}
+.part-sheet #three{aspect-ratio:1/1;border-radius:12px}
+.part-sheet .ps-f{display:grid;gap:8px;font-size:14px}.part-sheet .ps-f small{display:block;color:var(--muted);font-size:12px}
+.part-sheet .tg-st{display:inline-block;width:9px;height:9px;border-radius:50%}
+@media (prefers-reduced-motion:reduce){.part-sheet{transition:none}}
 .tg-stg button i{width:9px;height:9px;border-radius:50%;flex:none}
 .tg-stg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .tg-stg .lbl{grid-column:1/-1;font-size:12px;color:var(--muted)}
@@ -342,7 +353,7 @@ body.has-full{overflow:hidden}
    синий карандаш — размеры на чертежах; под 3D и чертежами — миллиметровка;
    шапка заказа оформлена как штамп чертежа. */
 :root{
-  --bg:#eceeeb; --surface:#ffffff; --sunk:#e3e6e2; --line:#cfd3ce; --ink:#1e2226; --muted:#5d636a;
+  --bg:#e1e3e0; --surface:#f7f8f6; --sunk:#d8dbd7; --line:#cfd3ce; --ink:#1e2226; --muted:#5d636a;
   --accent:#1d5fb4; --accent-ink:#ffffff; --accent-soft:#e1ebf8;
   --tape:#ffc21a; --tape-ink:#1e2226; --graphite:#1e2226; --graphite-2:#2b3036;
   --grid:rgba(29,95,180,.07); --grid-b:rgba(29,95,180,.13);
@@ -774,15 +785,31 @@ function drillMap(p, mode){
 /* ---------- 3D ---------- */
 let three=null;
 function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim()||"#888"; }
+// окошко детали снизу: что за деталь и её 3D, закрыть крестиком
+function partSheet(code){
+  const p=withRules(partByCode(code)); if(!p) return; closePartSheet();
+  const e=p.edges||{}, ek=Object.keys(e).filter(k=>e[k]);
+  const m=matShort(p.material), st=STAGES[stageOf(p.code)];
+  const d=document.createElement("div"); d.className="part-sheet"; d.id="partSheet"; d.setAttribute("role","dialog"); d.setAttribute("aria-label","Деталь");
+  d.innerHTML=`<div class="ps-h">${p.art?`<span class="tg-pos">${esc(p.art)}</span>`:""}<div class="ps-t"><b>${esc(p.name)}</b><span class="mono">${fmt(p.L)} × ${fmt(p.W)} × ${fmt(p.T)}</span></div><button type="button" class="ps-x" data-act="sheet-close" aria-label="Закрыть">✕</button></div>
+    <div class="ps-b"><canvas id="three" aria-label="Деталь в 3D"></canvas><div class="ps-f">
+      <div><small>Материал</small><b>${m?esc(m.t)+(m.d?` · ${esc(m.d)}`:""):esc(String(p.material||"—").split(/[\r\n]/)[0])}</b></div>
+      <div><small>Кромка</small><b>${ek.length?ek.map(k=>`${k} ${fmt(e[k].t)}`).join(", "):"нет"}</b></div>
+      <div><small>Отверстий</small><b>${(p.holes||[]).length}</b></div>
+      ${stagesOn()?`<div><small>Этап</small><b><i class="tg-st" style="background:${st.color}"></i> ${esc(st.name)}</b></div>`:""}
+      <button type="button" class="btn sm" data-act="part" data-code="${esc(p.code)}">Открыть карточку</button></div></div>`;
+  document.body.appendChild(d); requestAnimationFrame(()=>{ d.classList.add("on"); mount3D(p,23); });
+}
+function closePartSheet(){ const d=$("#partSheet"); if(d){ disposeThree(); d.remove(); } }
 function disposeThree(){ if(three){ cancelAnimationFrame(three.raf); three.ro&&three.ro.disconnect(); three.renderer.dispose(); three=null; } }
-function mount3D(p){
+function mount3D(p, z0){
   disposeThree();
   const canvas=$("#three"); if(!canvas||typeof THREE==="undefined") return;
   const L=p.L||1, W=p.W||1, T=Math.max(p.T||16,1), k=10/Math.max(L,W);
   const renderer=new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
   renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
   const scene=new THREE.Scene();
-  const cam=new THREE.PerspectiveCamera(35,4/3,0.1,100); cam.position.set(0,0,16);
+  const cam=new THREE.PerspectiveCamera(35,4/3,0.1,100); cam.position.set(0,0,z0||16);
   scene.add(new THREE.AmbientLight(0xffffff,0.62));
   const dl=new THREE.DirectionalLight(0xffffff,0.75); dl.position.set(4,6,10); scene.add(dl);
   const grp=new THREE.Group(); scene.add(grp);
@@ -809,7 +836,7 @@ function mount3D(p){
     grp.add(cyl);
   });
   grp.rotation.set(-0.95,0.0,-0.35);
-  let drag=null, zoom=16;
+  let drag=null, zoom=z0||16;
   canvas.onpointerdown=ev=>{ drag={x:ev.clientX,y:ev.clientY,rx:grp.rotation.x,rz:grp.rotation.z}; canvas.setPointerCapture(ev.pointerId); };
   canvas.onpointermove=ev=>{ if(!drag) return; grp.rotation.z=drag.rz+(ev.clientX-drag.x)*0.01; grp.rotation.x=drag.rx+(ev.clientY-drag.y)*0.01; };
   canvas.onpointerup=canvas.onpointercancel=()=>drag=null;
@@ -1106,7 +1133,7 @@ function mountAssembly(canvas, parts, opt){
   }
   const placeBase=place, applyBase=apply;
   const place2=()=>{ placeBase(); dirty=true; }, apply2=()=>{ applyBase(); fgroup.visible=!!st.wire&&!st.explode; furnGroup.visible=st.furn!==false&&!st.explode; if(opt._exactGroup) opt._exactGroup.visible=furnGroup.visible;
-    krepGroup.visible=krepGroupX.visible=st.krep!==false&&!st.explode;
+    krepGroup.visible=krepGroupX.visible=false;
     krepItems.forEach(m=>{ const sel=isSel(m.userData.code); m.material=sel?(exact?furnSelGhost:furnSel):(exact?furnHidden:krepMat); });
     furnItems.forEach(m=>{ const sel=isSel(m.userData.code); m.material=sel?(exact?furnSelGhost:furnSel):(exact?furnHidden:furnMat); }); dirty=true; };
   const furnSelGhost=new THREE.MeshBasicMaterial({color:hiC,transparent:true,opacity:0.35,depthWrite:false});
@@ -1114,7 +1141,7 @@ function mountAssembly(canvas, parts, opt){
   const pickable=()=>items.filter(m=>m.visible).concat(furnGroup.visible?furnItems:[]).concat(krepGroup.visible?krepItems:[]);
   st.apply=apply2; apply2(); place2();
   try{ if(matchMedia("(pointer:coarse)").matches&&!localStorage.getItem("cehqr-gest")){ const hb=document.createElement("div"); hb.className="gest-hint";
-    hb.innerHTML=`<b>Как управлять</b><span>☝ один палец — вращать</span><span>✌ два пальца — двигать и приближать</span><span>👆👆 два нажатия — приблизить к детали</span><span>☝ долгое нажатие — выбрать несколько</span><i>коснитесь модели — подсказка исчезнет</i>`;
+    hb.innerHTML=`<b>Как управлять</b><span>☝ один палец — вращать</span><span>✌ два пальца — двигать и приближать</span><span>👆👆 два нажатия — окошко детали</span><span>☝ долгое нажатие — выбрать несколько</span><i>коснитесь модели — подсказка исчезнет</i>`;
     const wrap=canvas.parentElement; wrap.appendChild(hb); const close=()=>{ hb.remove(); try{ localStorage.setItem("cehqr-gest","1"); }catch(_){} };
     setTimeout(close,9000); canvas.addEventListener("pointerdown",close,{once:true}); } }catch(_){}
   // ввод: вращение, масштаб, выбор детали
@@ -1126,7 +1153,7 @@ function mountAssembly(canvas, parts, opt){
   const stopSpin=()=>{ if(spin){ cancelAnimationFrame(spin.raf); spin=null; } };
   const startDrag=(x,y,pan)=>{ drag={x,y,yaw:st.yaw,pitch:st.pitch,pan,p0:pan?pointAt(x,y):null,t0:st.target.clone(),hist:[{x,y,t:performance.now()}]}; };
   const twoPinch=()=>{ const [a,b]=[...ptrs.values()]; pinch={d:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),dist:st.dist,mx:(a.x+b.x)/2,my:(a.y+b.y)/2,ang:Math.atan2(b.y-a.y,b.x-a.x)}; drag=null; };
-  canvas.onpointerdown=e=>{ stopSpin(); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); canvas.setPointerCapture(e.pointerId);
+  canvas.onpointerdown=e=>{ stopSpin(); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
     if(ptrs.size===1){ moved=false; tap={x:e.clientX,y:e.clientY,t:performance.now(),touch:e.pointerType!=="mouse"};
       if(tap.touch&&!st.measure&&!st.steps&&!opt.focus){ const t=tap, ex=e.clientX, ey=e.clientY; t.long=setTimeout(()=>{ if(moved||ptrs.size!==1||tap!==t) return; t.longArm=true; try{ navigator.vibrate&&navigator.vibrate(18); }catch(_){} },500); }
       const pan=e.button===1||e.button===2||e.shiftKey||(st.ortho&&e.pointerType==="mouse"); startDrag(e.clientX,e.clientY,pan); }
@@ -1170,7 +1197,7 @@ function mountAssembly(canvas, parts, opt){
     if(e.type==="pointerup"&&tap&&tap.longArm&&!moved&&!ptrs.size){ const was=st.multiMode; st.multiMode=true; pick(e); st.multiMode=was; tap.done=true; drag=null; return; }
     if(e.type==="pointerup"&&tap&&tap.touch&&!moved&&!ptrs.size&&performance.now()-tap.t<450){
       const now=performance.now();
-      if(lastTap&&now-lastTap.t<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<30){ lastTap=null; centerAt(e.clientX,e.clientY,true); }
+      if(lastTap&&now-lastTap.t<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<30){ lastTap=null; sheetAt(e.clientX,e.clientY); }
       else { lastTap={x:e.clientX,y:e.clientY,t:now}; pick(e); try{ st.selected&&navigator.vibrate&&navigator.vibrate(8); }catch(_){} }
       tap.done=true; }
     drag=null; };
@@ -1183,7 +1210,9 @@ function mountAssembly(canvas, parts, opt){
   function centerAt(cx,cy,zoomIn){ const r=canvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1), cam);
     const h=ray.intersectObjects(pickable(),false)[0]; if(h) flyTo(h.point.clone(), zoomIn?Math.max(size*0.15,st.dist*0.55):st.dist); }
   canvas.onwheel=e=>{ e.preventDefault(); const d=e.deltaMode===1?e.deltaY*33:e.deltaY; zoomAt(e.clientX,e.clientY,Math.exp(Math.max(-1,Math.min(1,d*0.0015)))); };
-  canvas.ondblclick=e=>{ if(e.pointerType==="touch"||(tap&&tap.touch)) return; centerAt(e.clientX,e.clientY,false); };
+  canvas.ondblclick=e=>{ if(e.pointerType==="touch"||(tap&&tap.touch)) return; sheetAt(e.clientX,e.clientY); };
+  function sheetAt(cx,cy){ const r=canvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1), cam);
+    const h=ray.intersectObjects(pickable(),false)[0], code=h&&h.object.userData.code; if(code&&!code.startsWith("F:")) partSheet(code); }
   function syncViewBtns(){ const box=canvas.closest(".asm"); box&&box.querySelectorAll('[data-act="asm-view"]').forEach(b=>b.setAttribute("aria-pressed",String((st.view||"3d")===b.dataset.v))); }
   function pick(e){
     const r=canvas.getBoundingClientRect(), v=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
@@ -1583,10 +1612,12 @@ function dlBlob(name, blob){
 }
 function sheetOf(mat){   // размер листа по материалу; null — не листовой (стекло, сталь, столешница)
   const m=String(mat||"").toLowerCase();
-  if(!m||/стекл|зеркал|стал|алюм|столешн|пластик|профил/.test(m)) return null;
+  if(!m||/стекл|зеркал|стал|алюм|столешн|пластик|профил|пвх|плёнк|пленк/.test(m)) return null;   // ПВХ-плёнку в раскрой не берём
   if(/двп|хдф/.test(m)) return {w:2745,h:1700,rot:true};
-  if(/agt|мдф|пвх|плёнк|пленк/.test(m)) return {w:2800,h:1220,rot:false};
-  return {w:2800,h:2070,rot:/белый|серый|черный|чёрный|однотон|шагрен/.test(m)};
+  if(/agt|мдф|kastamonu|кастамону|кастамона|eterno|этерно/.test(m)) return {w:2800,h:1220,rot:false};   // Eterno — МДФ-панели 2800×1220
+  const rot=/белый|серый|черный|чёрный|однотон|шагрен/.test(m);
+  if(/egger|эггер|экстраверт|extravert/.test(m)) return {w:2800,h:2070,rot};
+  return {w:2750,h:1830,rot};   // обычная ЛДСП
 }
 // гильотинный раскрой «лучшее совпадение по площади»: пропил 4 мм, обрезка кромки листа 10 мм
 function nest(parts, sh){
@@ -1793,16 +1824,13 @@ function asmTools(extra){
     wire:'<svg viewBox="0 0 24 24"><path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8" stroke-dasharray="2 2"/></svg>'
   };
   return `<div class="asm-tools${clientMode()?" cli":""}"><div class="grp">
-    <button type="button" data-act="asm-center" title="В центр">${I.center}<span>В центр</span></button>
     <button type="button" data-act="asm-measure" aria-pressed="${!!st.measure}" title="Поставить размер: две точки">${I.meas}<span>Размер</span></button>
-    <button type="button" data-act="asm-steps" aria-pressed="${!!st.steps}" title="Сборка по шагам: модуль за модулем">${I.steps}<span>Сборка</span></button>
     <button type="button" data-act="asm-multi" aria-pressed="${!!st.multiMode}" title="Выделить несколько деталей (или Ctrl + щелчок)">${I.multi}<span>Несколько</span></button>
     <button type="button" data-act="asm-explode" aria-pressed="${!!(st.explode)}" title="Разбор">${I.explode}<span>Разбор</span></button>
     <button type="button" data-act="asm-facades" aria-pressed="${!!st.hideFacades}" title="Скрыть фасады">${I.door}<span>Без фасадов</span></button>
     <button type="button" data-act="asm-wire" aria-pressed="${!!st.wire}" title="Каркас">${I.wire}<span>Каркас</span></button>
     <button type="button" data-act="asm-labels" aria-pressed="${st.labels===undefined?!matchMedia("(pointer:coarse)").matches:st.labels!==false}" title="Размеры">${I.ruler}<span>Размеры</span></button>
     <button type="button" data-act="asm-pos" aria-pressed="${st.pos!==false}" title="Номера позиций деталей">${I.pos}<span>Позиции</span></button>
-    ${curFasteners().some(isKrep)?`<button type="button" data-act="asm-krep" aria-pressed="${st.krep!==false}" title="Крепёж: конфирматы, шканты, полкодержатели, шурупы, уголки">${I.krep}<span>Крепёж</span></button>`:""}
     <button type="button" data-act="asm-holes" aria-pressed="${st.holes!==false}" title="Отверстия в деталях">${I.holes}<span>Отверстия</span></button>
     ${curFasteners().some(f=>Math.max(f.b[3]-f.b[0],f.b[4]-f.b[1],f.b[5]-f.b[2])>=15)?`<button type="button" data-act="asm-furn" aria-pressed="${st.furn!==false}" title="Фурнитура">${I.furn}<span>Фурнитура</span></button>`:""}
     <button type="button" data-act="asm-showall" id="asmShowAll" hidden>${I.eye}<span>Показать все</span></button></div>
@@ -2203,6 +2231,7 @@ function stageBar(oid, count){
   return {bar:`<div class="bar" role="img" aria-label="Готовность по этапам">${bar}</div>`, cnt, done:cnt[STAGES.length-1]};
 }
 function render(){
+  if(S.view!=="order"&&typeof closePartSheet==="function") closePartSheet();
   document.querySelectorAll("#nav button").forEach(b=>b.setAttribute("aria-current", String(b.dataset.view===S.view || (S.view!=="import"&&S.view!=="help"&&b.dataset.view==="orders"))));
   $("#navImport").hidden=true;
   $("#role").textContent = siteRoleText();
@@ -2569,7 +2598,7 @@ document.addEventListener("click", async ev=>{
   if(t.dataset.view){ S.confirmDelete=false; setView(t.dataset.view); return; }
   const a=t.dataset.act;
   if(a==="order"){ S.confirmDelete=false; goOrder(t.dataset.id); }
-  else if(a==="part"){ goPart(t.dataset.code); }
+  else if(a==="part"){ closePartSheet(); goPart(t.dataset.code); }
   else if(a==="home"){ setView("orders"); }
   else if(a==="go-import"){ setView("import"); }
   else if(a==="asm-center"){ asm&&asm.center(); }
@@ -2617,6 +2646,7 @@ document.addEventListener("click", async ev=>{
   else if(a==="asm-labels"){ if(asm){ asm.st.labels=asm.st.labels===false; asm.relabel(); t.setAttribute("aria-pressed",String(asm.st.labels!==false)); } }
   else if(a==="asm-facades"){ if(asm){ asm.st.hideFacades=!asm.st.hideFacades; asm.st.apply(); t.setAttribute("aria-pressed",String(asm.st.hideFacades)); } }
   else if(a==="mode"){ S.mapMode=t.dataset.m; render(); }
+  else if(a==="sheet-close"){ closePartSheet(); }
   else if(a==="stage"){ await siteSetStage(S.partCode,+t.dataset.n); }
   else if(a==="stage-to"){ const cs=String(t.dataset.codes||"").split(",").filter(Boolean); if(cs.length) await setStagesMany(cs,+t.dataset.n); if(asm&&asm.st) showPick(t.closest(".asm-pick")&&t.closest(".asm-pick").dataset.code||cs[0]); }
   else if(a==="stage-order"){ S.stgAsk=+t.dataset.n; render(); }
