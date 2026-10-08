@@ -128,6 +128,7 @@ td.num{text-align:right}
 .fv-mod>summary .muted{font-size:13px;margin-left:6px}
 .asm{position:relative;margin-bottom:18px;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:linear-gradient(180deg,var(--sunk),var(--bg))}
 .asm canvas{display:block;width:100%;height:min(62vh,560px);touch-action:none;cursor:grab}
+@media (max-width:720px){.asm:not(.full) canvas{height:min(54vh,520px)}}
 .asm-tools{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:6px;flex-wrap:wrap;pointer-events:none}
 .asm-tools button{pointer-events:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer;font-weight:500}
 .asm-tools button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
@@ -237,6 +238,8 @@ body.has-full{overflow:hidden}
 .tg-stg{flex:1 1 100%;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;padding-top:6px;margin-top:2px;border-top:1px solid var(--line)}
 @media (max-width:720px){.tg-stg{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .tg-stg button{min-width:0;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:32px;padding:0 6px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font:600 12px var(--f-sans,inherit);cursor:pointer;white-space:nowrap}
+.gest-hint{pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:grid;gap:6px;padding:14px 16px;border-radius:14px;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:var(--shadow-lg);font-size:14px;max-width:calc(100% - 32px)}
+.gest-hint b{font-size:15px}.gest-hint i{font-size:12px;color:var(--muted)}
 .tg-stg button i{width:9px;height:9px;border-radius:50%;flex:none}
 .tg-stg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .tg-stg .lbl{grid-column:1/-1;font-size:12px;color:var(--muted)}
@@ -1110,14 +1113,24 @@ function mountAssembly(canvas, parts, opt){
   const furnSel=new THREE.MeshLambertMaterial({color:hiC});
   const pickable=()=>items.filter(m=>m.visible).concat(furnGroup.visible?furnItems:[]).concat(krepGroup.visible?krepItems:[]);
   st.apply=apply2; apply2(); place2();
+  try{ if(matchMedia("(pointer:coarse)").matches&&!localStorage.getItem("cehqr-gest")){ const hb=document.createElement("div"); hb.className="gest-hint";
+    hb.innerHTML=`<b>Как управлять</b><span>☝ один палец — вращать</span><span>✌ два пальца — двигать и приближать</span><span>👆👆 два нажатия — приблизить к детали</span><span>☝ долгое нажатие — выбрать несколько</span><i>коснитесь модели — подсказка исчезнет</i>`;
+    const wrap=canvas.parentElement; wrap.appendChild(hb); const close=()=>{ hb.remove(); try{ localStorage.setItem("cehqr-gest","1"); }catch(_){} };
+    setTimeout(close,9000); canvas.addEventListener("pointerdown",close,{once:true}); } }catch(_){}
   // ввод: вращение, масштаб, выбор детали
   const ray=new THREE.Raycaster();
-  const ptrs=new Map(); let drag=null, pinch=null, moved=false;
+  const ptrs=new Map(); let drag=null, pinch=null, moved=false, tap=null, lastTap=null, spin=null;
   canvas.oncontextmenu=e=>e.preventDefault();
-  canvas.onpointerdown=e=>{ ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); canvas.setPointerCapture(e.pointerId); moved=false;
-    const pan=e.button===1||e.button===2||e.shiftKey||(st.ortho&&e.pointerType==="mouse");
-    if(ptrs.size===1) drag={x:e.clientX,y:e.clientY,yaw:st.yaw,pitch:st.pitch,pan,p0:pan?pointAt(e.clientX,e.clientY):null,t0:st.target.clone()};
-    if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y),dist:st.dist,mx:(a.x+b.x)/2,my:(a.y+b.y)/2}; drag=null; } };
+  // скорость поворота от размера окна: провёл пальцем по всей ширине — пол-оборота (одинаково на телефоне и на компьютере)
+  const rotK=()=>{ const r=canvas.getBoundingClientRect(); return {kx:Math.PI/Math.max(240,r.width), ky:Math.PI*0.75/Math.max(240,r.height)}; };
+  const stopSpin=()=>{ if(spin){ cancelAnimationFrame(spin.raf); spin=null; } };
+  const startDrag=(x,y,pan)=>{ drag={x,y,yaw:st.yaw,pitch:st.pitch,pan,p0:pan?pointAt(x,y):null,t0:st.target.clone(),hist:[{x,y,t:performance.now()}]}; };
+  const twoPinch=()=>{ const [a,b]=[...ptrs.values()]; pinch={d:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),dist:st.dist,mx:(a.x+b.x)/2,my:(a.y+b.y)/2,ang:Math.atan2(b.y-a.y,b.x-a.x)}; drag=null; };
+  canvas.onpointerdown=e=>{ stopSpin(); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); canvas.setPointerCapture(e.pointerId);
+    if(ptrs.size===1){ moved=false; tap={x:e.clientX,y:e.clientY,t:performance.now(),touch:e.pointerType!=="mouse"};
+      if(tap.touch&&!st.measure&&!st.steps&&!opt.focus){ const t=tap, ex=e.clientX, ey=e.clientY; t.long=setTimeout(()=>{ if(moved||ptrs.size!==1||tap!==t) return; t.longArm=true; try{ navigator.vibrate&&navigator.vibrate(18); }catch(_){} },500); }
+      const pan=e.button===1||e.button===2||e.shiftKey||(st.ortho&&e.pointerType==="mouse"); startDrag(e.clientX,e.clientY,pan); }
+    if(ptrs.size===2){ if(tap&&tap.long) clearTimeout(tap.long); twoPinch(); moved=true; tap=null; } };
   let hoverQ=null;
   canvas.addEventListener("pointermove",e=>{
     if(e.pointerType!=="mouse"||ptrs.size) return;
@@ -1132,18 +1145,45 @@ function mountAssembly(canvas, parts, opt){
   canvas.addEventListener("pointerleave",()=>{ if(st.hover){ st.hover=null; applyBase(); } canvas.classList.remove("hovering"); });
   canvas.onpointermove=e=>{ if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(pinch&&ptrs.size===2){ const [a,b]=[...ptrs.values()], mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+      // два пальца: сдвиг, приближение и поворот вокруг (как в картах)
       const p0=pointAt(pinch.mx,pinch.my), p1=pointAt(mx,my); if(p0&&p1) st.target.add(p0.sub(p1)); pinch.mx=mx; pinch.my=my;
+      const ang=Math.atan2(b.y-a.y,b.x-a.x); let da=ang-pinch.ang; if(da>Math.PI) da-=2*Math.PI; if(da<-Math.PI) da+=2*Math.PI;
+      if(Math.abs(da)<0.5&&!st.ortho) st.yaw-=da; pinch.ang=ang;
       const nd=pinch.dist*pinch.d/Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)); zoomAt(mx,my,nd/st.dist); moved=true; return; }
-    if(drag){ const dx=e.clientX-drag.x, dy=e.clientY-drag.y; if(Math.abs(dx)+Math.abs(dy)>8) moved=true;
+    if(drag){ const dx=e.clientX-drag.x, dy=e.clientY-drag.y; if(Math.abs(dx)+Math.abs(dy)>(e.pointerType==="mouse"?6:12)) moved=true;
+      if(!moved) return;   // дрожание пальца при нажатии — не крутим
+      const now=performance.now(); drag.hist.push({x:e.clientX,y:e.clientY,t:now}); if(drag.hist.length>6) drag.hist.shift();
       if(drag.pan){ if(drag.p0){ st.target.copy(drag.t0); place(); const p1=pointAt(e.clientX,e.clientY); if(p1) st.target.copy(drag.t0).add(drag.p0.clone().sub(p1)); } place2(); return; }
       if(st.ortho){ st.ortho=false; st.view="3d"; syncViewBtns(); }
-      st.yaw=drag.yaw-dx*0.008; st.pitch=Math.max(-1.3,Math.min(1.3,drag.pitch+dy*0.006)); place2(); } };
-  const up=e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null; drag=null; };
-  canvas.onclick=e=>{ if(!moved) pick(e); };
+      const k=rotK(); st.yaw=drag.yaw-dx*k.kx; st.pitch=Math.max(-1.3,Math.min(1.3,drag.pitch+dy*k.ky)); place2(); } };
+  const up=e=>{ const wasTwo=ptrs.size===2; ptrs.delete(e.pointerId);
+    if(wasTwo&&ptrs.size===1){ pinch=null; const [r]=[...ptrs.values()]; startDrag(r.x,r.y,false); return; }   // убрали один палец — второй сразу крутит, без рывка
+    if(ptrs.size<2) pinch=null;
+    // бросок: после быстрого движения модель ещё немного докручивается и плавно останавливается
+    if(drag&&!drag.pan&&moved&&e.type==="pointerup"){ const h=drag.hist, a=h[0], b=h[h.length-1], dt=b.t-a.t, k=rotK();
+      if(h.length>2&&dt>0&&performance.now()-b.t<80){ let vy=-(b.x-a.x)/dt*k.kx, vp=(b.y-a.y)/dt*k.ky; const sp=Math.hypot(vy,vp);
+        if(sp>0.0015){ let last=performance.now(); spin={raf:0}; const step=()=>{ const t=performance.now(), d=Math.min(40,t-last); last=t; st.yaw+=vy*d; st.pitch=Math.max(-1.3,Math.min(1.3,st.pitch+vp*d)); vy*=Math.pow(0.992,d); vp*=Math.pow(0.992,d); place2();
+          if(Math.hypot(vy,vp)>0.0002&&spin) spin.raf=requestAnimationFrame(step); else spin=null; }; spin.raf=requestAnimationFrame(step); } } }
+    // нажатие пальцем: выбираем деталь сразу по отпусканию (на телефоне «click» иногда теряется), двойное — приблизить сюда
+    if(tap&&tap.long) clearTimeout(tap.long);
+    // долгое нажатие без движения — добавить деталь к выделению (срабатывает, когда отпустили палец, поэтому вращение после паузы ничего не выделяет)
+    if(e.type==="pointerup"&&tap&&tap.longArm&&!moved&&!ptrs.size){ const was=st.multiMode; st.multiMode=true; pick(e); st.multiMode=was; tap.done=true; drag=null; return; }
+    if(e.type==="pointerup"&&tap&&tap.touch&&!moved&&!ptrs.size&&performance.now()-tap.t<450){
+      const now=performance.now();
+      if(lastTap&&now-lastTap.t<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<30){ lastTap=null; centerAt(e.clientX,e.clientY,true); }
+      else { lastTap={x:e.clientX,y:e.clientY,t:now}; pick(e); try{ st.selected&&navigator.vibrate&&navigator.vibrate(8); }catch(_){} }
+      tap.done=true; }
+    drag=null; };
+  canvas.onclick=e=>{ if(tap&&tap.done){ tap=null; return; } if(!moved) pick(e); };
   canvas.onpointerup=up; canvas.onpointercancel=up;
+  // плавный перелёт камеры: центр и расстояние меняются за 0,3 с, без скачка
+  let fly=null;
+  function flyTo(tgt,dist){ if(fly) cancelAnimationFrame(fly); const t0=st.target.clone(), d0=st.dist, s0=performance.now(), T=300;
+    const step=()=>{ const k=Math.min(1,(performance.now()-s0)/T), e=1-Math.pow(1-k,3); st.target.copy(t0).lerp(tgt,e); st.dist=d0+(dist-d0)*e; place2(); fly=k<1?requestAnimationFrame(step):null; }; fly=requestAnimationFrame(step); }
+  function centerAt(cx,cy,zoomIn){ const r=canvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1), cam);
+    const h=ray.intersectObjects(pickable(),false)[0]; if(h) flyTo(h.point.clone(), zoomIn?Math.max(size*0.15,st.dist*0.55):st.dist); }
   canvas.onwheel=e=>{ e.preventDefault(); const d=e.deltaMode===1?e.deltaY*33:e.deltaY; zoomAt(e.clientX,e.clientY,Math.exp(Math.max(-1,Math.min(1,d*0.0015)))); };
-  canvas.ondblclick=e=>{ const r=canvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1), cam);
-    const h=ray.intersectObjects(pickable(),false)[0]; if(h){ st.target.copy(h.point); place2(); } };
+  canvas.ondblclick=e=>{ if(e.pointerType==="touch"||(tap&&tap.touch)) return; centerAt(e.clientX,e.clientY,false); };
   function syncViewBtns(){ const box=canvas.closest(".asm"); box&&box.querySelectorAll('[data-act="asm-view"]').forEach(b=>b.setAttribute("aria-pressed",String((st.view||"3d")===b.dataset.v))); }
   function pick(e){
     const r=canvas.getBoundingClientRect(), v=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
@@ -1301,7 +1341,14 @@ function svgZoom(box){
   const mid=()=>{ const r=svg.getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2]; };
   svg.addEventListener("wheel",e=>{ e.preventDefault(); const d=e.deltaMode===1?e.deltaY*33:e.deltaY; zoom(e.clientX,e.clientY,Math.exp(Math.max(-1,Math.min(1,d*0.0015)))); },{passive:false});
   svg.addEventListener("dblclick",e=>{ e.preventDefault(); if(w<W0-0.01){ x=X0;y=Y0;w=W0;h=H0; set(); } else zoom(e.clientX,e.clientY,0.4); });
-  const ptrs=new Map(); let drag=null, pinch=null, down=null;
+  const ptrs=new Map(); let drag=null, pinch=null, down=null, lastTapD=null;
+  svg.addEventListener("pointerup",e=>{ if(e.pointerType!=="touch"||box.classList.contains("measuring")||!down) return;
+    if(e.target.closest&&e.target.closest(".fv-pos,.udim-x")) return;
+    if(Math.hypot(e.clientX-down.x,e.clientY-down.y)>10){ lastTapD=null; return; }
+    const now=performance.now();
+    if(lastTapD&&now-lastTapD.t<320&&Math.hypot(e.clientX-lastTapD.x,e.clientY-lastTapD.y)<30){ lastTapD=null; e.preventDefault();
+      if(w<W0-0.01){ x=X0;y=Y0;w=W0;h=H0; set(); } else zoom(e.clientX,e.clientY,0.4); }
+    else lastTapD={x:e.clientX,y:e.clientY,t:now}; });
   // ---- свои размеры на чертеже: две точки, прилипают к граням деталей; размер по горизонтали или вертикали ----
   let MD=null; try{ MD=JSON.parse(svg.dataset.meas||"null"); }catch(_){ MD=null; }
   const key=box.dataset.key||"", mBtn=box.querySelector('[data-z="meas"]');
