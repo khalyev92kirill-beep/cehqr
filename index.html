@@ -113,6 +113,7 @@ td.num{text-align:right}
 .seg button{border:0;background:var(--surface);padding:6px 10px;font-size:13px;cursor:pointer;color:var(--muted)}
 .seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--ink);font-weight:600}
 .mapbox{overflow-x:auto}
+.fac-it{padding:10px 0;border-top:1px solid var(--line)}.fac-it .mapbox svg{width:100%;height:auto;min-width:0;max-width:720px}
 .mapbox svg{display:block;width:100%;height:auto;min-width:420px}
 .fv-box{position:relative;overflow:hidden;border-radius:10px}
 .fv-box svg{min-width:0;cursor:grab;touch-action:pan-y;user-select:none}
@@ -1605,8 +1606,53 @@ function specBlock(){
   h+=`<details class="plist" ${S.issOpen?"open":""} data-k="iss"><summary>Проверка заказа · ${issues.length?`<span style="color:#b3261e">есть замечания</span>`:"всё в порядке"}</summary>
     ${issues.length?(()=>{ const g=new Map(); issues.forEach(x=>{ const k=x.t.replace(/^позиция .*: разные размеры.*/,"разные размеры у одной позиции"); if(!g.has(k)) g.set(k,[]); g.get(k).push(x); });
       return [...g.entries()].sort((a,b)=>a[1].length-b[1].length).map(([k,L])=>`<div class="iss-g"><b>${esc(k)}</b> <span class="muted">· ${L.length}</span><div class="iss-l">${L.slice(0,30).map(x=>`<button type="button" class="chip" data-act="part" data-code="${esc(x.p.code)}" title="${esc(x.t)}">${x.p.art?`<b>${esc(x.p.art)}</b> `:""}${esc(x.p.name)}</button>`).join("")}${L.length>30?` <span class="muted">и ещё ${L.length-30}</span>`:""}</div></div>`).join(""); })():`<p class="note">Материал, позиции, кромка, размеры листа и отверстия под петли — без ошибок.</p>`}</details>`;
+  h+=facadeBlock();
   h+=`<div class="spec-act"><button class="btn" data-act="spec-xls">Спецификация в Excel</button><button class="btn" data-act="spec-print">Печать / PDF</button></div>`;
   return h;
+}
+/* присадка фасадов: все фасады заказа с чашками петель — одним списком, одинаковые вместе, для печати */
+function facadeDrills(){
+  const parts=S.current.parts||[], fs=curFasteners().filter(f=>/петл/i.test(f.n)&&!/планк|заглушк|рычаг|накладк(?!ой)/i.test(f.n));
+  const isFac=p=>/фасад|дверь|дверц/i.test(p.name||"");
+  const out=new Map();
+  parts.filter(isFac).forEach(p0=>{
+    const p=withRules(p0); let holes=(p.holes||[]).slice(), derived=false;
+    const isCup=h=>(/петл|чашк/i.test(h.name||"")&&+h.d>=25)||(+h.d>=34&&+h.d<=36);
+    if(!holes.some(isCup)&&p.box){ const b=p.box, ex=[b[3]-b[0],b[4]-b[1],b[5]-b[2]];
+      const th=ex.indexOf(Math.min(...ex)), ax=[0,1,2].filter(i=>i!==th);
+      let la=Math.abs(ex[ax[0]]-p.L)<=Math.abs(ex[ax[1]]-p.L)?ax[0]:ax[1], wa=ax[0]===la?ax[1]:ax[0];
+      const seen=[];
+      fs.forEach(f=>{ const o=f.o||[(f.b[0]+f.b[3])/2,(f.b[1]+f.b[4])/2,(f.b[2]+f.b[5])/2];
+        if(ex[wa]<80||o[la]<b[la]+20||o[la]>b[la+3]-20||o[wa]<b[wa]-6||o[wa]>b[wa+3]+6||o[th]<b[th]-40||o[th]>b[th+3]+40) return;
+        const x=Math.round((o[la]-b[la])*10)/10, near0=(o[wa]-b[wa])<(b[wa+3]-o[wa]), y=near0?22:Math.round((ex[wa]-22)*10)/10;
+        if(seen.some(v=>Math.abs(v-x)<10)) return; seen.push(x);
+        holes.push({name:f.n,x,y,d:35,depth:12,face:"B",est:1}); derived=true; });
+    }
+    const cups=holes.filter(isCup); if(!cups.length) return;
+    const key=[fmt(p.L),fmt(p.W),fmt(p.T),holes.map(h=>[Math.round(h.x),Math.round(h.y),h.d,h.face].join(":")).sort().join("|")].join("/");
+    const vh=holes.map(h=>isCup(h)?{...h,face:"A"}:h);   // смотрим с внутренней стороны — чашки сплошным
+    const g=out.get(key)||{p:{...p,holes:vh},cups,n:0,arts:new Set(),derived,codes:[]}; g.n++; if(p.art) g.arts.add(p.art); g.codes.push(p.code); out.set(key,g);
+  });
+  return [...out.values()].sort((a,b)=>b.p.L-a.p.L);
+}
+function facadeBlock(){
+  const L=facadeDrills(); if(!L.length) return "";
+  const n=L.reduce((a,g)=>a+g.n,0);
+  let h=`<details class="plist" ${S.facOpen?"open":""} data-k="fac"><summary>Присадка фасадов · ${n} шт</summary>
+    <p class="note">Вид на фасад с внутренней стороны. Размеры от угла «0»: вдоль длины и от края до центра чашки. Одинаковые фасады — одной картинкой. ${L.some(g=>g.derived)?"Где написано «≈», чашку поставил по петле в 3D: отступ от края взят 22 мм, сверьте с паспортом петли.":""}</p>
+    <div class="spec-act" style="margin:0 0 10px"><button class="btn" data-act="fac-print">Печать присадки фасадов</button></div>`;
+  L.forEach(g=>{ const p=g.p, cups=g.cups;
+    h+=`<div class="fac-it"><div class="cut-h"><b>${esc(p.name)}</b> <span class="mono">${fmt(p.L)}×${fmt(p.W)}×${fmt(p.T)}</span> · <b>${g.n} шт</b>${g.arts.size?` · поз. ${esc([...g.arts].join(", "))}`:""} · чашек ${cups.length} × Ø${fmt(cups[0].d)}${cups[0].depth?` гл. ${fmt(cups[0].depth)}`:""}${g.derived?" · ≈":""} <button type="button" class="chip" data-act="part" data-code="${esc(g.codes[0])}">карточка</button></div>
+      <div class="mapbox">${drillMap(p,"base")}</div></div>`; });
+  return h+`</details>`;
+}
+function facadePrint(){
+  const L=facadeDrills(), o=S.orders[S.current.orderId]||{}, w=window.open("","_blank"); if(!w){ toast("Разрешите всплывающие окна для печати"); return; }
+  const css=getComputedStyle(document.documentElement), v=k=>css.getPropertyValue(k)||"#000";
+  w.document.write(`<!doctype html><meta charset="utf-8"><title>Присадка фасадов ${esc(S.current.orderId)}</title><style>:root{--board:#f3efe6;--board-line:#555;--edge:#c47a00;--hole:#1d5fb4;--hole-b:#1d5fb4;--ink:#111;--muted:#666;--surface:#fff;--accent:#c47a00;--f-mono:ui-monospace,Consolas,monospace}body{font:12px system-ui,sans-serif;margin:12mm}h1{font-size:17px;margin:0 0 8px}.it{break-inside:avoid;border-top:1px solid #bbb;padding:8px 0}.it svg{width:100%;max-height:105mm}</style>
+    <h1>Присадка фасадов — ${esc(o.name||"")}, заказ ${esc(S.current.orderId)}</h1><p>Вид с внутренней стороны. Размеры от угла «0». Всего фасадов с петлями: ${L.reduce((a,g)=>a+g.n,0)}.</p>
+    ${L.map(g=>{ const c=g.cups; return `<div class="it"><b>${esc(g.p.name)} ${fmt(g.p.L)}×${fmt(g.p.W)}×${fmt(g.p.T)} — ${g.n} шт</b>${g.arts.size?` · поз. ${esc([...g.arts].join(", "))}`:""} · чашек ${c.length} × Ø${fmt(c[0].d)}${g.derived?" (≈ по 3D)":""}${drillMap(g.p,"base")}</div>`; }).join("")}`);
+  w.document.close(); setTimeout(()=>{ try{ w.print(); }catch(_){} },400);
 }
 function specRows(){
   const parts=S.current.parts, o=S.orders[S.current.orderId]||{};
@@ -2505,6 +2551,7 @@ document.addEventListener("click", async ev=>{
   else if(a==="full-mode"||a==="client-mode"){ try{ localStorage.setItem("cehqr-full",a==="full-mode"?"1":"0"); }catch(_){} render(); }
   else if(a==="spec-xls"){ dlBlob(`Спецификация ${S.current.orderId}.csv`, new Blob([specCsv()],{type:"text/csv;charset=utf-8"})); }
   else if(a==="spec-print"){ specPrint(); }
+  else if(a==="fac-print"){ facadePrint(); }
   else if(a==="asm-multi"){ if(asm){ asm.st.multiMode=!asm.st.multiMode; t.setAttribute("aria-pressed",String(asm.st.multiMode)); toast(asm.st.multiMode?"Нажимайте на детали — они добавятся к выделению":"Выделение по одной детали"); } }
   else if(a==="asm-sel-clear"){ if(asm){ asm.st.multi={}; asm.st.selected=null; asm.st.apply(); showPick(null); } }
   else if(a==="asm-sel-hide"){ if(asm){ const m=asm.st.multi; Object.keys(m).forEach(c=>asm.st.hidden[c]=true); asm.st.multi={}; asm.st.selected=null; asm.st.apply(); showPick(null); syncShowAll(); } }
@@ -2559,7 +2606,7 @@ document.addEventListener("click", async ev=>{
     }catch(e){ toast(e&&e.code==="quota_exceeded"?"База заполнена: удалите старые заказы":"Не удалось загрузить: "+(e&&e.code||"ошибка")); t.disabled=false; t.textContent="Загрузить в базу"; }
   }
 });
-document.addEventListener("toggle", ev=>{ if(ev.target.classList&&ev.target.classList.contains("plist")){ const k=ev.target.dataset.k; if(k==="cut") S.cutOpen=ev.target.open; else if(k==="iss") S.issOpen=ev.target.open; else if(!k) S.listOpen=ev.target.open; } if(ev.target.classList&&ev.target.classList.contains("fv")) S.fvOpen=ev.target.open; }, true);
+document.addEventListener("toggle", ev=>{ if(ev.target.classList&&ev.target.classList.contains("plist")){ const k=ev.target.dataset.k; if(k==="cut") S.cutOpen=ev.target.open; else if(k==="fac") S.facOpen=ev.target.open; else if(k==="iss") S.issOpen=ev.target.open; else if(!k) S.listOpen=ev.target.open; } if(ev.target.classList&&ev.target.classList.contains("fv")) S.fvOpen=ev.target.open; }, true);
 document.addEventListener("input", ev=>{ if(/^r\d+-/.test(ev.target.id||"")) S.rulesDraft=readRulesForm(); });
 document.addEventListener("change", ev=>{ if(/^r\d+-/.test(ev.target.id||"")) S.rulesDraft=readRulesForm(); });
 document.addEventListener("change", async ev=>{
