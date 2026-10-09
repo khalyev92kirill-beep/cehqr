@@ -123,6 +123,15 @@ td.num{text-align:right}
 .fv-zoom button{border:0;background:transparent;border-radius:8px;min-width:34px;height:32px;font-size:17px;font-weight:600;color:var(--ink);cursor:pointer}
 .fv-zoom button:hover{background:var(--sunk)}
 .fv-tip{font-size:12px;color:var(--muted);margin:6px 2px 0}
+.fv-btn{display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin:0 0 18px;padding:14px 16px;font-size:16px}
+.fv-btn .fv-ic{font-size:24px}
+.fv-btn small{display:block;color:var(--muted);font-size:13px;font-weight:400;margin-top:2px}
+.fv-win{position:fixed;inset:0;z-index:30;background:var(--bg,var(--surface));display:flex;flex-direction:column}
+.fv-wbar{display:flex;align-items:center;gap:10px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+.fv-wbar h2{flex:1;margin:0;font-size:17px}
+.fv-x{border:0;background:var(--sunk);color:var(--ink);width:44px;height:44px;border-radius:50%;font-size:20px;cursor:pointer}
+.fv-wbody{flex:1;overflow:auto;padding:4px 12px calc(16px + env(safe-area-inset-bottom,0px))}
+body.fv-on{overflow:hidden}
 .fv-mod{border-top:1px solid var(--line);padding:8px 0}
 .fv-mod>summary{cursor:pointer;padding:6px 2px;font-size:15px}
 .fv-mod>summary .muted{font-size:13px;margin-left:6px}
@@ -2154,7 +2163,7 @@ function frontView(parts, opt){
   const P=parts.filter(p=>p.box).map(p=>{ const b=p.box; return {p,x0:b[0],y0:b[1],z0:b[2],x1:b[3],y1:b[4],z1:b[5],sx:b[3]-b[0],sy:b[4]-b[1],sz:b[5]-b[2]}; });
   if(!P.length) return "";
   const isFacade=q=>/фасад|дверь/i.test(q.p.name), isBack=q=>q.sz<=8&&q.sx>100&&q.sy>100, isDrawer=q=>/ящик/i.test(q.p.name);
-  const body=P.filter(q=>!isFacade(q)&&!isBack(q));
+  const body=P.filter(q=>!isFacade(q)&&!isBack(q)&&!/штанг|рейлинг|труба\s*(д|ø|ф|кругл|овал)/i.test(q.name||""));
   const D=Math.max(...P.map(q=>q.sz));
   const r1=v=>Math.round(v*10)/10, fmtv=v=>String(r1(v)).replace(".",",");
   const verts=body.filter(q=>q.sx<=40&&q.sy>=60&&q.sz>=D*0.5&&!isDrawer(q)).sort((a,b)=>a.x0-b.x0);
@@ -2211,9 +2220,7 @@ function frontView(parts, opt){
     g+=`<rect x="${X(q.x0)}" y="${Y(q.y1)}" width="${Math.max(0.6,q.sx*s)}" height="${Math.max(0.6,q.sy*s)}" fill="var(--board)" fill-opacity="${wire?0.18:1}" stroke="var(--ink)" stroke-width="${isDrawer(q)?0.45:0.8}" opacity="${isDrawer(q)&&!wire?0.65:1}"/>`;
   });
   // каркас: фурнитура (направляющие, петли, опоры…) серым контуром, чтобы было видно, где она стоит
-  if(opt.wire!==false) (opt.fasteners||[]).forEach(f=>{ const b=f.b, sx=b[3]-b[0], sy=b[4]-b[1];
-    if(Math.max(sx,sy,b[5]-b[2])<15||b[0]<X0-5||b[3]>X1+5||b[1]<Y0-5||b[4]>Y1+5) return;
-    g+=`<rect x="${X(b[0])}" y="${Y(b[4])}" width="${Math.max(0.8,sx*s)}" height="${Math.max(0.8,sy*s)}" fill="#8a9096" fill-opacity="0.25" stroke="#5f666c" stroke-width="0.6" stroke-dasharray="3 2"><title>${esc(f.g||f.n)}</title></rect>`; });
+  // фурнитуру (петли, полкодержатели, крепёж) на этом чертеже не рисуем — только каркас и размеры
   const label=(x,y,t,rot,anchor)=>`<text x="${x}" y="${y}" font-size="11.5" font-weight="700" fill="${A}" font-family="var(--f-mono)" text-anchor="${anchor||"middle"}" paint-order="stroke" stroke="var(--surface)" stroke-width="3" ${rot?`transform="rotate(-90 ${x} ${y})"`:""}>${t}</text>`;
   const arrowV=(x,ya,yb)=>`<line x1="${x}" y1="${ya}" x2="${x}" y2="${yb}" stroke="${A}" stroke-width="0.9"/><path d="M${x-2.5} ${yb+5} L${x} ${yb} L${x+2.5} ${yb+5}" fill="none" stroke="${A}" stroke-width="0.9"/>`;
   const fast=(opt.fasteners||[]).filter(f=>/направл|tandem|movento|legrabox|unihopper/i.test(f.n+" "+(f.g||"")));
@@ -2495,7 +2502,7 @@ function newOrderId(){
 }
 
 /* ---------- отрисовка ---------- */
-function setView(v){ document.body.classList.remove("has-full"); S.view=v; if(v!=="part") disposeThree(); disposeAsm(); render(); window.scrollTo(0,0); }
+function setView(v){ S.fvWin=false; document.body.classList.remove("has-full"); S.view=v; if(v!=="part") disposeThree(); disposeAsm(); render(); window.scrollTo(0,0); }
 function stageBar(oid, count){
   const st=(S.progress[oid]&&S.progress[oid].stages)||{}, cnt=new Array(STAGES.length).fill(0);
   let tagged=0; Object.values(st).forEach(n=>{ if(n>0&&n<STAGES.length){ cnt[n]++; tagged++; } });
@@ -2504,6 +2511,7 @@ function stageBar(oid, count){
   return {bar:`<div class="bar" role="img" aria-label="Готовность по этапам">${bar}</div>`, cnt, done:cnt[STAGES.length-1]};
 }
 function render(){
+  setTimeout(()=>document.body.classList.toggle("fv-on",!!document.querySelector(".fv-win")),0);
   if(S.view!=="order"&&typeof closePartSheet==="function") closePartSheet();
   document.querySelectorAll("#nav button").forEach(b=>b.setAttribute("aria-current", String(b.dataset.view===S.view || (S.view!=="import"&&S.view!=="help"&&S.view!=="catalog"&&b.dataset.view==="orders"))));
   $("#navImport").hidden=true;
@@ -2560,12 +2568,13 @@ function viewOrder(){
   if(S.current.parts.some(p=>p.box)){ const fvm=S.fvMode||"mid", fvw=S.fvWire!==false, views=moduleViews(S.current.parts, curFasteners(), fvm, fvw, !!S.fvHinge, S.fvPos!==false, S.fvGap===true);
     const tip=matchMedia("(pointer:fine)").matches?"Колесо мыши — приблизить к курсору, зажать и тянуть — сдвинуть, двойной щелчок — весь чертёж.":"Двумя пальцами — приблизить, потом одним — сдвинуть. Кнопка ⤢ — весь чертёж.";
     const box=v=>`<div class="mapbox fv-box" data-key="${esc(S.current.orderId+"|"+v.title+"|"+(S.fvHinge?"h":"n"))}">${v.svg}<div class="fv-zoom"><button type="button" data-z="meas" title="Поставить свой размер: две точки" aria-label="Поставить размер" aria-pressed="false">📏</button><button type="button" data-z="in" title="Приблизить" aria-label="Приблизить">+</button><button type="button" data-z="out" title="Отдалить" aria-label="Отдалить">−</button><button type="button" data-z="reset" title="Весь чертёж" aria-label="Весь чертёж">⤢</button><button type="button" data-z="full" title="Во весь экран" aria-label="Во весь экран">⛶</button></div></div>`;
-    if(views.length) h+=`<details class="card fv" ${S.fvOpen===false?"":"open"} style="margin-bottom:18px"><summary><h2 style="display:inline;margin:0">Вид спереди с размерами${views.length>1?` · ${views.length} модул${views.length<5?"я":"ей"}`:""}</h2></summary><div class="card-head" style="margin:8px 0"><span class="note">Фасады и задняя стенка скрыты. Высоты — от низа стойки, по горизонтали — от внутренней стороны стойки до оси перегородки, мм. Высоты полок:</span>
+    if(views.length&&!S.fvWin) h+=`<button type="button" class="btn fv-btn" data-act="fv-open"><span class="fv-ic">📐</span><span><b>Вид спереди с размерами</b><small>${views.length>1?`${views.length} модул${views.length<5?"я":"ей"} · `:""}открыть чертёж на весь экран</small></span></button>`;
+    if(views.length&&S.fvWin) h+=`<div class="fv-win" role="dialog" aria-label="Вид спереди с размерами"><div class="fv-wbar"><h2>Вид спереди с размерами${views.length>1?` · ${views.length} модул${views.length<5?"я":"ей"}`:""}</h2><button type="button" class="fv-x" data-act="fv-close" aria-label="Закрыть">✕</button></div><div class="fv-wbody"><div class="card-head" style="margin:8px 0"><span class="note">Фасады и задняя стенка скрыты. Высоты — от низа стойки, по горизонтали — от внутренней стороны стойки до оси перегородки, мм. Высоты полок:</span>
       <div class="seg" role="group" aria-label="До какой грани полки"><button type="button" data-act="fv-mode" data-m="bottom" aria-pressed="${fvm==="bottom"}">до низа полки</button><button type="button" data-act="fv-mode" data-m="mid" aria-pressed="${fvm==="mid"}">до середины</button><button type="button" data-act="fv-mode" data-m="top" aria-pressed="${fvm==="top"}">до верха</button></div>
       <div class="seg" role="group" aria-label="Вид чертежа"><button type="button" data-act="fv-wire" data-w="1" aria-pressed="${fvw&&!S.fvHinge}">Каркас</button><button type="button" data-act="fv-wire" data-w="0" aria-pressed="${!fvw&&!S.fvHinge}">Заливка</button><button type="button" data-act="fv-hinge" aria-pressed="${!!S.fvHinge}">Петли на фасадах</button></div>
       <div class="seg" role="group" aria-label="Подписи на чертеже"><button type="button" data-act="fv-pos" aria-pressed="${S.fvPos!==false}">Позиции</button><button type="button" data-act="fv-gap" aria-pressed="${S.fvGap===true}">Просветы</button></div></div>
       ${views.length===1?box(views[0]):views.map((v,i)=>`<details class="fv-mod" ${i===0?"open":""}><summary><b>${esc(v.title)}</b> <span class="muted mono">${v.size}</span></summary>${box(v)}</details>`).join("")}
-      <div class="fv-tip">${tip}</div></details>`; }
+      <div class="fv-tip">${tip}</div></div></div>`; }
   const fl=furnAll(curFasteners(),S.current.parts);
   h+=specBlock();
   if(fl.length) h+=`<details class="plist" style="margin-bottom:12px"><summary>Фурнитура · ${fl.length} наим.</summary><div class="tablebox"><table><thead><tr><th>Наименование</th><th class="num">Кол-во</th></tr></thead><tbody>${fl.map(r=>`<tr><td>${esc(r.name)}${r.auto?` <span class="sup-tag">авто: ${r.auto} шт за петли без пружины</span>`:""}</td><td class="num mono">${r.qty}</td></tr>`).join("")}</tbody></table></div></details>`;
@@ -3091,6 +3100,8 @@ document.addEventListener("click", async ev=>{
   else if(a==="asm-sel-hide"){ if(asm){ const m=asm.st.multi; Object.keys(m).forEach(c=>asm.st.hidden[c]=true); asm.st.multi={}; asm.st.selected=null; asm.st.apply(); showPick(null); syncShowAll(); } }
   else if(a==="asm-sel-only"){ if(asm){ const m=asm.st.multi; S.current.parts.forEach(p=>{ if(!m[p.code]) asm.st.hidden[p.code]=true; }); asm.st.apply(); syncShowAll(); } }
   else if(a==="asm-showall"){ if(asm){ asm.st.hidden={}; asm.st.apply(); syncShowAll(); } }
+  else if(a==="fv-open"){ S.fvWin=true; render(); }
+  else if(a==="fv-close"){ S.fvWin=false; render(); }
   else if(a==="fv-gap"){ S.fvGap=S.fvGap!==true; try{ localStorage.setItem("cehqr-fvg",S.fvGap?"1":"0"); }catch(_){} render(); }
   else if(a==="fv-pos"){ S.fvPos=S.fvPos===false; try{ localStorage.setItem("cehqr-fvp",S.fvPos?"1":"0"); }catch(_){} render(); }
   else if(a==="fv-hinge"){ S.fvHinge=true; render(); }
@@ -3219,7 +3230,7 @@ function findPos(v){
 $("#findForm").addEventListener("submit", ev=>{ ev.preventDefault(); const v=$("#findInput").value; if(v.trim()){ findPos(v); $("#findInput").value=""; $("#findInput").blur(); } });
 $("#home").addEventListener("click", ()=>{ history.replaceState(null,"",location.pathname+location.search); setView("orders"); });
 document.addEventListener("click", ev=>{ if(ev.target.classList&&ev.target.classList.contains("modal")) ev.target.remove(); });
-document.addEventListener("keydown", ev=>{ if(ev.key==="Escape"){ const fb=document.querySelector(".fv-box.full"); if(fb){ fb.classList.remove("full"); document.body.classList.remove("has-full"); const b=fb.querySelector('[data-z="full"]'); if(b) b.textContent="⛶"; } const qm=document.getElementById("qrModal"); if(qm) qm.remove(); const f=document.querySelector(".asm.full"); if(f){ f.classList.remove("full"); document.body.classList.remove("has-full"); } } });
+document.addEventListener("keydown", ev=>{ if(ev.key==="Escape"&&S.fvWin&&!document.querySelector(".fv-box.full")){ S.fvWin=false; render(); return; } if(ev.key==="Escape"){ const fb=document.querySelector(".fv-box.full"); if(fb){ fb.classList.remove("full"); document.body.classList.remove("has-full"); const b=fb.querySelector('[data-z="full"]'); if(b) b.textContent="⛶"; } const qm=document.getElementById("qrModal"); if(qm) qm.remove(); const f=document.querySelector(".asm.full"); if(f){ f.classList.remove("full"); document.body.classList.remove("has-full"); } } });
 window.addEventListener("hashchange", ()=>{ const raw=location.hash.slice(1), h=hashHook(raw); if(!h) return; if(raw.indexOf("~")>0){ S.current.orderId=null; S.partCode=null; }   /* пришла ссылка с ключом — открыть заново */ if(/-\d+$/.test(h)){ if(h!==S.partCode) goPart(h); } else if(/^[A-Za-z0-9]{2,12}$/.test(h)&&(S.view!=="order"||h.toUpperCase()!==S.current.orderId||S.current.missing)) goOrder(h); });
 
 /* ---------- запуск ---------- */
