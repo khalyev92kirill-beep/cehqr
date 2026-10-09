@@ -2206,8 +2206,11 @@ function frontView(parts, opt){
   const baseOf=v=>{ const cs=conts.filter(c=>v===c.L||v===c.R||(v.x0>=c.xl-1&&v.x1<=c.xr+1&&yOver(v,c.L)>0)); return cs.length?Math.min(...cs.map(c=>c.base)):vb0; };
   // только стойки, которые стоят на ЦЕЛЬНОМ дне (одна горизонтальная деталь проходит под стойкой с обеих сторон) — тогда размер нужен, чтобы разметить дно;
   // у отдельных модулей со своим дном (кухня) эти размеры не нужны
-  const onWholeBottom=v=>body.some(h=>h!==v&&h.sy<=40&&h.sx>=0.6*(xMax-xMin)&&!isDrawer(h)&&Math.abs(h.y1-v.y0)<=3&&h.x0<v.x0-20&&h.x1>v.x1+20);   // дно почти на всю ширину изделия (шкаф), а не дно одного модуля кухни
-  verts.filter(v=>v.y0<=baseOf(v)+2).forEach(v=>{ if(prev&&v.x0-prev.x1<1){ prev=v; return; } prev=v; if(v.x0<=xMin+0.5||v.x1>=xMax-0.5) return; if(!onWholeBottom(v)) return; ords.push(r1((v.x0+v.x1)/2-xMin)); });
+  const onWholeBottom=v=>body.find(h=>h!==v&&h.sy<=40&&h.sx>=0.6*(xMax-xMin)&&!isDrawer(h)&&Math.abs(h.y1-v.y0)<=3&&h.x0<v.x0-20&&h.x1>v.x1+20);   // дно почти на всю ширину изделия (шкаф), а не дно одного модуля кухни
+  verts.filter(v=>v.y0<=baseOf(v)+2).forEach(v=>{ if(prev&&v.x0-prev.x1<1){ prev=v; return; } prev=v; if(v.x0<=xMin+0.5||v.x1>=xMax-0.5) return; const wb=onWholeBottom(v); if(!wb) return; ords.push({ax:(v.x0+v.x1)/2, x0:wb.x0, y0:wb.y0}); });
+  // размеры для разметки дна — от края самого дна, а не от края изделия
+  const oX=ords.length?Math.min(...ords.map(o=>o.x0)):xMin, oY=ords.length?Math.min(...ords.map(o=>o.y0)):Y0;
+  ords.splice(0,ords.length,...ords.map(o=>r1(o.ax-oX)));
   const ordsU=HM?[]:[...new Set(ords)].sort((a,b)=>a-b);
   const mt=56+maxAx*13+(DC.length?22:0), mb=56+ordsU.length*14+10;
   const VW=(typeof matchMedia==="function"&&matchMedia("(max-width:720px)").matches)?560:900, m=56,   /* на телефоне чертёж «крупнее»: цифры и номера читаются без увеличения */
@@ -2311,8 +2314,9 @@ function frontView(parts, opt){
       const inC=fast.filter(f=>{ const cx=(f.b[0]+f.b[3])/2; return cx>c.xl&&cx<c.xr&&f.b[1]>=base2-1&&f.b[4]<=ytop+1&&Math.max(f.b[3]-f.b[0],f.b[5]-f.b[2])>=200; });
       const byG=new Map(); inC.forEach(f=>{ const k=f.g?"g"+f.gi:"n"+f.b.join(","); const L=Math.max(f.b[3]-f.b[0],f.b[5]-f.b[2]); if(!byG.has(k)||L>byG.get(k).L) byG.set(k,{L,y:f.b[1]}); });
       let runners=[]; [...byG.values()].map(o=>r1(o.y-base2)).sort((a,b)=>a-b).forEach(v=>{ if(!runners.length||v-runners[runners.length-1]>3) runners.push(v); });
-      // если направляющих нет в выгрузке — считаем от низа боковин ящиков (+22 мм до оси направляющей)
-      if(!runners.length) runners=[...new Set(body.filter(q=>isDrawer(q)&&/боковин/i.test(q.p.name)&&q.x0>c.xl-1&&q.x1<c.xr+1&&q.y0>=base2-1&&q.y1<=ytop+1).map(q=>r1(q.y0-base2+RUNNER_OFF)))].sort((a,b)=>a-b);
+      // как в Базисе: от низа боковины ящика +22 мм (ось направляющей); если боковин нет — по самой направляющей
+      let sideR=[...new Set(body.filter(q=>isDrawer(q)&&/боковин/i.test(q.p.name)&&q.x0>c.xl-1&&q.x1<c.xr+1&&q.y0>=base2-1&&q.y1<=ytop+1).map(q=>r1(q.y0-base2+RUNNER_OFF)))].sort((a,b)=>a-b);
+      if(sideR.length) runners=sideR;
       if(runners.length){
         const x0=inner.length?X((inner[0].x0+inner[0].x1)/2)+12:X(c.xr)-14-(runners.length-1)*9;
         runners.forEach((v,i)=>{ const x=x0+i*9, yt=Y(base2+v);
@@ -2326,11 +2330,11 @@ function frontView(parts, opt){
     g+=`<line x1="${xa}" y1="${yw}" x2="${xb}" y2="${yw}" stroke="${A}" stroke-width="0.8"/><line x1="${xa}" y1="${yw-4}" x2="${xa}" y2="${Y(c.L.y1)}" stroke="${A}" stroke-width="0.5"/><line x1="${xb}" y1="${yw-4}" x2="${xb}" y2="${Y(c.R.y1)}" stroke="${A}" stroke-width="0.5"/>`;
     g+=label((xa+xb)/2,yw-4,fmtv(w)); });
   // ординаты снизу от левого края до осей стоек
-  ordsU.forEach((v,i)=>{ const yy=Y(Y0)+18+i*14, xa=X(xMin), xb=X(xMin+v);
+  ordsU.forEach((v,i)=>{ const yy=Y(Y0)+18+i*14, xa=X(oX), xb=X(oX+v);
     g+=`<line x1="${xa}" y1="${yy}" x2="${xb}" y2="${yy}" stroke="${A}" stroke-width="0.8"/><path d="M${xb-5} ${yy-2.5} L${xb} ${yy} L${xb-5} ${yy+2.5}" fill="none" stroke="${A}" stroke-width="0.8"/>`;
     g+=`<line x1="${xb}" y1="${Y(vb0)}" x2="${xb}" y2="${yy+3}" stroke="${A}" stroke-width="0.5" stroke-dasharray="2 2"/>`;
     g+=label(Math.max(xa+16,xb-4),yy-3,fmtv(v),false,"end"); });
-  if(ordsU.length) g+=`<line x1="${X(xMin)}" y1="${Y(Y0)}" x2="${X(xMin)}" y2="${Y(Y0)+18+(ordsU.length-1)*14+4}" stroke="${A}" stroke-width="0.6"/>`;
+  if(ordsU.length) g+=`<line x1="${X(oX)}" y1="${Y(oY)}" x2="${X(oX)}" y2="${Y(Y0)+18+(ordsU.length-1)*14+4}" stroke="${A}" stroke-width="0.6"/>`;
   // габариты изделия
   const yb=Y(Y0)+18+ordsU.length*14+16, xr=X(X1)+24;
   g+=`<line x1="${X(X0)}" y1="${yb}" x2="${X(X1)}" y2="${yb}" stroke="var(--ink)"/><line x1="${X(X0)}" y1="${yb-5}" x2="${X(X0)}" y2="${yb+5}" stroke="var(--ink)"/><line x1="${X(X1)}" y1="${yb-5}" x2="${X(X1)}" y2="${yb+5}" stroke="var(--ink)"/>`;
