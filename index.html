@@ -1961,10 +1961,10 @@ function catShare(){ const L=catPickList();
 /* закупка по заказу: материалы, кромка, фурнитура + наличие из базы */
 function buyBlock(){
   if(!S.current.parts||!S.current.parts.length) return ""; catLoad();
-  const {mats,edges,furn,sheets}=specRows(), row=(name,qty,unit)=>{ const it=catFind(name);
-    return `<tr${it?` data-act="cat-item" data-i="${it.i}" style="cursor:pointer"`:""}><td>${it?catSw(it,"cat-sw sm"):""}</td><td>${esc(name)}${it&&it.a?` <span class="muted mono">· ${esc(it.a)}</span>`:""}${it&&it.na?` <span class="cat-na">нет в наличии</span>`:""}</td><td class="mono">${qty}</td><td>${unit}</td></tr>`; };
+  const {mats,edges,furn,sheets}=specRows(), row=(name,qty,unit,auto)=>{ const it=catFind(name);
+    return `<tr${it?` data-act="cat-item" data-i="${it.i}" style="cursor:pointer"`:""}><td>${it?catSw(it,"cat-sw sm"):""}</td><td>${esc(name)}${it&&it.a?` <span class="muted mono">· ${esc(it.a)}</span>`:""}${it&&it.na?` <span class="cat-na">нет в наличии</span>`:""}${auto?` <span class="sup-tag">авто: петли без пружины</span>`:""}</td><td class="mono">${qty}</td><td>${unit}</td></tr>`; };
   const rows=[...mats.map(([k,r])=>{ const sh=sheets.find(s=>s.mat===k); return sh?row(k,sh.sheets.length,"л."):row(k,r.a.toFixed(2).replace(".",","),"м²"); }),
-    ...edges.map(e=>row(e.name,String(e.m).replace(".",","),"м")), ...furn.map(f=>row(f.name,f.qty,"шт"))];
+    ...edges.map(e=>row(e.name,String(e.m).replace(".",","),"м")), ...furn.map(f=>row(f.name,f.qty,"шт",f.auto))];
   return `<details class="plist" ${S.buyOpen?"open":""} data-k="buy"><summary>Закупка по заказу · ${rows.length} поз.</summary>
     <p class="note">Листы — по расчёту раскроя, кромка — с запасом из Базиса. «Нет в наличии» — отметка из базы материалов Базиса. Нажмите на строку — откроется карточка материала.</p>
     <table class="spec-t buy-t"><thead><tr><th></th><th>Что</th><th>Кол-во</th><th></th></tr></thead><tbody>${rows.join("")}</tbody></table>
@@ -1994,7 +1994,7 @@ document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.clo
 function specRows(){
   const parts=S.current.parts, o=S.orders[S.current.orderId]||{};
   const mats=new Map(); parts.forEach(p=>{ const k=String(p.material||"—").split(/[\r\n]/)[0]; const r=mats.get(k)||{n:0,a:0}; r.n++; r.a+=p.L*p.W/1e6; mats.set(k,r); });
-  return {o,parts,mats:[...mats.entries()],edges:edgeMeters(parts),furn:furnList(curFasteners()),sheets:cutMaps(parts)};
+  return {o,parts,mats:[...mats.entries()],edges:edgeMeters(parts),furn:furnAll(curFasteners(),parts),sheets:cutMaps(parts)};
 }
 function specCsv(){
   const {o,parts,mats,edges,furn,sheets}=specRows(), q=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`, n=v=>String(v).replace(".",","), L=[];
@@ -2021,6 +2021,20 @@ function specPrint(){
 }
 
 const FURN_JUNK=/^(линия стыка|размер|управляющий размер|name|блок .*|секция-блок.*|профиль|гнутая|\d+\s*[xх×]\s*[\d,.]+|hettich brand)$/i;   // служебные объекты Базиса — не фурнитура
+/* автоматическая фурнитура: петли без пружины на двери → 1 пушап на дверь */
+const AUTO_PUSH="PUSH to open Premial";
+function autoFurn(parts, fs){
+  const hs=(fs||[]).filter(f=>/петл/i.test(f.n||"")&&/без\s*пружин/i.test((f.n||"")+" "+(f.g||""))&&!/планк|заглушк|рычаг/i.test(f.n||""));
+  if(!hs.length) return [];
+  const ctr=f=>f.o||[(f.b[0]+f.b[3])/2,(f.b[1]+f.b[4])/2,(f.b[2]+f.b[5])/2];
+  let doors=0;
+  (parts||[]).filter(p=>/фасад|дверь|дверц/i.test(p.name||"")&&p.box).forEach(p=>{ const b=p.box, ex=[b[3]-b[0],b[4]-b[1],b[5]-b[2]], th=ex.indexOf(Math.min(...ex));
+    if(hs.some(f=>{ const o=ctr(f); return [0,1,2].every(i=>i===th?(o[i]>b[i]-60&&o[i]<b[i+3]+60):(o[i]>b[i]-10&&o[i]<b[i+3]+10)); })) doors++; });
+  if(!doors){ const grp=new Set(hs.map(f=>f.g?f.g+"#"+f.gi:null).filter(Boolean)); doors=Math.max(1,Math.round((grp.size||hs.length)/2)); }
+  return [{name:AUTO_PUSH,qty:doors,auto:true}];
+}
+function furnAll(fs, parts){
+  const L=furnList(fs); autoFurn(parts,fs).forEach(a=>{ const e=L.find(x=>x.name===a.name); if(e){ e.qty+=a.qty; e.auto=a.qty; } else L.push(a); }); return L; }
 function furnList(fs){
   const m=new Map();
   fs.forEach(f=>{ const k=f.g||f.n; if(!k||FURN_JUNK.test(String(k).trim())) return; if(!m.has(k)) m.set(k,{name:k,ids:new Set(),n:0}); const r=m.get(k); if(f.g) r.ids.add(f.gi); else r.n++; });
@@ -2552,9 +2566,9 @@ function viewOrder(){
       <div class="seg" role="group" aria-label="Подписи на чертеже"><button type="button" data-act="fv-pos" aria-pressed="${S.fvPos!==false}">Позиции</button><button type="button" data-act="fv-gap" aria-pressed="${S.fvGap===true}">Просветы</button></div></div>
       ${views.length===1?box(views[0]):views.map((v,i)=>`<details class="fv-mod" ${i===0?"open":""}><summary><b>${esc(v.title)}</b> <span class="muted mono">${v.size}</span></summary>${box(v)}</details>`).join("")}
       <div class="fv-tip">${tip}</div></details>`; }
-  const fl=furnList(curFasteners());
+  const fl=furnAll(curFasteners(),S.current.parts);
   h+=specBlock();
-  if(fl.length) h+=`<details class="plist" style="margin-bottom:12px"><summary>Фурнитура · ${fl.length} наим.</summary><div class="tablebox"><table><thead><tr><th>Наименование</th><th class="num">Кол-во</th></tr></thead><tbody>${fl.map(r=>`<tr><td>${esc(r.name)}</td><td class="num mono">${r.qty}</td></tr>`).join("")}</tbody></table></div></details>`;
+  if(fl.length) h+=`<details class="plist" style="margin-bottom:12px"><summary>Фурнитура · ${fl.length} наим.</summary><div class="tablebox"><table><thead><tr><th>Наименование</th><th class="num">Кол-во</th></tr></thead><tbody>${fl.map(r=>`<tr><td>${esc(r.name)}${r.auto?` <span class="sup-tag">авто: ${r.auto} шт за петли без пружины</span>`:""}</td><td class="num mono">${r.qty}</td></tr>`).join("")}</tbody></table></div></details>`;
   h+=`<details class="plist" ${S.listOpen?"open":""}><summary>Список деталей · ${S.current.parts.length}</summary>`;
   h+=`<div class="tablebox"><table><thead><tr><th>Код</th><th>Наименование</th><th>Поз.</th><th class="num">Д×Ш×Т, мм</th><th>Материал</th><th>Кромка</th><th class="num">Отв.</th><th>Этап</th></tr></thead><tbody>`;
   S.current.parts.forEach(p=>{ const st=STAGES[stageOf(p.code)];
@@ -2899,7 +2913,7 @@ function supBase(oid,res){
   const other=new Map(); parts.forEach(p=>{ const k=String(p.material||"").split(/[\r\n]/)[0]; if(!k||onSheet.has(k)||!p.L||!p.W) return; other.set(k,(other.get(k)||0)+p.L*p.W/1e6); });
   other.forEach((a,k)=>out.push({key:"L:"+k,type:"L",name:k,qty:Math.round(a*100)/100,unit:"м²"}));
   edgeMeters(parts).forEach(e=>out.push({key:"E:"+e.name,type:"E",name:e.name,qty:e.m,unit:"м"}));
-  furnList(fs).forEach(f=>out.push({key:"F:"+f.name,type:"F",name:f.name,qty:f.qty,unit:"шт"}));
+  furnAll(fs,parts).forEach(f=>out.push({key:"F:"+f.name,type:"F",name:f.name,qty:f.qty,unit:"шт",auto:!!f.auto}));
   return out;
 }
 /* итоговый список заказа: из Базиса + правки снабженца */
@@ -2928,7 +2942,7 @@ function supRow(oid,it){
   if(ed) return `<div class="sup-row ed"><form class="sup-ed" data-o="${esc(oid)}" data-k="${esc(it.key)}"><input name="n" value="${esc(it.name)}" list="supNames" aria-label="Название"><input name="q" value="${esc(String(it.qty))}" inputmode="decimal" aria-label="Количество" style="width:80px"> <span class="muted">${esc(it.unit)}</span>
     <button class="btn sm primary" type="submit">Сохранить</button><button class="btn sm" type="button" data-act="sup-cancel">Отмена</button></form></div>`;
   return `<div class="sup-row${it.del?" del":""}">${cat?catSw(cat,"cat-sw sm"):`<span class="cat-sw sm none">${it.type==="F"||it.type==="A"?"⚙":it.type==="E"?"▬":"▦"}</span>`}
-    <div class="sup-n"><b>${esc(it.name)}</b>${it.name!==it.orig&&it.orig?`<span class="muted"> · было: ${esc(it.orig)}</span>`:""}${it.added?`<span class="sup-tag">добавлено</span>`:""}${(it.name!==it.orig&&it.orig)||(it.qty!==it.origQty&&it.origQty!=null)?`<span class="sup-tag">изменено снабженцем</span>`:""}</div>
+    <div class="sup-n"><b>${esc(it.name)}</b>${it.name!==it.orig&&it.orig?`<span class="muted"> · было: ${esc(it.orig)}</span>`:""}${it.added?`<span class="sup-tag">добавлено</span>`:""}${it.auto?`<span class="sup-tag">авто: петли без пружины</span>`:""}${(it.name!==it.orig&&it.orig)||(it.qty!==it.origQty&&it.origQty!=null)?`<span class="sup-tag">изменено снабженцем</span>`:""}</div>
     <div class="sup-q mono">${esc(String(it.qty).replace(".",","))} ${esc(it.unit)}${it.qty!==it.origQty&&it.origQty!=null?`<span class="muted"> (было ${esc(String(it.origQty).replace(".",","))})</span>`:""}</div>
     ${it.del?`<button class="btn sm" data-act="sup-undel" data-o="${esc(oid)}" data-k="${esc(it.key)}">Вернуть</button>`:`<div class="sup-st">${SUP_ST.map((s,i)=>`<button type="button" class="sup-chip${it.status===i?" on":""}" style="--c:${s.c}" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${i}">${s.name}</button>`).join("")}</div>
     <div class="sup-tools"><button type="button" class="btn sm" data-act="sup-edit" data-o="${esc(oid)}" data-k="${esc(it.key)}" title="Изменить название или количество">✎</button><button type="button" class="btn sm" data-act="sup-del" data-o="${esc(oid)}" data-k="${esc(it.key)}" title="Убрать позицию">✕</button></div>`}</div>`;
