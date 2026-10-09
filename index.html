@@ -663,7 +663,7 @@ function openOrder(oid){
     Object.keys(res.textures||{}).forEach(m=>{ const t=res.textures[m]; S.textures[m]=t.url||t.data; });
     if(!S.orders[oid]) S.orders[oid]={id:oid,name:res.order||oid,count:S.current.parts.length};
     S.current.loading=false; render(); siteAfterOrderLoad&&siteAfterOrderLoad(oid);
-  }).catch(e=>{ S.current.loading=false; S.current.missing=true; S.current.locked=!!(e&&e.locked); render(); });
+  }).catch(e=>{ S.current.loading=false; S.current.missing=true; S.current.locked=!!(e&&e.locked); if(!S.current.locked&&typeof siteOrderGone==="function"){ siteOrderGone(oid); return; } render(); });
 }
 function texId(name){ let h=2166136261; for(const ch of String(name)){ h^=ch.codePointAt(0); h=Math.imul(h,16777619); } return "t"+(h>>>0).toString(36); }
 function saveFileReq(o){ return saveFile(o.filename,o.data); }
@@ -2876,6 +2876,14 @@ viewOrders=function(){ return _viewOrders2()+`<p style="margin-top:24px;display:
   +(siteIsAdmin()?`<button class="btn sm" data-act="adm-out">Выйти из режима технолога</button>`:`<button class="btn sm" data-act="adm-in">Войти как технолог</button>`)
   +(siteIsSupply()?`<button class="btn sm" data-act="sup-out">Выйти из режима снабженца</button>`:(siteIsAdmin()?"":`<button class="btn sm" data-act="sup-in">Войти как снабженец</button>`))+`</p>`; };
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="adm-in"],[data-act="adm-out"]'); if(!t) return; ev.stopPropagation(); t.dataset.act==="adm-in"?adminLoginModal():adminLogout(); },true);
+
+/* заказ удалён с сайта: не показываем «не найден», а тихо убираем его из «Моих проектов» и возвращаемся к списку */
+function siteOrderGone(oid){
+  if(_ks.orders[oid]){ delete _ks.orders[oid]; keySave(); }
+  delete S.orders[oid]; S.current={orderId:null,parts:[]};
+  if(location.hash) history.replaceState(null,"",location.pathname+location.search);
+  setView("orders");
+}
 
 /* ---------- снабжение: закупка по всем заказам, статусы, правки позиций (данные — в Google-таблице, лист «Снабжение») ---------- */
 const SUP_ST=[{name:"Нужно",c:"#9aa0a6"},{name:"Заказано",c:"#e8a33d"},{name:"Пришло",c:"#3b82c4"},{name:"Выдано в цех",c:"#2e8b57"}];
