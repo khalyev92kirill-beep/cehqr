@@ -644,7 +644,7 @@ function expandParts(orderId, list){
         code: orderId+"-"+pad(n,3),
         name:p.name||"Деталь", art:p.art||"", L:+p.L||0, W:+p.W||0, T:+p.T||0,
         material:p.material||"", edges:p.edges||{}, edgesRaw:p.edgesRaw||[],
-        holes:Array.isArray(p.holes)?p.holes:[], box:p.box||null, grain:p.grain||null, mod:p.mod||"", copy: q>1 ? (i+1)+" из "+q : ""
+        holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, box:p.box||null, grain:p.grain||null, mod:p.mod||"", copy: q>1 ? (i+1)+" из "+q : ""
       });
     }
   });
@@ -757,15 +757,56 @@ function qrSvg(text){
 }
 
 /* ---------- карта присадки ---------- */
+// контур непрямоугольной детали: элементы → замкнутые пути + точки вырезов для размеров
+function shapeGeom(shape, L, W){
+  const TOL=0.6, eq=(a,b)=>Math.abs(a-b)<=TOL, onBox=(x,y)=>eq(x,0)||eq(x,L)||eq(y,0)||eq(y,W);
+  const segs=[], circles=[], xs=new Set(), ys=new Set(), radii=[];
+  (shape||[]).forEach(e=>{
+    if(e[0]==="l") segs.push({t:"l",a:[+e[1],+e[2]],b:[+e[3],+e[4]]});
+    else if(e[0]==="a"){ const a=[+e[1],+e[2]], b=[+e[3],+e[4]], c=[+e[5],+e[6]], r=Math.hypot(a[0]-c[0],a[1]-c[1]);
+      const A1=Math.atan2(a[1]-c[1],a[0]-c[0]), A2=Math.atan2(b[1]-c[1],b[0]-c[0]); let ccw=((A2-A1)%(2*Math.PI)+2*Math.PI)%(2*Math.PI); if(ccw<1e-6) ccw=2*Math.PI;
+      const len=+e[7]||0; const sweep=(len&&Math.abs(r*(2*Math.PI-ccw)-len)<Math.abs(r*ccw-len))?-(2*Math.PI-ccw):(len?ccw:(ccw<=Math.PI?ccw:-(2*Math.PI-ccw)));
+      segs.push({t:"a",a,b,c,r,sweep}); }
+    else if(e[0]==="c") circles.push({c:[+e[1],+e[2]],r:+e[3]});
+  });
+  // элементы, которые не лежат на краях габарита, — это вырезы, скосы и радиусы
+  segs.forEach(sg=>{
+    const outer=sg.t==="l"&&((eq(sg.a[0],0)&&eq(sg.b[0],0))||(eq(sg.a[0],L)&&eq(sg.b[0],L))||(eq(sg.a[1],0)&&eq(sg.b[1],0))||(eq(sg.a[1],W)&&eq(sg.b[1],W)));
+    if(outer) return;
+    [sg.a,sg.b].forEach(p=>{ xs.add(Math.round(p[0]*10)/10); ys.add(Math.round(p[1]*10)/10); });
+    if(sg.t==="a"){ const m=sg.c[0]!==undefined?Math.atan2(sg.a[1]-sg.c[1],sg.a[0]-sg.c[0])+sg.sweep/2:0; radii.push({x:sg.c[0]+sg.r*Math.cos(m), y:sg.c[1]+sg.r*Math.sin(m), r:sg.r}); }
+  });
+  circles.forEach(ci=>{ xs.add(Math.round(ci.c[0]*10)/10); ys.add(Math.round(ci.c[1]*10)/10); radii.push({x:ci.c[0],y:ci.c[1]+ci.r,r:ci.r,circle:true}); });
+  return {segs,circles,radii,xs:[...xs].filter(v=>v>TOL&&v<L-TOL).sort((a,b)=>a-b),ys:[...ys].filter(v=>v>TOL&&v<W-TOL).sort((a,b)=>a-b)};
+}
+function shapePath(G, X, Y, s){
+  const TOL=0.8, near=(p,q)=>Math.abs(p[0]-q[0])<=TOL&&Math.abs(p[1]-q[1])<=TOL;
+  const used=new Array(G.segs.length).fill(false); let d="";
+  const seg=(sg,rev)=>{ const b=rev?sg.a:sg.b;
+    if(sg.t==="l") return `L${X(b[0]).toFixed(1)} ${Y(b[1]).toFixed(1)}`;
+    const sw=rev?-sg.sweep:sg.sweep, R=(sg.r*s).toFixed(1);
+    return `A${R} ${R} 0 ${Math.abs(sw)>Math.PI?1:0} ${sw>0?0:1} ${X(b[0]).toFixed(1)} ${Y(b[1]).toFixed(1)}`; };
+  for(let i=0;i<G.segs.length;i++){ if(used[i]) continue; used[i]=true; const st=G.segs[i]; let end=st.b;
+    d+=`M${X(st.a[0]).toFixed(1)} ${Y(st.a[1]).toFixed(1)}`+seg(st,false);
+    for(let guard=0;guard<G.segs.length;guard++){ let k=-1, rev=false;
+      for(let j=0;j<G.segs.length;j++){ if(used[j]) continue; if(near(G.segs[j].a,end)){k=j;break;} if(near(G.segs[j].b,end)){k=j;rev=true;break;} }
+      if(k<0) break; used[k]=true; d+=seg(G.segs[k],rev); end=rev?G.segs[k].a:G.segs[k].b; if(near(end,st.a)) break; }
+    d+="Z"; }
+  G.circles.forEach(ci=>{ const cx=X(ci.c[0]), cy=Y(ci.c[1]), r=ci.r*s; d+=`M${(cx-r).toFixed(1)} ${cy.toFixed(1)}a${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${(2*r).toFixed(1)} 0a${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${(-2*r).toFixed(1)} 0Z`; });
+  return d;
+}
 function drillMap(p, mode){
   const L=p.L||1, W=p.W||1;
-  const VW=720, M={l:92,r:40,t:46,b:96};
+  const G=p.shape&&p.shape.length?shapeGeom(p.shape,L,W):null, hasCut=!!(G&&(G.xs.length||G.ys.length||G.radii.length));
+  const VW=720, M={l:92,r:hasCut?96:40,t:hasCut?96:46,b:96};
   const s=Math.min((VW-M.l-M.r)/L, 340/W);
   const pw=L*s, ph=W*s, VH=M.t+ph+M.b;
   const X=x=>M.l+x*s, Y=y=>M.t+ph-y*s;
   let g="";
   // панель
-  g+=`<rect x="${X(0)}" y="${Y(W)}" width="${pw}" height="${ph}" fill="var(--board)" stroke="var(--board-line)" stroke-width="1"/>`;
+  if(G&&G.segs.length){ g+=`<rect x="${X(0)}" y="${Y(W)}" width="${pw}" height="${ph}" fill="none" stroke="var(--board-line)" stroke-width="0.6" stroke-dasharray="4 3" opacity="0.6"/>`;
+    g+=`<path d="${shapePath(G,X,Y,s)}" fill="var(--board)" fill-rule="evenodd" stroke="var(--ink)" stroke-width="1.2"/>`; }
+  else g+=`<rect x="${X(0)}" y="${Y(W)}" width="${pw}" height="${ph}" fill="var(--board)" stroke="var(--board-line)" stroke-width="1"/>`;
   // кромка
   const e=p.edges||{}, ew=5;
   const edgeLine={L1:[X(0),Y(0)+ew/2+1,X(L),Y(0)+ew/2+1],L2:[X(0),Y(W)-ew/2-1,X(L),Y(W)-ew/2-1],W1:[X(0)-ew/2-1,Y(0),X(0)-ew/2-1,Y(W)],W2:[X(L)+ew/2+1,Y(0),X(L)+ew/2+1,Y(W)]};
@@ -819,6 +860,20 @@ function drillMap(p, mode){
   g+=`<text x="${X(L/2)}" y="${yo-5}" font-size="13" font-weight="700" fill="var(--ink)" font-family="var(--f-mono)" text-anchor="middle">${fmt(L)}</text>`;
   g+=`<line x1="${xo}" y1="${Y(0)}" x2="${xo}" y2="${Y(W)}" stroke="var(--ink)"/><line x1="${xo-5}" y1="${Y(0)}" x2="${xo+5}" y2="${Y(0)}" stroke="var(--ink)"/><line x1="${xo-5}" y1="${Y(W)}" x2="${xo+5}" y2="${Y(W)}" stroke="var(--ink)"/>`;
   g+=`<text x="${xo-6}" y="${Y(W/2)}" font-size="13" font-weight="700" fill="var(--ink)" font-family="var(--f-mono)" text-anchor="middle" transform="rotate(-90 ${xo-6} ${Y(W/2)})">${fmt(W)}</text>`;
+  // вырезы: размеры сверху (по длине) и справа (по ширине), от базы или цепочкой; радиусы — у дуги
+  if(hasCut){ const C="#d9480f", ct=(x,y,t,rot,anchor="middle")=>`<text x="${x}" y="${y}" font-size="11" font-weight="700" fill="${C}" font-family="var(--f-mono)" text-anchor="${anchor}" paint-order="stroke" stroke="var(--surface)" stroke-width="3" ${rot?`transform="rotate(-90 ${x} ${y})"`:""}>${t}</text>`;
+    const yt=Y(W)-30, xr=X(L)+36;
+    if(G.xs.length){ const cx=[0,...G.xs]; if(mode!=="base") cx.push(L);
+      g+=`<line x1="${X(0)}" y1="${yt}" x2="${X(mode==="base"?G.xs[G.xs.length-1]:L)}" y2="${yt}" stroke="${C}" stroke-width="0.8"/>`;
+      cx.forEach(v=>{ g+=`<line x1="${X(v)}" y1="${yt-4}" x2="${X(v)}" y2="${Y(W)-2}" stroke="${C}" stroke-width="0.5" stroke-dasharray="2 2"/>`; });
+      if(mode==="base"){ let last=-1e9; G.xs.forEach(v=>{ let x=X(v)-3; if(x-last<13) x=last+13; last=x; g+=ct(x,yt-6,fmt(v),true,"start"); }); }
+      else for(let i=1;i<cx.length;i++){ const d=cx[i]-cx[i-1], m=(X(cx[i])+X(cx[i-1]))/2; g+=(X(cx[i])-X(cx[i-1])>30)?ct(m,yt-5,fmt(Math.round(d*10)/10)):ct(m+4,yt-6,fmt(Math.round(d*10)/10),true,"start"); } }
+    if(G.ys.length){ const cy=[0,...G.ys]; if(mode!=="base") cy.push(W);
+      g+=`<line x1="${xr}" y1="${Y(0)}" x2="${xr}" y2="${Y(mode==="base"?G.ys[G.ys.length-1]:W)}" stroke="${C}" stroke-width="0.8"/>`;
+      cy.forEach(v=>{ g+=`<line x1="${X(L)+2}" y1="${Y(v)}" x2="${xr+4}" y2="${Y(v)}" stroke="${C}" stroke-width="0.5" stroke-dasharray="2 2"/>`; });
+      if(mode==="base"){ let last=1e9; G.ys.forEach(v=>{ let y=Y(v)+4; if(last-y<12) y=last-12; last=y; g+=ct(xr+7,y,fmt(v),false,"start"); }); }
+      else for(let i=1;i<cy.length;i++){ const d=cy[i]-cy[i-1], m=(Y(cy[i])+Y(cy[i-1]))/2; g+=ct(xr+7,m+4,fmt(Math.round(d*10)/10),false,"start"); } }
+    G.radii.forEach(r=>{ const x=Math.min(Math.max(X(r.x),X(0)+10),X(L)-10), y=Math.min(Math.max(Y(r.y),Y(W)+12),Y(0)-4); g+=ct(x,y,(r.circle?"Ø":"R")+fmt(Math.round((r.circle?2*r.r:r.r)*10)/10)); }); }
   // базовый угол
   g+=`<path d="M${X(0)} ${Y(0)} l14 0 l-14 -14 z" fill="var(--accent)"/>`;
   g+=`<text x="${X(0)+18}" y="${Y(0)-4}" font-size="10" fill="var(--accent)" font-weight="700">БАЗА</text>`;
@@ -2463,7 +2518,7 @@ function parseJSON(text){
   if(!list.length) throw new Error("В файле нет деталей");
   const parts=list.map(p=>{
     const L=numOf(p.L??p.length), W=numOf(p.W??p.width);
-    const out={mod:typeof p.mod==="string"?p.mod:"", name:p.name||"", art:p.art||"", qty:p.qty||1, L:Math.max(L,W), W:Math.min(L,W), T:numOf(p.T??p.thickness), material:p.material||"", edges:{}, edgesRaw:[], holes:Array.isArray(p.holes)?p.holes:[], box:Array.isArray(p.box)&&p.box.length===6?p.box.map(Number):null, grain:Array.isArray(p.grain)?p.grain.map(Number):null};
+    const out={mod:typeof p.mod==="string"?p.mod:"", name:p.name||"", art:p.art||"", qty:p.qty||1, L:Math.max(L,W), W:Math.min(L,W), T:numOf(p.T??p.thickness), material:p.material||"", edges:{}, edgesRaw:[], holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, box:Array.isArray(p.box)&&p.box.length===6?p.box.map(Number):null, grain:Array.isArray(p.grain)?p.grain.map(Number):null};
     if(Array.isArray(p.edges)){
       p.edges.forEach(e=>{ const r={elem:e.elem,m:e.material||e.m||"",t:+e.t||0};
         if(/^(L1|L2|W1|W2)$/.test(e.side||"")) out.edges[e.side]={m:r.m,t:r.t}; else out.edgesRaw.push(r); });
@@ -2614,7 +2669,7 @@ function viewPart(){
   h+=`<div class="panels"><div class="card"><div class="card-head"><h2 style="margin:0">Присадка · вид на пласть A</h2>
       <div class="seg" role="group" aria-label="Способ простановки размеров"><button type="button" data-act="mode" data-m="base" aria-pressed="${S.mapMode==="base"}">От базы</button><button type="button" data-act="mode" data-m="chain" aria-pressed="${S.mapMode==="chain"}">Цепочкой</button></div></div>
       <div class="mapbox">${drillMap(p,S.mapMode)}</div>
-      <p class="note">Сплошной круг — отверстие с пласти A, пунктир — с пласти B, пунктирный прямоугольник — в торце. Белый круг — сквозное.</p></div>
+      <p class="note">Сплошной круг — отверстие с пласти A, пунктир — с пласти B, пунктирный прямоугольник — в торце. Белый круг — сквозное.${p.shape?" Оранжевым — размеры вырезов и радиусы, пунктир — габарит заготовки.":""}</p></div>
     <div class="card"><div class="card-head"><h2 style="margin:0">Деталь в 3D</h2><span class="note">тяните, чтобы повернуть</span></div><canvas id="three" aria-label="Трёхмерная модель детали"></canvas></div></div>`;
   h+=`<div class="cols"><div class="card"><h2>Кромка</h2><div class="edges-list">`;
   const raw=p.edgesRaw||[];
