@@ -131,6 +131,7 @@ td.num{text-align:right}
 .fv-wbar h2{flex:1;margin:0;font-size:17px}
 .fv-x{border:0;background:var(--sunk);color:var(--ink);width:44px;height:44px;border-radius:50%;font-size:20px;cursor:pointer}
 .fv-wbody{flex:1;overflow:auto;padding:4px 12px calc(16px + env(safe-area-inset-bottom,0px))}
+.fv-win .fv-box:not(.full) svg{display:block;width:100%;height:auto;max-height:calc(100vh - 230px);max-height:calc(100dvh - 230px)}
 body.fv-on{overflow:hidden}
 .fv-mod{border-top:1px solid var(--line);padding:8px 0}
 .fv-mod>summary{cursor:pointer;padding:6px 2px;font-size:15px}
@@ -1030,7 +1031,9 @@ function mountAssembly(canvas, parts, opt){
       const p=withBox.find(q=>q.code===m.userData.code); if(!p) return; const B=p.box, verts=[], idx=[], ring=[], cyl=[], info=[];
       const th=[B[3]-B[0],B[4]-B[1],B[5]-B[2]], tA=th.indexOf(Math.min(...th));   // ось толщины детали
       const ctr=i=>(B[i]+B[i+3])/2;
+      const isFac=/фасад|дверь|дверц/i.test(p.name||"");
       fs.forEach(f=>{ const F=f.b, lo=[], hi=[]; let ok=true;
+        if(/петл/i.test(f.n+" "+(f.g||""))&&!isFac) return;   // у петли — только чашка Ø35 на фасаде; на стойке не рисуем
         for(let i=0;i<3;i++){ lo[i]=Math.max(B[i],F[i]); hi[i]=Math.min(B[i+3],F[i+3]); if(hi[i]-lo[i]<0.5) ok=false; }
         if(!ok) return;
         for(let a=0;a<3;a++){
@@ -1106,6 +1109,7 @@ function mountAssembly(canvas, parts, opt){
     const b=f.b, sx=b[3]-b[0], sy=b[4]-b[1], sz=b[5]-b[2], big=Math.max(sx,sy,sz)>=15&&Math.min(sx,sy,sz)>=1;
     // всё, что выходит далеко за изделие (комната, стены) — не показываем
     if(b[0]<lo[0]-300||b[1]<lo[1]-300||b[2]<lo[2]-300||b[3]>hi[0]+300||b[4]>hi[1]+300||b[5]>hi[2]+300) return;
+    if(/петл/i.test(f.n+" "+(f.g||""))) return;   // петли коробками не рисуем — не похоже; остаются чашки Ø35 на фасадах
     const pos=[((b[0]+b[3])/2-C[0])*K,((b[1]+b[4])/2-C[1])*K,((b[2]+b[5])/2-C[2])*K];
     if(isKrep(f)){
       // крепёж: в точном виде — модель из Базиса, иначе — аккуратный цилиндр по его габариту (ось — самая длинная сторона)
@@ -1121,7 +1125,8 @@ function mountAssembly(canvas, parts, opt){
       if(!exact) m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),furnLine));
       m.userData={code:"F:"+fi,furn:true}; furnGroup.add(m); furnItems.push(m); return;
     }
-    // точки одного заметного размера: петли крупнее, мелкий крепёж поменьше; видны сквозь детали
+    // мелочь без объёма (метки, точки крепежа) — оранжевыми кружками больше не рисуем: только мешали
+    return;
     const r=(/петл/i.test(f.n)?16:11)*K;
     const col=fastenerColor(f.n); if(!fmats[col]) fmats[col]=new THREE.MeshBasicMaterial({color:col,depthTest:false,transparent:true,opacity:0.95});
     const sp=new THREE.Mesh(new THREE.SphereGeometry(r,14,10),fmats[col]); sp.renderOrder=10;
@@ -2198,15 +2203,18 @@ function moduleViews(parts, fasteners, mode, wire, hinges, pos, gaps){
   [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0],"ru",{numeric:true})).forEach(([mod,ps])=>{
     const m=bb(ps);
     // задняя стенка — тонкая большая деталь: её тонкая ось и есть глубина модуля
-    const back=ps.filter(p=>{ const d=[0,1,2].map(i=>p.box[i+3]-p.box[i]); const t=Math.min(...d); return t<=8&&d[1]>=200&&Math.max(d[0],d[2])>=100; })
+    const FAC=/фасад|дверь|дверц/i, BACK=/^\s*з\.?\s*с\b|задн/i;
+    const back=ps.filter(p=>{ const d=[0,1,2].map(i=>p.box[i+3]-p.box[i]); const t=Math.min(...d); return (t<=8||(t<=20&&BACK.test(p.name||"")))&&t!==d[1]&&d[1]>=200&&Math.max(d[0],d[2])>=100; })
       .sort((a,b)=>{ const A=(a.box[3]-a.box[0])*(a.box[4]-a.box[1])*(a.box[5]-a.box[2]), B=(b.box[3]-b.box[0])*(b.box[4]-b.box[1])*(b.box[5]-b.box[2]); return B-A; })[0];
     let ax, sg;
     if(back){ const d=[back.box[3]-back.box[0],back.box[5]-back.box[2]]; ax=d[0]<d[1]?0:2; const bc=(back.box[ax]+back.box[ax+3])/2; sg=bc<m.c[ax]?1:-1; }
     else {
       // по боковинам: высокие тонкие детали стоят поперёк ширины модуля, значит глубина — другая ось
-      const H=m.hi[1]-m.lo[1], sides=ps.filter(p=>p.box[4]-p.box[1]>=H*0.5);
+      const H=m.hi[1]-m.lo[1], sides=ps.filter(p=>p.box[4]-p.box[1]>=H*0.5&&!FAC.test(p.name||"")&&!BACK.test(p.name||""));
       const thinX=sides.filter(p=>p.box[3]-p.box[0]<=40&&p.box[5]-p.box[2]>40).length, thinZ=sides.filter(p=>p.box[5]-p.box[2]<=40&&p.box[3]-p.box[0]>40).length;
-      ax=thinX>thinZ?2:thinZ>thinX?0:((m.hi[0]-m.lo[0])<(m.hi[2]-m.lo[2])?0:2); sg=m.c[ax]<all.c[ax]?1:-1; }
+      ax=thinX>thinZ?2:thinZ>thinX?0:((m.hi[0]-m.lo[0])<(m.hi[2]-m.lo[2])?0:2);
+      // лицо — там, где фасады; если фасадов нет — от центра всего заказа
+      const fc=ps.filter(p=>FAC.test(p.name||"")); if(fc.length){ const c=fc.reduce((a,p)=>a+(p.box[ax]+p.box[ax+3])/2,0)/fc.length; sg=c>m.c[ax]?1:-1; } else sg=m.c[ax]<all.c[ax]?1:-1; }
     const tf=T[ax+","+sg];
     const loose=ps.map(p=>Object.assign({},p,{box:tf(p.box)}));
     const fs=(fasteners||[]).filter(f=>f.b[0]>=m.lo[0]-5&&f.b[3]<=m.hi[0]+5&&f.b[1]>=m.lo[1]-5&&f.b[4]<=m.hi[1]+5&&f.b[2]>=m.lo[2]-5&&f.b[5]<=m.hi[2]+5).map(f=>{ const r=Object.assign({},f,{b:tf(f.b)}); if(f.o) r.o=tf(f.o.concat(f.o)).slice(0,3); return r; });
