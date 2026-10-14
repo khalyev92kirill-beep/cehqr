@@ -123,6 +123,9 @@ td.num{text-align:right}
 .fv-zoom button{border:0;background:transparent;border-radius:8px;min-width:34px;height:32px;font-size:17px;font-weight:600;color:var(--ink);cursor:pointer}
 .fv-zoom button:hover{background:var(--sunk)}
 .fv-tip{font-size:12px;color:var(--muted);margin:6px 2px 0}
+.work-rate{width:88px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font:inherit;font-family:var(--f-mono);text-align:right;background:var(--surface);color:var(--ink)}
+.work-t tfoot td{border-top:2px solid var(--line)}
+@media (max-width:600px){.work-t thead{display:none}.work-t,.work-t tbody,.work-t tfoot{display:block}.work-t tr{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:4px 12px;padding:9px 2px;border-bottom:1px solid var(--line)}.work-t td{border:0!important;padding:0!important}.work-t tbody td:first-child{grid-column:1/-1;font-weight:600}.work-t tfoot tr{grid-template-columns:1fr auto;border:0}}
 .fv-btn{display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin:0 0 18px;padding:14px 16px;font-size:16px}
 .fv-btn .fv-ic{font-size:24px}
 .fv-btn small{display:block;color:var(--muted);font-size:13px;font-weight:400;margin-top:2px}
@@ -645,7 +648,7 @@ function expandParts(orderId, list){
         code: orderId+"-"+pad(n,3),
         name:p.name||"Деталь", art:p.art||"", L:+p.L||0, W:+p.W||0, T:+p.T||0,
         material:p.material||"", edges:p.edges||{}, edgesRaw:p.edgesRaw||[],
-        holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, box:p.box||null, grain:p.grain||null, mod:p.mod||"", copy: q>1 ? (i+1)+" из "+q : ""
+        holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, frame:Array.isArray(p.frame)&&p.frame.length===9?p.frame.map(Number):null, box:p.box||null, grain:p.grain||null, mod:p.mod||"", copy: q>1 ? (i+1)+" из "+q : ""
       });
     }
   });
@@ -800,6 +803,59 @@ function shapePath(G, X, Y, s){
   G.circles.forEach(ci=>{ const cx=X(ci.c[0]), cy=Y(ci.c[1]), r=ci.r*s; d+=`M${(cx-r).toFixed(1)} ${cy.toFixed(1)}a${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${(2*r).toFixed(1)} 0a${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${(-2*r).toFixed(1)} 0Z`; });
   return d;
 }
+// контур детали → замкнутые ломаные (дуги разбиты на отрезки), в мм чертежа
+function shapeLoops(shape, L, W){
+  const G=shapeGeom(shape,L,W), TOL=0.8, near=(p,q)=>Math.abs(p[0]-q[0])<=TOL&&Math.abs(p[1]-q[1])<=TOL;
+  const pts=(sg,rev)=>{ if(sg.t==="l") return [rev?sg.a:sg.b];
+    const a0=Math.atan2(sg.a[1]-sg.c[1],sg.a[0]-sg.c[0]), n=Math.max(2,Math.ceil(Math.abs(sg.sweep)/(Math.PI/16))), out=[];
+    for(let i=1;i<=n;i++){ const t=a0+sg.sweep*i/n; out.push([sg.c[0]+sg.r*Math.cos(t),sg.c[1]+sg.r*Math.sin(t)]); }
+    return rev?out.reverse().slice(1).concat([sg.a]):out; };
+  const used=new Array(G.segs.length).fill(false), loops=[];
+  for(let i=0;i<G.segs.length;i++){ if(used[i]) continue; used[i]=true; const st=G.segs[i]; const loop=[st.a,...pts(st,false)]; let end=st.b;
+    for(let guard=0;guard<G.segs.length;guard++){ let k=-1, rev=false;
+      for(let j=0;j<G.segs.length;j++){ if(used[j]) continue; if(near(G.segs[j].a,end)){k=j;break;} if(near(G.segs[j].b,end)){k=j;rev=true;break;} }
+      if(k<0) break; used[k]=true; loop.push(...pts(G.segs[k],rev)); end=rev?G.segs[k].a:G.segs[k].b; if(near(end,st.a)) break; }
+    if(loop.length>=3) loops.push(loop); }
+  G.circles.forEach(ci=>{ const l=[]; for(let i=0;i<32;i++){ const t=i/32*Math.PI*2; l.push([ci.c[0]+ci.r*Math.cos(t),ci.c[1]+ci.r*Math.sin(t)]); } loops.push(l); });
+  return loops;
+}
+// объёмная деталь по контуру (толщина по Z от 0 до T); null — если контур не собрался
+function shapeExtrude(p){
+  if(typeof THREE==="undefined"||!p.shape) return null;
+  try{ const loops=shapeLoops(p.shape,p.L,p.W); if(!loops.length) return null;
+    const area=l=>{ let a=0; for(let i=0;i<l.length;i++){ const q=l[i], r=l[(i+1)%l.length]; a+=q[0]*r[1]-r[0]*q[1]; } return a/2; };
+    loops.sort((x,y)=>Math.abs(area(y))-Math.abs(area(x)));
+    const outer=loops[0]; if(Math.abs(area(outer))<p.L*p.W*0.3) return null;
+    const sh=new THREE.Shape(outer.map(q=>new THREE.Vector2(q[0],q[1])));
+    loops.slice(1).forEach(l=>sh.holes.push(new THREE.Path(l.map(q=>new THREE.Vector2(q[0],q[1])))));
+    return new THREE.ExtrudeGeometry(sh,{depth:Math.max(p.T||16,1),bevelEnabled:false,curveSegments:8});
+  }catch(e){ return null; }
+}
+// деталь с вырезом для 3D всего изделия: в осях изделия, с центром в центре габарита; null — рисуем коробкой
+function shapeGeoGlobal(p, K){
+  const f=p.frame, b=p.box; if(!f||!b) return null;
+  const geo=shapeExtrude(p); if(!geo) return null;
+  const O=[f[0],f[1],f[2]], X=[f[3],f[4],f[5]], Y=[f[6],f[7],f[8]], N=[X[1]*Y[2]-X[2]*Y[1],X[2]*Y[0]-X[0]*Y[2],X[0]*Y[1]-X[1]*Y[0]];
+  const bc=[(b[0]+b[3])/2,(b[1]+b[4])/2,(b[2]+b[5])/2], T=Math.max(p.T||16,1);
+  const c=(bc[0]-O[0])*N[0]+(bc[1]-O[1])*N[1]+(bc[2]-O[2])*N[2], z0=c-T/2;
+  const pos=geo.attributes.position, lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9];
+  for(let i=0;i<pos.count;i++){ const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i)+z0, g=[0,1,2].map(k=>O[k]+x*X[k]+y*Y[k]+z*N[k]);
+    for(let k=0;k<3;k++){ lo[k]=Math.min(lo[k],g[k]); hi[k]=Math.max(hi[k],g[k]); }
+    pos.setXYZ(i,(g[0]-bc[0])*K,(g[1]-bc[1])*K,(g[2]-bc[2])*K); }
+  // проверка: деталь должна лечь ровно в свой габарит из Базиса, иначе — коробкой
+  for(let k=0;k<3;k++) if(Math.abs(lo[k]-b[k])>2||Math.abs(hi[k]-b[k+3])>2){ geo.dispose(); return null; }
+  pos.needsUpdate=true; geo.computeVertexNormals(); geo.computeBoundingBox(); geo.computeBoundingSphere();
+  return geo;
+}
+// UV для текстуры на произвольной геометрии: по оси нормали, как у коробки
+function texUVAny(geo, g, K){
+  const pos=geo.attributes.position, nor=geo.attributes.normal, uv=new Float32Array(pos.count*2), AX=["x","y","z"];
+  for(let i=0;i<pos.count;i++){ const n=[Math.abs(nor.getX(i)),Math.abs(nor.getY(i)),Math.abs(nor.getZ(i))], a=n.indexOf(Math.max(...n));
+    const pr=[pos.getX(i)/K,pos.getY(i)/K,pos.getZ(i)/K], [ua,va]=a===0?[2,1]:a===1?[0,2]:[0,1];
+    let u=pr[ua]/TEX_TILE, v=pr[va]/TEX_TILE; if(g===AX[ua]){ const t=u; u=v; v=t; }
+    uv[i*2]=u; uv[i*2+1]=v; }
+  geo.setAttribute("uv",new THREE.BufferAttribute(uv,2));
+}
 function drillMap(p, mode){
   const L=p.L||1, W=p.W||1;
   const G=p.shape&&p.shape.length?shapeGeom(p.shape,L,W):null, hasCut=!!(G&&(G.xs.length||G.ys.length||G.radii.length));
@@ -922,8 +978,10 @@ function mount3D(p, z0){
   const side=k2=> e[k2]? m(edge) : m(board.clone().multiplyScalar(0.86));
   // +x W2, -x W1, +y L2, -y L1, +z A, -z B
   const mats=[side("W2"),side("W1"),side("L2"),side("L1"),m(board),m(board.clone().multiplyScalar(0.94))];
-  const box=new THREE.Mesh(new THREE.BoxGeometry(L*k,W*k,T*k),mats); grp.add(box);
-  const lines=new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({color:new THREE.Color(cssVar("--board-line"))}));
+  const ex=p.shape?shapeExtrude(p):null;   // деталь с вырезом — по контуру
+  if(ex){ ex.translate(-L/2,-W/2,-T/2); ex.scale(k,k,k); }
+  const box=ex? new THREE.Mesh(ex,[m(board),m(board.clone().multiplyScalar(0.86))]) : new THREE.Mesh(new THREE.BoxGeometry(L*k,W*k,T*k),mats); grp.add(box);
+  const lines=new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry,ex?25:1),new THREE.LineBasicMaterial({color:new THREE.Color(cssVar("--board-line"))}));
   grp.add(lines);
   const hm=new THREE.MeshBasicMaterial({color:holeC});
   (p.holes||[]).forEach(h=>{
@@ -1002,16 +1060,17 @@ function mountAssembly(canvas, parts, opt){
   const items=[];
   withBox.forEach(p=>{
     const b=p.box, w=Math.max(b[3]-b[0],0.5)*K, h=Math.max(b[4]-b[1],0.5)*K, d=Math.max(b[5]-b[2],0.5)*K;
-    const geo=new THREE.BoxGeometry(w,h,d);
+    const sg=p.shape?shapeGeoGlobal(p,K):null;   // деталь с вырезом — по контуру из Базиса
+    const geo=sg||new THREE.BoxGeometry(w,h,d);
     const glass=/стекл/i.test((p.material||"")+" "+(p.name||""))&&!/зеркал/i.test((p.material||"")+" "+(p.name||""));   // стекло — прозрачное
     const tex=glass?null:texFor(p.material);
-    if(tex) texUV(geo,{x:b[3]-b[0],y:b[4]-b[1],z:b[5]-b[2]},grainAxis(p));
+    if(tex){ if(sg) texUVAny(geo,grainAxis(p),K); else texUV(geo,{x:b[3]-b[0],y:b[4]-b[1],z:b[5]-b[2]},grainAxis(p)); }
     const mat=tex? new THREE.MeshLambertMaterial({map:tex,color:0xffffff,transparent:true,opacity:1})
                  : new THREE.MeshLambertMaterial({color:glass?0xbfe3ea:matColor(p.material),transparent:true,opacity:1});
     const mesh=new THREE.Mesh(geo,mat);
     const cx=((b[0]+b[3])/2-C[0])*K, cy=((b[1]+b[4])/2-C[1])*K, cz=((b[2]+b[5])/2-C[2])*K;
     mesh.position.set(cx,cy,cz);
-    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:lineC,transparent:true,opacity:0.8}));
+    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo,sg?25:1),new THREE.LineBasicMaterial({color:lineC,transparent:true,opacity:0.8}));
     mesh.add(edges);
     if(glass){ mesh.renderOrder=2; edges.material.color=new THREE.Color(0x6f9aa6); }
     mesh.userData={code:p.code,glass,home:new THREE.Vector3(cx,cy,cz),facade:/фасад|дверь/i.test(p.name),dims:`${fmt(p.L)}×${fmt(p.W)}`,art:String(p.art||"").trim()};
@@ -1792,6 +1851,7 @@ function specBlock(){
     ${issues.length?(()=>{ const g=new Map(); issues.forEach(x=>{ const k=x.t.replace(/^позиция .*: разные размеры.*/,"разные размеры у одной позиции"); if(!g.has(k)) g.set(k,[]); g.get(k).push(x); });
       return [...g.entries()].sort((a,b)=>a[1].length-b[1].length).map(([k,L])=>`<div class="iss-g"><b>${esc(k)}</b> <span class="muted">· ${L.length}</span><div class="iss-l">${L.slice(0,30).map(x=>`<button type="button" class="chip" data-act="part" data-code="${esc(x.p.code)}" title="${esc(x.t)}">${x.p.art?`<b>${esc(x.p.art)}</b> `:""}${esc(x.p.name)}</button>`).join("")}${L.length>30?` <span class="muted">и ещё ${L.length-30}</span>`:""}</div></div>`).join(""); })():`<p class="note">Материал, позиции, кромка, размеры листа и отверстия под петли — без ошибок.</p>`}</details>`;
   h+=buyBlock();
+  h+=workBlock();
   h+=frameBlock();
   h+=facadeBlock();
   h+=`<div class="spec-act"><button class="btn" data-act="spec-xls">Спецификация в Excel</button><button class="btn" data-act="spec-print">Печать / PDF</button></div>`;
@@ -2032,6 +2092,55 @@ function catShare(){ const L=catPickList();
   if(navigator.share) navigator.share({title:"Подборка материалов",text:tx}).catch(()=>{});
   else (navigator.clipboard?navigator.clipboard.writeText(tx):Promise.reject()).then(()=>toast("Список скопирован")).catch(()=>prompt("Скопируйте список:",tx)); }
 /* закупка по заказу: материалы, кромка, фурнитура + наличие из базы */
+/* ---------- объём работ и оплата рабочим (сдельно) ---------- */
+const WORK_KEYS=[
+  ["cut_sheet","Раскрой","лист"],["cut_part","Раскрой — детали","шт"],
+  ["edge_thin","Кромка 0,4–0,8 мм","м"],["edge_thick","Кромка 1–2 мм","м"],
+  ["drill","Присадка — отверстия","шт"],["cutout","Вырезы и фигурные детали","шт"],
+  ["asm_mod","Сборка модулей","шт"],["asm_drawer","Сборка ящиков","шт"],["asm_fac","Навес и регулировка фасадов","шт"],
+  ["furn_hinge","Установка петель","шт"],["furn_runner","Установка направляющих","компл"],["install","Установка у клиента","модуль"]];
+function workRates(){ try{ return JSON.parse(localStorage.getItem("cehqr-rates")||"{}")||{}; }catch(_){ return {}; } }
+function workRows(parts){
+  const mats=cutMaps(parts), q={};
+  q.cut_sheet=mats.reduce((a,m)=>a+m.sheets.length,0);
+  q.cut_part=mats.reduce((a,m)=>a+m.sheets.reduce((b,s)=>b+(s.placed||[]).length,0),0);
+  let thin=0, thick=0; parts.forEach(p=>{ Object.entries(p.edges||{}).forEach(([k,e])=>{ if(!e) return; const len=(/^L/.test(k)?p.L:p.W)/1000; if((+e.t||0)>=1) thick+=len; else thin+=len; });
+    (p.edgesRaw||[]).forEach(e=>{ if(e.len){ if((+e.t||0)>=1) thick+=e.len/1000; else thin+=e.len/1000; } }); });
+  q.edge_thin=Math.round(thin*10)/10; q.edge_thick=Math.round(thick*10)/10;
+  q.drill=parts.reduce((a,p)=>a+effHoles(p).length,0);
+  q.cutout=parts.filter(p=>p.shape||p.rect===false).length;
+  const mods=new Set(parts.filter(p=>p.mod).map(p=>p.mod)); q.asm_mod=mods.size||(parts.length?1:0); q.install=q.asm_mod;
+  const dDno=parts.filter(p=>/дно\s*ящик/i.test(p.name||"")).length, dSide=parts.filter(p=>/боковин\w*\s*ящик/i.test(p.name||"")).length;
+  q.asm_drawer=dDno||Math.round(dSide/2);
+  q.asm_fac=parts.filter(p=>/фасад|дверь|дверц/i.test(p.name||"")).length;
+  const fl=furnAll(curFasteners(),parts);
+  q.furn_hinge=fl.filter(r=>/петл/i.test(r.name)&&!/планк|заглушк|накладк/i.test(r.name)).reduce((a,r)=>a+(+r.qty||0),0);
+  q.furn_runner=fl.filter(r=>/направл|tandem|movento|legrabox|unihopper|метабокс|metabox/i.test(r.name)).reduce((a,r)=>a+(+r.qty||0),0);
+  const R=workRates();
+  return WORK_KEYS.map(([k,name,unit])=>({k,name,unit,qty:q[k]||0,rate:+R[k]||0})).filter(r=>r.qty>0);
+}
+function workBlock(){
+  const parts=S.current.parts; if(!parts||!parts.length) return "";
+  if(!(S.canEdit||(typeof siteIsAdmin==="function"&&siteIsAdmin()))) return "";   // расценки и суммы — только технологу
+  const rows=workRows(parts), money=v=>Math.round(v).toLocaleString("ru-RU"), num=v=>String(v).replace(".",",");
+  const total=rows.reduce((a,r)=>a+r.qty*r.rate,0);
+  return `<details class="plist" ${S.workOpen?"open":""} data-k="work"><summary>Объём работ и оплата${total?` · ${money(total)} ₽`:""}</summary>
+    <p class="note">Объём посчитан по заказу. Впишите расценку за единицу — сумма посчитается сама. Расценки запоминаются на этом устройстве и подставляются во все заказы.</p>
+    <div class="tablebox"><table class="work-t"><thead><tr><th>Работа</th><th class="num">Объём</th><th class="num">Расценка, ₽</th><th class="num">Сумма, ₽</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr data-k="${r.k}"><td>${esc(r.name)}</td><td class="num mono">${num(r.qty)} ${esc(r.unit)}</td><td class="num"><input class="work-rate" type="number" inputmode="decimal" min="0" step="any" data-k="${r.k}" data-q="${r.qty}" value="${r.rate||""}" placeholder="0" aria-label="Расценка: ${esc(r.name)}"></td><td class="num mono work-sum">${r.rate?money(r.qty*r.rate):"—"}</td></tr>`).join("")}
+    </tbody><tfoot><tr><td colspan="3"><b>Итого</b></td><td class="num mono"><b id="workTotal">${money(total)}</b></td></tr></tfoot></table></div>
+    <p style="margin:8px 0 0"><button type="button" class="btn sm" data-act="work-copy">Скопировать для ведомости</button></p></details>`;
+}
+function workText(){ const o=S.orders[S.current.orderId]||{}, rows=workRows(S.current.parts), money=v=>Math.round(v).toLocaleString("ru-RU");
+  const total=rows.reduce((a,r)=>a+r.qty*r.rate,0);
+  return `Объём работ · ${o.name||S.current.orderId}\n`+rows.map(r=>`${r.name}: ${String(r.qty).replace(".",",")} ${r.unit}${r.rate?` × ${r.rate} ₽ = ${money(r.qty*r.rate)} ₽`:""}`).join("\n")+(total?`\nИтого: ${money(total)} ₽`:""); }
+document.addEventListener("input", ev=>{ const t=ev.target; if(!t.classList||!t.classList.contains("work-rate")) return;
+  const R=workRates(), v=parseFloat(String(t.value).replace(",","."))||0; if(v) R[t.dataset.k]=v; else delete R[t.dataset.k];
+  try{ localStorage.setItem("cehqr-rates",JSON.stringify(R)); }catch(_){}
+  const tr=t.closest("tr"), money=v=>Math.round(v).toLocaleString("ru-RU"); if(tr) tr.querySelector(".work-sum").textContent=v?money(v*(+t.dataset.q)):"—";
+  let tot=0; document.querySelectorAll(".work-rate").forEach(i=>{ tot+=(parseFloat(String(i.value).replace(",","."))||0)*(+i.dataset.q); });
+  const el=document.getElementById("workTotal"); if(el) el.textContent=money(tot);
+  const sm=t.closest("details")&&t.closest("details").querySelector("summary"); if(sm) sm.textContent="Объём работ и оплата"+(tot?` · ${money(tot)} ₽`:""); });
 function buyBlock(){
   if(!S.current.parts||!S.current.parts.length) return ""; catLoad();
   const {mats,edges,furn,sheets}=specRows(), row=(name,qty,unit,auto)=>{ const it=catFind(name);
@@ -2530,7 +2639,7 @@ function parseJSON(text){
   if(!list.length) throw new Error("В файле нет деталей");
   const parts=list.map(p=>{
     const L=numOf(p.L??p.length), W=numOf(p.W??p.width);
-    const out={mod:typeof p.mod==="string"?p.mod:"", name:p.name||"", art:p.art||"", qty:p.qty||1, L:Math.max(L,W), W:Math.min(L,W), T:numOf(p.T??p.thickness), material:p.material||"", edges:{}, edgesRaw:[], holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, box:Array.isArray(p.box)&&p.box.length===6?p.box.map(Number):null, grain:Array.isArray(p.grain)?p.grain.map(Number):null};
+    const out={mod:typeof p.mod==="string"?p.mod:"", name:p.name||"", art:p.art||"", qty:p.qty||1, L:Math.max(L,W), W:Math.min(L,W), T:numOf(p.T??p.thickness), material:p.material||"", edges:{}, edgesRaw:[], holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, frame:Array.isArray(p.frame)&&p.frame.length===9?p.frame.map(Number):null, box:Array.isArray(p.box)&&p.box.length===6?p.box.map(Number):null, grain:Array.isArray(p.grain)?p.grain.map(Number):null};
     if(Array.isArray(p.edges)){
       p.edges.forEach(e=>{ const r={elem:e.elem,m:e.material||e.m||"",t:+e.t||0};
         if(/^(L1|L2|W1|W2)$/.test(e.side||"")) out.edges[e.side]={m:r.m,t:r.t}; else out.edgesRaw.push(r); });
@@ -3164,6 +3273,7 @@ document.addEventListener("click", async ev=>{
   else if(a==="spec-print"){ specPrint(); }
   else if(a==="fac-print"){ facadePrint(); }
   else if(a==="fr-print"){ framePrint(); }
+  else if(a==="work-copy"){ const tx=workText(); (navigator.clipboard?navigator.clipboard.writeText(tx):Promise.reject()).then(()=>toast("Объём работ скопирован")).catch(()=>toast("Не удалось скопировать")); }
   else if(a==="gl-copy"){ const tx=glassText(); (navigator.clipboard?navigator.clipboard.writeText(tx):Promise.reject()).then(()=>toast("Список стекла скопирован — вставьте в WhatsApp или почту")).catch(()=>{ prompt("Скопируйте список:",tx); }); }
   else if(a==="fr-del"){ const L=frameManual(); L.splice(+t.dataset.i,1); frameManualSave(L); S.frameOpen=true; render(); }
   else if(a==="asm-multi"){ if(asm){ asm.st.multiMode=!asm.st.multiMode; t.setAttribute("aria-pressed",String(asm.st.multiMode)); toast(asm.st.multiMode?"Нажимайте на детали — они добавятся к выделению":"Выделение по одной детали"); } }
@@ -3228,7 +3338,7 @@ document.addEventListener("submit", ev=>{ const f=ev.target.closest&&ev.target.c
   if(!(H>=100&&W>=100)){ toast("Введите высоту и ширину фасада в мм"); return; }
   const L=frameManual(); L.push({H,W,q}); frameManualSave(L); S.frameOpen=true; render(); toast(`Фасад ${H}×${W} × ${q} добавлен`); });
 document.addEventListener("change", ev=>{ const i=ev.target.closest&&ev.target.closest(".gl-in"); if(!i) return; const v=Math.round(+i.value); if(v>=300){ S[i.dataset.k]=v; S.frameOpen=true; render(); } });
-document.addEventListener("toggle", ev=>{ if(ev.target.classList&&ev.target.classList.contains("plist")){ const k=ev.target.dataset.k; if(k==="cut") S.cutOpen=ev.target.open; else if(k==="fac") S.facOpen=ev.target.open; else if(k==="frame") S.frameOpen=ev.target.open; else if(k==="iss") S.issOpen=ev.target.open; else if(k==="buy") S.buyOpen=ev.target.open; else if(!k) S.listOpen=ev.target.open; } if(ev.target.classList&&ev.target.classList.contains("fv")) S.fvOpen=ev.target.open; }, true);
+document.addEventListener("toggle", ev=>{ if(ev.target.classList&&ev.target.classList.contains("plist")){ const k=ev.target.dataset.k; if(k==="cut") S.cutOpen=ev.target.open; else if(k==="fac") S.facOpen=ev.target.open; else if(k==="frame") S.frameOpen=ev.target.open; else if(k==="iss") S.issOpen=ev.target.open; else if(k==="buy") S.buyOpen=ev.target.open; else if(k==="work") S.workOpen=ev.target.open; else if(!k) S.listOpen=ev.target.open; } if(ev.target.classList&&ev.target.classList.contains("fv")) S.fvOpen=ev.target.open; }, true);
 document.addEventListener("input", ev=>{ if(/^r\d+-/.test(ev.target.id||"")) S.rulesDraft=readRulesForm(); });
 document.addEventListener("change", ev=>{ if(/^r\d+-/.test(ev.target.id||"")) S.rulesDraft=readRulesForm(); });
 document.addEventListener("change", async ev=>{
