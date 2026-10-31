@@ -800,6 +800,7 @@ function openOrder(oid){
     siteRememberOrder(oid,res,res.parts.length);
     S.current.parts=expandParts(oid,res.parts); S.current.fasteners=res.fasteners||[]; S.current.furnMesh=res.furnMesh||null;
     Object.keys(res.textures||{}).forEach(m=>{ const t=res.textures[m]; S.textures[m]=t.url||t.data; });
+    S.matColors=Object.assign(S.matColors||{},res.colors||{});
     if(!S.orders[oid]) S.orders[oid]={id:oid,name:res.order||oid,count:S.current.parts.length};
     S.current.loading=false; render(); siteAfterOrderLoad&&siteAfterOrderLoad(oid);
   }).catch(e=>{ S.current.loading=false; S.current.missing=true; S.current.locked=!!(e&&e.locked); if(!S.current.locked&&typeof siteOrderGone==="function"){ siteOrderGone(oid); return; } render(); });
@@ -1157,6 +1158,7 @@ function mount3D(p, z0){
 /* ---------- 3D всего изделия ---------- */
 let asm=null; try{ Object.defineProperty(window,"cehqrAsm",{get:()=>asm}); }catch(_){}
 function matColor(name){
+  const bc=S.matColors&&S.matColors[name]; if(bc&&/^#[0-9a-f]{6}$/i.test(bc)) return parseInt(bc.slice(1),16);   // цвет из базы материалов Базиса
   const n=String(name||"").toLowerCase();
   if(/орех|дуб|бук|вишн|венге|ясень|сонома/.test(n)) return 0xa77b52;
   if(/крем|ваниль|беж|капуч/.test(n)) return 0xf1e7d3;
@@ -3101,7 +3103,8 @@ function parseJSON(text){
   const textures={}; if(j.textures&&typeof j.textures==="object") Object.keys(j.textures).forEach(k=>{ const t=j.textures[k]; if(t&&typeof t.data==="string"&&/^data:image\//.test(t.data)) textures[k]={file:t.file||"",data:t.data}; else if(t&&typeof t.url==="string"&&/^textures\/[^\/]+$/.test(t.url)) textures[k]={file:t.file||"",url:t.url}; });
   const fasteners=Array.isArray(j.fasteners)?j.fasteners.filter(f=>f&&Array.isArray(f.b)&&f.b.length===6).map(f=>{ const o={n:String(f.n||""),b:f.b.map(Number)}; if(f.g){ o.g=String(f.g); o.gi=f.gi; } if(Array.isArray(f.o)&&f.o.length===3&&f.o.every(v=>isFinite(+v))) o.o=f.o.map(Number); return o; }):[];
   const furnMesh=j.furnMesh&&(Array.isArray(j.furnMesh.m)||(j.furnMesh.v===2&&Array.isArray(j.furnMesh.it)))?j.furnMesh:null;
-  return {parts, order:j.order||"", source:j.source||"json", textures, fasteners, furnMesh};
+  const colors={}; if(j.colors&&typeof j.colors==="object") Object.keys(j.colors).forEach(k=>{ const c=j.colors[k]; if(typeof c==="string"&&/^#[0-9a-f]{6}$/i.test(c)) colors[k]=c; });
+  return {parts, order:j.order||"", source:j.source||"json", textures, fasteners, furnMesh, colors};
 }
 function parseCSV(text){
   text=text.replace(/^﻿/,"");
