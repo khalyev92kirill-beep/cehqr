@@ -2558,7 +2558,7 @@ function dqMenu(){
   h+=`<hr>`;
   if(!cl){ if(has("fv")) h+=it("dq-go","Вид спереди с размерами",null,' data-to="fv"');
     [["list","Список деталей"],["furn","Фурнитура — список"],["cut","Раскрой листов"],["fac","Фасады"],["frame","Рамки и стекло"],["buy","Закупка"],["work","Объём работы"]].forEach(([k,t])=>{ if(has(k)) h+=it("dq-go",t,null,` data-to="${k}"`); });
-    h+=`<hr>`+it("order-qr","QR проекта для мастеров"); if(S.site&&!S.canEdit&&!S.pin&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())) h+=it("client-mode","Вид для клиента"); }
+    h+=`<hr>`+it("order-qr","QR проекта для мастеров")+it("to-verstak","Скопировать для Верстака"); if(S.site&&!S.canEdit&&!S.pin&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())) h+=it("client-mode","Вид для клиента"); }
   else h+=it("full-mode","Режим мастера");
   h+=it("home","Все заказы");
   return h;
@@ -2568,6 +2568,14 @@ function dqTarget(k){
   if(k==="list"){ const i=document.getElementById("plQ"); return i&&i.closest("details"); }
   if(k==="furn") return [...document.querySelectorAll("details.plist:not([data-k])")].find(d=>/^Фурнитура/.test(d.querySelector("summary").textContent.trim()));
   return document.querySelector(`details.plist[data-k="${k}"]`); }
+// данные заказа для «Верстака» (доска заказов в Claude): текст, который Верстак понимает кнопкой «Вставить из Технолог 3D»
+function verstakText(){ const oid=S.current.orderId, o=S.orders[oid]||{}, parts=S.current.parts||[];
+  let sheets=0; try{ sheets=cutMaps(parts).reduce((a,m)=>a+m.sheets.length,0); }catch(_){}
+  const edge=edgeMeters(parts).reduce((a,e)=>a+e.m,0), rez=parts.reduce((a,p)=>a+2*((+p.L||0)+(+p.W||0)),0)/1000;
+  return ["ТЕХНОЛОГ3D v1","Заказ: "+oid,"Изделие: "+(o.name||""),"Ссылка: "+partUrl(oid),"Деталей: "+parts.length,"Листов: "+sheets,"Рез, м: "+(Math.round(rez*10)/10),"Кромка, м: "+(Math.round(edge*10)/10)].join("\n"); }
+function verstakCopy(){ const t=verstakText();
+  const fall=()=>{ const m=document.createElement("div"); m.className="modal"; m.id="vsModal"; m.innerHTML=`<div class="modal-card" role="dialog" aria-label="Для Верстака"><h2 style="margin:0 0 8px">Для Верстака</h2><p class="note" style="margin:0 0 8px">Скопируйте и вставьте в Верстаке: заказ → «Технолог и 3D» → «Вставить из Технолог 3D».</p><textarea readonly style="width:100%;min-height:170px;font:13px/1.4 var(--f-mono)">${esc(t)}</textarea><div style="text-align:right;margin-top:10px"><button class="btn primary" data-act="vs-x">Готово</button></div></div>`; document.body.appendChild(m); const ta=m.querySelector("textarea"); ta.focus(); ta.select(); };
+  try{ navigator.clipboard.writeText(t).then(()=>toast("Скопировано для Верстака. Вставьте там: «Технолог и 3D» → «Вставить из Технолог 3D»"),fall); }catch(_){ fall(); } }
 function dqOpenBtn(){ return `<button type="button" class="btn fv-btn dq-open" data-act="dq-open"><span class="fv-ic">🧊</span><span><b>Открыть 3D изделия</b><small>на весь экран: детали, присадка, разбор</small></span></button>`; }
 function dqExit(){ S.dqFull=false; document.body.classList.remove("has-full"); render(); }
 function dqGo(k){ dqExit(); if(k==="fv"){ S.fvWin=true; S.fvFromDq=true; render(); return; }
@@ -3129,7 +3137,7 @@ function viewOrder(){
   let h=`<div class="tblock"><div class="tb-name"><span class="tb-l">Изделие</span><h1>${esc(o.name)}</h1></div>
     <div class="tb-c"><span class="tb-l">Заказ</span><b class="mono">${esc(oid)}</b></div>${clientMode()&&clientDims()?`<div class="tb-c"><span class="tb-l">Габариты, мм</span><b class="mono">${clientDims()}</b></div>`:`<div class="tb-c"><span class="tb-l">Деталей</span><b class="mono">${o.count}</b></div>`}
     <div class="tb-c tb-client"><span class="tb-l">Клиент</span><b>${esc(o.client||"не указан")}</b></div>
-    <div class="head-actions tb-act">${clientMode()?"":`<button class="btn primary" data-act="order-qr">QR проекта для мастеров</button>`}
+    <div class="head-actions tb-act">${clientMode()?"":`<button class="btn primary" data-act="order-qr">QR проекта для мастеров</button><button class="btn" data-act="to-verstak" title="Скопировать данные заказа для Верстака">В Верстак</button>`}
     ${S.canEdit? (S.confirmDelete? `<button class="btn danger" data-act="del-yes">Удалить навсегда</button><button class="btn" data-act="del-no">Отмена</button>` : `<button class="btn danger" data-act="del">Удалить</button>`):""}</div></div>`;
   if(stagesOn()) h+=`<div style="margin-bottom:16px">${sb.bar}<div class="legend">${STAGES.map((s,i)=>`<span><i style="background:${s.color}"></i>${s.name} · ${sb.cnt[i]}</span>`).join("")}</div>${canStage()&&S.current.parts.length?`<div class="stg-all">${S.stgAsk!=null?`<div class="ask"><span>Отметить <b>все ${S.current.parts.length} дет.</b> этого заказа как «${esc(STAGES[S.stgAsk].name)}»?</span><button type="button" class="btn sm primary" data-act="stage-order-yes">Да, отметить</button><button type="button" class="btn sm" data-act="stage-order-no">Отмена</button></div>`:`<span class="lbl">Весь заказ:</span>${STAGES.slice(1).map((s,k)=>`<button type="button" data-act="stage-order" data-n="${k+1}"><i style="background:${s.color}"></i>${s.name}</button>`).join("")}`}</div>`:""}</div>`;
   if(S.current.loading) return h+`<p class="muted">Загружаю детали…</p>`;
@@ -3666,6 +3674,8 @@ document.addEventListener("click", async ev=>{
   else if(a==="order-qr"){ orderQrModal(S.current.orderId); }
   else if(a==="order-qr-id"){ orderQrModal(t.dataset.id); }
   else if(a==="qr-close"){ const m=$("#qrModal"); m&&m.remove(); }
+  else if(a==="to-verstak"){ verstakCopy(); }
+  else if(a==="vs-x"){ const m=$("#vsModal"); m&&m.remove(); }
   else if(a==="qr-copy"){ const inp=$("#qrLink"); try{ await navigator.clipboard.writeText(inp.value); toast("Ссылка скопирована"); }catch(e){ inp.select(); toast("Выделил ссылку — скопируйте её"); } }
   else if(a==="qr-pdf"){ t.disabled=true; await orderSheetPdf(t.dataset.id); t.disabled=false; }
   else if(a==="dq-close"){ S.dqFull=false; document.body.classList.remove("has-full"); setView("orders"); }
