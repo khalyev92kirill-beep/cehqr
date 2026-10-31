@@ -984,6 +984,9 @@ function texUVAny(geo, g, K){
     uv[i*2]=u; uv[i*2+1]=v; }
   geo.setAttribute("uv",new THREE.BufferAttribute(uv,2));
 }
+// пазы/вырезы, которые стоит показывать: вырез-площадка уже 3 мм (подрезка торца столешницы) — не показываем
+function cutsShown(p){ return (p.cuts||[]).filter(c=>{ if(c.k!=="z") return true; const pts=[]; (c.path||[]).forEach(e=>{ pts.push([e[1],e[2]],[e[3],e[4]]); });
+  if(!pts.length) return false; const xs=pts.map(q=>+q[0]), ys=pts.map(q=>+q[1]); return Math.min(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys))>=3; }); }
 function drillMap(p, mode){
   const L=p.L||1, W=p.W||1;
   const G=p.shape&&p.shape.length?shapeGeom(p.shape,L,W):null, hasCut=!!(G&&(G.xs.length||G.ys.length||G.radii.length));
@@ -1023,7 +1026,7 @@ function drillMap(p, mode){
     }
   });
   // пазы и вырезы-площадки из Базиса (Panel.Cuts)
-  (p.cuts||[]).forEach(c=>{
+  cutsShown(p).forEach(c=>{
     let pts=[];
     if(c.k==="g"&&Array.isArray(c.poly)) pts=c.poly;
     else if(Array.isArray(c.path)) c.path.forEach(e=>{ if(e[0]==="l"||e[0]==="a"){ pts.push([e[1],e[2]]); pts.push([e[3],e[4]]); } });
@@ -1031,12 +1034,12 @@ function drillMap(p, mode){
     const xs0=pts.map(q=>+q[0]), ys0=pts.map(q=>+q[1]), x0=Math.min(...xs0), x1=Math.max(...xs0), y0=Math.min(...ys0), y1=Math.max(...ys0);
     [x0,x1].forEach(v=>{ if(v>0.5&&v<L-0.5) xs.add(Math.round(v*10)/10); }); [y0,y1].forEach(v=>{ if(v>0.5&&v<W-0.5) ys.add(Math.round(v*10)/10); });
     const d="M"+pts.map(q=>X(q[0])+" "+Y(q[1])).join(" L")+" Z", cx=X((x0+x1)/2), cy=Y((y0+y1)/2), vert=(y1-y0)>(x1-x0)*1.5;
-    const lab=c.k==="g"?`паз ${fmt(c.w)}×${c.face==="T"?"скв.":fmt(c.d)}`:`вырез ${fmt(x1-x0)}×${fmt(y1-y0)}`;
-    if(c.k==="g") g+=`<path d="${d}" fill="${c.face==="B"?"none":"rgba(25,113,194,.22)"}" stroke="#1971c2" stroke-width="1.3" ${c.face==="B"?'stroke-dasharray="5 3"':""}/>`;
+    const lab=c.k==="g"?(c.face==="E"?`паз в торце ${fmt(c.w)}×${fmt(c.d)}`:`паз ${fmt(c.w)}×${c.face==="T"?"скв.":fmt(c.d)}`):`вырез ${fmt(x1-x0)}×${fmt(y1-y0)}`;
+    if(c.k==="g") g+=`<path d="${d}" fill="${c.face==="B"||c.face==="E"?"none":"rgba(25,113,194,.22)"}" stroke="#1971c2" stroke-width="1.3" ${c.face==="B"?'stroke-dasharray="5 3"':c.face==="E"?'stroke-dasharray="2 2"':""}/>`;
     else g+=`<path d="${d}" fill="var(--surface)"/><path d="${d}" fill="url(#cutHatch)" stroke="#e8590c" stroke-width="1.3"/>`;
     g+=`<text x="${cx}" y="${cy}" font-size="11" font-weight="700" fill="${c.k==="g"?"#1971c2":"#e8590c"}" font-family="var(--f-mono)" text-anchor="middle" dominant-baseline="middle" paint-order="stroke" stroke="var(--board)" stroke-width="3" ${vert?`transform="rotate(-90 ${cx} ${cy})"`:""}>${lab}</text>`;
   });
-  if((p.cuts||[]).some(c=>c.k==="z")) g=`<defs><pattern id="cutHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#e8590c" stroke-width="1.2" opacity=".55"/></pattern></defs>`+g;
+  if(cutsShown(p).some(c=>c.k==="z")) g=`<defs><pattern id="cutHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#e8590c" stroke-width="1.2" opacity=".55"/></pattern></defs>`+g;
   // размеры
   const dimC="var(--muted)", tx=(x,y,t,rot,anchor="middle")=>`<text x="${x}" y="${y}" font-size="11" fill="var(--ink)" font-family="var(--f-mono)" text-anchor="${anchor}" ${rot?`transform="rotate(-90 ${x} ${y})"`:""}>${t}</text>`;
   const sx=[...xs].filter(v=>v>0&&v<L).sort((a,b)=>a-b), sy=[...ys].filter(v=>v>0&&v<W).sort((a,b)=>a-b);
@@ -3265,7 +3268,7 @@ function viewPart(){
   h+=`<div class="panels"><div class="card"><div class="card-head"><h2 style="margin:0">Присадка · вид на пласть A</h2>
       <div class="seg" role="group" aria-label="Способ простановки размеров"><button type="button" data-act="mode" data-m="base" aria-pressed="${S.mapMode==="base"}">От базы</button><button type="button" data-act="mode" data-m="chain" aria-pressed="${S.mapMode==="chain"}">Цепочкой</button></div></div>
       <div class="mapbox">${drillMap(p,S.mapMode)}</div>
-      <p class="note">Сплошной круг — отверстие с пласти A, пунктир — с пласти B, пунктирный прямоугольник — в торце. Белый круг — сквозное.${p.shape?" Оранжевым — размеры вырезов и радиусы, пунктир — габарит заготовки.":""}${(p.cuts||[]).length?" Синим — пазы (пунктир — паз с пласти B), оранжевой штриховкой — вырезы.":""}</p>${(p.cuts||[]).length?`<div class="cut-list">${p.cuts.map(c=>`<span class="chip">${c.k==="g"?`Паз ${fmt(c.w)}×${c.face==="T"?"сквозной":fmt(c.d)+" мм"}${c.face==="A"?" · пласть A":c.face==="B"?" · пласть B":""}`:"Вырез"}${c.n?` · ${esc(c.n)}`:""}</span>`).join(" ")}</div>`:""}</div>
+      <p class="note">Сплошной круг — отверстие с пласти A, пунктир — с пласти B, пунктирный прямоугольник — в торце. Белый круг — сквозное.${p.shape?" Оранжевым — размеры вырезов и радиусы, пунктир — габарит заготовки.":""}${cutsShown(p).length?" Синим — пазы (пунктир — паз с пласти B), оранжевой штриховкой — вырезы.":""}</p>${cutsShown(p).length?`<div class="cut-list">${cutsShown(p).map(c=>`<span class="chip">${c.k==="g"?(c.face==="E"?`Паз в торце ${fmt(c.w)}×${fmt(c.d)} мм`:`Паз ${fmt(c.w)}×${c.face==="T"?"сквозной":fmt(c.d)+" мм"}${c.face==="A"?" · пласть A":c.face==="B"?" · пласть B":""}`):"Вырез"}${c.n?` · ${esc(c.n)}`:""}</span>`).join(" ")}</div>`:""}</div>
     <div class="card"><div class="card-head"><h2 style="margin:0">Деталь в 3D</h2><span class="note">тяните, чтобы повернуть</span></div><canvas id="three" aria-label="Трёхмерная модель детали"></canvas></div></div>`;
   h+=`<div class="facts">
     <div class="fact"><b>Длина × ширина</b><span class="mono">${fmt(p.L)} × ${fmt(p.W)}</span></div>
