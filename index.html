@@ -1184,6 +1184,40 @@ function texUV(geo, dims, g){
   uv.needsUpdate=true;
 }
 function disposeAsm(){ if(asm){ cancelAnimationFrame(asm.raf); asm.ro&&asm.ro.disconnect(); asm.renderer.dispose(); asm=null; } }
+// похожая фурнитура (когда нет точной модели из Базиса): форма по названию внутри габарита b (мм), центр в 0
+const FURN_MAT={};
+function furnMatOf(k){ if(FURN_MAT[k]) return FURN_MAT[k];
+  const c={metal:[0xb8bec5,90],dark:[0x3b3f44,60],white:[0xf1f1ee,20],gray:[0x9da3a8,30]}[k]||[0x9da3a8,30];
+  return FURN_MAT[k]=new THREE.MeshPhongMaterial({color:c[0],shininess:c[1],specular:k==="white"?0x222222:0x777777}); }
+function furnShape(name, b, K, parts){
+  const n=String(name||"").toLowerCase(), S=[b[3]-b[0],b[4]-b[1],b[5]-b[2]], ord=[0,1,2].sort((i,j)=>S[j]-S[i]), ax=ord[0], mid=ord[1], sm=ord[2];
+  const g=new THREE.Group(), add=(geo,mat,x,y,z)=>{ const m=new THREE.Mesh(geo,furnMatOf(mat)); m.userData.mat=m.material; m.position.set(x*K,y*K,z*K); g.add(m); return m; };
+  const box=(dx,dy,dz,mat,x,y,z)=>add(new THREE.BoxGeometry(Math.max(dx,0.5)*K,Math.max(dy,0.5)*K,Math.max(dz,0.5)*K),mat,x||0,y||0,z||0);
+  const cyl=(axis,len,dia,mat,x,y,z)=>{ const m=add(new THREE.CylinderGeometry(dia/2*K,dia/2*K,Math.max(len,0.5)*K,16),mat,x||0,y||0,z||0); if(axis===0) m.rotation.z=Math.PI/2; else if(axis===2) m.rotation.x=Math.PI/2; return m; };
+  const V=(i,v)=>{ const a=[0,0,0]; a[i]=v; return a; }, dims=(o)=>{ const d=[0,0,0]; for(const k in o) d[k]=o[k]; return d; };
+  if(/направл|tandem|movento|legrabox|quadro|шарик|ролик|телескоп|runner|slide/.test(n)){
+    // шина: плоская рейка по длине, высотой по средней стороне, тонкая по малой; внутренняя каретка чуть короче
+    const d1=dims({[ax]:S[ax],[mid]:Math.min(S[mid],45),[sm]:Math.max(1.5,S[sm]*0.35)}); box(d1[0],d1[1],d1[2],"metal");
+    const o=V(sm,S[sm]*0.25), d2=dims({[ax]:S[ax]*0.86,[mid]:Math.min(S[mid],45)*0.7,[sm]:Math.max(1.5,S[sm]*0.3)}); box(d2[0],d2[1],d2[2],"metal",...o);
+    return g; }
+  if(/ручк|handle|кноб|knob/.test(n)){
+    // скоба: перекладина у дальнего от фасада края + две ножки к фасаду
+    const dep=mid, len=ax, dia=Math.max(6,Math.min(14,S[sm])), c=[(b[0]+b[3])/2,(b[1]+b[4])/2,(b[2]+b[5])/2];
+    let sign=1; const tol=3, near=(v)=>parts.some(p=>{ const q=p.box, pt=c.slice(); pt[dep]=v; return pt[0]>=q[0]-tol&&pt[0]<=q[3]+tol&&pt[1]>=q[1]-tol&&pt[1]<=q[4]+tol&&pt[2]>=q[2]-tol&&pt[2]<=q[5]+tol; });
+    if(near(b[dep+3])&&!near(b[dep])) sign=-1;   // фасад со стороны «+» — перекладина на «−»
+    if(S[ax]<40){ cyl(dep,S[dep],Math.min(S[ax],S[sm],30),"dark"); return g; }   // кнопка
+    const barPos=V(dep,sign*(S[dep]/2-dia/2)); cyl(len,S[len],dia,"dark",...barPos);
+    const legLen=S[dep]-dia, legOff=S[len]/2-Math.max(dia,S[len]*0.08);
+    [-1,1].forEach(k=>{ const p=V(len,k*legOff); p[dep]=-sign*dia/2; cyl(dep,legLen,dia*0.8,"dark",...p); });
+    return g; }
+  if(/опор|ножк|нога|регулир|колес/.test(n)){
+    // ножка: вертикальный цилиндр + опорный диск
+    const dia=Math.max(12,Math.min(S[0],S[2],60)); cyl(1,S[1]*0.85,dia*0.6,"dark",0,S[1]*0.075,0); cyl(1,S[1]*0.15,dia,"dark",0,-S[1]*0.425,0); return g; }
+  if(/штанг|рейлинг|труб|релинг/.test(n)){ cyl(ax,S[ax],Math.max(8,Math.min(S[mid],S[sm],30)),"metal"); return g; }
+  if(/мойк|плит|духов|холод|посудом|вытяжк|микров|варочн|стирал|техник/.test(n)){ box(S[0],S[1],S[2],"white"); return g; }
+  if(/газлифт|подъ[её]м|aventos|амортиз/.test(n)){ cyl(ax,S[ax],Math.max(8,Math.min(S[mid],S[sm],22)),"metal"); return g; }
+  return null;
+}
 function mountAssembly(canvas, parts, opt){
   disposeAsm();
   if(!canvas||typeof THREE==="undefined") return;
@@ -1280,10 +1314,19 @@ function mountAssembly(canvas, parts, opt){
   const fgroup=new THREE.Group(); fgroup.visible=false; scene.add(fgroup);
   const fmats={};
   // точная фурнитура из OBJ Базиса (если выгружена): рисуем её, а габаритные коробки оставляем невидимыми — для нажатия
-  const exact=opt.furnMesh&&opt.furnMesh.m&&opt.furnMesh.m.length?opt.furnMesh:null;
+  const exact=opt.furnMesh&&((opt.furnMesh.m&&opt.furnMesh.m.length)||(opt.furnMesh.v===2&&opt.furnMesh.it&&opt.furnMesh.it.length))?opt.furnMesh:null;
   const b64=s=>{ const bin=atob(s), u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u.buffer; };
   const krepGroupX=new THREE.Group(); scene.add(krepGroupX);   // точный крепёж из OBJ — отдельно, чтобы скрывать своей кнопкой
-  if(exact){
+  if(exact&&exact.v===2){
+    // настоящая фурнитура из модели Базиса: каждая сетка один раз, дальше — места установки (поворот + сдвиг, мм)
+    const g0=new THREE.Group(); scene.add(g0); opt._exactGroup=g0; const mats={}, geos=[];
+    const matOf=(c,mt)=>mats[c+mt]||(mats[c+mt]=new THREE.MeshPhongMaterial({color:new THREE.Color(c),shininess:mt?90:25,specular:mt?0x777777:0x151515,side:THREE.DoubleSide}));
+    const geoOf=gi=>{ if(geos[gi]) return geos[gi]; const G=exact.g[gi]; geos[gi]=(G&&G.q||[]).map(q=>{ try{ const geo=new THREE.BufferGeometry();
+        geo.setAttribute("position",new THREE.BufferAttribute(new Float32Array(b64(q.p)),3)); geo.setIndex(new THREE.BufferAttribute(q.b===4?new Uint32Array(b64(q.i)):new Uint16Array(b64(q.i)),1)); geo.computeVertexNormals(); return {geo,mat:matOf(q.c,q.mt)}; }catch(e){ return null; } }).filter(Boolean); return geos[gi]; };
+    exact.it.forEach(r=>{ const G=exact.g[r[0]]; if(!G) return; const kr=isKrep({n:G.n,b:[0,0,0,99,99,99]});
+      const M=new THREE.Matrix4().set(r[1]*K,r[2]*K,r[3]*K,(r[10]-C[0])*K, r[4]*K,r[5]*K,r[6]*K,(r[11]-C[1])*K, r[7]*K,r[8]*K,r[9]*K,(r[12]-C[2])*K, 0,0,0,1);
+      geoOf(r[0]).forEach(x=>{ const m=new THREE.Mesh(x.geo,x.mat); m.matrixAutoUpdate=false; m.matrix.copy(M); (kr?krepGroupX:g0).add(m); }); });
+  } else if(exact){
     const g0=new THREE.Group(); scene.add(g0); opt._exactGroup=g0;
     // сетка ячеек 50 мм с габаритами крепежа: треугольник внутри габарита крепежа — это крепёж
     const KB=(opt.fasteners||[]).filter(isKrep).map(f=>f.b), CELL=50, grid=new Map();
@@ -1463,7 +1506,9 @@ function mountAssembly(canvas, parts, opt){
   const place2=()=>{ placeBase(); dirty=true; }, apply2=()=>{ applyBase(); fgroup.visible=!!st.wire&&!st.explode; furnGroup.visible=st.furn!==false&&!st.explode; if(opt._exactGroup) opt._exactGroup.visible=furnGroup.visible;
     krepGroup.visible=krepGroupX.visible=false;
     krepItems.forEach(m=>{ const sel=isSel(m.userData.code); m.material=sel?(exact?furnSelGhost:furnSel):(exact?furnHidden:krepMat); });
-    furnItems.forEach(m=>{ const sel=isSel(m.userData.code); m.material=sel?(exact?furnSelGhost:furnSel):(exact?furnHidden:furnMat); }); dirty=true; };
+    furnItems.forEach(m=>{ const sel=isSel(m.userData.code);
+      if(m.userData.shape){ m.material=furnHidden; m.traverse(o=>{ if(o!==m&&o.isMesh&&o.userData.mat) o.material=sel?furnSel:o.userData.mat; }); return; }
+      m.material=sel?(exact?furnSelGhost:furnSel):(exact?furnHidden:furnMat); }); dirty=true; };
   const furnSelGhost=new THREE.MeshBasicMaterial({color:hiC,transparent:true,opacity:0.35,depthWrite:false});
   const furnSel=new THREE.MeshLambertMaterial({color:hiC});
   const pickable=()=>items.filter(m=>m.visible).concat(furnGroup.visible?furnItems:[]).concat(krepGroup.visible?krepItems:[]);
@@ -2222,11 +2267,14 @@ function catLoad(){ if(S.cat.data||S.cat.loading) return; S.cat.loading=true;
   fetch("catalog.json").then(r=>r.ok?r.json():Promise.reject(r.status)).then(j=>{ S.cat.data=j; j.items.forEach((it,i)=>{ it.i=i; it.s=(it.n+" "+it.a+" "+it.g).toLowerCase().replace(/ё/g,"е"); }); S.cat.loading=false; if(S.view==="catalog"||S.view==="order") render(); })
     .catch(()=>{ S.cat.loading=false; S.cat.err=true; if(S.view==="catalog") render(); }); }
 const CAT_SHEET=/^(Листовой|Кромочные|Погонные)/;
-function catIsSwatch(it){ return CAT_SHEET.test(it.g)||!!it.t; }
+function catIsSwatch(it){ return CAT_SHEET.test(it.g)||it.t!=null; }
+// превью текстуры: номер в листах catalog/s/NNN.jpg (10×10); старый вид — имя файла в catalog/t
+function catTex(t){ if(t==null||t==='') return ''; if(typeof t==='string') return `background-image:url(catalog/t/${t}.jpg)`; const c=(S.cat.data&&S.cat.data.sp&&S.cat.data.sp.c)||10, per=c*c, sh=Math.floor(t/per), j=t%per;
+  return `background-image:url(catalog/s/${String(sh).padStart(3,'0')}.jpg);background-size:${c*100}% ${c*100}%;background-position:${(j%c)/(c-1)*100}% ${Math.floor(j/c)/(c-1)*100}%`; }
 function decSprite(k){ const D=S.cat.dec; if(!D||k==null) return ""; const per=D.per, c=D.cols, sh=Math.floor(k/per), j=k%per;
   return `background-image:url(decor/s${sh}.jpg);background-size:${c*100}% ${c*100}%;background-position:${(j%c)/(c-1)*100}% ${Math.floor(j/c)/(c-1)*100}%`; }
 function catSw(it,cls){ if(it.d!=null&&!S.cat.dec) decLoad();
-  const bg=it.t?`background-image:url(catalog/t/${it.t}.jpg)`:(it.d!=null&&S.cat.dec)?decSprite(it.d):it.c?`background:#${it.c}`:"";
+  const bg=it.t!=null?catTex(it.t):(it.d!=null&&S.cat.dec)?decSprite(it.d):it.c?`background:#${it.c}`:"";
   return bg?`<span class="${cls||"cat-sw"}" style="${bg}"></span>`:`<span class="${cls||"cat-sw"} none" aria-hidden="true">${/Фурнитур|Hettich|Крепеж/.test(it.g)?"⚙":"▦"}</span>`; }
 function decLoad(){ if(S.cat.dec||S.cat.decL) return; S.cat.decL=true;
   fetch("decor.json").then(r=>r.ok?r.json():Promise.reject()).then(j=>{ S.cat.dec=j; j.items.forEach((d,k)=>{ d.k=k; d.s=(d.b+" "+d.n).toLowerCase().replace(/ё/g,"е"); }); if(S.view==="catalog"||S.view==="order") render(); }).catch(()=>{ S.cat.decL=false; }); }
@@ -3052,7 +3100,7 @@ function parseJSON(text){
   if(text.indexOf(String.fromCharCode(0xFFFD))>=0) toast("В файле испорчены русские буквы. Выгрузите заново новой версией скрипта.");
   const textures={}; if(j.textures&&typeof j.textures==="object") Object.keys(j.textures).forEach(k=>{ const t=j.textures[k]; if(t&&typeof t.data==="string"&&/^data:image\//.test(t.data)) textures[k]={file:t.file||"",data:t.data}; else if(t&&typeof t.url==="string"&&/^textures\/[^\/]+$/.test(t.url)) textures[k]={file:t.file||"",url:t.url}; });
   const fasteners=Array.isArray(j.fasteners)?j.fasteners.filter(f=>f&&Array.isArray(f.b)&&f.b.length===6).map(f=>{ const o={n:String(f.n||""),b:f.b.map(Number)}; if(f.g){ o.g=String(f.g); o.gi=f.gi; } if(Array.isArray(f.o)&&f.o.length===3&&f.o.every(v=>isFinite(+v))) o.o=f.o.map(Number); return o; }):[];
-  const furnMesh=j.furnMesh&&Array.isArray(j.furnMesh.m)?j.furnMesh:null;
+  const furnMesh=j.furnMesh&&(Array.isArray(j.furnMesh.m)||(j.furnMesh.v===2&&Array.isArray(j.furnMesh.it)))?j.furnMesh:null;
   return {parts, order:j.order||"", source:j.source||"json", textures, fasteners, furnMesh};
 }
 function parseCSV(text){
