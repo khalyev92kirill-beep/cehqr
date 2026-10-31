@@ -127,11 +127,11 @@ body.client #findForm{display:none}
 .cl-head{margin:4px 0 12px}.cl-head h1{margin:0 0 2px;font-size:24px}.cl-head .muted{font-size:14px}
 body.client .asm canvas{height:min(52vh,520px)}
 .cl-mats{display:grid;gap:8px;margin:12px 0 4px}
-.cl-mr{display:grid;grid-template-columns:86px 1fr;gap:8px;align-items:start}
+.cl-mr{display:grid;grid-template-columns:86px minmax(0,1fr);gap:8px;align-items:start}
 .cl-rl{font-size:13px;color:var(--muted);padding-top:7px}
-.cl-chips{display:flex;flex-wrap:wrap;gap:6px}
-.cl-m{display:inline-flex;align-items:center;gap:7px;padding:3px 10px 3px 3px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:13.5px;max-width:100%}
-.cl-m b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cl-chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.cl-m{display:inline-flex;align-items:center;gap:7px;padding:3px 10px 3px 3px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:13.5px;max-width:100%;min-width:0;border-radius:16px}
+.cl-m b{font-weight:600;min-width:0;overflow-wrap:anywhere;line-height:1.25}
 .cl-sw,.cl-m .cat-sw{width:26px;height:26px;flex:none;border-radius:50%;border:1px solid var(--line);background-size:cover;background-position:center}
 .ocards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
 .ocard{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;transition:box-shadow .15s,transform .15s}
@@ -478,6 +478,12 @@ body.has-full .asm.full.dq .dq-menu{touch-action:pan-y}
 .hcoord .tablebox{max-height:260px;overflow:auto;margin:0;border:0}
 .hcoord table{font-size:13px}
 .hcoord th.num{text-align:right}
+.ord-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ord-head .refr{flex:none}
+.ptr{position:fixed;left:50%;top:calc(70px + env(safe-area-inset-top,0px));z-index:80;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#fff;color:#1d1f1e;font:700 20px/1 system-ui;box-shadow:0 2px 10px rgba(0,0,0,.2);transform:translate(-50%,-60px);pointer-events:none}
+.ptr.ready{background:#f2913d;color:#fff}
+.ptr.go{animation:ptrs .7s linear infinite}
+@keyframes ptrs{from{transform:translate(-50%,30px) rotate(0)}to{transform:translate(-50%,30px) rotate(360deg)}}
 .cut-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .hcoord tbody tr{cursor:pointer}
 .hcoord tbody tr.on td{background:#ffe9d6}
@@ -761,7 +767,16 @@ const esc = v => String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&
 const fmt = n => { const v=Math.round(Number(n)*10)/10; return String(v).replace(".",","); };
 const pad = (n,w) => String(n).padStart(w,"0");
 
-function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,3200); }
+// вибрация: Android — navigator.vibrate; iPhone (iOS 18+) — системный переключатель даёт короткий отклик
+function hapticOn(){ try{ return localStorage.getItem("cehqr-haptic")!=="0"; }catch(_){ return true; } }
+function haptic(kind){ if(!hapticOn()) return; const now=Date.now(); if(haptic._t&&now-haptic._t<60&&kind==="tap") return; haptic._t=now;
+  const ms={tap:8,sel:12,long:22,ok:[14,60,14],err:[45,60,45]}[kind]||8;
+  try{ if(navigator.vibrate&&navigator.vibrate(ms)) return; }catch(_){}
+  try{ if(!haptic.l){ const l=document.createElement("label"); l.setAttribute("aria-hidden","true"); l.style.cssText="position:fixed;left:-99px;top:-99px;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none";
+      l.innerHTML='<input type="checkbox" switch tabindex="-1">'; document.body.appendChild(l); haptic.l=l; }
+    haptic.l.click(); if(kind==="ok"||kind==="err") setTimeout(()=>{ try{ haptic.l.click(); }catch(_){} },90); }catch(_){} }
+function toast(msg){ try{ if(/не удалось|ошибк|нет связи|не сохран|не отправ|не принят|не похоже/i.test(msg)) haptic("err"); else if(/скопирован|сохранён|отправлен|привязан|готово|добавлен/i.test(msg)) haptic("ok"); }catch(_){}
+  const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,3200); }
 
 /* ---------- данные: разворот заказа в список деталей с кодами ---------- */
 function expandParts(orderId, list){
@@ -1544,7 +1559,7 @@ function mountAssembly(canvas, parts, opt){
   const twoPinch=()=>{ const [a,b]=[...ptrs.values()]; pinch={d:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),dist:st.dist,mx:(a.x+b.x)/2,my:(a.y+b.y)/2,ang:Math.atan2(b.y-a.y,b.x-a.x)}; drag=null; };
   canvas.onpointerdown=e=>{ stopSpin(); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
     if(ptrs.size===1){ moved=false; tap={x:e.clientX,y:e.clientY,t:performance.now(),touch:e.pointerType!=="mouse"};
-      if(tap.touch&&!st.measure&&!st.steps&&!opt.focus){ const t=tap, ex=e.clientX, ey=e.clientY; t.long=setTimeout(()=>{ if(moved||ptrs.size!==1||tap!==t) return; t.longArm=true; try{ navigator.vibrate&&navigator.vibrate(18); }catch(_){} },500); }
+      if(tap.touch&&!st.measure&&!st.steps&&!opt.focus){ const t=tap, ex=e.clientX, ey=e.clientY; t.long=setTimeout(()=>{ if(moved||ptrs.size!==1||tap!==t) return; t.longArm=true; try{ haptic("long"); }catch(_){} },500); }
       const pan=e.button===1||e.button===2||e.shiftKey||(st.ortho&&e.pointerType==="mouse"); startDrag(e.clientX,e.clientY,pan); }
     if(ptrs.size===2){ if(tap&&tap.long) clearTimeout(tap.long); twoPinch(); moved=true; tap=null; } };
   let hoverQ=null;
@@ -1587,7 +1602,7 @@ function mountAssembly(canvas, parts, opt){
     if(e.type==="pointerup"&&tap&&tap.touch&&!moved&&!ptrs.size&&performance.now()-tap.t<450){
       const now=performance.now();
       if(lastTap&&now-lastTap.t<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<30){ lastTap=null; sheetAt(e.clientX,e.clientY); }
-      else { lastTap={x:e.clientX,y:e.clientY,t:now}; pick(e); try{ st.selected&&navigator.vibrate&&navigator.vibrate(8); }catch(_){} }
+      else { lastTap={x:e.clientX,y:e.clientY,t:now}; pick(e); try{ (st.selected||st.hideMode)&&haptic("sel"); }catch(_){} }
       tap.done=true; }
     drag=null; };
   canvas.onclick=e=>{ if(tap&&tap.done){ tap=null; return; } if(!moved) pick(e); };
@@ -2399,7 +2414,7 @@ document.addEventListener("input", ev=>{ const t=ev.target; if(!t.classList||!t.
 function scanBtn(){ if(!canStage()||!S.current.parts.length) return "";
   return `<button type="button" class="btn fv-btn" data-act="scan-open"><span class="fv-ic">📷</span><span><b>Сканер деталей</b><small>наводите камеру на QR подряд — этап отмечается сразу, видно, чего не хватает</small></span></button>`; }
 function scanParse(raw){ let s=String(raw||"").trim(); const h=s.indexOf("#"); if(h>=0) s=s.slice(h+1); s=s.split("~")[0]; try{ s=decodeURIComponent(s); }catch(_){} return s.trim(); }
-function scanBeep(ok){ try{ navigator.vibrate&&navigator.vibrate(ok?35:[60,60,60]); }catch(_){}
+function scanBeep(ok){ try{ haptic(ok?"ok":"err"); }catch(_){}
   try{ const A=scanBeep.a||(scanBeep.a=new (window.AudioContext||window.webkitAudioContext)()), o=A.createOscillator(), g=A.createGain(); o.frequency.value=ok?1320:330; g.gain.value=0.08; o.connect(g); g.connect(A.destination); o.start(); o.stop(A.currentTime+(ok?0.09:0.25)); }catch(_){} }
 function scanLoadJsQR(){ const urls=["https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js","https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"];
   const one=u=>new Promise(res=>{ const s=document.createElement("script"); s.src=u; s.onload=()=>res(!!window.jsQR); s.onerror=()=>res(false); document.head.appendChild(s); });
@@ -2489,7 +2504,7 @@ async function scanNumLoop(video,note){
 }
 function scanSuggest(n){ if(SCAN.sugN===n) return; SCAN.sugN=n; const el=document.querySelector("#scanWin .scan-sug"); if(!el) return;
   const ps=S.current.parts.filter(p=>String(p.art||"").trim()===n), todo=ps.filter(p=>stageOf(p.code)<SCAN.n), p=todo[0]||ps[0];
-  try{ navigator.vibrate&&navigator.vibrate(15); }catch(_){}
+  try{ haptic("sel"); }catch(_){}
   el.hidden=false; el.innerHTML=`<div><b>Поз. ${esc(n)}</b> — ${esc(p.name)} <span class="muted mono">${fmt(p.L)}×${fmt(p.W)}</span>${ps.length>1?` <span class="muted">· таких ${ps.length}, без этапа ${todo.length}</span>`:""}</div>
     ${todo.length?`<button type="button" class="btn" data-sug="${esc(p.code)}">Отметить «${esc(STAGES[SCAN.n].name)}»</button>`:`<span class="muted">все такие уже «${esc(STAGES[SCAN.n].name)}»</span>`}`; }
 function scanClose(){ if(SCAN.raf) cancelAnimationFrame(SCAN.raf); SCAN.raf=0; if(SCAN.stream){ SCAN.stream.getTracks().forEach(t=>t.stop()); SCAN.stream=null; }
@@ -2656,6 +2671,7 @@ function dqMenu(){
     if(has("iss")) h+=it("dq-go","Проверка заказа",null,' data-to="iss"');
     h+=`<hr>`+it("order-qr","QR проекта для мастеров")+it("to-verstak","Скопировать для Верстака"); if(S.site&&!S.canEdit&&!S.pin&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())) h+=it("client-mode","Вид для клиента"); }
   else h+=it("full-mode","Режим мастера");
+  h+=`<hr>`+it("haptic","Вибрация при нажатии",hapticOn());
   h+=it("home","Все заказы");
   return h;
 }
@@ -3173,7 +3189,7 @@ function render(){
 }
 function viewOrders(){
   const ids=Object.keys(S.orders).sort((a,b)=>String(S.orders[b].createdAt||"").localeCompare(String(S.orders[a].createdAt||"")));
-  let h=`<div class="head"><h1>Заказы в работе</h1></div>`;
+  let h=`<div class="head ord-head"><h1>Заказы в работе</h1><button type="button" class="btn sm refr" data-act="refresh" title="Обновить список и картинки заказов">↻ Обновить</button></div>`;
 
   if(!ids.length){
     h+=`<div class="empty"><h2>Заказов пока нет</h2><p class="muted">Выгрузите заказ из Базиса скриптом «Технолог 3D» и загрузите папку сайта на хостинг.</p>
@@ -3199,7 +3215,8 @@ function thumbGet(id){ const k=thumbKey(id); if(TH.mem[k]) return TH.mem[k]; try
 async function thumbParts(id){
   if(S.current.orderId===id&&S.current.parts.length) return {parts:S.current.parts,tex:{}};
   if(typeof siteOrderText!=="function") return null;   // в приложении Claude — только у открытого заказа
-  const r=await fetch("orders/"+encodeURIComponent(id)+".json",{cache:"force-cache"}); if(!r.ok) return null;
+  let fresh=false; try{ fresh=Date.now()-(+sessionStorage.getItem("cehqr-fresh")||0)<90000; }catch(_){}
+  const r=await fetch("orders/"+encodeURIComponent(id)+".json",{cache:fresh?"no-cache":"force-cache"}); if(!r.ok) return null;
   const res=parseJSON(await siteOrderText(id,await r.text())); const tex={};
   Object.keys(res.textures||{}).forEach(m=>{ const t=res.textures[m]; tex[m]=t.url||t.data; });
   return {parts:expandParts(id,res.parts),tex};
@@ -3805,11 +3822,13 @@ document.addEventListener("click", async ev=>{
   else if(a==="order-qr-id"){ orderQrModal(t.dataset.id); }
   else if(a==="qr-close"){ const m=$("#qrModal"); m&&m.remove(); }
   else if(a==="to-verstak"){ verstakCopy(); }
+  else if(a==="refresh"){ pageRefresh(); }
+  else if(a==="haptic"){ const on=!hapticOn(); try{ localStorage.setItem("cehqr-haptic",on?"1":"0"); }catch(_){} if(on) haptic("ok"); toast(on?"Вибрация включена":"Вибрация выключена"); }
   else if(a==="hole-hi"){ holeHi(+t.dataset.i, t); }
   else if(a==="vs-x"){ const m=$("#vsModal"); m&&m.remove(); }
   else if(a==="qr-copy"){ const inp=$("#qrLink"); try{ await navigator.clipboard.writeText(inp.value); toast("Ссылка скопирована"); }catch(e){ inp.select(); toast("Выделил ссылку — скопируйте её"); } }
   else if(a==="qr-pdf"){ t.disabled=true; await orderSheetPdf(t.dataset.id); t.disabled=false; }
-  else if(a==="dq-close"){ S.dqFull=false; document.body.classList.remove("has-full"); setView("orders"); }
+  else if(a==="dq-close"){ S.dqFull=false; document.body.classList.remove("has-full"); try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){} setView("orders"); }
   else if(a==="dq-open"){ S.dqFull=true; render(); window.scrollTo(0,0); }
   else if(a==="dq-menu"){ const m=t.closest(".asm").querySelector(".dq-menu"); if(m){ if(m.hidden){ m.innerHTML=dqMenu(); m.hidden=false; } else m.hidden=true; } }
   else if(a==="dq-go"){ dqGo(t.dataset.to); }
@@ -3935,6 +3954,22 @@ function plFilter(){ const i=$("#plQ"), b=$("#plBody"); if(!i||!b) return; const
   if(window.visualViewport) visualViewport.addEventListener("resize",()=>{ if(full()) unzoom(); });
   new MutationObserver(()=>{ if(full()) unzoom(); }).observe(document.body,{attributes:true,attributeFilter:["class"]});
 })();
+// обновить страницу: свежий список, заказы и картинки (в приложении с иконкой нет кнопки браузера)
+function pageRefresh(){ try{ Object.keys(localStorage).forEach(k=>{ if(k.indexOf("cehqr-th4-")===0) localStorage.removeItem(k); }); sessionStorage.setItem("cehqr-fresh",String(Date.now())); }catch(_){}
+  const p=document.querySelector(".ptr"); if(p){ p.classList.add("go"); }
+  if(S.view==="orders"){ try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){} }
+  location.reload(); }
+// потянуть список заказов вниз от самого верха — обновить
+(function(){ let y0=null, dy=0, el=null;
+  const ok=()=>document.body.dataset.page==="orders"&&!document.body.classList.contains("has-full")&&window.scrollY<=0;
+  document.addEventListener("touchstart",e=>{ if(e.touches.length!==1||!ok()){ y0=null; return; } y0=e.touches[0].clientY; dy=0; },{passive:true});
+  document.addEventListener("touchmove",e=>{ if(y0==null) return; dy=e.touches[0].clientY-y0; if(dy<=0){ if(el) el.style.transform="translate(-50%,-60px)"; return; }
+    if(!el){ el=document.createElement("div"); el.className="ptr"; el.textContent="↻"; document.body.appendChild(el); }
+    const k=Math.min(1,dy/90); el.style.transform=`translate(-50%,${-60+k*90}px) rotate(${k*270}deg)`; el.classList.toggle("ready",dy>=90); },{passive:true});
+  document.addEventListener("touchend",()=>{ if(y0==null) return; const go=dy>=90; y0=null; if(go){ haptic("long"); pageRefresh(); return; } else if(el){ el.remove(); el=null; } });
+})();
+// лёгкий отклик на нажатие кнопок, вкладок, карточек
+document.addEventListener("click",e=>{ const t=e.target&&e.target.closest&&e.target.closest('button,[data-act],summary,.ocard,a.btn,label.btn,[role="tab"]'); if(t&&!t.disabled&&t.tagName!=="CANVAS") haptic("tap"); },true);
 function dqSync(){ if(!asm) return; const st=asm.st; document.querySelectorAll('.dq-bar [data-act="dq-block"]').forEach(b=>b.setAttribute("aria-pressed",String(!!st.blockMode)));
   document.querySelectorAll('.dq-bar [data-act="dq-hide"]').forEach(b=>b.setAttribute("aria-pressed",String(!!st.hideMode))); document.querySelectorAll('.dq-bar [data-act="asm-steps"]').forEach(b=>b.setAttribute("aria-pressed",String(!!st.steps))); }
 document.addEventListener("click", ev=>{ if(document.querySelector(".dq-bar")) setTimeout(dqSync,0); const m=document.querySelector(".dq-menu:not([hidden])"); if(!m) return; const t=ev.target;
