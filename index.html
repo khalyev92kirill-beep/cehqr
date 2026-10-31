@@ -478,6 +478,19 @@ body.has-full .asm.full.dq .dq-menu{touch-action:pan-y}
 .hcoord .tablebox{max-height:260px;overflow:auto;margin:0;border:0}
 .hcoord table{font-size:13px}
 .hcoord th.num{text-align:right}
+.hcoord tbody tr{cursor:pointer}
+.hcoord tbody tr.on td{background:#ffe9d6}
+.prob-card{max-width:520px;max-height:86vh;overflow:auto}
+.prob-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}.prob-h h2{margin:0}
+.prob-p{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.prob-card .notes-card{box-shadow:none;border:1px solid var(--line);padding:12px}
+.prob-sub{font-size:14px;margin:16px 0 8px}
+.prob-list{display:grid;gap:6px}
+.prob-it{display:flex;gap:10px;align-items:flex-start;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px;cursor:pointer;font:inherit;color:inherit}
+.prob-it img,.prob-it i{width:52px;height:52px;flex:none;border-radius:8px;object-fit:cover;display:grid;place-items:center;background:var(--sunk);font-style:normal}
+.prob-it span{display:grid;gap:2px;min-width:0}.prob-it small{color:var(--muted)}.prob-it em{font-style:normal;font-size:13px}
+.hl-ring{fill:none;stroke:#e8590c;stroke-width:3;pointer-events:none;animation:hlr 1s ease-in-out 4 both}
+@keyframes hlr{0%,100%{stroke-opacity:1;stroke-width:3}50%{stroke-opacity:.25;stroke-width:6}}
 .asm-pick.tag.acts{flex-wrap:wrap;width:min(480px,calc(100% - 16px));max-width:none;box-sizing:border-box}
 .asm-pick.tag.acts .tg-t{min-width:0;flex:1 1 0}
 .asm-pick.tag .tg-acts{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding-top:5px;margin-top:1px;border-top:1px solid var(--line)}
@@ -992,20 +1005,20 @@ function drillMap(p, mode){
   lab("L2",X(L/2),Y(W)-10,"middle"); lab("W2",X(L)+18,Y(W/2),"middle",true);
   // отверстия
   const xs=new Set(), ys=new Set();
-  (p.holes||[]).forEach(h=>{
-    const r=Math.max(2.2,h.d/2*s);
+  (p.holes||[]).forEach((h,hi)=>{
+    const r=Math.max(2.2,h.d/2*s), dh=` data-hi="${hi}"`;
     if(h.face==="A"||h.face==="B"){
       xs.add(+h.x); ys.add(+h.y);
       const through=h.depth>=p.T;
       g+= h.face==="A"
-        ? `<circle cx="${X(h.x)}" cy="${Y(h.y)}" r="${r}" fill="${through?"var(--surface)":"var(--hole)"}" stroke="var(--hole)" stroke-width="1.4"/>`
-        : `<circle cx="${X(h.x)}" cy="${Y(h.y)}" r="${r}" fill="none" stroke="var(--hole-b)" stroke-width="1.4" stroke-dasharray="3 2"/>`;
+        ? `<circle${dh} cx="${X(h.x)}" cy="${Y(h.y)}" r="${r}" fill="${through?"var(--surface)":"var(--hole)"}" stroke="var(--hole)" stroke-width="1.4"/>`
+        : `<circle${dh} cx="${X(h.x)}" cy="${Y(h.y)}" r="${r}" fill="none" stroke="var(--hole-b)" stroke-width="1.4" stroke-dasharray="3 2"/>`;
     } else {
       const dep=Math.max(6,h.depth*s), hw=Math.max(2.5,h.d/2*s);
       if(h.face==="W1"||h.face==="W2"){ ys.add(+h.y); const x0=h.face==="W1"?X(0):X(L)-dep;
-        g+=`<rect x="${x0}" y="${Y(h.y)-hw}" width="${dep}" height="${hw*2}" fill="none" stroke="var(--hole)" stroke-width="1.2" stroke-dasharray="4 2"/>`; }
+        g+=`<rect${dh} x="${x0}" y="${Y(h.y)-hw}" width="${dep}" height="${hw*2}" fill="none" stroke="var(--hole)" stroke-width="1.2" stroke-dasharray="4 2"/>`; }
       else { xs.add(+h.x); const y0=h.face==="L1"?Y(0)-dep:Y(W);
-        g+=`<rect x="${X(h.x)-hw}" y="${y0}" width="${hw*2}" height="${dep}" fill="none" stroke="var(--hole)" stroke-width="1.2" stroke-dasharray="4 2"/>`; }
+        g+=`<rect${dh} x="${X(h.x)-hw}" y="${y0}" width="${hw*2}" height="${dep}" fill="none" stroke="var(--hole)" stroke-width="1.2" stroke-dasharray="4 2"/>`; }
     }
   });
   // размеры
@@ -1436,6 +1449,18 @@ function mountAssembly(canvas, parts, opt){
   const furnSel=new THREE.MeshLambertMaterial({color:hiC});
   const pickable=()=>items.filter(m=>m.visible).concat(furnGroup.visible?furnItems:[]).concat(krepGroup.visible?krepItems:[]);
   st.apply=apply2; apply2(); place2();
+  // сборка при открытии: детали слетаются снизу вверх, ~1,5 с (как в detalQR)
+  if(opt.intro&&!st.explode&&!matchMedia("(prefers-reduced-motion: reduce)").matches){
+    let y0=1e9,y1=-1e9; items.forEach(m=>{ y0=Math.min(y0,m.userData.home.y); y1=Math.max(y1,m.userData.home.y); });
+    const off=items.map((m,i)=>{ const h=m.userData.home, d=new THREE.Vector3(h.x,0,h.z); if(d.lengthSq()<1e-6) d.set(Math.sin(i*2.4),0,Math.cos(i*2.4)); d.normalize();
+      return d.multiplyScalar(size*(0.7+((i*37)%10)/25)).add(new THREE.Vector3(0,size*0.9,0)); });
+    const delay=items.map(m=>(m.userData.home.y-y0)/((y1-y0)||1)*650), T0=performance.now(), fv=furnGroup.visible;
+    furnGroup.visible=false;
+    const step=()=>{ const t=performance.now()-T0; let busy=false;
+      items.forEach((m,i)=>{ const k=Math.max(0,Math.min(1,(t-delay[i])/750)), e=1-Math.pow(1-k,3); if(k<1) busy=true; m.position.copy(m.userData.home).addScaledVector(off[i],1-e); });
+      dirty=true; if(busy&&asm&&asm.st===st) requestAnimationFrame(step); else { furnGroup.visible=fv; apply2(); } };
+    requestAnimationFrame(step);
+  }
   try{ if(matchMedia("(pointer:coarse)").matches&&!localStorage.getItem("cehqr-gest2")){ const hb=document.createElement("div"); hb.className="gest-hint";
     hb.innerHTML=`<b>Как управлять</b><span>☝ один палец — вращать</span><span>↕ листать страницу — касаясь выше или ниже модели</span><span>✌ два пальца — двигать и приближать</span><span>👆👆 два нажатия — окошко детали</span><span>☝ долгое нажатие — выбрать несколько</span><i>коснитесь модели — подсказка исчезнет</i>`;
     const wrap=canvas.parentElement; wrap.appendChild(hb); const close=()=>{ hb.remove(); try{ localStorage.setItem("cehqr-gest2","1"); }catch(_){} };
@@ -2519,6 +2544,7 @@ function showPick(code){
   const acts=inPart?"":`<span class="tg-acts"><button type="button" class="tg-b main" data-act="part" data-code="${esc(p.code)}" title="Чертёж и присадка">${IC.draw}<span>Присадка${nh?` · ${nh}`:""}</span></button>`
     +`<button type="button" class="tg-b" data-act="asm-iso" data-code="${esc(p.code)}" title="Показать только эту деталь">${IC.iso}<span>Только эта</span></button>`
     +`<button type="button" class="tg-b" data-act="asm-zoom" data-code="${esc(p.code)}" title="Приблизить к детали">${IC.zoom}<span>Приблизить</span></button>`
+    +(clientMode()?"":`<button type="button" class="tg-b" data-act="prob" data-code="${esc(p.code)}" title="Сообщить о проблеме с деталью">⚠<span>Проблема</span></button>`)
     +(seq.length>1&&si>=0?`<span class="tg-nav"><button type="button" class="tg-b" data-act="asm-nav" data-d="-1" title="Предыдущая деталь" aria-label="Предыдущая деталь">‹</button><span class="mono">${si+1}/${seq.length}</span><button type="button" class="tg-b" data-act="asm-nav" data-d="1" title="Следующая деталь" aria-label="Следующая деталь">›</button></span>`:"")+`</span>`;
   el.innerHTML=`${p.art?`<span class="tg-pos" title="Позиция в Базисе">${esc(p.art)}</span>`:""}<span class="tg-t"><b>${esc(p.name)}</b><small><span class="mono">${fmt(p.L)}×${fmt(p.W)}×${fmt(p.T)}</span>${stagesOn()?` <i class="tg-st" style="background:${stg.color}" title="${esc(stg.name)}"></i>`:""}</small>`
     +(()=>{ const m=matShort(p.material); return m?`<small class="tg-m" title="${esc(String(p.material).split(/[\r\n]/)[0])}"><b>${esc(m.t)}</b>${m.d?` · ${esc(m.d)}`:""}</small>`:""; })()+`</span>`
@@ -2544,7 +2570,7 @@ function dqBar(){
   const st=(asm&&asm.st)||S.asmOrder||{}, cl=clientMode();
   const b=(act,ic,title,on,cls)=>`<button type="button" class="dq-b${cls?" "+cls:""}" data-act="${act}" title="${title}" aria-label="${title}"${on!=null?` aria-pressed="${!!on}"`:""}>${ic}</button>`;
   return `<div class="dq-bar"><div class="dq-l">${b("dq-shot",DQI.shot,"Снимок 3D",null,"hot")}${b("dq-block",DQI.block,"Выбор блока",st.blockMode)}${cl?"":b("asm-steps",DQI.play,"Сборка по шагам",!!st.steps)}${b("dq-hide",DQI.eye,"Скрывать касанием",st.hideMode)}</div>
-    <div class="dq-r">${cl?"":`<button type="button" class="dq-b" data-act="dq-go" data-to="fv" title="Вид спереди с размерами" aria-label="Вид спереди с размерами">${DQI.draw}</button>`}${b("dq-menu",DQI.more,"Меню")}${cl?"":b("dq-warn",DQI.warn,"Проверка заказа")}${b("dq-close",DQI.close,"Закрыть — к списку заказов")}</div></div>
+    <div class="dq-r">${cl?"":`<button type="button" class="dq-b" data-act="dq-go" data-to="fv" title="Вид спереди с размерами" aria-label="Вид спереди с размерами">${DQI.draw}</button>`}${b("dq-menu",DQI.more,"Меню")}${cl?"":b("dq-warn",DQI.warn,"Сообщить о проблеме")}${b("dq-close",DQI.close,"Закрыть — к списку заказов")}</div></div>
     <div class="dq-cube" aria-label="Виды"><div class="cb"><button type="button" class="f fr" data-act="dq-face" data-f="front">перед</button><button type="button" class="f bk" data-act="dq-face" data-f="back">зад</button><button type="button" class="f rt" data-act="dq-face" data-f="right">прав</button><button type="button" class="f lf" data-act="dq-face" data-f="left">лев</button><button type="button" class="f tp" data-act="dq-face" data-f="top">верх</button><button type="button" class="f bt" data-act="dq-face" data-f="bottom">низ</button></div></div>
     <button type="button" class="dq-help" data-act="dq-help" aria-label="Как пользоваться">?</button><div class="dq-menu" hidden></div>`;
 }
@@ -2558,6 +2584,7 @@ function dqMenu(){
   h+=`<hr>`;
   if(!cl){ if(has("fv")) h+=it("dq-go","Вид спереди с размерами",null,' data-to="fv"');
     [["list","Список деталей"],["furn","Фурнитура — список"],["cut","Раскрой листов"],["fac","Фасады"],["frame","Рамки и стекло"],["buy","Закупка"],["work","Объём работы"]].forEach(([k,t])=>{ if(has(k)) h+=it("dq-go",t,null,` data-to="${k}"`); });
+    if(has("iss")) h+=it("dq-go","Проверка заказа",null,' data-to="iss"');
     h+=`<hr>`+it("order-qr","QR проекта для мастеров")+it("to-verstak","Скопировать для Верстака"); if(S.site&&!S.canEdit&&!S.pin&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())) h+=it("client-mode","Вид для клиента"); }
   else h+=it("full-mode","Режим мастера");
   h+=it("home","Все заказы");
@@ -2576,6 +2603,37 @@ function verstakText(){ const oid=S.current.orderId, o=S.orders[oid]||{}, parts=
 function verstakCopy(){ const t=verstakText();
   const fall=()=>{ const m=document.createElement("div"); m.className="modal"; m.id="vsModal"; m.innerHTML=`<div class="modal-card" role="dialog" aria-label="Для Верстака"><h2 style="margin:0 0 8px">Для Верстака</h2><p class="note" style="margin:0 0 8px">Скопируйте и вставьте в Верстаке: заказ → «Технолог и 3D» → «Вставить из Технолог 3D».</p><textarea readonly style="width:100%;min-height:170px;font:13px/1.4 var(--f-mono)">${esc(t)}</textarea><div style="text-align:right;margin-top:10px"><button class="btn primary" data-act="vs-x">Готово</button></div></div>`; document.body.appendChild(m); const ta=m.querySelector("textarea"); ta.focus(); ta.select(); };
   try{ navigator.clipboard.writeText(t).then(()=>toast("Скопировано для Верстака. Вставьте там: «Технолог и 3D» → «Вставить из Технолог 3D»"),fall); }catch(_){ fall(); } }
+// подсветка отверстия на чертеже детали: кольцо мигает вокруг него
+function holeHi(i, row){
+  document.querySelectorAll(".hcoord tr.on").forEach(r=>r.classList.remove("on")); row&&row.classList.add("on");
+  const svg=document.querySelector(".part-view .mapbox svg"), el=svg&&svg.querySelector(`[data-hi="${i}"]`); if(!el) return;
+  svg.querySelectorAll(".hl-ring").forEach(x=>x.remove());
+  const b=el.getBBox(), cx=b.x+b.width/2, cy=b.y+b.height/2, r=Math.max(b.width,b.height)/2+9;
+  const ns="http://www.w3.org/2000/svg", c=document.createElementNS(ns,"circle");
+  c.setAttribute("class","hl-ring"); c.setAttribute("cx",cx); c.setAttribute("cy",cy); c.setAttribute("r",r); svg.appendChild(c);
+  const box=svg.closest(".mapbox"), rr=box.getBoundingClientRect();
+  if(rr.top<60||rr.bottom>innerHeight) box.scrollIntoView({behavior:"smooth",block:"center"});
+}
+// «Сообщить о проблеме»: мастер выбирает деталь в 3D → пишет, что не так, + фото; технолог видит все замечания заказа
+function probModal(){
+  const oid=S.current.orderId, sel=asm&&asm.st&&asm.st.selected, code=sel&&!String(sel).startsWith("F:")?sel:null, p=code&&withRules(partByCode(code));
+  S._probTry=S._probTry||{};
+  if(typeof siteLoadNotes==="function"&&S.notes&&!S.notes[oid]&&!S._probTry[oid]){ S._probTry[oid]=1; siteLoadNotes(oid).then(()=>{ if($("#probModal")&&S.notes[oid]) probModal(); }); }
+  const all=((S.notes||{})[oid]||[]).slice().sort((a,b)=>String(b.when).localeCompare(String(a.when)));
+  const admin=typeof siteIsAdmin==="function"&&siteIsAdmin(), canNotes=typeof siteNotesHtml==="function"&&S.site&&S.site.stagesUrl;
+  let h=`<div class="modal-card prob-card" role="dialog" aria-label="Сообщить о проблеме"><div class="prob-h"><h2>Сообщить о проблеме</h2><button type="button" class="fv-x" data-act="prob-x" aria-label="Закрыть">✕</button></div>`;
+  if(!canNotes) h+=`<p class="note">Замечания работают на сайте цеха.</p>`;
+  else if(p){ h+=`<p class="prob-p">${p.art?`<span class="tg-pos">${esc(p.art)}</span>`:""}<b>${esc(p.name)}</b> <span class="mono muted">${fmt(p.L)}×${fmt(p.W)}×${fmt(p.T)}</span></p>`;
+    const nh=siteNotesHtml(p); h+=nh||"";
+    if(!S.pin) h+=`<p class="note" style="margin:8px 0">Чтобы написать замечание, войдите один раз на этом телефоне.</p><button type="button" class="btn primary" data-act="prob-login">Войти (имя и PIN цеха)</button>`; }
+  else h+=`<p class="note" style="margin:0 0 10px">Нажмите на деталь в 3D, потом снова ⚠ — или в карточке детали кнопку «Проблема».</p>`;
+  if(all.length) h+=`<h3 class="prob-sub">Все замечания по заказу · ${all.length}</h3><div class="prob-list">${all.map(n=>{ const q=partByCode(n.code);
+      return `<button type="button" class="prob-it" data-act="prob-go" data-code="${esc(n.code)}">${n.photo?`<img src="${esc(n.photo)}" alt="" loading="lazy">`:"<i>⚠</i>"}<span><b>${q?(q.art?"поз. "+esc(q.art)+" · ":"")+esc(q.name):esc(n.code)}</b><small>${esc(n.who||"")} · ${esc(new Date(n.when).toLocaleString("ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}))}</small><em>${esc(n.text||"")}</em></span></button>`; }).join("")}</div>`;
+  if(admin&&dqTarget("iss")) h+=`<p style="margin:12px 0 0"><button type="button" class="btn sm" data-act="dq-go" data-to="iss">Проверка заказа (ошибки в выгрузке)</button></p>`;
+  h+=`</div>`;
+  let m=$("#probModal"); if(!m){ m=document.createElement("div"); m.className="modal"; m.id="probModal"; document.body.appendChild(m); }
+  m.innerHTML=h;
+}
 function dqOpenBtn(){ return `<button type="button" class="btn fv-btn dq-open" data-act="dq-open"><span class="fv-ic">🧊</span><span><b>Открыть 3D изделия</b><small>на весь экран: детали, присадка, разбор</small></span></button>`; }
 function dqExit(){ S.dqFull=false; document.body.classList.remove("has-full"); render(); }
 function dqGo(k){ dqExit(); if(k==="fv"){ S.fvWin=true; S.fvFromDq=true; render(); return; }
@@ -3032,7 +3090,8 @@ function render(){
     v.innerHTML=viewOrder();
     plFilter();
     S.asmOrder=S.asmOrder&&S.asmOrder.oid===S.current.orderId?S.asmOrder:{oid:S.current.orderId};
-    mountAssembly($("#asm"), S.current.parts, {state:S.asmOrder, onPick:showPick, fasteners:curFasteners(), furnMesh:S.current.furnMesh}); showPick(S.asmOrder.selected); syncShowAll();
+    const intro=S.dqFull&&S.introOid!==S.current.orderId; if(intro) S.introOid=S.current.orderId;
+    mountAssembly($("#asm"), S.current.parts, {state:S.asmOrder, intro, onPick:showPick, fasteners:curFasteners(), furnMesh:S.current.furnMesh}); showPick(S.asmOrder.selected); syncShowAll();
     document.querySelectorAll(".fv-box").forEach(svgZoom); }
   else if(S.view==="part"){ v.innerHTML=viewPart(); const p=withRules(partByCode(S.partCode)); if(p) mount3D(p);
     S.asmPart=S.asmPart&&S.asmPart.oid===S.current.orderId?S.asmPart:{oid:S.current.orderId};
@@ -3218,11 +3277,11 @@ function viewPart(){
       h+=`<tr><td>${FACE_NAMES[f]||esc(f)}</td>${fromBazis?`<td>${esc(x.name)}${x.note?`<div class="note">${esc(x.note)}</div>`:""}</td>`:""}<td class="num mono">${x.approx?"≈":""}${fmt(x.d)}</td><td class="num mono">${through?"сквозное":(x.approx?"≈":"")+fmt(x.depth)}</td><td class="num mono">${x.n}</td></tr>`; });
     h+=`</tbody></table></div>`;
     // координаты каждого отверстия — по группам, как на чертеже (X от левого края, Y от нижнего)
-    h+=`<h3 class="hc-h">Координаты отверстий</h3>`;
-    rows.forEach((k,gi)=>{ const x=grp[k], f=x.face, list=p.holes.filter(y=>[y.face,y.d,y.depth,y.name||"",y.note||"",y.approx?1:0].join("|")===k).slice().sort((a,b)=>(+a.x)-(+b.x)||(+a.y)-(+b.y));
+    h+=`<h3 class="hc-h">Координаты отверстий</h3><p class="note" style="margin:0 0 8px">Нажмите на строку — отверстие мигнёт на чертеже.</p>`;
+    rows.forEach((k,gi)=>{ const x=grp[k], f=x.face, list=p.holes.map((y,i)=>Object.assign({_i:i},y)).filter(y=>[y.face,y.d,y.depth,y.name||"",y.note||"",y.approx?1:0].join("|")===k).sort((a,b)=>(+a.x)-(+b.x)||(+a.y)-(+b.y));
       const thr=+x.depth>=p.T&&(f==="A"||f==="B"), side=f==="A"||f==="B";
       h+=`<details class="hcoord"${rows.length===1?" open":""}><summary><b class="mono">${x.n}× Ø${fmt(x.d)}${thr?"":`×${fmt(x.depth)}`}</b> <span class="muted">${FACE_NAMES[f]||esc(f)}${x.name?` · ${esc(x.name)}`:""}</span></summary>
-        <div class="tablebox"><table><thead><tr><th class="num">№</th><th class="num">X</th><th class="num">Y</th>${side?"":`<th class="num">Глубина</th>`}</tr></thead><tbody>${list.map((y,i)=>`<tr><td class="num mono">${i+1}</td><td class="num mono">${fmt(+y.x)}</td><td class="num mono">${fmt(+y.y)}</td>${side?"":`<td class="num mono">${fmt(y.depth)}</td>`}</tr>`).join("")}</tbody></table></div></details>`; });
+        <div class="tablebox"><table><thead><tr><th class="num">№</th><th class="num">X</th><th class="num">Y</th>${side?"":`<th class="num">Глубина</th>`}</tr></thead><tbody>${list.map((y,i)=>`<tr data-act="hole-hi" data-i="${y._i}" title="Показать на чертеже"><td class="num mono">${i+1}</td><td class="num mono">${fmt(+y.x)}</td><td class="num mono">${fmt(+y.y)}</td>${side?"":`<td class="num mono">${fmt(y.depth)}</td>`}</tr>`).join("")}</tbody></table></div></details>`; });
     if(anyApprox) h+=`<p class="note">≈ — для этого крепежа нет правила, размер взят по габариту из Базиса. Правила настраиваются во вкладке «Импорт из Базиса».</p>`; }
   h+=`</div></div>`;
   h+=`</div>`;
@@ -3325,7 +3384,7 @@ function siteAfterOrderLoad(oid){ siteLoadProgress(oid); }
 function siteLoginModal(then){
   const m=document.createElement("div"); m.className="modal"; m.id="qrModal";
   m.innerHTML=`<form class="modal-card" id="loginForm" autocomplete="off">
-    <h2 style="margin:0 0 6px">Вход для отметки этапов</h2>
+    <h2 style="margin:0 0 6px">Вход для мастеров</h2>
     <p class="note" style="margin:0 0 12px">Один раз на этом телефоне. PIN цеха даёт технолог.</p>
     <div class="form" style="grid-template-columns:1fr;margin:0"><label>Ваше имя<input id="loginWho" value="${esc(S.who||"")}" maxlength="40" required></label>
     <label>PIN цеха<input id="loginPin" inputmode="numeric" maxlength="20" required></label></div>
@@ -3412,7 +3471,7 @@ document.addEventListener("submit", async ev=>{
     const photo=file?await siteShrink(file):"";
     const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"note",pin:S.pin,code,order:oid,text,photo,who:S.who})}); const j=await r.json();
     if(!j.ok){ toast(j.error==="pin"?"PIN сменился. Войдите заново.":"Не сохранилось. Попробуйте ещё раз."); btn.disabled=false; btn.textContent="Отправить"; return; }
-    (S.notes[oid]=S.notes[oid]||[]).push({when:new Date().toISOString(),code,text,photo:j.photo||"",who:S.who}); toast("Замечание отправлено технологу"); render();
+    (S.notes[oid]=S.notes[oid]||[]).push({when:new Date().toISOString(),code,text,photo:j.photo||"",who:S.who}); toast("Замечание отправлено технологу"); render(); if(document.getElementById("probModal")&&typeof probModal==="function") probModal();
   }catch(e){ toast("Нет связи. Замечание не отправлено."); btn.disabled=false; btn.textContent="Отправить"; }
 });
 
@@ -3675,6 +3734,7 @@ document.addEventListener("click", async ev=>{
   else if(a==="order-qr-id"){ orderQrModal(t.dataset.id); }
   else if(a==="qr-close"){ const m=$("#qrModal"); m&&m.remove(); }
   else if(a==="to-verstak"){ verstakCopy(); }
+  else if(a==="hole-hi"){ holeHi(+t.dataset.i, t); }
   else if(a==="vs-x"){ const m=$("#vsModal"); m&&m.remove(); }
   else if(a==="qr-copy"){ const inp=$("#qrLink"); try{ await navigator.clipboard.writeText(inp.value); toast("Ссылка скопирована"); }catch(e){ inp.select(); toast("Выделил ссылку — скопируйте её"); } }
   else if(a==="qr-pdf"){ t.disabled=true; await orderSheetPdf(t.dataset.id); t.disabled=false; }
@@ -3682,7 +3742,11 @@ document.addEventListener("click", async ev=>{
   else if(a==="dq-open"){ S.dqFull=true; render(); window.scrollTo(0,0); }
   else if(a==="dq-menu"){ const m=t.closest(".asm").querySelector(".dq-menu"); if(m){ if(m.hidden){ m.innerHTML=dqMenu(); m.hidden=false; } else m.hidden=true; } }
   else if(a==="dq-go"){ dqGo(t.dataset.to); }
-  else if(a==="dq-warn"){ if(dqTarget("iss")) dqGo("iss"); else toast("Ошибок в заказе не найдено"); }
+  else if(a==="dq-warn"){ probModal(); }
+  else if(a==="prob"){ if(asm){ asm.st.selected=t.dataset.code; asm.st.multi={}; asm.st.apply(); } probModal(); }
+  else if(a==="prob-x"){ const m=$("#probModal"); m&&m.remove(); }
+  else if(a==="prob-login"){ const m=$("#probModal"); m&&m.remove(); if(typeof siteLoginModal==="function") siteLoginModal(()=>probModal()); }
+  else if(a==="prob-go"){ const m=$("#probModal"); m&&m.remove(); if(asm&&asm.st.zoomTo&&document.querySelector(".asm.full")){ asm.st.selected=t.dataset.code; asm.st.multi={}; asm.st.apply(); showPick(t.dataset.code); asm.st.zoomTo(t.dataset.code); } else goPart(t.dataset.code); }
   else if(a==="dq-help"){ dqHelp(); }
   else if(a==="dq-help-x"){ const m=document.querySelector(".dq-hm"); m&&m.remove(); }
   else if(a==="dq-face"){ if(asm){ const F={front:[0,0],back:[Math.PI,0],right:[Math.PI/2,0],left:[-Math.PI/2,0],top:[asm.st.yaw,1.35],bottom:[asm.st.yaw,-1.3]}[t.dataset.f]; asm.orient(F[0],F[1]); } }
