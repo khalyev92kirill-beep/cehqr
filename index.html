@@ -1530,16 +1530,23 @@ function mountAssembly(canvas, parts, opt){
   const furnSel=new THREE.MeshLambertMaterial({color:hiC});
   const pickable=()=>items.filter(m=>m.visible).concat(furnGroup.visible?furnItems:[]).concat(krepGroup.visible?krepItems:[]);
   st.apply=apply2; apply2(); place2();
-  // сборка при открытии: детали слетаются снизу вверх, ~1,5 с (как в detalQR)
+  // сборка при открытии, ~5 с: по шагам как в «▶» — модуль за модулем слева направо (корпус → полки → задняя → фасады), фурнитура в конце; касание — сразу готово
   if(opt.intro&&!st.explode&&!matchMedia("(prefers-reduced-motion: reduce)").matches){
-    let y0=1e9,y1=-1e9; items.forEach(m=>{ y0=Math.min(y0,m.userData.home.y); y1=Math.max(y1,m.userData.home.y); });
-    const off=items.map((m,i)=>{ const h=m.userData.home, d=new THREE.Vector3(h.x,0,h.z); if(d.lengthSq()<1e-6) d.set(Math.sin(i*2.4),0,Math.cos(i*2.4)); d.normalize();
-      return d.multiplyScalar(size*(0.7+((i*37)%10)/25)).add(new THREE.Vector3(0,size*0.9,0)); });
-    const delay=items.map(m=>(m.userData.home.y-y0)/((y1-y0)||1)*650), T0=performance.now(), fv=furnGroup.visible;
-    furnGroup.visible=false;
-    const step=()=>{ const t=performance.now()-T0; let busy=false;
-      items.forEach((m,i)=>{ const k=Math.max(0,Math.min(1,(t-delay[i])/750)), e=1-Math.pow(1-k,3); if(k<1) busy=true; m.position.copy(m.userData.home).addScaledVector(off[i],1-e); });
-      dirty=true; if(busy&&asm&&asm.st===st) requestAnimationFrame(step); else { furnGroup.visible=fv; apply2(); } };
+    let L=[]; try{ L=buildSteps(parts); }catch(_){}
+    const byMod=new Map(); L.forEach(s=>{ if(!byMod.has(s.mi)) byMod.set(s.mi,[]); byMod.get(s.mi).push(s); });
+    const order=[...byMod.values()].sort((a,b)=>(a[0].lo[0]+a[0].lo[2]*0.001)-(b[0].lo[0]+b[0].lo[2]*0.001)).flat();
+    const si=new Map(); order.forEach((s,i)=>s.codes.forEach(c=>si.set(c,i)));
+    const N=Math.max(1,order.length), FLY=550, SPAN=4300-FLY;
+    const delay=items.map((m,i)=>{ const k=si.has(m.userData.code)?si.get(m.userData.code):N-1; return k/N*SPAN+((i*37)%7)*12; });
+    const off=items.map((m,i)=>new THREE.Vector3(0,size*0.35,0).add(new THREE.Vector3(Math.sin(i*2.4),0,Math.cos(i*2.4)).multiplyScalar(size*0.04)));
+    let T0=typeof opt.intro==='number'?opt.intro:0; const fv=furnGroup.visible; let stop=false; // отсчёт — с первого показанного кадра, а не с загрузки
+    const fHide=v=>{ furnGroup.visible=v; if(opt._exactGroup) opt._exactGroup.visible=v; }; fHide(false); items.forEach(m=>{ m.userData._v=m.visible; m.visible=false; });
+    const skip=()=>{ stop=true; S.introT0=0; }; canvas.addEventListener("pointerdown",skip,{once:true});
+    const done=()=>{ canvas.removeEventListener("pointerdown",skip); items.forEach(m=>m.position.copy(m.userData.home)); furnGroup.visible=fv; apply2(); };
+    const step=()=>{ if(!asm||asm.st!==st) return; if(stop){ done(); return; } if(!T0){ T0=performance.now(); S.introT0=T0; } const t=performance.now()-T0; let busy=false;
+      items.forEach((m,i)=>{ const k=(t-delay[i])/FLY; if(k<1) busy=true; if(k<=0){ m.visible=false; return; } m.visible=m.userData._v; const e=1-Math.pow(1-Math.min(1,k),3); m.position.copy(m.userData.home).addScaledVector(off[i],1-e); });
+      if(!busy&&t<4700) busy=true; fHide(t>=4300&&fv);
+      dirty=true; if(busy) requestAnimationFrame(step); else done(); };
     requestAnimationFrame(step);
   }
   try{ if(matchMedia("(pointer:coarse)").matches&&!localStorage.getItem("cehqr-gest2")){ const hb=document.createElement("div"); hb.className="gest-hint";
@@ -3151,7 +3158,7 @@ function newOrderId(){
 }
 
 /* ---------- отрисовка ---------- */
-function setView(v){ S.fvWin=false; if(v==="orders") S.dqOid=null; document.body.classList.remove("has-full"); S.view=v; if(v!=="part") disposeThree(); disposeAsm(); render(); window.scrollTo(0,0); }
+function setView(v){ S.fvWin=false; if(v==="orders"){ S.dqOid=null; S.introOid=null; } document.body.classList.remove("has-full"); S.view=v; if(v!=="part") disposeThree(); disposeAsm(); render(); window.scrollTo(0,0); }
 function stageBar(oid, count){
   const st=(S.progress[oid]&&S.progress[oid].stages)||{}, cnt=new Array(STAGES.length).fill(0);
   let tagged=0; Object.values(st).forEach(n=>{ if(n>0&&n<STAGES.length){ cnt[n]++; tagged++; } });
@@ -3176,7 +3183,8 @@ function render(){
     v.innerHTML=viewOrder();
     plFilter();
     S.asmOrder=S.asmOrder&&S.asmOrder.oid===S.current.orderId?S.asmOrder:{oid:S.current.orderId};
-    const intro=S.dqFull&&S.introOid!==S.current.orderId; if(intro) S.introOid=S.current.orderId;
+    if(S.dqFull&&S.introOid!==S.current.orderId){ S.introOid=S.current.orderId; S.introT0=-1; } // сбрасывается при выходе к списку — при каждом новом открытии заказа сборка снова
+    const intro=!(S.dqFull&&S.introOid===S.current.orderId&&S.introT0)?0:S.introT0===-1?true:performance.now()-S.introT0<4700?S.introT0:0; // страница может перерисоваться во время сборки — продолжаем с того же места
     mountAssembly($("#asm"), S.current.parts, {state:S.asmOrder, intro, onPick:showPick, fasteners:curFasteners(), furnMesh:S.current.furnMesh}); showPick(S.asmOrder.selected); syncShowAll();
     document.querySelectorAll(".fv-box").forEach(svgZoom); }
   else if(S.view==="part"){ v.innerHTML=viewPart(); const p=withRules(partByCode(S.partCode)); if(p) mount3D(p);
