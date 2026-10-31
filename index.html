@@ -3810,6 +3810,305 @@ document.addEventListener("submit",ev=>{ const f=ev.target;
     supSave([{order:o,key:"A:"+Date.now().toString(36),name:f.n.value.trim(),qty:isNaN(q)?1:q,unit:f.u.value,status:0,op:"add"}]); }
 },true);
 
+/* ---------- «Цех»: заказы клиентов по этапам (замер → монтаж) и чат по заказу (данные — Google-таблица, листы «Цех» и «Чат») ---------- */
+const SHP_ST=[{k:"zamer",n:"Замер"},{k:"smeta",n:"Смета и проект"},{k:"kp",n:"КП у клиента"},{k:"dogovor",n:"Договор и предоплата"},{k:"cex",n:"В производстве"},{k:"montazh",n:"Монтаж"},{k:"closed",n:"Закрыт"}];
+const SHP_OWNERS=["Толян","Айтал","Ариан","PAIN"];
+S.shop=S.shop||{orders:[],tech:false,loaded:false,loading:false,mode:"board",cur:null,edit:null,delAsk:false,chat:null,draft:{}};
+try{ S.shop.techPin=localStorage.getItem("cehqr-techpin")||""; }catch(_){ S.shop.techPin=""; }
+function shpOn(){ return !!(S.site&&S.site.stagesUrl); }
+function shpPin(){ return S.shop.techPin||S.pin||""; }
+function shpWho(){ return S.who||(S.shop.techPin?"Технолог":"Мастер"); }
+function shpUrl(q){ return S.site.stagesUrl+(S.site.stagesUrl.includes("?")?"&":"?")+q; }
+function shpStName(k){ const s=SHP_ST.find(x=>x.k===k); return s?s.n:"Замер"; }
+function shpById(id){ return S.shop.orders.find(o=>o.id===id)||null; }
+function shpToday(d){ d=d||new Date(); const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+function shpDays(a,b){ return Math.round((new Date(a+"T00:00:00")-new Date(b+"T00:00:00"))/864e5); }
+function shpDM(d){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d||""); return m?m[3]+"."+m[2]:""; }
+function shpMoney(v){ return v===""||v==null||isNaN(+v)?"—":Number(v).toLocaleString("ru-RU")+" ₽"; }
+function shpSafeLink(u){ u=String(u||"").trim(); return /^https?:\/\//i.test(u)?u:""; }
+function shpSeen(){ try{ return JSON.parse(localStorage.getItem("cehqr-shopseen")||"{}")||{}; }catch(_){ return {}; } }
+function shpMarkSeen(id,ms){ const s=shpSeen(); if(!(s[id]>=ms)){ s[id]=ms; try{ localStorage.setItem("cehqr-shopseen",JSON.stringify(s)); }catch(_){} } }
+function shpUnread(o,seen){ return o.lastAt&&o.lastAt>(seen[o.id]||0)&&o.lastWho!==shpWho(); }
+function shpBadPin(){ // PIN сменили в таблице — забываем его на этом устройстве
+  if(S.shop.techPin){ S.shop.techPin=""; try{ localStorage.removeItem("cehqr-techpin"); }catch(_){} }
+  else { S.pin=""; try{ localStorage.removeItem("cehqr-pin"); }catch(_){} }
+  S.shop.loaded=false; toast("PIN не подошёл. Войдите заново."); render(); }
+
+/* загрузка и запись */
+async function shpLoad(quiet){
+  if(!shpPin()) return;
+  S.shop.loading=true;
+  try{ const r=await fetch(shpUrl("action=shop&pin="+encodeURIComponent(shpPin())),{cache:"no-cache"}); const j=await r.json();
+    if(!j||!j.ok){ S.shop.loading=false; if(j&&j.error==="pin") return shpBadPin(); toast("Таблица ответила ошибкой. Обновите позже."); return; }
+    S.shop.orders=j.orders||[]; S.shop.tech=!!j.tech; S.shop.loaded=true; S.shop.err=false;
+  }catch(_){ if(!quiet) toast("Нет связи с таблицей. Проверьте интернет."); S.shop.loaded=S.shop.loaded||false; S.shop.err=!S.shop.loaded; }
+  S.shop.loading=false;
+  if(S.view==="shop"&&!(S.shop.mode==="form")) shpRenderKeep();
+}
+async function shpPost(body){
+  try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify(Object.assign({pin:shpPin(),who:shpWho()},body))}); const j=await r.json();
+    if(!j||!j.ok){ if(j&&j.error==="pin"){ shpBadPin(); return null; } toast(j&&j.error==="tech"?"Это может только технолог":"Не сохранилось. Попробуйте ещё раз."); return null; }
+    return j; }catch(_){ toast("Нет связи с таблицей. Не сохранилось."); return null; }
+}
+/* чат: подгружаем только новые сообщения, раз в 15 секунд, пока чат на экране */
+let shpTimer=null;
+function shpChatOn(){ return S.view==="shop"&&(S.shop.mode==="order"||S.shop.mode==="general")&&S.shop.chat; }
+function shpChatStart(id){
+  if(!S.shop.chat||S.shop.chat.id!==id){ S.shop.chat={id,msgs:[],last:0,loaded:false}; shpChatPoll(); }
+  if(!shpTimer) shpTimer=setInterval(()=>{ if(!shpChatOn()){ clearInterval(shpTimer); shpTimer=null; return; } if(document.visibilityState==="visible") shpChatPoll(); },15000);
+}
+async function shpChatPoll(){
+  const c=S.shop.chat; if(!c||!shpPin()||c.busy) return; c.busy=true;
+  try{ const r=await fetch(shpUrl("action=chat&pin="+encodeURIComponent(shpPin())+"&chat="+encodeURIComponent(c.id)+"&since="+c.last),{cache:"no-cache"}); const j=await r.json();
+    if(j&&j.ok){ const have=new Set(c.msgs.map(m=>m.when+"|"+m.who+"|"+m.text));
+      (j.messages||[]).forEach(m=>{ if(!have.has(m.when+"|"+m.who+"|"+m.text)){ c.msgs.push(m); c.last=Math.max(c.last,m.when); } });
+      c.msgs=c.msgs.slice(-300); c.loaded=true; if(c.id!=="general") shpMarkSeen(c.id,c.last);
+      if(S.shop.chat===c&&shpChatOn()) shpDrawMsgs(); }
+    else if(j&&j.error==="pin") shpBadPin();
+  }catch(_){ if(!c.loaded){ c.loaded=true; c.err=true; if(S.shop.chat===c&&shpChatOn()) shpDrawMsgs(); } }
+  c.busy=false;
+}
+function shpTime(ms){ const d=new Date(ms), t=d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}); return shpToday(d)===shpToday()?t:d.toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"})+" "+t; }
+function shpMsgsHtml(){
+  const c=S.shop.chat; if(!c||!c.loaded) return `<p class="muted shp-sys">Загружаю сообщения…</p>`;
+  if(c.err&&!c.msgs.length) return `<p class="muted shp-sys">Нет связи — сообщения не загрузились.</p>`;
+  if(!c.msgs.length) return `<p class="muted shp-sys">Сообщений пока нет. Напишите первым.</p>`;
+  const me=shpWho();
+  return c.msgs.map(m=>m.kind==="system"?`<div class="shp-sys">${esc(m.text)} · ${esc(m.who||"")} · ${esc(shpTime(m.when))}</div>`
+    :`<div class="shp-msg${m.who===me?" me":""}"><div class="shp-mh"><b>${esc(m.who||"")}</b><span>${esc(shpTime(m.when))}</span></div><div class="shp-mt">${esc(m.text)}</div></div>`).join("");
+}
+function shpDrawMsgs(){ const box=document.getElementById("shpMsgs"); if(!box) return; const end=box.scrollHeight-box.scrollTop-box.clientHeight<60;
+  box.innerHTML=shpMsgsHtml(); if(end||!box.dataset.once){ box.scrollTop=box.scrollHeight; box.dataset.once="1"; } }
+async function shpSend(form){
+  const ta=form.querySelector("textarea"), text=ta.value.trim(), c=S.shop.chat; if(!text||!c) return;
+  const btn=form.querySelector('[type="submit"]'); btn.disabled=true;
+  const j=await shpPost({action:"chatSend",chat:c.id,text}); btn.disabled=false;
+  if(!j) return;
+  ta.value=""; S.shop.draft[c.id]=""; const o=shpById(c.id); if(o){ o.lastAt=j.when; o.lastText=text; o.lastWho=shpWho(); }
+  await shpChatPoll(); ta.focus();
+}
+function shpChatBox(id,title){
+  return `<div class="card shp-chat"><h2>${esc(title)}</h2><div class="shp-msgs" id="shpMsgs" aria-live="polite">${shpMsgsHtml()}</div>
+    <form class="shp-send" data-chat="${esc(id)}"><textarea name="t" rows="2" maxlength="2000" placeholder="Напишите сообщение…" title="Enter — отправить, Shift+Enter — новая строка" aria-label="Сообщение">${esc(S.shop.draft[id]||"")}</textarea><button class="btn primary" type="submit">Отправить</button></form></div>`;
+}
+
+/* экраны */
+function shpLoginHtml(){
+  return `<div class="head"><h1>Цех</h1></div><div class="empty shp-login"><h2>Заказы цеха и чат</h2><p class="muted">Здесь все заказы клиентов по этапам — от замера до монтажа — и переписка по каждому заказу. Войдите один раз на этом телефоне.</p>
+    <div class="shp-login-b"><button type="button" class="btn primary" data-act="shp-in-master">Я мастер</button><button type="button" class="btn" data-act="shp-in-tech">Я технолог</button></div></div>`;
+}
+function shpCard(o,seen,today){
+  const chips=[];
+  if(o.deadline&&o.stage!=="closed"){ const d=shpDays(today,o.deadline);
+    if(d>0) chips.push(`<span class="shp-chip bad">просрочен на ${d} дн.</span>`); else chips.push(`<span class="shp-chip${d>=-1?" warn":""}">срок ${esc(shpDM(o.deadline))}</span>`); }
+  if(shpUnread(o,seen)) chips.push(`<span class="shp-chip new">новое в чате</span>`);
+  if(o.t3d||o.link) chips.push(`<span class="shp-chip">3D</span>`);
+  return `<button type="button" class="shp-card" data-act="shp-open" data-id="${esc(o.id)}"><span class="shp-c1"><b>${esc(o.client||"Без имени")}</b><span class="mono muted">№ ${esc(o.num)}</span></span>
+    <span class="shp-c2">${o.kind?`<span class="shp-kind">${esc(o.kind)}</span>`:""}${o.owner?`<span class="muted">${esc(o.owner)}</span>`:`<span class="muted">без ответственного</span>`}</span>${chips.length?`<span class="shp-chips">${chips.join("")}</span>`:""}</button>`;
+}
+function shpBoardHtml(){
+  const L=S.shop.orders, seen=shpSeen(), today=shpToday();
+  const sortF=(a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999")||String(a.num).localeCompare(String(b.num));
+  let h=`<div class="head"><div><h1>Цех</h1><p class="muted" style="margin:4px 0 0">${S.shop.tech?"Технолог":"Мастер: "+esc(shpWho())} · в работе: ${L.filter(o=>o.stage!=="closed").length}</p></div>
+    <div class="head-actions"><button type="button" class="btn primary" data-act="shp-new">Новый заказ</button><button type="button" class="btn" data-act="shp-general">Общий чат</button><button type="button" class="btn" data-act="shp-reload">Обновить</button></div></div>`;
+  if(!S.shop.loaded) return h+`<p class="muted">${S.shop.err?"Нет связи с таблицей. Нажмите «Обновить».":"Загружаю заказы…"}</p>`;
+  if(!L.length) h+=`<p class="note">Заказов пока нет. Нажмите «Новый заказ», когда будет первый замер.</p>`;
+  h+=`<div class="shp-board">`+SHP_ST.filter(s=>s.k!=="closed").map(s=>{ const g=L.filter(o=>o.stage===s.k).sort(sortF);
+    return `<section class="shp-col"><h2>${esc(s.n)} <span class="muted">${g.length}</span></h2>${g.length?g.map(o=>shpCard(o,seen,today)).join(""):`<p class="muted shp-none">пусто</p>`}</section>`; }).join("")+`</div>`;
+  const cl=L.filter(o=>o.stage==="closed").sort((a,b)=>(b.stageAt||0)-(a.stageAt||0));
+  h+=`<details class="shp-closed"><summary>Закрытые заказы · ${cl.length}</summary><div class="shp-closed-l">${cl.length?cl.map(o=>shpCard(o,seen,today)).join(""):`<p class="muted shp-none">пока нет</p>`}</div></details>`;
+  h+=`<p class="home-foot"><button type="button" class="linkbtn" data-act="shp-out">Выйти из раздела «Цех» на этом телефоне</button></p>`;
+  return h;
+}
+function shpOrderHtml(){
+  const o=shpById(S.shop.cur);
+  if(!o) return `<div class="empty"><h2>Заказ не найден</h2><p class="muted">Возможно, его удалили.</p><button class="btn" data-act="shp-back">К заказам</button></div>`;
+  const tech=S.shop.tech, today=shpToday(), late=o.deadline&&o.stage!=="closed"?shpDays(today,o.deadline):0;
+  let h=`<div class="tblock shp-tb"><div class="tb-name"><span class="tb-l">Клиент</span><h1>${esc(o.client||"Без имени")}</h1></div>
+    <div class="tb-c"><span class="tb-l">Заказ</span><b class="mono">№ ${esc(o.num)}</b></div>
+    <div class="tb-c"><span class="tb-l">Срок</span><b class="mono${late>0?" shp-late":""}">${o.deadline?esc(shpDM(o.deadline)):"—"}</b></div>
+    <div class="tb-c"><span class="tb-l">Ответственный</span><b>${esc(o.owner||"—")}</b></div>
+    <div class="head-actions tb-act"><button type="button" class="btn" data-act="shp-back">← К заказам</button><button type="button" class="btn" data-act="shp-edit">Изменить</button>
+    ${tech?(S.shop.delAsk?`<button type="button" class="btn danger shp-del-yes" data-act="shp-del">Точно удалить?</button><button type="button" class="btn" data-act="shp-del-no">Отмена</button>`:`<button type="button" class="btn danger" data-act="shp-del">Удалить</button>`):""}</div></div>`;
+  if(late>0) h+=`<div class="banner warn">Срок прошёл ${late} дн. назад.</div>`;
+  h+=`<label class="shp-stage-l"><span>Этап</span><select id="shpStage" data-id="${esc(o.id)}">${SHP_ST.map(s=>`<option value="${s.k}"${s.k===o.stage?" selected":""}>${esc(s.n)}</option>`).join("")}</select></label>`;
+  const row=(l,v)=>v?`<div><dt>${l}</dt><dd>${v}</dd></div>`:"";
+  const tel=String(o.phone||"").replace(/[^\d+]/g,"");
+  const rest=(+o.sum||0)-(+o.prepay||0);
+  h+=`<div class="shp-cols"><div><dl class="card shp-info">${row("Что делаем",esc(o.kind||""))}${row("Описание",esc(o.desc||"").replace(/\n/g,"<br>"))}
+    ${tech&&o.phone?row("Телефон",tel?`<a href="tel:${esc(tel)}">${esc(o.phone)}</a>`:esc(o.phone)):""}${row("Адрес",esc(o.address||""))}
+    ${tech&&(o.sum!==""&&o.sum!=null)?row("Сумма",esc(shpMoney(o.sum)))+row("Предоплата",esc(shpMoney(o.prepay)))+row("Остаток",`<b>${esc(shpMoney(rest))}</b>`):""}
+    ${row("Заметки",esc(o.notes||"").replace(/\n/g,"<br>"))}
+    ${!(o.kind||o.desc||o.address||o.notes||(tech&&(o.phone||o.sum)))?`<p class="muted" style="margin:0">Подробностей пока нет. Нажмите «Изменить», чтобы дописать.</p>`:""}</dl>`;
+  const lk=shpSafeLink(o.link), in3d=o.t3d&&S.orders&&S.orders[o.t3d];
+  h+=`<div class="card shp-3d"><h2>Проект 3D</h2>${in3d?`<p class="muted">${S.orders[o.t3d].name&&S.orders[o.t3d].name!==o.t3d?esc(S.orders[o.t3d].name)+" · ":""}заказ <span class="mono">${esc(o.t3d)}</span></p><button type="button" class="btn primary" data-act="order" data-from="shop" data-id="${esc(o.t3d)}">Открыть 3D</button>`
+    :lk?`<a class="btn primary" href="${esc(lk)}" target="_blank" rel="noopener">Открыть 3D</a>`
+    :o.t3d?`<p class="muted">Привязан заказ <span class="mono">${esc(o.t3d)}</span>, но на этом телефоне он не открыт. Отсканируйте его QR-код один раз.</p><button type="button" class="btn" data-act="order" data-from="shop" data-id="${esc(o.t3d)}">Попробовать открыть</button>`
+    :`<p class="muted" style="margin:0">3D не привязан. Технолог выгружает заказ из Базиса скриптом «Технолог 3D», потом здесь «Изменить» → «Проект 3D» — выбрать заказ из списка или вставить ссылку.</p>`}</div></div>`;
+  h+=`<div>${shpChatBox(o.id,"Чат по заказу")}</div></div>`;
+  return h;
+}
+function shpFormHtml(){
+  const o=S.shop.edit||{}, tech=S.shop.tech, isNew=!o.id;
+  const ids=Object.keys(S.orders||{}).sort();
+  const opt3d=`<option value="">Не привязан</option>`+ids.map(id=>`<option value="${esc(id)}"${o.t3d===id?" selected":""}>${esc(id)} · ${esc(S.orders[id].name||"")}</option>`).join("")+(o.t3d&&!ids.includes(o.t3d)?`<option value="${esc(o.t3d)}" selected>${esc(o.t3d)}</option>`:"");
+  const f=(label,name,val,extra)=>`<label>${label}<input name="${name}" value="${esc(val==null?"":String(val))}" ${extra||""}></label>`;
+  return `<div class="head"><h1>${isNew?"Новый заказ":"Изменить заказ № "+esc(o.num)}</h1></div>
+  <form class="card shp-form" id="shpForm" autocomplete="off">
+    ${f("Клиент *","client",o.client,'required maxlength="120" placeholder="Фамилия или как записан"')}
+    ${tech?f("Телефон","phone",o.phone,'type="tel" inputmode="tel" maxlength="40" placeholder="+7 914 …"'):""}
+    ${f("Что делаем","kind",o.kind,'maxlength="120" placeholder="Кухня, шкаф-купе, прихожая…" list="shpKinds"')}
+    <label class="wide">Описание<textarea name="desc" rows="3" maxlength="2000">${esc(o.desc||"")}</textarea></label>
+    ${f("Адрес","address",o.address,'maxlength="200"')}
+    ${tech?f("Сумма, ₽","sum",o.sum,'inputmode="decimal" maxlength="15"')+f("Предоплата, ₽","prepay",o.prepay,'inputmode="decimal" maxlength="15"'):""}
+    ${f("Срок","deadline",o.deadline,'type="date"')}
+    ${f("Ответственный","owner",o.owner,'maxlength="40" list="shpOwners"')}
+    <label>Этап<select name="stage">${SHP_ST.map(s=>`<option value="${s.k}"${s.k===(o.stage||"zamer")?" selected":""}>${esc(s.n)}</option>`).join("")}</select></label>
+    <label>Проект 3D<select name="t3d">${opt3d}</select></label>
+    ${f("Ссылка на 3D (если нет в списке)","link",o.link,'type="url" inputmode="url" maxlength="500" placeholder="https://…"')}
+    <label class="wide">Заметки<textarea name="notes" rows="3" maxlength="2000">${esc(o.notes||"")}</textarea></label>
+    <div class="wide shp-form-b"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="shp-cancel">Отмена</button></div>
+  </form><datalist id="shpOwners">${SHP_OWNERS.map(n=>`<option value="${esc(n)}">`).join("")}</datalist><datalist id="shpKinds">${["Кухня","Шкаф-купе","Прихожая","Гардеробная","Детская","Спальня","Ванная","Офисная мебель"].map(n=>`<option value="${n}">`).join("")}</datalist>`;
+}
+function viewShop(){
+  if(!shpOn()) return `<div class="empty"><h2>Раздел «Цех» не подключён</h2><p class="muted">Нужна ссылка на Google-таблицу в config.json (stagesUrl).</p></div>`;
+  if(!shpPin()) return shpLoginHtml();
+  if(!S.shop.loaded&&!S.shop.loading&&!S.shop.err) shpLoad();
+  if(S.shop.mode==="form") return shpFormHtml();
+  if(S.shop.mode==="general") return `<div class="head"><h1>Общий чат</h1><div class="head-actions"><button type="button" class="btn" data-act="shp-back">← К заказам</button></div></div>${shpChatBox("general","Все мастера и технолог")}`;
+  if(S.shop.mode==="order"){ if(!S.shop.loaded) return `<p class="muted">Загружаю заказ…</p>`; return shpOrderHtml(); }
+  return shpBoardHtml();
+}
+function shpRenderKeep(){ const y=window.scrollY; render(); window.scrollTo(0,y); }
+function shpGo(mode,id){ S.shop.mode=mode; S.shop.delAsk=false; if(id!==undefined) S.shop.cur=id;
+  if(mode!=="order"&&mode!=="general") S.shop.chat=null;
+  if(S.view!=="shop") setView("shop"); else { render(); window.scrollTo(0,0); } }
+
+/* вход технолога по PIN (Google-таблица, «Настройки», ячейка B3) */
+function shpTechModal(){
+  const m=document.createElement("div"); m.className="modal"; m.id="qrModal";
+  m.innerHTML=`<form class="modal-card" id="shpTechForm" autocomplete="off"><h2 style="margin:0 0 6px">PIN технолога</h2><p class="note" style="margin:0 0 12px">Один раз на этом устройстве. PIN — в Google-таблице, лист «Настройки», ячейка B3.</p>
+    <div class="form" style="grid-template-columns:1fr;margin:0"><label>PIN технолога<input id="shpTechPin" type="password" inputmode="numeric" maxlength="20" required></label></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Войти</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",ev=>{ if(ev.target===m) m.remove(); }); document.body.appendChild(m); setTimeout(()=>{ const i=$("#shpTechPin"); i&&i.focus(); },50);
+  $("#shpTechForm").addEventListener("submit",async ev=>{ ev.preventDefault(); const pin=$("#shpTechPin").value.trim(); if(!pin) return;
+    let j=null; try{ const r=await fetch(shpUrl("action=shop&pin="+encodeURIComponent(pin)),{cache:"no-cache"}); j=await r.json(); }catch(_){ toast("Нет связи с таблицей. Проверьте интернет."); return; }
+    if(!j||!j.ok||!j.tech){ toast("Неверный PIN технолога"); return; }
+    S.shop.techPin=pin; S.shop.orders=j.orders||[]; S.shop.tech=true; S.shop.loaded=true; S.shop.err=false; try{ localStorage.setItem("cehqr-techpin",pin); }catch(_){}
+    m.remove(); toast("Вы вошли как технолог"); shpGo("board"); });
+}
+function shpFormRead(fm){
+  const g=n=>fm.elements[n]?String(fm.elements[n].value||"").trim():"";
+  const base=S.shop.edit||{}, o={id:base.id||"",client:g("client"),kind:g("kind"),desc:g("desc"),address:g("address"),deadline:g("deadline"),owner:g("owner"),stage:g("stage")||"zamer",t3d:g("t3d"),link:g("link"),notes:g("notes")};
+  if(S.shop.tech){ o.phone=g("phone"); o.sum=g("sum").replace(/\s/g,"").replace(",","."); o.prepay=g("prepay").replace(/\s/g,"").replace(",","."); }
+  return o;
+}
+
+/* вкладка «Цех» в меню — перед «Как работать» */
+(function(){ const nav=document.getElementById("nav"); if(nav&&!document.getElementById("navShop")){ const b=document.createElement("button"); b.type="button"; b.dataset.view="shop"; b.id="navShop"; b.textContent="Цех"; b.hidden=true; const help=nav.querySelector('[data-view="help"]'); nav.insertBefore(b,help); } })();
+/* стили раздела */
+(function(){ if(document.getElementById("shpCss")) return; const st=document.createElement("style"); st.id="shpCss"; st.textContent=`
+.shp-login{padding:32px 16px}.shp-login p{max-width:440px;margin:8px auto 16px}
+.shp-login-b{display:grid;gap:10px;max-width:320px;margin:0 auto}.shp-login-b .btn{min-height:48px;font-size:16px}
+.shp-board{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:900px){.shp-board{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.shp-col{background:var(--sunk);border-radius:var(--r);padding:10px;min-width:0;display:flex;flex-direction:column;gap:8px}
+.shp-col h2{font-size:14px;margin:2px 4px 2px;display:flex;justify-content:space-between;gap:8px;text-transform:none}
+.shp-none{margin:0 4px;font-size:13px}
+.shp-card{display:flex;flex-direction:column;gap:6px;width:100%;min-height:44px;text-align:left;padding:10px 12px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-left:4px solid var(--tape);border-radius:var(--r);cursor:pointer;font:inherit}
+.shp-card:hover{border-color:var(--muted);border-left-color:var(--tape)}
+.shp-c1{display:flex;justify-content:space-between;gap:8px;align-items:baseline;min-width:0}.shp-c1 b{font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.shp-c1 .mono{flex:none;font-size:12.5px}
+.shp-c2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}
+.shp-kind{background:var(--ink);color:var(--surface);border-radius:4px;padding:1px 7px;font-size:12px;font-weight:600}
+.shp-chips{display:flex;gap:5px;flex-wrap:wrap}
+.shp-chip{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--sunk);color:var(--ink);border:1px solid var(--line)}
+.shp-chip.bad{background:#b3261e;border-color:#b3261e;color:#fff}.shp-chip.warn{background:var(--tape);border-color:var(--tape);color:var(--tape-ink)}.shp-chip.new{background:#2e6fd0;border-color:#2e6fd0;color:#fff}
+.shp-closed{margin-top:14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:0 12px}
+.shp-closed summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-weight:600}
+.shp-closed-l{display:grid;gap:8px;padding-bottom:12px}@media (min-width:900px){.shp-closed-l{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.shp-tb .tb-act .btn{min-height:44px}.shp-late{color:#b3261e}.shp-del-yes{background:#b3261e;color:#fff!important;border-color:#b3261e}
+.shp-stage-l{display:flex;align-items:center;gap:10px;margin:0 0 14px;font-weight:600}
+.shp-stage-l select{flex:1;min-width:0;max-width:360px;height:46px;padding:0 10px;border:2px solid var(--ink);border-radius:var(--r);background:var(--surface);color:var(--ink);font:600 15px var(--f-body,system-ui)}
+.shp-cols{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}@media (min-width:900px){.shp-cols{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);align-items:start}}
+.shp-cols>div{display:grid;gap:14px;min-width:0}
+.shp-info{margin:0;display:grid;gap:10px}.shp-info>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px}
+.shp-info dt{color:var(--muted);font-size:13px}.shp-info dd{margin:0;overflow-wrap:anywhere}.shp-info a{color:inherit;font-weight:600}
+.shp-3d h2,.shp-chat h2{margin:0 0 8px;font-size:16px}.shp-3d p{margin:0 0 10px}.shp-3d .btn{min-height:44px;display:inline-flex;align-items:center;text-decoration:none}
+.shp-msgs{display:flex;flex-direction:column;gap:8px;max-height:52vh;min-height:120px;overflow-y:auto;padding:4px 2px;margin-bottom:10px;overscroll-behavior:contain}
+.shp-msg{align-self:flex-start;max-width:85%;background:var(--sunk);border-radius:12px 12px 12px 4px;padding:7px 10px;min-width:0}
+.shp-msg.me{align-self:flex-end;background:color-mix(in srgb,var(--tape) 28%,var(--surface));border-radius:12px 12px 4px 12px}
+.shp-mh{display:flex;gap:8px;justify-content:space-between;font-size:12px;color:var(--muted)}.shp-mh b{color:var(--ink)}
+.shp-mt{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px}
+.shp-sys{align-self:center;text-align:center;font-size:12px;color:var(--muted);margin:2px 0}
+.shp-send{display:flex;gap:8px;align-items:flex-end}.shp-send textarea{flex:1;min-width:0;min-height:48px;padding:10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);font:15px var(--f-body,system-ui);resize:vertical}
+.shp-send .btn{min-height:48px}
+.shp-form{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}@media (min-width:700px){.shp-form{grid-template-columns:repeat(2,minmax(0,1fr))}.shp-form .wide{grid-column:1/-1}}
+.shp-form label{display:grid;gap:4px;font-size:13px;color:var(--muted);min-width:0}
+.shp-form input,.shp-form select,.shp-form textarea{width:100%;box-sizing:border-box;min-height:44px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:15px var(--f-body,system-ui)}
+.shp-form-b{display:flex;gap:8px}.shp-form-b .btn{min-height:46px;padding:0 20px}
+body[data-page="shop"] .head-actions .btn{min-height:44px}
+@media (max-width:520px){body[data-page="shop"] .head-actions{width:100%}body[data-page="shop"] .head>.head-actions .btn{flex:1 1 auto}}
+`; document.head.appendChild(st); })();
+/* ссылка «#ceh» сразу открывает раздел */
+const _hashShop=hashHook;
+hashHook=h=>{ if(String(h||"").toLowerCase()==="ceh"){ history.replaceState(null,"",location.pathname+location.search); S.view="shop"; setTimeout(()=>{ if(S.view==="shop") render(); },0); return ""; } return _hashShop(h); };
+/* на главной — тихая ссылка в раздел для тех, у кого не видно вкладок */
+const _viewOrdersShop=viewOrders;
+viewOrders=function(){ const h=_viewOrdersShop(); if(!shpOn()) return h; const i=h.lastIndexOf("</p>"); if(i<0||h.indexOf("home-foot")<0) return h;
+  return h.slice(0,i)+`<span>·</span><button type="button" class="linkbtn" data-view="shop">Цех: заказы и чат</button>`+h.slice(i); };
+const _renderShop=render;
+render=function(){
+  const nb=document.getElementById("navShop"); if(nb) nb.hidden=!shpOn();
+  if(S.view!=="shop"){ _renderShop(); if(document.body.dataset.page==="shop") document.body.dataset.page=S.view; if(shpOn()&&shpPin()) document.body.classList.remove("anon"); return; }
+  if(typeof closePartSheet==="function") closePartSheet(); disposeAsm();
+  document.body.dataset.page="shop"; document.body.classList.remove("client","has-full");
+  document.body.classList.toggle("anon",!shpPin()&&!!(S.site&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())&&!(typeof siteIsSupply==="function"&&siteIsSupply())));
+  document.querySelectorAll("#nav button").forEach(b=>b.setAttribute("aria-current",String(b.dataset.view==="shop")));
+  const want=S.shop.mode==="order"?S.shop.cur:S.shop.mode==="general"?"general":null;
+  if(want&&shpPin()&&(!S.shop.chat||S.shop.chat.id!==want||!shpTimer)) shpChatStart(want);
+  const ae=document.activeElement, keepTa=ae&&ae.closest&&ae.closest(".shp-send")?ae.selectionStart:null;
+  $("#view").innerHTML=viewShop();
+  const box=document.getElementById("shpMsgs"); if(box){ box.scrollTop=box.scrollHeight; box.dataset.once="1"; }
+  if(keepTa!=null){ const ta=document.querySelector(".shp-send textarea"); if(ta){ ta.focus(); try{ ta.setSelectionRange(keepTa,keepTa); }catch(_){} } }
+};
+/* нажатия */
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-view="shop"]'); if(t&&S.shop.mode!=="form"){ S.shop.mode="board"; S.shop.chat=null; } },true);
+document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest("[data-act^='shp-']"); if(!t) return; ev.stopPropagation(); const a=t.dataset.act;
+  if(a==="shp-in-master"){ siteLoginModal(()=>{ S.shop.loaded=false; S.shop.err=false; render(); }); return; }
+  if(a==="shp-in-tech") return shpTechModal();
+  if(a==="shp-out"){ if(!confirm("Выйти из раздела «Цех» на этом телефоне?")) return; if(S.shop.techPin){ S.shop.techPin=""; try{ localStorage.removeItem("cehqr-techpin"); }catch(_){} } else { S.pin=""; try{ localStorage.removeItem("cehqr-pin"); }catch(_){} } S.shop.loaded=false; S.shop.orders=[]; S.shop.tech=false; shpGo("board"); return; }
+  if(a==="shp-reload"){ S.shop.err=false; t.disabled=true; await shpLoad(); t.disabled=false; if(S.shop.loaded) toast("Обновлено"); return; }
+  if(a==="shp-open") return shpGo("order",t.dataset.id);
+  if(a==="shp-back"){ shpGo("board"); shpLoad(true); return; }
+  if(a==="shp-general") return shpGo("general");
+  if(a==="shp-new"){ S.shop.edit={stage:"zamer"}; S.shop.backTo=null; return shpGo("form"); }
+  if(a==="shp-edit"){ const o=shpById(S.shop.cur); if(!o) return; S.shop.edit=Object.assign({},o); S.shop.backTo=o.id; S.shop.chat=null; S.shop.mode="form"; render(); window.scrollTo(0,0); return; }
+  if(a==="shp-cancel"){ const b=S.shop.backTo; S.shop.edit=null; return b?shpGo("order",b):shpGo("board"); }
+  if(a==="shp-del-no"){ S.shop.delAsk=false; render(); return; }
+  if(a==="shp-del"){ if(!S.shop.delAsk){ S.shop.delAsk=true; render(); return; }
+    const id=S.shop.cur; t.disabled=true; const j=await shpPost({action:"shopDel",id}); if(!j){ S.shop.delAsk=false; render(); return; }
+    S.shop.orders=S.shop.orders.filter(o=>o.id!==id); toast("Заказ удалён"); shpGo("board"); return; }
+},true);
+document.addEventListener("change",async ev=>{ const sel=ev.target; if(!sel||sel.id!=="shpStage") return;
+  const o=shpById(sel.dataset.id); if(!o) return; const prev=o.stage, nx=sel.value; if(prev===nx) return;
+  o.stage=nx; sel.disabled=true;
+  const j=await shpPost({action:"shopSave",order:Object.assign({},o,{stage:nx})});
+  if(!j){ o.stage=prev; if(S.view==="shop"&&S.shop.mode==="order") shpRenderKeep(); return; }
+  o.stageAt=Date.now(); toast("Этап: "+shpStName(nx)); sel.disabled=false; shpChatPoll(); });
+document.addEventListener("input",ev=>{ const ta=ev.target; if(ta&&ta.closest&&ta.closest(".shp-send")){ S.shop.draft[ta.closest(".shp-send").dataset.chat]=ta.value; } });
+document.addEventListener("keydown",ev=>{ const ta=ev.target; if(ev.key!=="Enter"||ev.shiftKey||ev.isComposing||!ta||!ta.closest||!ta.closest(".shp-send")||ta.tagName!=="TEXTAREA") return; ev.preventDefault(); shpSend(ta.closest("form")); });
+document.addEventListener("submit",async ev=>{ const f=ev.target;
+  if(f.classList&&f.classList.contains("shp-send")){ ev.preventDefault(); shpSend(f); return; }
+  if(f.id==="shpForm"){ ev.preventDefault(); const o=shpFormRead(f); if(!o.client){ toast("Впишите клиента"); return; }
+    const btn=f.querySelector('[type="submit"]'); btn.disabled=true; btn.textContent="Сохраняю…";
+    const j=await shpPost({action:"shopSave",order:o}); if(!j){ btn.disabled=false; btn.textContent="Сохранить"; return; }
+    toast(o.id?"Сохранено":"Заказ № "+j.num+" создан"); S.shop.edit=null;
+    await shpLoad(true); if(!shpById(j.id)) S.shop.orders.push(Object.assign({},o,{id:j.id,num:j.num})); shpGo("order",j.id); }
+},true);
+
+/* 3D открыли из «Цеха» — крестик вернёт обратно в «Цех» (в ту же карточку) */
+document.addEventListener("click",ev=>{ const b=ev.target.closest&&ev.target.closest('[data-act="order"]'); if(b) S.backShop=b.dataset.from==="shop"; },true);
+
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
   const t=ev.target.closest("[data-act],[data-view]"); if(!t) return;
@@ -3836,7 +4135,7 @@ document.addEventListener("click", async ev=>{
   else if(a==="vs-x"){ const m=$("#vsModal"); m&&m.remove(); }
   else if(a==="qr-copy"){ const inp=$("#qrLink"); try{ await navigator.clipboard.writeText(inp.value); toast("Ссылка скопирована"); }catch(e){ inp.select(); toast("Выделил ссылку — скопируйте её"); } }
   else if(a==="qr-pdf"){ t.disabled=true; await orderSheetPdf(t.dataset.id); t.disabled=false; }
-  else if(a==="dq-close"){ S.dqFull=false; document.body.classList.remove("has-full"); try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){} setView("orders"); }
+  else if(a==="dq-close"){ S.dqFull=false; document.body.classList.remove("has-full"); try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){} if(S.backShop){ S.backShop=false; S.dqOid=null; S.introOid=null; setView("shop"); } else setView("orders"); }
   else if(a==="dq-open"){ S.dqFull=true; render(); window.scrollTo(0,0); }
   else if(a==="dq-menu"){ const m=t.closest(".asm").querySelector(".dq-menu"); if(m){ if(m.hidden){ m.innerHTML=dqMenu(); m.hidden=false; } else m.hidden=true; } }
   else if(a==="dq-go"){ dqGo(t.dataset.to); }
