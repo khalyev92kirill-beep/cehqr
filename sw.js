@@ -1,5 +1,5 @@
 // Технолог 3D — работа как приложение и без интернета (для уже открытых заказов)
-const V="cehqr-"+"202610082008", SHELL=["./","index.html","manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"];
+const V="cehqr-"+"202611010525", SHELL=["./","index.html","manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"];
 const LIBS=/cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com/;
 self.addEventListener("install",e=>{ e.waitUntil(caches.open(V).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting())); });
 const DATA="cehqr-data", LIBC="cehqr-libs";   // заказы, текстуры и библиотеки живут отдельно — не стираются при обновлении сайта
@@ -13,5 +13,5 @@ self.addEventListener("fetch",e=>{
   // сайт и заказы — сначала свежие из интернета, без интернета — последние сохранённые
   const store=/\/(orders|textures)\//.test(u.pathname)?DATA:V;
   e.respondWith(fetch(r).then(res=>{ if(res.ok){ const cp=res.clone(); caches.open(store).then(c=>c.put(r.url.split("#")[0],cp)); } return res; })
-    .catch(()=>caches.match(r.url.split("#")[0],{ignoreSearch:true}).then(m=>m||(r.mode==="navigate"?caches.match("index.html"):Response.error()))));
+    .catch(()=>caches.match(r.url.split("#")[0],{ignoreSearch:true}).then(m=>m||(r.mode!=="navigate"?Response.error():/\/vertaks\//.test(u.pathname)?caches.match("vertaks/").then(v=>v||caches.match("index.html")):caches.match("index.html")))));
 });
