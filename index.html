@@ -146,12 +146,12 @@ body.client .asm canvas{height:min(52vh,520px)}
 .oc-meta{font-size:13px;color:var(--muted)}
 .oc-st{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin-top:6px;font-size:12px;color:var(--muted)}
 .oc-st .bar{margin:0}
-body:not([data-view="order"]):not([data-view="part"]) #findForm{display:none}
+body:not([data-page="order"]):not([data-page="part"]) #findForm{display:none}
 .role:empty{display:none}
 body.anon #nav{display:none}
 body.anon #view{padding-top:18px}
 #nav .nav-help{display:none}
-body[data-view="help"] #nav .nav-help{display:inline-flex}
+body[data-page="help"] #nav .nav-help{display:inline-flex}
 .home-foot{margin:28px 0 8px;display:flex;gap:10px;justify-content:center;align-items:center;color:var(--muted);font-size:14px}
 .linkbtn{border:0;background:none;padding:6px 2px;font:inherit;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .linkbtn:hover{color:var(--ink)}
@@ -188,8 +188,8 @@ body.fv-on{overflow:hidden}
 .fv-mod>summary .muted{font-size:13px;margin-left:6px}
 .asm{position:relative;margin-bottom:18px;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:linear-gradient(180deg,var(--sunk),var(--bg))}
 .asm canvas{display:block;width:100%;height:min(62vh,560px);touch-action:none;cursor:grab}
-.asm:not(.full) canvas{touch-action:pan-y}
-@media (max-width:720px){.asm:not(.full) canvas{height:min(54vh,520px)}}
+/* 3D забирает все жесты пальцами (как в приложениях 3D): страница листается касанием выше или ниже модели */
+@media (max-width:720px){body .asm:not(.full) canvas{height:min(50vh,480px)}}
 .asm-tools{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:6px;flex-wrap:wrap;pointer-events:none}
 .asm-tools button{pointer-events:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer;font-weight:500}
 .asm-tools button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
@@ -1356,16 +1356,18 @@ function mountAssembly(canvas, parts, opt){
   const furnSel=new THREE.MeshLambertMaterial({color:hiC});
   const pickable=()=>items.filter(m=>m.visible).concat(furnGroup.visible?furnItems:[]).concat(krepGroup.visible?krepItems:[]);
   st.apply=apply2; apply2(); place2();
-  try{ if(matchMedia("(pointer:coarse)").matches&&!localStorage.getItem("cehqr-gest")){ const hb=document.createElement("div"); hb.className="gest-hint";
-    hb.innerHTML=`<b>Как управлять</b><span>☝ палец влево-вправо — вращать</span><span>☝ вверх-вниз — листать страницу</span><span>✌ два пальца — двигать и приближать</span><span>👆👆 два нажатия — окошко детали</span><span>☝ долгое нажатие — выбрать несколько</span><i>коснитесь модели — подсказка исчезнет</i>`;
-    const wrap=canvas.parentElement; wrap.appendChild(hb); const close=()=>{ hb.remove(); try{ localStorage.setItem("cehqr-gest","1"); }catch(_){} };
+  try{ if(matchMedia("(pointer:coarse)").matches&&!localStorage.getItem("cehqr-gest2")){ const hb=document.createElement("div"); hb.className="gest-hint";
+    hb.innerHTML=`<b>Как управлять</b><span>☝ один палец — вращать</span><span>↕ листать страницу — касаясь выше или ниже модели</span><span>✌ два пальца — двигать и приближать</span><span>👆👆 два нажатия — окошко детали</span><span>☝ долгое нажатие — выбрать несколько</span><i>коснитесь модели — подсказка исчезнет</i>`;
+    const wrap=canvas.parentElement; wrap.appendChild(hb); const close=()=>{ hb.remove(); try{ localStorage.setItem("cehqr-gest2","1"); }catch(_){} };
     setTimeout(close,9000); canvas.addEventListener("pointerdown",close,{once:true}); } }catch(_){}
   // ввод: вращение, масштаб, выбор детали
   const ray=new THREE.Raycaster();
   const ptrs=new Map(); let drag=null, pinch=null, moved=false, tap=null, lastTap=null, spin=null;
   canvas.oncontextmenu=e=>e.preventDefault();
+  // iPhone/Android: жест на модели не должен листать или увеличивать страницу — всё отдаём 3D
+  ["touchstart","touchmove","gesturestart","gesturechange"].forEach(ev=>canvas.addEventListener(ev,e=>{ if(e.cancelable) e.preventDefault(); },{passive:false}));
   // скорость поворота от размера окна: провёл пальцем по всей ширине — пол-оборота (одинаково на телефоне и на компьютере)
-  const rotK=()=>{ const r=canvas.getBoundingClientRect(), t=matchMedia("(pointer:coarse)").matches?0.6:1; return {kx:t*Math.PI/Math.max(240,r.width), ky:t*Math.PI*0.75/Math.max(240,r.height)}; };
+  const rotK=()=>{ const r=canvas.getBoundingClientRect(), t=matchMedia("(pointer:coarse)").matches?0.8:1; return {kx:t*Math.PI/Math.max(240,r.width), ky:t*Math.PI*0.75/Math.max(240,r.height)}; };
   const stopSpin=()=>{ if(spin){ cancelAnimationFrame(spin.raf); spin=null; } };
   const startDrag=(x,y,pan)=>{ drag={x,y,yaw:st.yaw,pitch:st.pitch,pan,p0:pan?pointAt(x,y):null,t0:st.target.clone(),hist:[{x,y,t:performance.now()}]}; };
   const twoPinch=()=>{ const [a,b]=[...ptrs.values()]; pinch={d:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),dist:st.dist,mx:(a.x+b.x)/2,my:(a.y+b.y)/2,ang:Math.atan2(b.y-a.y,b.x-a.x)}; drag=null; };
@@ -1587,6 +1589,9 @@ function svgZoom(box){
   svg.addEventListener("wheel",e=>{ e.preventDefault(); const d=e.deltaMode===1?e.deltaY*33:e.deltaY; zoom(e.clientX,e.clientY,Math.exp(Math.max(-1,Math.min(1,d*0.0015)))); },{passive:false});
   svg.addEventListener("dblclick",e=>{ e.preventDefault(); if(w<W0-0.01){ x=X0;y=Y0;w=W0;h=H0; set(); } else zoom(e.clientX,e.clientY,0.4); });
   const ptrs=new Map(); let drag=null, pinch=null, down=null, lastTapD=null;
+  // iPhone: щипок двумя пальцами по чертежу — масштаб чертежа, а не всей страницы
+  ["gesturestart","gesturechange"].forEach(ev=>svg.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+  svg.addEventListener("touchmove",e=>{ if(e.touches.length>1&&e.cancelable) e.preventDefault(); },{passive:false});
   svg.addEventListener("pointerup",e=>{ if(e.pointerType!=="touch"||box.classList.contains("measuring")||!down) return;
     if(e.target.closest&&e.target.closest(".fv-pos,.udim-x")) return;
     if(Math.hypot(e.clientX-down.x,e.clientY-down.y)>10){ lastTapD=null; return; }
@@ -2841,7 +2846,7 @@ function stageBar(oid, count){
 }
 function render(){
   // главный экран без лишнего: поиск по позиции — только в заказе и детали; вкладки — только сотрудникам
-  document.body.dataset.view=S.view; document.body.classList.toggle("client",S.view==="order"&&clientMode()); document.body.classList.toggle("anon",!!(S.site&&!S.canEdit&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())&&!(typeof siteIsSupply==="function"&&siteIsSupply())));
+  document.body.dataset.page=S.view; document.body.classList.toggle("client",S.view==="order"&&clientMode()); document.body.classList.toggle("anon",!!(S.site&&!S.canEdit&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())&&!(typeof siteIsSupply==="function"&&siteIsSupply())));
   setTimeout(()=>document.body.classList.toggle("fv-on",!!document.querySelector(".fv-win")),0);
   if(S.view!=="order"&&typeof closePartSheet==="function") closePartSheet();
   document.querySelectorAll("#nav button").forEach(b=>b.setAttribute("aria-current", String(b.dataset.view===S.view || (S.view!=="import"&&S.view!=="help"&&S.view!=="catalog"&&b.dataset.view==="orders"))));
