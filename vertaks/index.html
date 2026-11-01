@@ -881,7 +881,10 @@ function partUrl(code){ const base=(S.config.url||"").split("#")[0], k=keyFor(co
 function qrMatrix(text){ const q=qrcode(0,"M"); q.addData(unescape(encodeURIComponent(text))); q.make(); return q; }
 // этапы показываем тем, кто может их отмечать: технолог, мастер с PIN цеха, демо. Клиенту по QR — нет.
 // клиент по QR-ссылке: только красивое изделие и статус, без технических кнопок. Мастер включает «Режим мастера» внизу страницы.
-function clientMode(){ if(!S.site||S.canEdit||S.pin||(typeof siteIsAdmin==="function"&&siteIsAdmin())) return false; try{ return localStorage.getItem("cehqr-full")!=="1"; }catch(_){ return true; } }
+function clientMode(){ if(!S.site||S.canEdit||S.pin||(typeof siteIsAdmin==="function"&&siteIsAdmin())) return false;
+  // мастера, дизайнеры, снабженец и все, кто вошёл в Вертакс по PIN, — сотрудники: им видны чертежи
+  if((typeof siteIsMasters==="function"&&siteIsMasters())||(typeof siteIsDesigners==="function"&&siteIsDesigners())||(typeof siteIsSupply==="function"&&siteIsSupply())) return false;
+  try{ if(["cehqr-pin","cehqr-techpin","cehqr-officepin","cehqr-suppin"].some(k=>localStorage.getItem(k))) return false; }catch(_){} try{ return localStorage.getItem("cehqr-full")!=="1"; }catch(_){ return true; } }
 function clientStatus(oid){
   if(STAGES_OFF) return "";
   if(!S.site||!S.site.stagesUrl) return "";
@@ -1352,13 +1355,13 @@ function mountAssembly(canvas, parts, opt){
     KB.forEach((b,i)=>{ for(let x=Math.floor(b[0]/CELL);x<=Math.floor(b[3]/CELL);x++) for(let y=Math.floor(b[1]/CELL);y<=Math.floor(b[4]/CELL);y++) for(let z=Math.floor(b[2]/CELL);z<=Math.floor(b[5]/CELL);z++){ const k=x+","+y+","+z; if(!grid.has(k)) grid.set(k,[]); grid.get(k).push(i); } });
     const inKrep=(x,y,z)=>{ const L=grid.get(Math.floor(x/CELL)+","+Math.floor(y/CELL)+","+Math.floor(z/CELL)); if(!L) return false; for(const i of L){ const b=KB[i]; if(x>=b[0]-1&&x<=b[3]+1&&y>=b[1]-1&&y<=b[4]+1&&z>=b[2]-1&&z<=b[5]+1) return true; } return false; };
     opt._krepTest=KB.length?inKrep:null;
-    exact.m.forEach(mm=>{ if(/^stena|beton|oboi|potolok/i.test(mm.n||"")) return;   /* стены комнаты — не фурнитура */ try{
+    let roomG=null; exact.m.forEach(mm=>{ const room=/^stena|beton|oboi|potolok/i.test(mm.n||"");   /* стены комнаты — показываем светлыми, без крепежа */ try{
       const q=new Uint16Array(b64(mm.p)), n=q.length/3, pos=new Float32Array(q.length);
       for(let i=0;i<n;i++){ pos[i*3]=(q[i*3]*exact.s+exact.o[0]-C[0])*K; pos[i*3+1]=(q[i*3+1]*exact.s+exact.o[1]-C[1])*K; pos[i*3+2]=(q[i*3+2]*exact.s+exact.o[2]-C[2])*K; }
       const allIdx=mm.b===4?new Uint32Array(b64(mm.i)):new Uint16Array(b64(mm.i));
       // делим треугольники: крепёж / остальная фурнитура
       let idxF=allIdx, idxK=null;
-      if(opt._krepTest){ const f=[], k=[]; for(let t=0;t<allIdx.length;t+=3){ const a=allIdx[t], b=allIdx[t+1], c=allIdx[t+2];
+      if(opt._krepTest&&!room){ const f=[], k=[]; for(let t=0;t<allIdx.length;t+=3){ const a=allIdx[t], b=allIdx[t+1], c=allIdx[t+2];
           const cx=(q[a*3]+q[b*3]+q[c*3])/3*exact.s+exact.o[0], cy=(q[a*3+1]+q[b*3+1]+q[c*3+1])/3*exact.s+exact.o[1], cz=(q[a*3+2]+q[b*3+2]+q[c*3+2])/3*exact.s+exact.o[2];
           (opt._krepTest(cx,cy,cz)?k:f).push(a,b,c); }
         idxF=new Uint32Array(f); idxK=k.length?new Uint32Array(k):null; }
@@ -1367,6 +1370,7 @@ function mountAssembly(canvas, parts, opt){
       let col=mm.c||"#a0a4a8"; if(/^#f[ef]f[ef]f[ef]$/i.test(col)&&/khrom|хром|stal|nikel|profil/i.test(mm.n)) col="#c9cdd2";
       const metal=/khrom|хром|stal|сталь|nikel|никел|tsink|цинк|zink|profil|alyum|алюм/i.test(mm.n);
       const mat=new THREE.MeshPhongMaterial({color:new THREE.Color(col),shininess:metal?90:20,specular:metal?0x666666:0x111111,side:THREE.DoubleSide});
+      if(room){ if(!roomG){ roomG=new THREE.Group(); scene.add(roomG); } roomG.add(new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0xe9e6df,side:THREE.DoubleSide,transparent:true,opacity:0.55,depthWrite:false}))); return; }
       if(idxF.length) g0.add(new THREE.Mesh(geo,mat));
       if(idxK) krepGroupX.add(new THREE.Mesh(mk(idxK),mat)); }catch(e){} });
   }
@@ -2053,7 +2057,7 @@ function dlBlob(name, blob){
 }
 function sheetOf(mat){   // размер листа по материалу; null — не листовой (стекло, сталь, столешница)
   const m=String(mat||"").toLowerCase();
-  if(!m||/стекл|зеркал|стал|алюм|столешн|пластик|профил|пвх|плёнк|пленк|eterno|этерно/.test(m)) return null;   // ПВХ-плёнку и Eterno (заказные фасады) в раскрой не берём
+  if(!m||/^\s*стена|стекл|зеркал|стал|алюм|столешн|пластик|профил|пвх|плёнк|пленк|eterno|этерно/.test(m)) return null;   // «Стена» — стены комнаты из Базиса, не деталь   // ПВХ-плёнку и Eterno (заказные фасады) в раскрой не берём
   if(/двп|хдф/.test(m)) return {w:2745,h:1700,rot:true};
   if(/agt|мдф|kastamonu|кастамону|кастамона/.test(m)) return {w:2800,h:1220,rot:false};
   const rot=/белый|серый|черный|чёрный|однотон|шагрен/.test(m);
@@ -2777,10 +2781,20 @@ function asmTools(extra){
 const RUNNER_OFF=22;
 // отдельный чертёж на каждый модуль (кухня): модуль поворачиваем так, чтобы смотреть на него спереди
 function moduleViews(parts, fasteners, mode, wire, hinges, pos, gaps){
+  parts=parts.filter(p=>!/^\s*стена/i.test(String(p.material||"")));   // стены комнаты в чертёж не берём
   const withBox=parts.filter(p=>p.box), groups=new Map();
   withBox.forEach(p=>{ if(!p.mod) return; if(!groups.has(p.mod)) groups.set(p.mod,[]); groups.get(p.mod).push(p); });
   const one=()=>{ const fv=frontView(parts,{mode,fasteners,wire,hinges,pos,gaps}); return fv&&fv.sections?[{title:"",size:"",svg:fv.svg}]:[]; };
-  if(groups.size<2) return one();
+  if(groups.size<2){ const r=one(); if(r.length||withBox.length<8||parts._split) return r;
+    // вся мебель в одном слое Базиса: делим на модули по соприкасающимся деталям
+    const n=withBox.length, par=withBox.map((_,i)=>i), f=i=>{ while(par[i]!==i){ par[i]=par[par[i]]; i=par[i]; } return i; };
+    const touch=(a,b)=>[0,1,2].every(k=>a.box[k]<=b.box[k+3]+3&&b.box[k]<=a.box[k+3]+3);
+    for(let i=0;i<n;i++) for(let j=i+1;j<n;j++) if(touch(withBox[i],withBox[j])){ const x=f(i),y=f(j); if(x!==y) par[x]=y; }
+    const cl=new Map(); withBox.forEach((p,i)=>{ const r0=f(i); if(!cl.has(r0)) cl.set(r0,[]); cl.get(r0).push(p); });
+    const big=[...cl.values()].filter(c=>c.length>=4).sort((a,b)=>Math.min(...a.map(p=>p.box[0]))-Math.min(...b.map(p=>p.box[0])));
+    if(big.length<2) return r;
+    const copy=[]; big.forEach((c,k)=>c.forEach(p=>copy.push(Object.assign({},p,{mod:"Блок "+(k+1)}))));
+    copy._split=true; return moduleViews(copy, fasteners, mode, wire, hinges, pos, gaps); }
   const bb=ps=>{ const lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9]; ps.forEach(p=>{ for(let i=0;i<3;i++){ lo[i]=Math.min(lo[i],p.box[i]); hi[i]=Math.max(hi[i],p.box[i+3]); } }); return {lo,hi,c:[0,1,2].map(i=>(lo[i]+hi[i])/2)}; };
   const all=bb(withBox), out=[];
   const T={ "2,1":b=>b, "2,-1":b=>[-b[3],b[1],-b[5],-b[0],b[4],-b[2]], "0,1":b=>[-b[5],b[1],b[0],-b[2],b[4],b[3]], "0,-1":b=>[b[2],b[1],-b[3],b[5],b[4],-b[0]] };
@@ -3704,7 +3718,7 @@ function supBase(oid,res){
   const parts=expandParts(oid,res.parts||[]), fs=(res.fasteners||[]).filter(f=>f.g||!NOT_FURN.test(String(f.n).trim()));
   const out=[], onSheet=new Set();
   cutMaps(parts).forEach(m=>{ onSheet.add(m.mat); out.push({key:"L:"+m.mat,type:"L",name:m.mat,qty:m.sheets.length,unit:"л."}); });
-  const other=new Map(); parts.forEach(p=>{ const k=String(p.material||"").split(/[\r\n]/)[0]; if(!k||onSheet.has(k)||!p.L||!p.W) return; other.set(k,(other.get(k)||0)+p.L*p.W/1e6); });
+  const other=new Map(); parts.forEach(p=>{ const k=String(p.material||"").split(/[\r\n]/)[0]; if(!k||onSheet.has(k)||!p.L||!p.W||/^\s*стена/i.test(k)) return; other.set(k,(other.get(k)||0)+p.L*p.W/1e6); });
   other.forEach((a,k)=>out.push({key:"L:"+k,type:"L",name:k,qty:Math.round(a*100)/100,unit:"м²"}));
   edgeMeters(parts).forEach(e=>out.push({key:"E:"+e.name,type:"E",name:e.name,qty:e.m,unit:"м"}));
   furnAll(fs,parts).forEach(f=>out.push({key:"F:"+f.name,type:"F",name:f.name,qty:f.qty,unit:"шт",auto:!!f.auto}));
