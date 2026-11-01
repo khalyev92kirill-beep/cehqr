@@ -3166,7 +3166,7 @@ function stageBar(oid, count){
 }
 function render(){
   // главный экран без лишнего: поиск по позиции — только в заказе и детали; вкладки — только сотрудникам
-  document.body.dataset.page=S.view; document.body.classList.toggle("client",S.view==="order"&&clientMode()); document.body.classList.toggle("anon",!!(S.site&&!S.canEdit&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())&&!(typeof siteIsSupply==="function"&&siteIsSupply())));
+  document.body.dataset.page=S.view; document.body.classList.toggle("client",S.view==="order"&&clientMode()); document.body.classList.toggle("anon",!!(S.site&&!S.canEdit&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())&&!(typeof siteIsSupply==="function"&&siteIsSupply())&&!(typeof siteIsDesigners==="function"&&siteIsDesigners())));
   setTimeout(()=>document.body.classList.toggle("fv-on",!!document.querySelector(".fv-win")),0);
   if(S.view!=="order"&&typeof closePartSheet==="function") closePartSheet();
   document.querySelectorAll("#nav button").forEach(b=>b.setAttribute("aria-current", String(b.dataset.view===S.view || (S.view!=="import"&&S.view!=="help"&&S.view!=="catalog"&&b.dataset.view==="orders"))));
@@ -3576,11 +3576,15 @@ if(!_ks.orders) _ks.orders={};
 function keySave(){ try{ localStorage.setItem(T3K,JSON.stringify(_ks)); }catch(_){} }
 function siteIsAdmin(){ return !!_ks.master; }
 function siteIsSupply(){ return !!_ks.supply; }
+function siteIsMasters(){ return !!_ks.masters; }
+function siteIsDesigners(){ return !!_ks.designers; }
 keyFor=code=>{ const c=String(code||"").toUpperCase(), oid=/-\d+$/.test(c)?orderIdOf(c):c; const o=_ks.orders[oid]; return (o&&o.k)||""; };
 // «#4444~ключ», «#4444-012~ключ», «#admin~ключ»: ключ запоминаем на этом телефоне, из адресной строки убираем
 hashHook=h=>{ h=String(h||""); const m=/^(.*?)~([A-Za-z0-9_-]{20,})$/.exec(h); if(!m) return h;
   const id=m[1].toUpperCase(), k=m[2];
   if(id==="ADMIN"){ _ks.master=k; keySave(); history.replaceState(null,"",location.pathname+location.search); return ""; }
+  if(id==="DESIGNERS"){ _ks.designers=k; keySave(); history.replaceState(null,"",location.pathname+location.search); setTimeout(()=>{ siteLoadIndex().then(()=>{ toast("Вы вошли в режим дизайнеров: видны все заказы"); setView("orders"); }); },0); return ""; }
+  if(id==="MASTERS"){ _ks.masters=k; keySave(); history.replaceState(null,"",location.pathname+location.search); setTimeout(()=>{ siteLoadIndex().then(()=>{ toast("Вы вошли в режим мастеров: видны все заказы"); setView("orders"); }); },0); return ""; }
   if(id==="SUPPLY"){ _ks.supply=k; keySave(); history.replaceState(null,"",location.pathname+location.search); setTimeout(()=>{ siteLoadIndex().then(()=>setView("supply")); },0); return ""; }
   const oid=/-\d+$/.test(id)?orderIdOf(id):id; _ks.orders[oid]=Object.assign(_ks.orders[oid]||{},{k}); keySave();
   history.replaceState(null,"","#"+m[1]); return m[1]; };
@@ -3597,6 +3601,8 @@ async function siteLoadIndex(){
   if(j&&j.ct){
     if(_ks.master){ try{ j=JSON.parse(await decryptText(j,_ks.master)); }catch(_){ j=null; toast("Ссылка технолога устарела — откройте новую из файла «Технолог 3D — ссылки.txt»"); } }
     else if(_ks.supply){ j=null; try{ const r2=await fetch("orders/supply.json",{cache:"no-cache"}); if(r2.ok) j=JSON.parse(await decryptText(await r2.json(),_ks.supply)); }catch(_){ j=null; toast("Ссылка снабженца устарела — попросите новую у технолога"); } }
+    else if(_ks.designers){ j=null; try{ const r4=await fetch("orders/designers.json",{cache:"no-cache"}); if(r4.ok) j=JSON.parse(await decryptText(await r4.json(),_ks.designers)); }catch(_){ j=null; toast("Ссылка дизайнеров устарела — попросите новую у технолога"); } }
+    else if(_ks.masters){ j=null; try{ const r3=await fetch("orders/masters.json",{cache:"no-cache"}); if(r3.ok) j=JSON.parse(await decryptText(await r3.json(),_ks.masters)); }catch(_){ j=null; toast("Ссылка мастеров устарела — попросите новую у технолога"); } }
     else j=null;
     if(j) (j.orders||[]).forEach(o=>{ if(o&&o.id&&o.k){ const id=String(o.id).toUpperCase(); _ks.orders[id]=Object.assign(_ks.orders[id]||{},{k:o.k,name:o.name,count:o.count}); } });
     keySave();
@@ -3623,6 +3629,7 @@ viewOrders=function(){
   const ids=Object.keys(S.orders);
   if(!ids.length) return `<div class="empty" style="padding:48px 16px"><h2>Проекты открываются по QR-коду</h2>
     <p class="muted" style="max-width:420px;margin:8px auto 0">Отсканируйте QR-код проекта, который дал технолог, — откроется 3D и чертежи вашего заказа. Другие заказы здесь не видны.</p></div>`;
+  if(siteIsMasters()||siteIsDesigners()) return _viewOrders();   // режим мастеров: все заказы, как у технолога
   return _viewOrders().replace("<h1>Заказы в работе</h1>","<h1>Мои проекты</h1>");
 };
 /* вход технолога прямо в приложении: вставить ссылку технолога из файла «Технолог 3D — ссылки.txt» */
@@ -3646,13 +3653,15 @@ const _viewOrders2=viewOrders;
 viewOrders=function(){ const a=siteIsAdmin(), sp=siteIsSupply();
   // внизу — тихие ссылки: справка и вход/выход для сотрудников (клиенту и мастеру лишние кнопки не нужны)
   return _viewOrders2()+`<p class="home-foot"><button type="button" class="linkbtn" data-view="help">Как работать</button><span>·</span>`
-  +(a?`<button type="button" class="linkbtn" data-act="adm-out">Выйти (технолог)</button>`:sp?`<button type="button" class="linkbtn" data-act="sup-out">Выйти (снабженец)</button>`:`<button type="button" class="linkbtn" data-act="staff-in">Вход для сотрудников</button>`)+`</p>`; };
+  +(a?`<button type="button" class="linkbtn" data-act="adm-out">Выйти (технолог)</button>`:(!sp&&siteIsDesigners())?`<button type="button" class="linkbtn" data-act="dsg-out">Выйти из режима дизайнеров</button>`:(!sp&&siteIsMasters())?`<button type="button" class="linkbtn" data-act="mst-out">Выйти из режима мастеров</button>`:sp?`<button type="button" class="linkbtn" data-act="sup-out">Выйти (снабженец)</button>`:`<button type="button" class="linkbtn" data-act="staff-in">Вход для сотрудников</button>`)+`</p>`; };
 function staffModal(){ const m=document.createElement("div"); m.className="modal"; m.id="qrModal";
   m.innerHTML=`<div class="modal-card"><h2 style="margin:0 0 6px">Вход для сотрудников</h2><p class="note" style="margin:0 0 14px">Мастеру входить не нужно: PIN цеха приложение спросит само, когда он отметит этап.</p>
     <div style="display:grid;gap:8px"><button type="button" class="btn" data-staff="adm">Я технолог</button><button type="button" class="btn" data-staff="sup">Я снабженец</button><button type="button" class="btn sm" data-staff="no">Отмена</button></div></div>`;
   document.body.appendChild(m); m.addEventListener("click",e=>{ const b=e.target.closest("[data-staff]"); if(e.target!==m&&!b) return; m.remove();
     if(b&&b.dataset.staff==="adm") adminLoginModal(); else if(b&&b.dataset.staff==="sup") supLoginModal(); }); }
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="staff-in"]'); if(!t) return; ev.stopPropagation(); staffModal(); },true);
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="dsg-out"]'); if(!t) return; ev.stopPropagation(); if(!confirm("Выйти из режима дизайнеров на этом телефоне?")) return; delete _ks.designers; keySave(); siteLoadIndex().then(()=>setView("orders")); },true);
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="mst-out"]'); if(!t) return; ev.stopPropagation(); if(!confirm("Выйти из режима мастеров на этом телефоне?")) return; delete _ks.masters; keySave(); siteLoadIndex().then(()=>setView("orders")); },true);
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="adm-in"],[data-act="adm-out"]'); if(!t) return; ev.stopPropagation(); t.dataset.act==="adm-in"?adminLoginModal():adminLogout(); },true);
 
 /* заказ удалён с сайта: не показываем «не найден», а тихо убираем его из «Моих проектов» и возвращаемся к списку */
@@ -3668,7 +3677,7 @@ const SUP_ST=[{name:"Нужно",c:"#9aa0a6"},{name:"Заказано",c:"#e8a33
 S.sup=S.sup||{needs:{},st:{},tab:"orders",open:{},edit:null,loading:false};
 try{ S.sup.pin=localStorage.getItem("cehqr-suppin")||""; }catch(_){ S.sup.pin=""; }
 function supUrl(q){ return S.site.stagesUrl+(S.site.stagesUrl.includes("?")?"&":"?")+q; }
-function supCanSee(){ return siteIsAdmin()||siteIsSupply(); }
+function supCanSee(){ return siteIsAdmin()||siteIsSupply()||(typeof siteIsDesigners==="function"&&siteIsDesigners()); }
 /* что нужно купить по заказу — из данных Базиса */
 function supBase(oid,res){
   const parts=expandParts(oid,res.parts||[]), fs=(res.fasteners||[]).filter(f=>f.g||!NOT_FURN.test(String(f.n).trim()));
@@ -4799,7 +4808,7 @@ render=function(){
   if(S.view!=="shop"){ _renderShop(); if(document.body.dataset.page==="shop") document.body.dataset.page=S.view; if(shpOn()&&shpPin()) document.body.classList.remove("anon"); return; }
   if(typeof closePartSheet==="function") closePartSheet(); disposeAsm();
   document.body.dataset.page="shop"; document.body.classList.remove("client","has-full");
-  document.body.classList.toggle("anon",!shpPin()&&!!(S.site&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())&&!(typeof siteIsSupply==="function"&&siteIsSupply())));
+  document.body.classList.toggle("anon",!shpPin()&&!!(S.site&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())&&!(typeof siteIsSupply==="function"&&siteIsSupply())&&!(typeof siteIsDesigners==="function"&&siteIsDesigners())));
   document.querySelectorAll("#nav button").forEach(b=>b.setAttribute("aria-current",String(b.dataset.view==="shop")));
   const want=S.shop.mode==="order"?S.shop.cur:S.shop.mode==="general"?"general":null;
   if(want&&shpPin()&&(!S.shop.chat||S.shop.chat.id!==want||!shpTimer)) shpChatStart(want);
