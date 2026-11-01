@@ -4533,6 +4533,7 @@ function viewShop(){
   if(m==="staff") return nav+shpStaffHtml();
   if(m==="person") return nav+shpPersonHtml();
   if(m==="more") return nav+shpMoreHtml();
+  if(m==="money") return nav+shpMoneyHtml();
   return nav+shpBoardHtml();
 }
 function shpRenderKeep(){ const y=window.scrollY; render(); window.scrollTo(0,y); }
@@ -4623,7 +4624,7 @@ async function shpTasksLoad(quiet){ const j=await shpGet("action=tasks",quiet); 
 function shpOldScript(){ return S.shop.v2?"":`<div class="banner warn">Задачи, лента и сотрудники заработают после обновления скрипта Google-таблицы (вставить новый код → «Управление развёртываниями» → «Новая версия»).</div>`; }
 
 /* нижние вкладки (Вертакс) / меню сверху (сайт) */
-function shpTab(){ const m=S.shop.mode; return m==="tasks"?"tasks":m==="chats"||m==="general"?"chats":m==="cal"?"cal":/^(more|feed|clients|client|staff|person)$/.test(m)?"more":"board"; }
+function shpTab(){ const m=S.shop.mode; return m==="tasks"?"tasks":m==="chats"||m==="general"?"chats":m==="cal"?"cal":/^(more|feed|clients|client|staff|person|money)$/.test(m)?"more":"board"; }
 function shpChatUnread(){ const seen=shpSeen(); return S.shop.orders.filter(o=>shpUnread(o,seen)).length+(shpGenUnread(seen)?1:0); }
 function shpNavHtml(){
   const cur=shpTab(), my=shpMyOpen(), un=shpChatUnread();
@@ -4948,11 +4949,38 @@ function shpChatsHtml(){
     ${L.length?"":`<p class="note">По заказам пока никто не писал. Откройте заказ — внизу чат.</p>`}`;
 }
 
+/* ---- «Деньги по заказам»: сумма, предоплата, закупка по чекам снабженца, что остаётся. Только технолог и офис ---- */
+const SHP_MP=[["m0","Этот месяц"],["m1","Прошлый"],["y","Год"],["all","Всё"]];
+function shpMoneyRange(v){ const d=new Date(), y=d.getFullYear(), m=d.getMonth();
+  if(v==="m0") return [new Date(y,m,1).getTime(),Infinity]; if(v==="m1") return [new Date(y,m-1,1).getTime(),new Date(y,m,1).getTime()];
+  if(v==="y") return [new Date(y,0,1).getTime(),Infinity]; return [-Infinity,Infinity]; }
+function shpMoneyHtml(){
+  const back=`<button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button>`;
+  if(!S.shop.full) return `<div class="head"><h1>Деньги по заказам</h1><div class="head-actions">${back}</div></div><p class="note">Суммы видят только технолог и офис.</p>`;
+  const per=S.shop.mper||"all", [a,b]=shpMoneyRange(per), lost=!!S.shop.mlost;
+  const L=S.shop.orders.filter(o=>{ const t=+o.created||0; return (per==="all"||(t>=a&&t<b))&&(lost||o.stage!=="lost"); }).sort((x,y)=>(+y.created||0)-(+x.created||0));
+  let sum=0,pre=0,buy=0,nos=0; L.forEach(o=>{ const has=o.sum!==""&&o.sum!=null; if(has) sum+=+o.sum||0; else nos++; pre+=+o.prepay||0; buy+=+o.receiptsTotal||0; });
+  const it=(l,v,c)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b></div>`, pc=(x,y)=>y>0?Math.round(x/y*100)+"%":"—";
+  let h=`<div class="head"><div><h1>Деньги по заказам</h1><p class="muted" style="margin:4px 0 0">Закупка — сумма чеков снабженца по заказу</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-reload">Обновить</button>${back}</div></div>
+  <div class="shp-mbar"><div class="shp-seg" role="group" aria-label="За какой период (по дате создания заказа)">${SHP_MP.map(([k,t])=>`<button type="button" data-act="shp-mper" data-v="${k}" aria-pressed="${per===k}">${t}</button>`).join("")}</div>
+  <label class="shp-mlost"><input type="checkbox" data-act="shp-mlost" ${lost?"checked":""}> с отказами</label></div>
+  <div class="card shp-money" aria-label="Итого">${it("Заказов",String(L.length))}${it("Сумма заказов",shpMoney(sum))}${it("Получено предоплат",shpMoney(pre))}${it("Закупка по чекам",shpMoney(buy)+(sum?" · "+pc(buy,sum):""))}${it("Остаётся (сумма − закупка)",shpMoney(sum-buy),sum-buy<0?"neg":"")}</div>`;
+  if(nos) h+=`<p class="note" style="margin:-4px 0 12px">У ${nos} ${shpPl(nos,"заказа","заказов","заказов")} не указана сумма — они не входят в «Сумму заказов».</p>`;
+  if(!L.length) return h+`<p class="note">За этот период заказов нет.</p>`;
+  h+=`<div class="tablebox"><table class="shp-mt"><thead><tr><th>Заказ</th><th>Этап</th><th class="num">Сумма</th><th class="num">Предопл.</th><th class="num">Закупка</th><th class="num">Остаётся</th><th class="num" title="Закупка от суммы заказа">%</th></tr></thead><tbody>`;
+  L.forEach(o=>{ const has=o.sum!==""&&o.sum!=null, s1=+o.sum||0, b1=+o.receiptsTotal||0, r=s1-b1, p=has&&s1>0?Math.round(b1/s1*100):null;
+    h+=`<tr data-act="shp-open" data-id="${esc(o.id)}" tabindex="0"><td><b>${esc(shpTitle(o))}</b>${o.kind?`<span class="muted shp-mk">${esc(o.kind)}</span>`:""}</td><td class="shp-mst">${esc(shpStName(o.stage))}</td>
+      <td class="num" data-l="Сумма">${has?esc(shpMoney(s1)):"—"}</td><td class="num" data-l="Предоплата">${esc(shpMoney(+o.prepay||0))}</td><td class="num" data-l="Закупка">${b1?esc(shpMoney(b1)):"—"}</td>
+      <td class="num${has&&r<0?" shp-neg":""}" data-l="Остаётся">${has?esc(shpMoney(r)):"—"}</td><td class="num${p!=null&&p>=60?" shp-neg":""}" data-l="Закупка от суммы">${p==null?"—":p+"%"}</td></tr>`; });
+  return h+`</tbody><tfoot><tr><td colspan="2"><b>Итого</b></td><td class="num"><b>${esc(shpMoney(sum))}</b></td><td class="num"><b>${esc(shpMoney(pre))}</b></td><td class="num"><b>${esc(shpMoney(buy))}</b></td><td class="num${sum-buy<0?" shp-neg":""}"><b>${esc(shpMoney(sum-buy))}</b></td><td class="num"><b>${pc(buy,sum)}</b></td></tr></tfoot></table></div>
+  <p class="muted" style="margin-top:8px">Красным — закупка 60% и больше от суммы заказа или ушли в минус. Нажмите на строку — откроется заказ.</p>`;
+}
+
 /* ---- «Ещё» ---- */
 function shpMoreHtml(){
   const it=(act,v,ic,t,sub)=>`<li><button type="button" class="shp-row" data-act="${act}" data-v="${v}"><span class="shp-av" aria-hidden="true">${shpIco(ic,20)}</span><span class="shp-rb"><b>${t}</b><span class="muted">${sub}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
   return `<div class="head"><div><h1>Ещё</h1><p class="muted" style="margin:4px 0 0">${esc(shpRoleLine())}</p></div></div>
-    <ul class="shp-list">${it("shp-tab","feed","feed","Лента","Кто что сделал по заказам")}${it("shp-tab","clients","clients","Клиенты","Все клиенты и их заказы")}${it("shp-tab","staff","staff","Сотрудники","Задачи, заказы и телефоны")}
+    <ul class="shp-list">${it("shp-tab","feed","feed","Лента","Кто что сделал по заказам")}${it("shp-tab","clients","clients","Клиенты","Все клиенты и их заказы")}${it("shp-tab","staff","staff","Сотрудники","Задачи, заказы и телефоны")}${S.shop.full?it("shp-tab","money","money","Деньги по заказам","Сумма, закупка по чекам и что остаётся"):""}
     ${it("shp-myname","","staff","Моё имя: "+esc(shpWho()),"Так вас видят в задачах и чатах — нажмите, чтобы изменить")}${it("shp-reload","","reload","Обновить данные","Заказы и задачи из таблицы")}${it("shp-out","","out","Выйти из «Вертакса»","На этом телефоне")}</ul>`;
 }
 
@@ -5174,6 +5202,11 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
 .shp-money{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin:0 0 14px}@media (min-width:700px){.shp-money{grid-template-columns:repeat(5,minmax(0,1fr))}}
 .shp-m{display:grid;gap:2px;min-width:0}.shp-m span{font-size:12px;color:var(--muted)}.shp-m b{font-size:16px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .shp-m.due b{color:#b3261e}.shp-m.neg b{color:#b3261e}
+.shp-mbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:0 0 14px}.shp-mlost{display:inline-flex;gap:8px;align-items:center;min-height:44px;font-size:14px;cursor:pointer}.shp-mlost input{width:20px;height:20px}
+.shp-mt tbody tr{cursor:pointer}.shp-mt tbody tr:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}.shp-mt td{vertical-align:top}.shp-mk{display:block;font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shp-mt .shp-neg{color:#ff6b5e;font-weight:700}.shp-mt tfoot td{border-top:2px solid var(--line)}.shp-mt td.num,.shp-mt th.num{white-space:nowrap;font-variant-numeric:tabular-nums}.shp-mt td,.shp-mt th{padding-left:10px;padding-right:10px}
+@media (max-width:699px){.shp-mt thead{display:none}.shp-mt,.shp-mt tbody,.shp-mt tfoot{display:block}.shp-mt tr{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.shp-mt td{display:block;padding:0;border:0}.shp-mt td:first-child,.shp-mt td.shp-mst{grid-column:1/-1}.shp-mt td.shp-mst{font-size:13px;color:var(--muted);margin-bottom:4px}
+.shp-mt td.num{text-align:left}.shp-mt td[data-l]::before{content:attr(data-l);display:block;font-size:11px;color:var(--muted);font-weight:400}.shp-mt tfoot tr{display:none}}
 @media (max-width:699px){.shp-m:last-child{grid-column:1/-1;border-top:1px solid var(--line);padding-top:8px}}
 .shp-rc h2{margin:0;font-size:16px}.shp-rc-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 10px}
 .shp-rc-sum{font-size:14px}.shp-rc-sum b{font-size:16px;font-variant-numeric:tabular-nums}
@@ -5442,6 +5475,8 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="shp-reload"){ S.shop.err=false; t.disabled=true; await shpLoad(); t.disabled=false; if(S.shop.loaded) toast("Обновлено"); return; }
   if(a==="shp-open"){ document.querySelectorAll("#shpTaskModal").forEach(x=>x.remove()); return shpGo("order",t.dataset.id); }
   if(a==="shp-back"){ const b=S.shop.back&&S.shop.back!=="order"?S.shop.back:"board"; shpGo(b); shpLoad(true); return; }
+  if(a==="shp-mper"){ S.shop.mper=t.dataset.v; return shpRenderKeep(); }
+  if(a==="shp-mlost"){ S.shop.mlost=!!t.checked; return shpRenderKeep(); }
   if(a==="shp-tab"){ const v=t.dataset.v; if(t.dataset.tt) S.shop.ttab=t.dataset.tt; S.shop.chat=null;
     if(v==="feed"){ S.shop.feed.loaded&&shpFeedLoad(true); } if(v==="staff"){ S.shop.staffLoaded=false; } if(v==="cal"&&!S.shop.cal.a) S.shop.cal.a=shpToday();
     if(v==="tasks"&&S.shop.v2) shpTasksLoad(true).then(()=>{ if(S.view==="shop"&&S.shop.mode==="tasks"&&!document.querySelector(".modal")) shpRenderKeep(); });
