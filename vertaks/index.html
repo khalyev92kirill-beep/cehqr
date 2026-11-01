@@ -799,6 +799,8 @@ function expandParts(orderId, list){
 }
 function orderIdOf(code){ const i=code.lastIndexOf("-"); return i>0?code.slice(0,i):null; }
 function partByCode(code){ return S.current.parts.find(p=>p.code===code)||null; }
+const isWall=p=>/^\s*стена/i.test(String(p&&p.material||""));   // стены комнаты: только в 3D, не деталь
+function cutParts(){ return (S.current.parts||[]).filter(p=>!isWall(p)); }
 function stageOf(code){ const oid=orderIdOf(code); const pr=S.progress[oid]; return (pr&&pr.stages&&pr.stages[code])||0; }
 
 /* ---------- db ---------- */
@@ -895,7 +897,7 @@ function clientMode(){ if(!S.site||S.canEdit||S.pin||(typeof siteIsAdmin==="func
 function clientStatus(oid){
   if(STAGES_OFF) return "";
   if(!S.site||!S.site.stagesUrl) return "";
-  const st=(S.progress[oid]&&S.progress[oid].stages)||{}, ps=S.current.parts, n=ps.length||1;
+  const st=(S.progress[oid]&&S.progress[oid].stages)||{}, ps=cutParts(), n=ps.length||1;
   const at=i=>ps.filter(p=>(st[p.code]||0)>=i).length;
   const steps=STAGES.slice(1).map((s,k)=>({s,pct:Math.round(at(k+1)/n*100)}));
   const done=steps.filter(x=>x.pct===100).length, cur=steps.find(x=>x.pct<100);
@@ -2410,7 +2412,7 @@ function workRows(parts){
   return WORK_KEYS.map(([k,name,unit])=>({k,name,unit,qty:q[k]||0,rate:+R[k]||0})).filter(r=>r.qty>0);
 }
 function workBlock(){
-  const parts=S.current.parts; if(!parts||!parts.length) return "";
+  const parts=cutParts(); if(!parts||!parts.length) return "";
   if(!(S.canEdit||(typeof siteIsAdmin==="function"&&siteIsAdmin()))) return "";   // расценки и суммы — только технологу
   const rows=workRows(parts), money=v=>Math.round(v).toLocaleString("ru-RU"), num=v=>String(v).replace(".",",");
   const total=rows.reduce((a,r)=>a+r.qty*r.rate,0);
@@ -2421,7 +2423,7 @@ function workBlock(){
     </tbody><tfoot><tr><td colspan="3"><b>Итого</b></td><td class="num mono"><b id="workTotal">${money(total)}</b></td></tr></tfoot></table></div>
     <p style="margin:8px 0 0"><button type="button" class="btn sm" data-act="work-copy">Скопировать для ведомости</button></p></details>`;
 }
-function workText(){ const o=S.orders[S.current.orderId]||{}, rows=workRows(S.current.parts), money=v=>Math.round(v).toLocaleString("ru-RU");
+function workText(){ const o=S.orders[S.current.orderId]||{}, rows=workRows(cutParts()), money=v=>Math.round(v).toLocaleString("ru-RU");
   const total=rows.reduce((a,r)=>a+r.qty*r.rate,0);
   return `Объём работ · ${o.name||S.current.orderId}\n`+rows.map(r=>`${r.name}: ${String(r.qty).replace(".",",")} ${r.unit}${r.rate?` × ${r.rate} ₽ = ${money(r.qty*r.rate)} ₽`:""}`).join("\n")+(total?`\nИтого: ${money(total)} ₽`:""); }
 document.addEventListener("input", ev=>{ const t=ev.target; if(!t.classList||!t.classList.contains("work-rate")) return;
@@ -2441,7 +2443,7 @@ function scanLoadJsQR(){ const urls=["https://cdn.jsdelivr.net/npm/jsqr@1.4.0/di
   const one=u=>new Promise(res=>{ const s=document.createElement("script"); s.src=u; s.onload=()=>res(!!window.jsQR); s.onerror=()=>res(false); document.head.appendChild(s); });
   return (async()=>{ if(window.jsQR) return true; for(const u of urls){ if(await one(u)) return true; } return false; })(); }
 const SCAN={};
-function scanList(){ const n=SCAN.n, ps=S.current.parts, miss=ps.filter(p=>stageOf(p.code)<n), done=ps.length-miss.length;
+function scanList(){ const n=SCAN.n, ps=cutParts(), miss=ps.filter(p=>stageOf(p.code)<n), done=ps.length-miss.length;
   const by=new Map(); miss.forEach(p=>{ const m=(p.mod||"Без модуля").replace(/#\d+$/,""); if(!by.has(m)) by.set(m,[]); by.get(m).push(p); });
   let h=`<div class="scan-prog"><b>${STAGES[n].name}: ${done} / ${ps.length}</b><div class="bar"><span style="width:${ps.length?done/ps.length*100:0}%;background:${STAGES[n].color}"></span></div></div>`;
   if(!miss.length) h+=`<p class="scan-ok">Все детали заказа отмечены — «${esc(STAGES[n].name)}».</p>`;
@@ -2461,7 +2463,7 @@ async function scanHit(raw){
   await (typeof siteSetStage==="function"?siteSetStage:setStage)(p.code,SCAN.n); scanRefresh();
 }
 function scanManual(v){ v=String(v||"").trim(); if(!v) return;
-  const ps=S.current.parts, byCode=ps.find(p=>p.code===v); if(byCode) return scanHit(byCode.code);
+  const ps=cutParts(), byCode=ps.find(p=>p.code===v); if(byCode) return scanHit(byCode.code);
   const p=ps.find(q=>String(q.art||"").trim()===v&&stageOf(q.code)<SCAN.n)||ps.find(q=>String(q.art||"").trim()===v);
   if(p){ SCAN.last=null; scanHit(p.code); } else { scanBeep(false); scanMsg(`Позиции ${esc(v)} в заказе нет`,false); } }
 async function scanOpen(){
@@ -2517,14 +2519,14 @@ async function scanNumLoop(video,note){
       const avg=sum/(d.length/4); for(let i=0;i<d.length;i+=4){ const v=d[i]<avg*0.8?0:255; d[i]=d[i+1]=d[i+2]=v; } cx.putImageData(im,0,0);
       const r=await SCAN.ocr.recognize(cv), txt=String(r.data.text||"").replace(/\D+/g," ").trim(), conf=r.data.confidence||0;
       const nums=txt.split(" ").filter(x=>x.length&&x.length<=4);
-      const hit=nums.find(n=>S.current.parts.some(p=>String(p.art||"").trim()===n));
+      const hit=nums.find(n=>cutParts().some(p=>String(p.art||"").trim()===n));
       if(hit&&conf>=45){ if(prev===hit) scanSuggest(hit); prev=hit; } else prev=null;
     }catch(_){}
     busy=false; };
   SCAN.raf=requestAnimationFrame(loop);
 }
 function scanSuggest(n){ if(SCAN.sugN===n) return; SCAN.sugN=n; const el=document.querySelector("#scanWin .scan-sug"); if(!el) return;
-  const ps=S.current.parts.filter(p=>String(p.art||"").trim()===n), todo=ps.filter(p=>stageOf(p.code)<SCAN.n), p=todo[0]||ps[0];
+  const ps=cutParts().filter(p=>String(p.art||"").trim()===n), todo=ps.filter(p=>stageOf(p.code)<SCAN.n), p=todo[0]||ps[0];
   try{ haptic("sel"); }catch(_){}
   el.hidden=false; el.innerHTML=`<div><b>Поз. ${esc(n)}</b> — ${esc(p.name)} <span class="muted mono">${fmt(p.L)}×${fmt(p.W)}</span>${ps.length>1?` <span class="muted">· таких ${ps.length}, без этапа ${todo.length}</span>`:""}</div>
     ${todo.length?`<button type="button" class="btn" data-sug="${esc(p.code)}">Отметить «${esc(STAGES[SCAN.n].name)}»</button>`:`<span class="muted">все такие уже «${esc(STAGES[SCAN.n].name)}»</span>`}`; }
@@ -2702,7 +2704,7 @@ function dqTarget(k){
   if(k==="furn") return [...document.querySelectorAll("details.plist:not([data-k])")].find(d=>/^Фурнитура/.test(d.querySelector("summary").textContent.trim()));
   return document.querySelector(`details.plist[data-k="${k}"]`); }
 // сводка заказа для сделки в «Вертаксе»: детали, листы, рез, кромка
-function orderStatsLine(){ const parts=S.current.parts||[];
+function orderStatsLine(){ const parts=cutParts();
   let sheets=0; try{ sheets=cutMaps(parts).reduce((a,m)=>a+m.sheets.length,0); }catch(_){}
   let edge=0; try{ edge=edgeMeters(parts).reduce((a,e)=>a+e.m,0); }catch(_){}
   const rez=parts.reduce((a,p)=>a+2*((+p.L||0)+(+p.W||0)),0)/1000, r1=v=>String(Math.round(v*10)/10).replace(".",",");
@@ -3330,7 +3332,7 @@ function viewOrder(){
     <div class="tb-c tb-client"><span class="tb-l">Клиент</span><b>${esc(o.client||"не указан")}</b></div>
     <div class="head-actions tb-act">${clientMode()?"":`<button class="btn primary" data-act="order-qr">QR проекта для мастеров</button>${typeof vtxBtnHtml==="function"?vtxBtnHtml(oid):""}`}
     ${S.canEdit? (S.confirmDelete? `<button class="btn danger" data-act="del-yes">Удалить навсегда</button><button class="btn" data-act="del-no">Отмена</button>` : `<button class="btn danger" data-act="del">Удалить</button>`):""}</div></div>`;
-  if(stagesOn()) h+=`<div style="margin-bottom:16px">${sb.bar}<div class="legend">${STAGES.map((s,i)=>`<span><i style="background:${s.color}"></i>${s.name} · ${sb.cnt[i]}</span>`).join("")}</div>${canStage()&&S.current.parts.length?`<div class="stg-all">${S.stgAsk!=null?`<div class="ask"><span>Отметить <b>все ${S.current.parts.length} дет.</b> этого заказа как «${esc(STAGES[S.stgAsk].name)}»?</span><button type="button" class="btn sm primary" data-act="stage-order-yes">Да, отметить</button><button type="button" class="btn sm" data-act="stage-order-no">Отмена</button></div>`:`<span class="lbl">Весь заказ:</span>${STAGES.slice(1).map((s,k)=>`<button type="button" data-act="stage-order" data-n="${k+1}"><i style="background:${s.color}"></i>${s.name}</button>`).join("")}`}</div>`:""}</div>`;
+  if(stagesOn()) h+=`<div style="margin-bottom:16px">${sb.bar}<div class="legend">${STAGES.map((s,i)=>`<span><i style="background:${s.color}"></i>${s.name} · ${sb.cnt[i]}</span>`).join("")}</div>${canStage()&&S.current.parts.length?`<div class="stg-all">${S.stgAsk!=null?`<div class="ask"><span>Отметить <b>все ${cutParts().length} дет.</b> этого заказа как «${esc(STAGES[S.stgAsk].name)}»?</span><button type="button" class="btn sm primary" data-act="stage-order-yes">Да, отметить</button><button type="button" class="btn sm" data-act="stage-order-no">Отмена</button></div>`:`<span class="lbl">Весь заказ:</span>${STAGES.slice(1).map((s,k)=>`<button type="button" data-act="stage-order" data-n="${k+1}"><i style="background:${s.color}"></i>${s.name}</button>`).join("")}`}</div>`:""}</div>`;
   if(S.current.loading) return h+`<p class="muted">Загружаю детали…</p>`;
   if(clientMode()){ S.asmOrder=S.asmOrder&&S.asmOrder.oid===oid?S.asmOrder:{oid}; if(S.asmOrder.labels===undefined) S.asmOrder.labels=false; if(S.asmOrder.pos===undefined) S.asmOrder.pos=false; }
   if(S.current.parts.some(p=>p.box)&&!S.dqFull) h+=dqOpenBtn();
@@ -3353,10 +3355,10 @@ function viewOrder(){
   h+=specBlock();
   if(fl.length) h+=`<details class="plist" style="margin-bottom:12px"><summary>Фурнитура · ${fl.length} наим.</summary><div class="tablebox"><table><thead><tr><th>Наименование</th><th class="num">Кол-во</th></tr></thead><tbody>${fl.map(r=>`<tr><td>${esc(r.name)}${r.auto?` <span class="sup-tag">авто: ${r.auto} шт за петли без пружины</span>`:""}</td><td class="num mono">${r.qty}</td></tr>`).join("")}</tbody></table></div></details>`;
   const SO=stagesOn();
-  h+=`<details class="plist" ${S.listOpen?"open":""}><summary>Список деталей · ${S.current.parts.length}</summary>`;
+  h+=`<details class="plist" ${S.listOpen?"open":""}><summary>Список деталей · ${cutParts().length}</summary>`;
   h+=`<div class="pl-find"><input type="search" id="plQ" placeholder="Поиск: позиция, название, размер, материал" aria-label="Поиск детали" value="${esc(S.plQ||"")}" autocomplete="off"><span class="muted mono" id="plN"></span></div>`;
   h+=`<div class="tablebox"><table><thead><tr><th>Код</th><th>Наименование</th><th>Поз.</th><th class="num">Д×Ш×Т, мм</th><th>Материал</th><th>Кромка</th><th class="num">Отв.</th>${SO?"<th>Этап</th>":""}</tr></thead><tbody id="plBody">`;
-  S.current.parts.forEach(p=>{ const st=STAGES[stageOf(p.code)];
+  cutParts().forEach(p=>{ const st=STAGES[stageOf(p.code)];
     const ek=Object.keys(p.edges||{}); const edge= ek.length? ek.join(" ") : (p.edgesRaw&&p.edgesRaw.length? p.edgesRaw.length+" торц.":"—");
     const q=[p.code,p.name,p.copy,p.art,`${fmt(p.L)}x${fmt(p.W)}x${fmt(p.T)}`,`${fmt(p.L)}×${fmt(p.W)}`,p.L,p.W,p.material].join(" ").toLowerCase();
     h+=`<tr data-act="part" data-code="${esc(p.code)}" data-q="${esc(q)}"><td class="mono">${esc(p.code)}</td><td>${esc(p.name)}${p.copy?` <span class="muted">${esc(p.copy)}</span>`:""}</td><td>${esc(p.art)}</td>
@@ -5647,10 +5649,10 @@ document.addEventListener("click", async ev=>{
   else if(a==="stage-to"){ const cs=String(t.dataset.codes||"").split(",").filter(Boolean); if(cs.length) await setStagesMany(cs,+t.dataset.n); if(asm&&asm.st) showPick(t.closest(".asm-pick")&&t.closest(".asm-pick").dataset.code||cs[0]); }
   else if(a==="stage-order"){ S.stgAsk=+t.dataset.n; render(); }
   else if(a==="stage-order-no"){ S.stgAsk=null; render(); }
-  else if(a==="stage-order-yes"){ const n=S.stgAsk; S.stgAsk=null; await setStagesMany(S.current.parts.map(p=>p.code),n); render(); }
+  else if(a==="stage-order-yes"){ const n=S.stgAsk; S.stgAsk=null; await setStagesMany(cutParts().map(p=>p.code),n); render(); }
   else if(a==="labels"){ labelsModal(); }
   else if(a==="labels-go"){ const v=(document.querySelector('input[name="lsize"]:checked')||{}).value||"58x40"; try{ localStorage.setItem("cehqr-label",v); }catch(_){}
-    const o=S.orders[S.current.orderId]; t.disabled=true; t.textContent="Готовлю PDF…"; await labelsPdf(S.current.parts,(o&&o.name)||S.current.orderId, v.split("x").map(Number)); const md=$("#qrModal"); md&&md.remove(); }
+    const o=S.orders[S.current.orderId]; t.disabled=true; t.textContent="Готовлю PDF…"; await labelsPdf(cutParts(),(o&&o.name)||S.current.orderId, v.split("x").map(Number)); const md=$("#qrModal"); md&&md.remove(); }
   else if(a==="del"){ S.confirmDelete=true; render(); }
   else if(a==="del-no"){ S.confirmDelete=false; render(); }
   else if(a==="del-yes"){ const oid=S.current.orderId; t.disabled=true; try{ await deleteOrder(oid); toast("Заказ удалён"); }catch(e){ toast("Не удалось удалить: "+(e.code||"ошибка")); } S.confirmDelete=false; S.current={orderId:null,parts:[]}; setView("orders"); }
@@ -5765,7 +5767,7 @@ function findPos(v){
   if(/[A-Za-zА-Яа-я].*-\d+|#/.test(v)){ goPart(v); return; }   /* ссылка или код со сканера — как раньше */
   if(!S.current.orderId||S.current.missing){ toast("Сначала откройте заказ — поиск идёт по номерам позиций в нём"); return; }
   if(S.current.loading){ toast("Заказ ещё загружается, попробуйте через секунду"); return; }
-  const n=v.replace(/^поз\.?\s*/i,""), hit=S.current.parts.filter(p=>String(p.art||"").trim()===n);
+  const n=v.replace(/^поз\.?\s*/i,""), hit=cutParts().filter(p=>String(p.art||"").trim()===n);
   if(!hit.length){ toast(`Позиции ${n} в этом заказе нет`); return; }
   if(hit.length===1){ goPart(hit[0].code); return; }
   /* одинаковые детали — все сразу выделены в 3D заказа, внизу их список */
