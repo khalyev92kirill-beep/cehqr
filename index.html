@@ -3655,10 +3655,10 @@ viewOrders=function(){ const a=siteIsAdmin(), sp=siteIsSupply();
   return _viewOrders2()+`<p class="home-foot"><button type="button" class="linkbtn" data-view="help">Как работать</button><span>·</span>`
   +(a?`<button type="button" class="linkbtn" data-act="adm-out">Выйти (технолог)</button>`:(!sp&&siteIsDesigners())?`<button type="button" class="linkbtn" data-act="dsg-out">Выйти из режима дизайнеров</button>`:(!sp&&siteIsMasters())?`<button type="button" class="linkbtn" data-act="mst-out">Выйти из режима мастеров</button>`:sp?`<button type="button" class="linkbtn" data-act="sup-out">Выйти (снабженец)</button>`:`<button type="button" class="linkbtn" data-act="staff-in">Вход для сотрудников</button>`)+`</p>`; };
 function staffModal(){ const m=document.createElement("div"); m.className="modal"; m.id="qrModal";
-  m.innerHTML=`<div class="modal-card"><h2 style="margin:0 0 6px">Вход для сотрудников</h2><p class="note" style="margin:0 0 14px">Мастеру входить не нужно: PIN цеха приложение спросит само, когда он отметит этап.</p>
-    <div style="display:grid;gap:8px"><button type="button" class="btn" data-staff="adm">Я технолог</button><button type="button" class="btn" data-staff="sup">Я снабженец</button><button type="button" class="btn sm" data-staff="no">Отмена</button></div></div>`;
+  m.innerHTML=`<div class="modal-card"><h2 style="margin:0 0 6px">Вход для сотрудников</h2><p class="note" style="margin:0 0 14px">Скопируйте ссылку, которую прислал технолог (зажмите её в Телеграме или WhatsApp → «Скопировать»), и вставьте здесь. Один раз на этом телефоне.</p>
+    <div style="display:grid;gap:8px"><button type="button" class="btn primary" data-staff="mst">Я мастер</button><button type="button" class="btn" data-staff="dsg">Я дизайнер</button><button type="button" class="btn" data-staff="adm">Я технолог</button><button type="button" class="btn" data-staff="sup">Я снабженец</button><button type="button" class="btn sm" data-staff="no">Отмена</button></div></div>`;
   document.body.appendChild(m); m.addEventListener("click",e=>{ const b=e.target.closest("[data-staff]"); if(e.target!==m&&!b) return; m.remove();
-    if(b&&b.dataset.staff==="adm") adminLoginModal(); else if(b&&b.dataset.staff==="sup") supLoginModal(); }); }
+    if(b&&b.dataset.staff==="mst") roleLinkModal("masters"); else if(b&&b.dataset.staff==="dsg") roleLinkModal("designers"); else if(b&&b.dataset.staff==="adm") adminLoginModal(); else if(b&&b.dataset.staff==="sup") supLoginModal(); }); }
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="staff-in"]'); if(!t) return; ev.stopPropagation(); staffModal(); },true);
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="dsg-out"]'); if(!t) return; ev.stopPropagation(); if(!confirm("Выйти из режима дизайнеров на этом телефоне?")) return; delete _ks.designers; keySave(); siteLoadIndex().then(()=>setView("orders")); },true);
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="mst-out"]'); if(!t) return; ev.stopPropagation(); if(!confirm("Выйти из режима мастеров на этом телефоне?")) return; delete _ks.masters; keySave(); siteLoadIndex().then(()=>setView("orders")); },true);
@@ -3670,6 +3670,25 @@ function siteOrderGone(oid){
   delete S.orders[oid]; S.current={orderId:null,parts:[]};
   if(location.hash) history.replaceState(null,"",location.pathname+location.search);
   setView("orders");
+}
+
+/* вход по ссылке мастеров / дизайнеров прямо в приложении (на iPhone значок на экране не видит ссылки, открытые в Safari) */
+function roleLinkModal(role){
+  const nm=role==="masters"?"мастеров":"дизайнеров";
+  const m=document.createElement("div"); m.className="modal"; m.id="qrModal";
+  m.innerHTML=`<form class="modal-card" id="roleForm" autocomplete="off"><h2 style="margin:0 0 6px">Ссылка ${nm}</h2>
+    <p class="note" style="margin:0 0 12px">Вставьте ссылку, которую прислал технолог. Её можно скопировать из Телеграма или WhatsApp: зажмите ссылку → «Скопировать».</p>
+    <input id="roleLink" placeholder="https://…#${role}~…" style="width:100%;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:14px var(--f-body,system-ui)" required>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" type="submit">Войти</button><button class="btn" type="button" data-act="role-paste">Вставить из буфера</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",async ev=>{ if(ev.target===m||ev.target.closest('[data-act="qr-close"]')){ m.remove(); return; }
+    if(ev.target.closest('[data-act="role-paste"]')){ try{ const t=await navigator.clipboard.readText(); $("#roleLink").value=t||""; }catch(_){ toast("Не получилось вставить — зажмите поле и нажмите «Вставить»"); } } });
+  document.body.appendChild(m); setTimeout(()=>{ const i=$("#roleLink"); i&&i.focus(); },50);
+  $("#roleForm").addEventListener("submit",async ev=>{ ev.preventDefault();
+    const v=$("#roleLink").value.trim(), mm=new RegExp("(?:"+role+"~)?([A-Za-z0-9_-]{20,})\\s*$","i").exec(v);
+    if(!mm){ toast("Это не похоже на ссылку "+nm); return; }
+    try{ const r=await fetch("orders/"+role+".json",{cache:"no-cache"}); await decryptText(await r.json(),mm[1]); }
+    catch(_){ toast("Ссылка не подошла. Попросите у технолога свежую."); return; }
+    _ks[role]=mm[1]; keySave(); m.remove(); toast("Готово: видны все заказы"); await siteLoadIndex(); setView("orders"); });
 }
 
 /* ---------- снабжение: закупка по всем заказам, статусы, правки позиций (данные — в Google-таблице, лист «Снабжение») ---------- */
