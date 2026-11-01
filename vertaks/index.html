@@ -4284,6 +4284,7 @@ function shpSafeLink(u){ u=String(u||"").trim(); return /^https?:\/\//i.test(u)?
 function shpSeen(){ try{ return JSON.parse(localStorage.getItem("cehqr-shopseen")||"{}")||{}; }catch(_){ return {}; } }
 function shpMarkSeen(id,ms){ const s=shpSeen(); if(!(s[id]>=ms)){ s[id]=ms; try{ localStorage.setItem("cehqr-shopseen",JSON.stringify(s)); }catch(_){} } }
 function shpUnread(o,seen){ return o.lastAt&&o.lastAt>(seen[o.id]||0)&&o.lastWho!==shpWho(); }
+function shpKUnread(o,seen){ return o.kAt&&o.kAt>(seen["K:"+o.id]||0); }
 function shpGenUnread(seen){ const g=S.shop.general; return !!(g&&g.lastAt&&g.lastAt>((seen||shpSeen()).general||0)&&g.lastWho!==shpWho()); }
 function shpBadPin(){ // PIN сменили в таблице — забываем его на этом устройстве
   if(S.shop.techPin){ S.shop.techPin=""; try{ localStorage.removeItem("cehqr-techpin"); }catch(_){} }
@@ -4343,7 +4344,7 @@ function shpMsgsHtml(){
   if(c.err&&!c.msgs.length) return `<p class="muted shp-sys">Нет связи — сообщения не загрузились.</p>`;
   if(!c.msgs.length) return `<p class="muted shp-sys">Сообщений пока нет. Напишите первым.</p>`;
   const me=shpWho();
-  return c.msgs.map(m=>m.kind==="system"?`<div class="shp-sys">${esc(m.text)} · ${esc(m.who||"")} · ${esc(shpTime(m.when))}</div>`
+  return c.msgs.map(m=>/^client/.test(m.kind)?`<div class="shp-msg kl"><div class="shp-mh"><b>${esc(m.who||"Клиент")} · клиент</b><span>${esc(shpTime(m.when))}</span></div>${shpSafeLink(m.photo)?`<a class="shp-ph" href="${esc(m.photo)}" target="_blank" rel="noopener"><img src="${esc(shpThumb(m.photo,480))}" alt="Фото от клиента" loading="lazy"></a>`:""}${m.text?`<div class="shp-mt">${esc(m.text)}</div>`:""}</div>`:m.kind==="system"?`<div class="shp-sys">${esc(m.text)} · ${esc(m.who||"")} · ${esc(shpTime(m.when))}</div>`
     :`<div class="shp-msg${m.who===me?" me":""}"><div class="shp-mh"><b>${esc(m.who||"")}</b><span>${esc(shpTime(m.when))}</span></div>${shpSafeLink(m.photo)?`<a class="shp-ph" href="${esc(m.photo)}" target="_blank" rel="noopener"><img src="${esc(shpThumb(m.photo,480))}" alt="Фото" loading="lazy"></a>`:""}${m.text?`<div class="shp-mt">${esc(m.text)}</div>`:""}</div>`).join("");
 }
 function shpDrawMsgs(){ const box=document.getElementById("shpMsgs"); if(!box) return; const end=box.scrollHeight-box.scrollTop-box.clientHeight<60;
@@ -4377,6 +4378,7 @@ function shpCard(o,seen,today){
   const nt=S.shop.tasks.filter(t=>t.order===o.id&&t.status!=="done").length; if(nt) chips.push(`<span class="shp-chip">задач: ${nt}</span>`);
   if(o.stage==="lost"&&o.reason) chips.push(`<span class="shp-chip lost">${esc(o.reason.length>40?o.reason.slice(0,40)+"…":o.reason)}</span>`);
   if(shpUnread(o,seen)) chips.push(`<span class="shp-chip new">новое в чате</span>`);
+  if(shpKUnread(o,seen)) chips.push(`<span class="shp-chip new">клиент написал</span>`);
   if(o.t3d||o.link) chips.push(`<span class="shp-chip">3D</span>`);
   if(S.shop.rcpt&&o.receiptsTotal>0) chips.push(`<span class="shp-chip buy">закупка ${esc(shpMoney(o.receiptsTotal))}</span>`);
   const key=[o.client,o.num,"№"+o.num,o.phone,String(o.phone||"").replace(/\D/g,""),o.address,o.kind].join(" ").toLowerCase();
@@ -4439,8 +4441,10 @@ function shpOrderHtml(){
   h+=shpOrderTasksHtml(o);
   h+=specBlockHtml(o);
   h+=shpRcHtml(o);
-  const tabs=`<div class="shp-otabs" role="tablist" aria-label="Чат или история"><button type="button" role="tab" data-act="shp-otab" data-v="chat" aria-selected="${S.shop.otab!=="history"}">Чат по заказу</button><button type="button" role="tab" data-act="shp-otab" data-v="history" aria-selected="${S.shop.otab==="history"}">История</button></div>`;
-  h+=`</div><div>${S.shop.otab==="history"?`<div class="card shp-chat">${tabs}${shpHistHtml(o)}</div>`:shpChatBox(o.id,"Чат по заказу").replace(/<h2>[^<]*<\/h2>/,tabs)}</div></div>`;
+  const ot=S.shop.otab==="history"||S.shop.otab==="client"?S.shop.otab:"chat", kNew=shpKUnread(o,shpSeen());
+  const tabs=`<div class="shp-otabs" role="tablist" aria-label="Чат, клиент или история"><button type="button" role="tab" data-act="shp-otab" data-v="chat" aria-selected="${ot==="chat"}">Чат цеха</button><button type="button" role="tab" data-act="shp-otab" data-v="client" aria-selected="${ot==="client"}">Клиент${kNew?' <span class="bdg" aria-label="клиент написал">новое</span>':""}</button><button type="button" role="tab" data-act="shp-otab" data-v="history" aria-selected="${ot==="history"}">История</button></div>`;
+  const kbar=`<div class="shp-kbar"><p class="muted">Переписка с клиентом — он видит только этот чат, не чат цеха.${o.kOn?"":" Клиент ещё не получил ссылку."}</p><button type="button" class="btn${o.kOn?"":" primary"}" data-act="shp-klink" data-id="${esc(o.id)}">${o.kOn?"Ссылка клиента":"Дать ссылку клиенту"}</button></div>`;
+  h+=`</div><div>${ot==="history"?`<div class="card shp-chat">${tabs}${shpHistHtml(o)}</div>`:ot==="client"?shpChatBox("K:"+o.id,"").replace(/<h2>[^<]*<\/h2>/,tabs+kbar).replace('class="card shp-chat"','class="card shp-chat shp-kchat"'):shpChatBox(o.id,"Чат по заказу").replace(/<h2>[^<]*<\/h2>/,tabs)}</div></div>`;
   return h;
 }
 /* чеки закупки по заказу — технолог, офис, снабженец */
@@ -4976,6 +4980,24 @@ function shpMoneyHtml(){
   <p class="muted" style="margin-top:8px">Красным — закупка 60% и больше от суммы заказа или ушли в минус. Нажмите на строку — откроется заказ.</p>`;
 }
 
+/* ---- ссылка клиенту: страница k/#ключ — этап, даты, 3D, сумма и остаток, чат с цехом ---- */
+function shpSiteRoot(){ try{ return new URL(window.SITE_ROOT||"./",location.href).href; }catch(_){ return location.origin+"/"; } }
+function shpKUrl(tok){ return shpSiteRoot()+"k/#"+tok; }
+function shpK3d(o){ const t=String(o.t3d||"").toUpperCase(); try{ const k=t&&typeof keyFor==="function"?keyFor(t):""; if(k) return shpSiteRoot()+"#"+t+"~"+k; }catch(_){} return ""; }
+function shpKModal(o,url){
+  const tel=String(o.phone||"").replace(/\D/g,"").replace(/^8(?=\d{10}$)/,"7"), txt="Здравствуйте! Здесь ваш заказ: этап, даты, проект и чат с нами. "+url;
+  const m=document.createElement("div"); m.className="modal"; m.id="shpKModal";
+  m.innerHTML=`<div class="modal-card" role="dialog" aria-label="Ссылка клиенту"><h2 style="margin:0 0 6px">Ссылка клиенту</h2>
+    <p class="note" style="margin:0 0 10px">${esc(shpTitle(o))}. По ссылке клиент видит этап, даты замера и монтажа, ${shpK3d(o)||/^https:\/\//.test(o.link||"")?"3D проекта, ":""}сумму и остаток, и пишет в чат «Клиент». Чат цеха он не видит.</p>
+    <input id="shpKUrl" class="shp-kurl" readonly value="${esc(url)}" aria-label="Ссылка" onfocus="this.select()">
+    <div class="shp-kbtns"><button type="button" class="btn primary" data-act="shp-kcopy">Копировать</button>
+    <a class="btn" href="https://wa.me/${tel.length>=11?tel:""}?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener">WhatsApp</a>
+    <a class="btn" href="https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent("Здравствуйте! Здесь ваш заказ и чат с нами.")}" target="_blank" rel="noopener">Телеграм</a></div>
+    ${o.t3d&&!shpK3d(o)?`<p class="note">3D клиенту не попадёт: на этом телефоне нет ключа заказа <span class="mono">${esc(o.t3d)}</span>. Технолог может нажать «Ссылка клиента» у себя — 3D добавится.</p>`:""}
+    <div class="shp-kbtns" style="margin-top:14px"><button type="button" class="btn" data-act="shp-kreset" data-id="${esc(o.id)}">Сделать новую ссылку</button><button type="button" class="btn" data-act="shp-kclose">Закрыть</button></div></div>`;
+  document.body.appendChild(m); m.addEventListener("click",e=>{ if(e.target===m){ m.remove(); } });
+}
+
 /* ---- «Ещё» ---- */
 function shpMoreHtml(){
   const it=(act,v,ic,t,sub)=>`<li><button type="button" class="shp-row" data-act="${act}" data-v="${v}"><span class="shp-av" aria-hidden="true">${shpIco(ic,20)}</span><span class="shp-rb"><b>${t}</b><span class="muted">${sub}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
@@ -5307,7 +5329,12 @@ body.shp-dragging,body.shp-dragging *{cursor:grabbing!important;-webkit-user-sel
 .shp-hint{font-size:12.5px;margin:6px 0 0}
 @media (min-width:900px){.shp-kb{margin:0;padding:2px 0 12px;scroll-snap-type:none}.shp-kb .shp-col{flex:1 1 0;min-width:170px;max-width:none}}
 /* вкладки чата в заказе */
-.shp-otabs{display:flex;gap:4px;margin:0 0 10px;border-bottom:1px solid var(--line)}
+.shp-otabs{display:flex;gap:4px;margin:0 0 10px;border-bottom:1px solid var(--line);overflow-x:auto}
+.shp-otabs .bdg{position:static;margin-left:4px;vertical-align:middle}
+.shp-kbar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;margin:0 0 10px}.shp-kbar p{margin:0;font-size:13px;flex:1 1 200px}
+.shp-msg.kl{background:color-mix(in srgb,#2e6fd0 14%,var(--surface));border-left:3px solid #2e6fd0}
+.shp-kurl{width:100%;min-height:48px;padding:10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);font:14px/1.3 ui-monospace,monospace}
+.shp-kbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.shp-kbtns .btn{min-height:44px}
 .shp-otabs button{min-height:44px;padding:0 12px;border:0;border-bottom:3px solid transparent;background:none;color:var(--muted);font:600 15px var(--f-body,system-ui);cursor:pointer;margin-bottom:-1px}
 .shp-otabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--tape,#ffc21a)}
 .shp-hist{max-height:60vh;overflow-y:auto;overscroll-behavior:contain}
@@ -5434,7 +5461,7 @@ render=function(){
   document.body.dataset.page="shop"; document.body.classList.remove("client","has-full");
   document.body.classList.toggle("anon",!shpPin()&&!!(S.site&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())&&!(typeof siteIsSupply==="function"&&siteIsSupply())&&!(typeof siteIsDesigners==="function"&&siteIsDesigners())));
   document.querySelectorAll("#nav button").forEach(b=>b.setAttribute("aria-current",String(b.dataset.view==="shop")));
-  const want=S.shop.mode==="order"?S.shop.cur:S.shop.mode==="general"?"general":null;
+  const want=S.shop.mode==="order"?(S.shop.otab==="client"?"K:"+S.shop.cur:S.shop.cur):S.shop.mode==="general"?"general":null;
   if(want&&shpPin()&&(!S.shop.chat||S.shop.chat.id!==want||!shpTimer)) shpChatStart(want);
   const ae=document.activeElement, keepTa=ae&&ae.closest&&ae.closest(".shp-send")?ae.selectionStart:null;
   $("#view").innerHTML=viewShop();
@@ -5498,6 +5525,12 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="shp-chgo"){ const o=shpById(t.dataset.id), to=t.dataset.st; if(!o) return; if(o.stage===to){ toast("Сделка сейчас здесь: "+shpStName(to)); return; }
     if(!shpCanStage(o,to)){ toast(shpStageHint(o,to)); return; } shpChessAsk(o,to); return; }
   if(a==="shp-otab"){ S.shop.otab=t.dataset.v; if(t.dataset.v==="history") S.shop.hist[S.shop.cur]=null; shpRenderKeep(); return; }
+  if(a==="shp-klink"||a==="shp-kreset"){ const o=shpById(t.dataset.id||S.shop.cur); if(!o) return;
+    if(a==="shp-kreset"&&!t.dataset.sure){ t.dataset.sure="1"; t.textContent="Точно? Старая ссылка перестанет работать — нажмите ещё раз"; return; }
+    t.disabled=true; const j=await shpPost({action:"clientLink",id:o.id,reset:a==="shp-kreset",link3d:shpK3d(o)}); t.disabled=false; if(!j||!j.token) return;
+    o.kOn=true; document.getElementById("shpKModal")?.remove(); shpKModal(o,shpKUrl(j.token)); if(a==="shp-kreset") toast("Новая ссылка готова — старая больше не работает"); return; }
+  if(a==="shp-kcopy"){ const v=document.getElementById("shpKUrl").value; try{ await navigator.clipboard.writeText(v); toast("Ссылка скопирована"); }catch(_){ const i=document.getElementById("shpKUrl"); i.select(); toast("Выделил — нажмите «Копировать»"); } return; }
+  if(a==="shp-kclose"){ document.getElementById("shpKModal")?.remove(); shpRenderKeep(); return; }
   if(a==="shp-feedre"){ t.disabled=true; await shpFeedLoad(); t.disabled=false; return; }
   if(a==="shp-ochat"){ S.shop.focusChat=true; S.shop.otab="chat"; return shpGo("order",t.dataset.id); }
   if(a==="shp-calv"){ S.shop.cal.v=t.dataset.v; try{ localStorage.setItem("cehqr-calv",t.dataset.v); }catch(_){} render(); return; }
