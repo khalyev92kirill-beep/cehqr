@@ -2678,7 +2678,7 @@ function dqMenu(){
   if(!cl){ if(has("fv")) h+=it("dq-go","Вид спереди с размерами",null,' data-to="fv"');
     [["list","Список деталей"],["furn","Фурнитура — список"],["cut","Раскрой листов"],["fac","Фасады"],["frame","Рамки и стекло"],["buy","Закупка"],["work","Объём работы"]].forEach(([k,t])=>{ if(has(k)) h+=it("dq-go",t,null,` data-to="${k}"`); });
     if(has("iss")) h+=it("dq-go","Проверка заказа",null,' data-to="iss"');
-    h+=`<hr>`+it("order-qr","QR проекта для мастеров")+it("to-verstak","Скопировать для Верстака"); if(S.site&&!S.canEdit&&!S.pin&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())) h+=it("client-mode","Вид для клиента"); }
+    h+=`<hr>`+it("order-qr","QR проекта для мастеров")+(typeof vtxBtnHtml==="function"&&typeof shpOn==="function"&&shpOn()?it("to-vertaks",shpPin()&&S.shop.loaded&&vtxLinked(S.current.orderId)?"Открыть в Вертаксе":"В Вертакс"):""); if(S.site&&!S.canEdit&&!S.pin&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())) h+=it("client-mode","Вид для клиента"); }
   else h+=it("full-mode","Режим мастера");
   h+=`<hr>`+it("haptic","Вибрация при нажатии",hapticOn());
   h+=it("home","Все заказы");
@@ -2689,14 +2689,12 @@ function dqTarget(k){
   if(k==="list"){ const i=document.getElementById("plQ"); return i&&i.closest("details"); }
   if(k==="furn") return [...document.querySelectorAll("details.plist:not([data-k])")].find(d=>/^Фурнитура/.test(d.querySelector("summary").textContent.trim()));
   return document.querySelector(`details.plist[data-k="${k}"]`); }
-// данные заказа для «Верстака» (доска заказов в Claude): текст, который Верстак понимает кнопкой «Вставить из Технолог 3D»
-function verstakText(){ const oid=S.current.orderId, o=S.orders[oid]||{}, parts=S.current.parts||[];
+// сводка заказа для сделки в «Вертаксе»: детали, листы, рез, кромка
+function orderStatsLine(){ const parts=S.current.parts||[];
   let sheets=0; try{ sheets=cutMaps(parts).reduce((a,m)=>a+m.sheets.length,0); }catch(_){}
-  const edge=edgeMeters(parts).reduce((a,e)=>a+e.m,0), rez=parts.reduce((a,p)=>a+2*((+p.L||0)+(+p.W||0)),0)/1000;
-  return ["ТЕХНОЛОГ3D v1","Заказ: "+oid,"Изделие: "+(o.name||""),"Ссылка: "+partUrl(oid),"Деталей: "+parts.length,"Листов: "+sheets,"Рез, м: "+(Math.round(rez*10)/10),"Кромка, м: "+(Math.round(edge*10)/10)].join("\n"); }
-function verstakCopy(){ const t=verstakText();
-  const fall=()=>{ const m=document.createElement("div"); m.className="modal"; m.id="vsModal"; m.innerHTML=`<div class="modal-card" role="dialog" aria-label="Для Верстака"><h2 style="margin:0 0 8px">Для Верстака</h2><p class="note" style="margin:0 0 8px">Скопируйте и вставьте в Верстаке: заказ → «Технолог и 3D» → «Вставить из Технолог 3D».</p><textarea readonly style="width:100%;min-height:170px;font:13px/1.4 var(--f-mono)">${esc(t)}</textarea><div style="text-align:right;margin-top:10px"><button class="btn primary" data-act="vs-x">Готово</button></div></div>`; document.body.appendChild(m); const ta=m.querySelector("textarea"); ta.focus(); ta.select(); };
-  try{ navigator.clipboard.writeText(t).then(()=>toast("Скопировано для Верстака. Вставьте там: «Технолог и 3D» → «Вставить из Технолог 3D»"),fall); }catch(_){ fall(); } }
+  let edge=0; try{ edge=edgeMeters(parts).reduce((a,e)=>a+e.m,0); }catch(_){}
+  const rez=parts.reduce((a,p)=>a+2*((+p.L||0)+(+p.W||0)),0)/1000, r1=v=>String(Math.round(v*10)/10).replace(".",",");
+  return "Деталей "+parts.length+", листов "+sheets+", рез "+r1(rez)+" м, кромка "+r1(edge)+" м"; }
 // подсветка отверстия на чертеже детали: кольцо мигает вокруг него
 function holeHi(i, row){
   document.querySelectorAll(".hcoord tr.on").forEach(r=>r.classList.remove("on")); row&&row.classList.add("on");
@@ -3293,7 +3291,7 @@ function viewOrder(){
   let h=`<div class="tblock"><div class="tb-name"><span class="tb-l">Изделие</span><h1>${esc(o.name)}</h1></div>
     <div class="tb-c"><span class="tb-l">Заказ</span><b class="mono">${esc(oid)}</b></div>${clientMode()&&clientDims()?`<div class="tb-c"><span class="tb-l">Габариты, мм</span><b class="mono">${clientDims()}</b></div>`:`<div class="tb-c"><span class="tb-l">Деталей</span><b class="mono">${o.count}</b></div>`}
     <div class="tb-c tb-client"><span class="tb-l">Клиент</span><b>${esc(o.client||"не указан")}</b></div>
-    <div class="head-actions tb-act">${clientMode()?"":`<button class="btn primary" data-act="order-qr">QR проекта для мастеров</button><button class="btn" data-act="to-verstak" title="Скопировать данные заказа для Верстака">В Верстак</button>`}
+    <div class="head-actions tb-act">${clientMode()?"":`<button class="btn primary" data-act="order-qr">QR проекта для мастеров</button>${typeof vtxBtnHtml==="function"?vtxBtnHtml(oid):""}`}
     ${S.canEdit? (S.confirmDelete? `<button class="btn danger" data-act="del-yes">Удалить навсегда</button><button class="btn" data-act="del-no">Отмена</button>` : `<button class="btn danger" data-act="del">Удалить</button>`):""}</div></div>`;
   if(stagesOn()) h+=`<div style="margin-bottom:16px">${sb.bar}<div class="legend">${STAGES.map((s,i)=>`<span><i style="background:${s.color}"></i>${s.name} · ${sb.cnt[i]}</span>`).join("")}</div>${canStage()&&S.current.parts.length?`<div class="stg-all">${S.stgAsk!=null?`<div class="ask"><span>Отметить <b>все ${S.current.parts.length} дет.</b> этого заказа как «${esc(STAGES[S.stgAsk].name)}»?</span><button type="button" class="btn sm primary" data-act="stage-order-yes">Да, отметить</button><button type="button" class="btn sm" data-act="stage-order-no">Отмена</button></div>`:`<span class="lbl">Весь заказ:</span>${STAGES.slice(1).map((s,k)=>`<button type="button" data-act="stage-order" data-n="${k+1}"><i style="background:${s.color}"></i>${s.name}</button>`).join("")}`}</div>`:""}</div>`;
   if(S.current.loading) return h+`<p class="muted">Загружаю детали…</p>`;
@@ -3813,10 +3811,14 @@ document.addEventListener("submit",ev=>{ const f=ev.target;
 },true);
 
 /* ---------- «Цех»: заказы клиентов по этапам (замер → монтаж) и чат по заказу (данные — Google-таблица, листы «Цех» и «Чат») ---------- */
-const SHP_ST=[{k:"zamer",n:"Замер"},{k:"smeta",n:"Смета и проект"},{k:"kp",n:"КП у клиента"},{k:"dogovor",n:"Договор и предоплата"},{k:"cex",n:"В производстве"},{k:"montazh",n:"Монтаж"},{k:"closed",n:"Закрыт"}];
+const SHP_ST=[{k:"dogovor",n:"Договор и предоплата"},{k:"zamer",n:"Замер"},{k:"proekt",n:"Проект готов"},{k:"zakup",n:"Материалы закуплены"},{k:"cex",n:"В производстве"},{k:"montazh",n:"Монтаж"},{k:"closed",n:"Закрыт · успешно"},{k:"lost",n:"Закрыт · не успешно"}];
+const SHP_OLDST={smeta:"dogovor",kp:"dogovor"};   // старые этапы (до ноября 2026)
+function shpClosed(o){ return o.stage==="closed"||o.stage==="lost"; }
 const VTX=window.APP_MODE==="vertaks";   // отдельное приложение «Вертакс» (папка vertaks/): только этот раздел
 const SHP_OWNERS=["Толян","Айтал","Ариан","PAIN"];
 S.shop=S.shop||{orders:[],tech:false,loaded:false,loading:false,mode:"board",cur:null,edit:null,delAsk:false,chat:null,draft:{}};
+Object.assign(S.shop,{tasks:[],staff:[],staffLast:{},v2:false,feed:{evs:[],last:0,loaded:false},hist:{},cal:{v:"week",a:"",sel:""},ttab:"me",tdone:false,otab:"chat",cq:"",back:"board",kbX:0});
+try{ S.shop.showClosed=localStorage.getItem("cehqr-shopclosed")==="1"; S.shop.cal.v=localStorage.getItem("cehqr-calv")==="month"?"month":"week"; }catch(_){ S.shop.showClosed=false; }
 try{ S.shop.techPin=localStorage.getItem("cehqr-techpin")||""; }catch(_){ S.shop.techPin=""; }
 try{ S.shop.officePin=localStorage.getItem("cehqr-officepin")||""; }catch(_){ S.shop.officePin=""; }   // дизайнеры и офис: свой PIN (Настройки!B4)
 try{ S.shop.supPin=localStorage.getItem("cehqr-suppin")||""; }catch(_){ S.shop.supPin=""; }   // снабженец: тот же PIN, что во вкладке «Снабжение» (Настройки!B2)
@@ -3825,13 +3827,15 @@ function shpOn(){ return !!(S.site&&S.site.stagesUrl); }
 function shpPin(){ return S.shop.techPin||S.shop.officePin||S.shop.supPin||S.pin||""; }
 function shpWho(){ return S.who||(S.shop.techPin?"Технолог":S.shop.officePin?"Офис":S.shop.supPin?"Снабженец":"Мастер"); }
 /* роли: tech — всё; office — всё, кроме удаления; supply — как мастер + чеки закупки; master — всё, кроме денег */
-function shpSetRole(j){ S.shop.tech=!!j.tech; S.shop.role=j.role||(j.tech?"tech":"master"); S.shop.full=S.shop.tech||S.shop.role==="office"; S.shop.rcpt=S.shop.full||S.shop.role==="supply"; S.shop.general=j.general||S.shop.general||{lastAt:0,lastWho:""}; }
+function shpFixStages(L){ (L||[]).forEach(o=>{ o.stage=SHP_OLDST[o.stage]||(SHP_ST.some(x=>x.k===o.stage)?o.stage:"dogovor"); }); return L; }
+function shpSetRole(j){ shpFixStages(j.orders); S.shop.tech=!!j.tech; S.shop.role=j.role||(j.tech?"tech":"master"); S.shop.full=S.shop.tech||S.shop.role==="office"; S.shop.rcpt=S.shop.full||S.shop.role==="supply"; S.shop.general=j.general||S.shop.general||{lastAt:0,lastWho:""};
+  if(Array.isArray(j.tasks)){ S.shop.tasks=j.tasks; S.shop.v2=true; } if(Array.isArray(j.staff)) S.shop.staff=j.staff; }
 const SHP_ROLE={tech:"Технолог",office:"Офис",supply:"Снабженец",master:"Мастер"};
-function shpRoleLine(){ return S.shop.tech?"Технолог":(SHP_ROLE[S.shop.role]||"Мастер")+": "+shpWho(); }
+function shpRoleLine(){ return S.shop.tech?"Технолог"+(S.who?": "+S.who:""):(SHP_ROLE[S.shop.role]||"Мастер")+": "+shpWho(); }
 function shpThumb(u,w){ return String(u||"").replace(/([?&]sz=)w\d+/,"$1w"+(w||400)); }
 function shpMap(a){ return "https://2gis.ru/yakutsk/search/"+encodeURIComponent(String(a||"").trim()); }
 function shpUrl(q){ return S.site.stagesUrl+(S.site.stagesUrl.includes("?")?"&":"?")+q; }
-function shpStName(k){ const s=SHP_ST.find(x=>x.k===k); return s?s.n:"Замер"; }
+function shpStName(k){ k=SHP_OLDST[k]||k; const s=SHP_ST.find(x=>x.k===k); return s?s.n:SHP_ST[0].n; }
 function shpById(id){ return S.shop.orders.find(o=>o.id===id)||null; }
 function shpToday(d){ d=d||new Date(); const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
 function shpDays(a,b){ return Math.round((new Date(a+"T00:00:00")-new Date(b+"T00:00:00"))/864e5); }
@@ -3861,10 +3865,19 @@ async function shpLoad(quiet){
   S.shop.loading=false;
   if(S.view==="shop"&&!(S.shop.mode==="form")) shpRenderKeep();
 }
+async function shpPostRaw(body){   // без подсказок: null — нет связи
+  try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify(Object.assign({pin:shpPin(),who:shpWho()},body))}); return await r.json(); }catch(_){ return null; }
+}
 async function shpPost(body){
-  try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify(Object.assign({pin:shpPin(),who:shpWho()},body))}); const j=await r.json();
-    if(!j||!j.ok){ if(j&&j.error==="pin"){ shpBadPin(); return null; } toast(j&&j.error==="tech"?"Это может только технолог":"Не сохранилось. Попробуйте ещё раз."); return null; }
-    return j; }catch(_){ toast("Нет связи с таблицей. Не сохранилось."); return null; }
+  const j=await shpPostRaw(body);
+  if(!j){ toast("Нет связи с таблицей. Не сохранилось."); return null; }
+  if(!j.ok){ if(j.error==="pin"){ shpBadPin(); return null; } toast(j.error==="tech"?"Это может только технолог":j.error==="role"?"Нет прав на это действие":j.error==="notfound"?"Не нашлось — возможно, уже удалили. Обновите.":"Не сохранилось. Попробуйте ещё раз."); return null; }
+  return j;
+}
+async function shpGet(q,quiet){   // GET к таблице; null — ошибка (подсказка, если не quiet)
+  try{ const r=await fetch(shpUrl(q+"&pin="+encodeURIComponent(shpPin())),{cache:"no-cache"}); const j=await r.json();
+    if(j&&j.ok) return j; if(j&&j.error==="pin"){ shpBadPin(); return null; } if(!quiet) toast("Таблица ответила ошибкой. Обновите скрипт или попробуйте позже."); return null;
+  }catch(_){ if(!quiet) toast("Нет связи с таблицей. Проверьте интернет."); return null; }
 }
 /* чат: подгружаем только новые сообщения, раз в 15 секунд, пока чат на экране */
 let shpTimer=null;
@@ -3912,48 +3925,57 @@ function shpChatBox(id,title){
 
 /* экраны */
 function shpLoginHtml(){
-  return `<div class="head"><h1>${VTX?"Вертакс":"Цех"}</h1></div><div class="empty shp-login"><h2>Заказы цеха и чат</h2><p class="muted">Здесь все заказы клиентов по этапам — от замера до монтажа — и переписка по каждому заказу. Войдите один раз на этом телефоне.</p>
+  return `<div class="head"><h1>Вертакс</h1></div><div class="empty shp-login"><h2>Сделки, задачи и чат</h2><p class="muted">Здесь все заказы клиентов по этапам — от замера до монтажа — и переписка по каждому заказу. Войдите один раз на этом телефоне.</p>
     <div class="shp-login-b"><button type="button" class="btn primary" data-act="shp-in-master">Я мастер</button><button type="button" class="btn" data-act="shp-in-tech">Я технолог</button><button type="button" class="btn" data-act="shp-in-office">Я дизайнер / офис</button><button type="button" class="btn" data-act="shp-in-sup">Я снабженец</button></div></div>`;
 }
 function shpCard(o,seen,today){
   const chips=[];
-  if(o.deadline&&o.stage!=="closed"){ const d=shpDays(today,o.deadline);
+  if(o.deadline&&!shpClosed(o)){ const d=shpDays(today,o.deadline);
     if(d>0) chips.push(`<span class="shp-chip bad">просрочен на ${d} дн.</span>`); else chips.push(`<span class="shp-chip${d>=-1?" warn":""}">срок ${esc(shpDM(o.deadline))}</span>`); }
+  if((o.stage==="dogovor"||o.stage==="zamer")&&o.zamerDate) chips.push(`<span class="shp-chip${o.zamerDate<today?" bad":o.zamerDate===today?" warn":""}">замер ${esc(shpDM(o.zamerDate))}</span>`);
+  if((o.stage==="cex"||o.stage==="montazh")&&o.montazhDate) chips.push(`<span class="shp-chip${o.montazhDate<today?" bad":o.montazhDate===today?" warn":""}">монтаж ${esc(shpDM(o.montazhDate))}</span>`);
+  const nt=S.shop.tasks.filter(t=>t.order===o.id&&t.status!=="done").length; if(nt) chips.push(`<span class="shp-chip">задач: ${nt}</span>`);
+  if(o.stage==="lost"&&o.reason) chips.push(`<span class="shp-chip lost">${esc(o.reason.length>40?o.reason.slice(0,40)+"…":o.reason)}</span>`);
   if(shpUnread(o,seen)) chips.push(`<span class="shp-chip new">новое в чате</span>`);
   if(o.t3d||o.link) chips.push(`<span class="shp-chip">3D</span>`);
   if(S.shop.rcpt&&o.receiptsTotal>0) chips.push(`<span class="shp-chip buy">закупка ${esc(shpMoney(o.receiptsTotal))}</span>`);
   const key=[o.client,o.num,"№"+o.num,o.phone,String(o.phone||"").replace(/\D/g,""),o.address,o.kind].join(" ").toLowerCase();
-  return `<button type="button" class="shp-card" data-act="shp-open" data-id="${esc(o.id)}" data-s="${esc(key)}" data-own="${esc(String(o.owner||"").trim().toLowerCase())}"><span class="shp-c1"><b>${esc(o.client||"Без имени")}</b><span class="mono muted">№ ${esc(o.num)}</span></span>
-    <span class="shp-c2">${o.kind?`<span class="shp-kind">${esc(o.kind)}</span>`:""}${o.owner?`<span class="muted">${esc(o.owner)}</span>`:`<span class="muted">без ответственного</span>`}</span>${chips.length?`<span class="shp-chips">${chips.join("")}</span>`:""}</button>`;
+  return `<button type="button" class="shp-card" data-act="shp-open" data-id="${esc(o.id)}" data-s="${esc(key)}" data-own="${esc(String(o.owner||"").trim().toLowerCase())}"${S.shop.full&&+o.sum?` data-sum="${esc(String(+o.sum))}"`:""}><span class="shp-c1"><b>${esc(o.client||"Без имени")}</b><span class="mono muted">№ ${esc(o.num)}</span></span>
+    <span class="shp-c2">${o.kind?`<span class="shp-kind">${esc(o.kind)}</span>`:""}${o.owner?`<span class="muted">${esc(o.owner)}</span>`:`<span class="muted">без ответственного</span>`}${S.shop.full&&+o.sum?`<span class="shp-csum2 mono">${esc(shpMoney(o.sum))}</span>`:""}</span>${chips.length?`<span class="shp-chips">${chips.join("")}</span>`:""}</button>`;
 }
+function shpKbSum(n){ return n?Number(n).toLocaleString("ru-RU")+" ₽":""; }
 function shpBoardHtml(){
   const L=S.shop.orders, seen=shpSeen(), today=shpToday();
   const sortF=(a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999")||String(a.num).localeCompare(String(b.num));
-  const gu=shpGenUnread(seen);
-  let h=`<div class="head"><div><h1>${VTX?"Заказы":"Цех"}</h1><p class="muted" style="margin:4px 0 0">${esc(shpRoleLine())} · в работе: ${L.filter(o=>o.stage!=="closed").length}</p></div>
-    <div class="head-actions"><button type="button" class="btn primary" data-act="shp-new">Новый заказ</button><button type="button" class="btn shp-gen" data-act="shp-general">Общий чат${gu?`<span class="shp-dot" aria-label="есть новые сообщения">новое</span>`:""}</button><button type="button" class="btn" data-act="shp-reload">Обновить</button></div></div>`;
+  let h=`<div class="head shp-bhead"><div><h1>Сделки</h1><p class="muted" style="margin:4px 0 0">${esc(shpRoleLine())} · в работе: ${L.filter(o=>!shpClosed(o)).length}</p></div>
+    <div class="head-actions"><button type="button" class="btn primary" data-act="shp-new">+ Заказ</button><button type="button" class="btn" data-act="shp-reload">Обновить</button></div></div>`;
   if(!S.shop.loaded) return h+`<p class="muted">${S.shop.err?"Нет связи с таблицей. Нажмите «Обновить».":"Загружаю заказы…"}</p>`;
-  if(!L.length) h+=`<p class="note">Заказов пока нет. Нажмите «Новый заказ», когда будет первый замер.</p>`;
-  else h+=`<div class="shp-find"><input id="shpQ" type="search" value="${esc(S.shop.q||"")}" placeholder="Поиск: клиент, №, телефон, адрес" aria-label="Поиск заказа" enterkeyhint="search" autocomplete="off">
-    <div class="shp-seg" role="group" aria-label="Какие заказы показать"><button type="button" data-act="shp-mine" data-v="0" aria-pressed="${!S.shop.mine}">Все</button><button type="button" data-act="shp-mine" data-v="1" aria-pressed="${!!S.shop.mine}">Мои</button></div></div><p class="muted shp-nofind" hidden>Ничего не нашлось.</p>`;
-  h+=`<div class="shp-board">`+SHP_ST.filter(s=>s.k!=="closed").map(s=>{ const g=L.filter(o=>o.stage===s.k).sort(sortF);
-    return `<section class="shp-col"><h2>${esc(s.n)} <span class="muted">${g.length}</span></h2>${g.length?g.map(o=>shpCard(o,seen,today)).join(""):`<p class="muted shp-none">пусто</p>`}</section>`; }).join("")+`</div>`;
-  const cl=L.filter(o=>o.stage==="closed").sort((a,b)=>(b.stageAt||0)-(a.stageAt||0));
-  h+=`<details class="shp-closed"><summary>Закрытые заказы · ${cl.length}</summary><div class="shp-closed-l">${cl.length?cl.map(o=>shpCard(o,seen,today)).join(""):`<p class="muted shp-none">пока нет</p>`}</div></details>`;
-  h+=`<p class="home-foot"><button type="button" class="linkbtn" data-act="shp-out">${VTX?"Выйти из «Вертакса» на этом телефоне":"Выйти из раздела «Цех» на этом телефоне"}</button></p>`;
+  h+=shpTaskStrip();
+  if(!L.length) h+=`<p class="note">Заказов пока нет. Нажмите «+ Заказ», когда будет первый замер.</p>`;
+  const cl=L.filter(shpClosed);
+  h+=`<div class="shp-find"><input id="shpQ" type="search" value="${esc(S.shop.q||"")}" placeholder="Поиск: клиент, №, телефон, адрес" aria-label="Поиск заказа" enterkeyhint="search" autocomplete="off">
+    <div class="shp-seg" role="group" aria-label="Какие заказы показать"><button type="button" data-act="shp-mine" data-v="0" aria-pressed="${!S.shop.mine}">Все</button><button type="button" data-act="shp-mine" data-v="1" aria-pressed="${!!S.shop.mine}">Мои</button></div>
+    <button type="button" class="btn shp-cltog" data-act="shp-closed" aria-pressed="${!!S.shop.showClosed}">${S.shop.showClosed?"Скрыть закрытые":"Показать закрытые"} · ${cl.length}</button></div><p class="muted shp-nofind" hidden>Ничего не нашлось.</p>`;
+  const col=(s,g)=>{ const sum=S.shop.full?g.reduce((a,o)=>a+(+o.sum||0),0):0;
+    return `<section class="shp-col" data-st="${s.k}" aria-label="${esc(s.n)}"><header class="shp-colh"><h2>${esc(s.n)}</h2><span class="shp-cnt">${g.length}</span>${S.shop.full?`<span class="shp-csum mono">${esc(shpKbSum(sum))}</span>`:""}</header>
+      <div class="shp-colb">${g.map(o=>shpCard(o,seen,today)).join("")}<p class="muted shp-none"${g.length?" hidden":""}>${s.k==="closed"||s.k==="lost"?"пока нет — можно перетащить сюда":"пусто — перетащите сюда карточку"}</p></div></section>`; };
+  const byAt=(a,b)=>(b.stageAt||0)-(a.stageAt||0);
+  h+=`<div class="shp-kb" id="shpKb">`+SHP_ST.map(s=>col(s,L.filter(o=>o.stage===s.k).sort(s.k==="closed"||s.k==="lost"?byAt:sortF))).join("")+`</div>`;
+  h+=`<p class="muted shp-hint">${matchMedia("(pointer:coarse)").matches?"Чтобы перенести заказ на другой этап — нажмите на карточку и подержите, потом тащите.":"Карточку можно перетащить мышкой на другой этап."}</p>`;
   return h;
 }
 function shpOrderHtml(){
   const o=shpById(S.shop.cur);
   if(!o) return `<div class="empty"><h2>Заказ не найден</h2><p class="muted">Возможно, его удалили.</p><button class="btn" data-act="shp-back">К заказам</button></div>`;
-  const tech=S.shop.tech, full=S.shop.full, today=shpToday(), late=o.deadline&&o.stage!=="closed"?shpDays(today,o.deadline):0;
+  const tech=S.shop.tech, full=S.shop.full, today=shpToday(), late=o.deadline&&!shpClosed(o)?shpDays(today,o.deadline):0;
   let h=`<div class="tblock shp-tb"><div class="tb-name"><span class="tb-l">Клиент</span><h1>${esc(o.client||"Без имени")}</h1></div>
     <div class="tb-c"><span class="tb-l">Заказ</span><b class="mono">№ ${esc(o.num)}</b></div>
     <div class="tb-c"><span class="tb-l">Срок</span><b class="mono${late>0?" shp-late":""}">${o.deadline?esc(shpDM(o.deadline)):"—"}</b></div>
     <div class="tb-c"><span class="tb-l">Ответственный</span><b>${esc(o.owner||"—")}</b></div>
-    <div class="head-actions tb-act"><button type="button" class="btn" data-act="shp-back">← К заказам</button><button type="button" class="btn" data-act="shp-edit">Изменить</button>
+    <div class="head-actions tb-act"><button type="button" class="btn" data-act="shp-back">← Назад</button><button type="button" class="btn" data-act="shp-edit">Изменить</button>
     ${tech?(S.shop.delAsk?`<button type="button" class="btn danger shp-del-yes" data-act="shp-del">Точно удалить?</button><button type="button" class="btn" data-act="shp-del-no">Отмена</button>`:`<button type="button" class="btn danger" data-act="shp-del">Удалить</button>`):""}</div></div>`;
   if(late>0) h+=`<div class="banner warn">Срок прошёл ${late} дн. назад.</div>`;
+  if(o.stage==="lost") h+=`<div class="banner shp-lostb">Сделка закрыта неуспешно${o.reason?`. Причина: <b>${esc(o.reason)}</b>`:"."}</div>`;
   h+=`<label class="shp-stage-l"><span>Этап</span><select id="shpStage" data-id="${esc(o.id)}">${SHP_ST.map(s=>`<option value="${s.k}"${s.k===o.stage?" selected":""}>${esc(s.n)}</option>`).join("")}</select></label>`;
   const row=(l,v)=>v?`<div><dt>${l}</dt><dd>${v}</dd></div>`:"";
   const tel=String(o.phone||"").replace(/[^\d+]/g,"");
@@ -3963,6 +3985,7 @@ function shpOrderHtml(){
     h+=`<div class="card shp-money" aria-label="Деньги по заказу">${it("Сумма",has?shpMoney(sum):"—")}${it("Предоплата",shpMoney(o.prepay))}${it("Остаток клиента",has?shpMoney(rest):"—",rest>0?"due":"")}${it("Закупка по чекам",shpMoney(buy))}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has&&sum-buy<0?"neg":"")}</div>`; }
   h+=`<div class="shp-cols"><div><dl class="card shp-info">${row("Что делаем",esc(o.kind||""))}${row("Описание",esc(o.desc||"").replace(/\n/g,"<br>"))}
     ${o.phone?row("Телефон",tel?`<a href="tel:${esc(tel)}">${esc(o.phone)}</a>`:esc(o.phone)):""}${o.address?row("Адрес",`${esc(o.address)} <a class="shp-map" href="${esc(shpMap(o.address))}" target="_blank" rel="noopener">На карте</a>`):""}
+    ${row("Дата замера",o.zamerDate?esc(shpDM(o.zamerDate)):"")}${row("Дата монтажа",o.montazhDate?esc(shpDM(o.montazhDate)):"")}
     ${row("Заметки",esc(o.notes||"").replace(/\n/g,"<br>"))}
     ${!(o.kind||o.desc||o.address||o.notes||o.phone||(full&&o.sum))?`<p class="muted" style="margin:0">Подробностей пока нет. Нажмите «Изменить», чтобы дописать.</p>`:""}</dl>`;
   const lk=shpSafeLink(o.link), in3d=o.t3d&&S.orders&&S.orders[o.t3d];
@@ -3970,8 +3993,10 @@ function shpOrderHtml(){
     :lk?`<a class="btn primary" href="${esc(lk)}" target="_blank" rel="noopener">Открыть 3D</a>`
     :o.t3d?`<p class="muted">Привязан заказ <span class="mono">${esc(o.t3d)}</span>, но на этом телефоне он не открыт. Отсканируйте его QR-код один раз.</p><button type="button" class="btn" data-act="order" data-from="shop" data-id="${esc(o.t3d)}">Попробовать открыть</button>`
     :`<p class="muted" style="margin:0">3D не привязан. Технолог выгружает заказ из Базиса скриптом «Технолог 3D», потом здесь «Изменить» → «Проект 3D» — выбрать заказ из списка или вставить ссылку.</p>`}</div>`;
+  h+=shpOrderTasksHtml(o);
   h+=shpRcHtml(o);
-  h+=`</div><div>${shpChatBox(o.id,"Чат по заказу")}</div></div>`;
+  const tabs=`<div class="shp-otabs" role="tablist" aria-label="Чат или история"><button type="button" role="tab" data-act="shp-otab" data-v="chat" aria-selected="${S.shop.otab!=="history"}">Чат по заказу</button><button type="button" role="tab" data-act="shp-otab" data-v="history" aria-selected="${S.shop.otab==="history"}">История</button></div>`;
+  h+=`</div><div>${S.shop.otab==="history"?`<div class="card shp-chat">${tabs}${shpHistHtml(o)}</div>`:shpChatBox(o.id,"Чат по заказу").replace(/<h2>[^<]*<\/h2>/,tabs)}</div></div>`;
   return h;
 }
 /* чеки закупки по заказу — технолог, офис, снабженец */
@@ -4003,16 +4028,17 @@ async function shpRcLoad(id){
 function shpApplyFilter(){
   const q=String(S.shop.q||"").trim().toLowerCase(), me=shpWho().trim().toLowerCase(), words=q.split(/\s+/).filter(Boolean);
   let shown=0;
-  document.querySelectorAll(".shp-board .shp-col, .shp-closed").forEach(col=>{ let n=0;
+  document.querySelectorAll(".shp-kb .shp-col").forEach(col=>{ let n=0, sum=0; const closed=col.dataset.st==="closed"||col.dataset.st==="lost";
     col.querySelectorAll(".shp-card").forEach(c=>{ const s=c.dataset.s||"";
       const ok=(!S.shop.mine||c.dataset.own===me)&&words.every(w=>s.includes(w)||(/^[\d+()-]{3,}$/.test(w)&&w.replace(/\D/g,"").length>=3&&s.includes(w.replace(/\D/g,""))));
-      c.hidden=!ok; if(ok) n++; });
-    shown+=n; const cnt=col.querySelector("h2 .muted"); if(cnt) cnt.textContent=n;
-    const none=col.querySelector(".shp-none"); if(none&&col.querySelector(".shp-card")) none.hidden=n>0;
-    col.hidden=!!(q||S.shop.mine)&&n===0; });   // при поиске пустые этапы прячем
+      c.hidden=!ok; if(ok){ n++; sum+=+c.dataset.sum||0; } });
+    const cnt=col.querySelector(".shp-cnt"); if(cnt) cnt.textContent=n;
+    const cs=col.querySelector(".shp-csum"); if(cs) cs.textContent=shpKbSum(sum);
+    const none=col.querySelector(".shp-none"); if(none) none.hidden=n>0;
+    col.hidden=closed?!(S.shop.showClosed||(q&&n>0)):(!!(q||S.shop.mine)&&n===0);   // при поиске пустые этапы прячем; закрытые — по кнопке или если нашлись
+    if(!col.hidden||!closed) shown+=n; });
   const nf=document.querySelector(".shp-nofind"); if(nf) nf.hidden=!(shown===0&&S.shop.orders.length&&(q||S.shop.mine));
   if(nf&&!nf.hidden) nf.textContent=S.shop.mine&&!q?"Нет заказов, где ответственный — «"+shpWho()+"».":"Ничего не нашлось.";
-  if(q){ const d=document.querySelector(".shp-closed"); if(d&&d.querySelector(".shp-card:not([hidden])")) d.open=true; }
 }
 function shpFileMark(fi){ const f=fi.closest(".shp-chat,.shp-rc"), p=f&&f.querySelector(".shp-chat .shp-fn"), lab=fi.closest("label");
   if(lab) lab.classList.toggle("on",!!fi.files[0]);
@@ -4027,30 +4053,45 @@ function shpFormHtml(){
   <form class="card shp-form" id="shpForm" autocomplete="off">
     ${f("Клиент *","client",o.client,'required maxlength="120" placeholder="Фамилия или как записан"')}
     ${f("Телефон","phone",o.phone,'type="tel" inputmode="tel" maxlength="40" placeholder="+7 914 …"')}
+    <div class="wide shp-repeat" id="shpRepeat" aria-live="polite"></div>
     ${f("Что делаем","kind",o.kind,'maxlength="120" placeholder="Кухня, шкаф-купе, прихожая…" list="shpKinds"')}
     <label class="wide">Описание<textarea name="desc" rows="3" maxlength="2000">${esc(o.desc||"")}</textarea></label>
     ${f("Адрес","address",o.address,'maxlength="200"')}
     ${full?f("Сумма, ₽","sum",o.sum,'inputmode="decimal" maxlength="15"')+f("Предоплата, ₽","prepay",o.prepay,'inputmode="decimal" maxlength="15"'):""}
     ${f("Срок","deadline",o.deadline,'type="date"')}
+    ${f("Дата замера","zamerDate",o.zamerDate,'type="date"')}${f("Дата монтажа","montazhDate",o.montazhDate,'type="date"')}
     ${f("Ответственный","owner",o.owner,'maxlength="40" list="shpOwners"')}
-    <label>Этап<select name="stage">${SHP_ST.map(s=>`<option value="${s.k}"${s.k===(o.stage||"zamer")?" selected":""}>${esc(s.n)}</option>`).join("")}</select></label>
+    <label>Этап<select name="stage">${SHP_ST.map(s=>`<option value="${s.k}"${s.k===(o.stage||"dogovor")?" selected":""}>${esc(s.n)}</option>`).join("")}</select></label>
+    <label id="shpReasonL"${o.stage==="lost"?"":" hidden"}>Причина (почему не успешно)<input name="reason" value="${esc(o.reason||"")}" maxlength="300" placeholder="Дорого, передумали, ушли к другим…"></label>
     <label>Проект 3D<select name="t3d">${opt3d}</select></label>
     ${f("Ссылка на 3D (если нет в списке)","link",o.link,'type="url" inputmode="url" maxlength="500" placeholder="https://…"')}
     <label class="wide">Заметки<textarea name="notes" rows="3" maxlength="2000">${esc(o.notes||"")}</textarea></label>
     <div class="wide shp-form-b"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="shp-cancel">Отмена</button></div>
-  </form><datalist id="shpOwners">${SHP_OWNERS.map(n=>`<option value="${esc(n)}">`).join("")}</datalist><datalist id="shpKinds">${["Кухня","Шкаф-купе","Прихожая","Гардеробная","Детская","Спальня","Ванная","Офисная мебель"].map(n=>`<option value="${n}">`).join("")}</datalist>`;
+  </form><datalist id="shpOwners">${shpPeople().map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist><datalist id="shpKinds">${["Кухня","Шкаф-купе","Прихожая","Гардеробная","Детская","Спальня","Ванная","Офисная мебель"].map(n=>`<option value="${n}">`).join("")}</datalist>`;
 }
 function viewShop(){
-  if(!shpOn()) return `<div class="empty"><h2>Раздел «Цех» не подключён</h2><p class="muted">Нужна ссылка на Google-таблицу в config.json (stagesUrl).</p></div>`;
+  if(!shpOn()) return `<div class="empty"><h2>«Вертакс» не подключён</h2><p class="muted">Нужна ссылка на Google-таблицу в config.json (stagesUrl).</p></div>`;
   if(!shpPin()) return shpLoginHtml();
   if(!S.shop.loaded&&!S.shop.loading&&!S.shop.err) shpLoad();
-  if(S.shop.mode==="form") return shpFormHtml();
-  if(S.shop.mode==="general") return `<div class="head"><h1>Общий чат</h1><div class="head-actions"><button type="button" class="btn" data-act="shp-back">← К заказам</button></div></div>${shpChatBox("general","Все мастера и технолог")}`;
-  if(S.shop.mode==="order"){ if(!S.shop.loaded) return `<p class="muted">Загружаю заказ…</p>`; return shpOrderHtml(); }
-  return shpBoardHtml();
+  const m=S.shop.mode;
+  if(m==="form") return shpFormHtml();
+  const nav=shpNavHtml(), wait=`<p class="muted">${S.shop.err?"Нет связи с таблицей. Нажмите «Обновить».":"Загружаю…"}</p>`;
+  if(m==="general") return nav+`<div class="head"><h1>Общий чат</h1><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="chats">← Чаты</button></div></div>${shpChatBox("general","Все мастера, офис и технолог")}`;
+  if(m==="order") return nav+(S.shop.loaded?shpOrderHtml():`<p class="muted">Загружаю заказ…</p>`);
+  if(m!=="board"&&m!=="more"&&!S.shop.loaded) return nav+wait;
+  if(m==="tasks") return nav+shpTasksHtml();
+  if(m==="chats") return nav+shpChatsHtml();
+  if(m==="cal") return nav+shpCalHtml();
+  if(m==="feed") return nav+shpFeedScreen();
+  if(m==="clients") return nav+shpClientsHtml();
+  if(m==="client") return nav+shpClientHtml();
+  if(m==="staff") return nav+shpStaffHtml();
+  if(m==="person") return nav+shpPersonHtml();
+  if(m==="more") return nav+shpMoreHtml();
+  return nav+shpBoardHtml();
 }
 function shpRenderKeep(){ const y=window.scrollY; render(); window.scrollTo(0,y); }
-function shpGo(mode,id){ S.shop.mode=mode; S.shop.delAsk=false; S.shop.rcDel=null; S.shop.rcOpen=false; if(mode==="order"&&id!==undefined) delete S.shop.rc[id]; if(id!==undefined) S.shop.cur=id;
+function shpGo(mode,id){ if(mode==="order"&&S.shop.mode!=="order"&&S.shop.mode!=="form") S.shop.back=S.shop.mode; if(mode==="order"&&id!==S.shop.cur) S.shop.otab="chat"; S.shop.mode=mode; S.shop.delAsk=false; S.shop.rcDel=null; S.shop.rcOpen=false; if(mode==="order"&&id!==undefined) delete S.shop.rc[id]; if(id!==undefined) S.shop.cur=id;
   if(mode!=="order"&&mode!=="general") S.shop.chat=null;
   if(S.view!=="shop") setView("shop"); else { render(); window.scrollTo(0,0); } }
 
@@ -4058,14 +4099,15 @@ function shpGo(mode,id){ S.shop.mode=mode; S.shop.delAsk=false; S.shop.rcDel=nul
 function shpTechModal(){
   const m=document.createElement("div"); m.className="modal"; m.id="qrModal";
   m.innerHTML=`<form class="modal-card" id="shpTechForm" autocomplete="off"><h2 style="margin:0 0 6px">PIN технолога</h2><p class="note" style="margin:0 0 12px">Один раз на этом устройстве. PIN — в Google-таблице, лист «Настройки», ячейка B3.</p>
-    <div class="form" style="grid-template-columns:1fr;margin:0"><label>PIN технолога<input id="shpTechPin" type="password" inputmode="numeric" maxlength="20" required></label></div>
+    <div class="form" style="grid-template-columns:1fr;margin:0"><label>Ваше имя (для задач и чатов)<input id="shpTechWho" value="${esc(S.who||"")}" maxlength="40" placeholder="Например, Кирилл"></label><label>PIN технолога<input id="shpTechPin" type="password" inputmode="numeric" maxlength="20" required></label></div>
     <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Войти</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
   m.addEventListener("click",ev=>{ if(ev.target===m) m.remove(); }); document.body.appendChild(m); setTimeout(()=>{ const i=$("#shpTechPin"); i&&i.focus(); },50);
   $("#shpTechForm").addEventListener("submit",async ev=>{ ev.preventDefault(); const pin=$("#shpTechPin").value.trim(); if(!pin) return;
     let j=null; try{ const r=await fetch(shpUrl("action=shop&pin="+encodeURIComponent(pin)),{cache:"no-cache"}); j=await r.json(); }catch(_){ toast("Нет связи с таблицей. Проверьте интернет."); return; }
     if(!j||!j.ok||!j.tech){ toast("Неверный PIN технолога"); return; }
+    const tw=($("#shpTechWho")||{}).value; if(tw&&tw.trim()){ S.who=tw.trim().slice(0,40); try{ localStorage.setItem("cehqr-who",S.who); }catch(_){} }
     S.shop.techPin=pin; S.shop.orders=j.orders||[]; shpSetRole(j); S.shop.loaded=true; S.shop.err=false; try{ localStorage.setItem("cehqr-techpin",pin); }catch(_){}
-    m.remove(); toast("Вы вошли как технолог"); shpGo("board"); });
+    m.remove(); toast("Вы вошли как технолог"); const af=S.shop.afterLogin; S.shop.afterLogin=null; if(af) af(); else shpGo("board"); });
 }
 /* вход дизайнеров и офиса: имя + свой PIN (Google-таблица, «Настройки», ячейка B4) */
 const SHP_RM={office:{t:"Вход для дизайнеров и офиса",cell:"B4",l:"PIN дизайнеров / офиса",k:"cehqr-officepin",f:"officePin"},
@@ -4085,18 +4127,438 @@ function shpOfficeModal(kind){
     if(j.role!==want){ toast(j.tech?"Это PIN технолога — нажмите «Я технолог»":j.role==="master"?"Это PIN мастеров — нажмите «Я мастер»":j.role==="office"?"Это PIN офиса — нажмите «Я дизайнер / офис»":j.role==="supply"?"Это PIN снабженца — нажмите «Я снабженец»":"Скрипт таблицы не обновлён. Попросите технолога."); return; }
     S.shop[R.f]=pin; if(want==="supply"&&S.sup) S.sup.pin=pin; S.who=who; S.shop.orders=j.orders||[]; shpSetRole(j); S.shop.loaded=true; S.shop.err=false;
     try{ localStorage.setItem(R.k,pin); localStorage.setItem("cehqr-who",who); }catch(_){}
-    m.remove(); toast("Вы вошли: "+who); shpGo("board"); });
+    m.remove(); toast("Вы вошли: "+who); const af=S.shop.afterLogin; S.shop.afterLogin=null; if(af) af(); else shpGo("board"); });
 }
 function shpFormRead(fm){
   const g=n=>fm.elements[n]?String(fm.elements[n].value||"").trim():"";
-  const base=S.shop.edit||{}, o={id:base.id||"",client:g("client"),kind:g("kind"),desc:g("desc"),address:g("address"),deadline:g("deadline"),owner:g("owner"),stage:g("stage")||"zamer",t3d:g("t3d"),link:g("link"),notes:g("notes")};
-  o.phone=g("phone");
+  const base=S.shop.edit||{}, o={id:base.id||"",client:g("client"),kind:g("kind"),desc:g("desc"),address:g("address"),deadline:g("deadline"),zamerDate:g("zamerDate"),montazhDate:g("montazhDate"),owner:g("owner"),stage:g("stage")||"dogovor",t3d:g("t3d"),link:g("link"),notes:g("notes")};
+  o.phone=g("phone"); if(o.stage==="lost") o.reason=g("reason");
   if(S.shop.full){ o.sum=g("sum").replace(/\s/g,"").replace(",","."); o.prepay=g("prepay").replace(/\s/g,"").replace(",","."); }
   return o;
 }
 
-/* вкладка «Цех» в меню — перед «Как работать» */
-(function(){ const nav=document.getElementById("nav"); if(nav&&!document.getElementById("navShop")){ const b=document.createElement("button"); b.type="button"; b.dataset.view="shop"; b.id="navShop"; b.textContent="Цех"; b.hidden=true; const help=nav.querySelector('[data-view="help"]'); nav.insertBefore(b,help); } })();
+/* ---------- «Вертакс» как Битрикс: вкладки, перетаскивание, задачи, лента, календарь, клиенты, сотрудники ---------- */
+function shpNorm(s){ return String(s==null?"":s).trim().toLowerCase(); }
+function shpMe(){ return shpNorm(shpWho()); }
+function shpTitle(o){ return "№ "+o.num+(o.client?" · "+o.client:""); }
+function shpAddDays(d,n){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return shpToday(new Date(+m[1],+m[2]-1,+m[3]+n)); }
+const SHP_MON=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+const SHP_MONN=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+const SHP_DOW=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+function shpDayName(d){ const today=shpToday(); if(d===today) return "Сегодня"; if(d===shpAddDays(today,-1)) return "Вчера"; if(d===shpAddDays(today,1)) return "Завтра";
+  const x=new Date(d+"T00:00:00"); return x.getDate()+" "+SHP_MON[x.getMonth()]+(x.getFullYear()!==new Date().getFullYear()?" "+x.getFullYear():""); }
+/* значки (линии, цвет — от текста) */
+const SHP_I={
+  deals:'<rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/>',
+  tasks:'<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 12.5l3 3 5.5-6"/>',
+  chats:'<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2.5 2.5 0 0 1 4 13.5z"/>',
+  cal:'<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  more:'<circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/>',
+  feed:'<path d="M4 6h16M4 12h16M4 18h10"/>', clients:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.8a3.4 3.4 0 0 1 0 6.4M18 14.8c1.8.7 3 2.5 3.5 5.2"/>',
+  staff:'<rect x="3" y="6.5" width="18" height="13" rx="2.5"/><path d="M9 6.5V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5v1.5M3 12.5h18"/>',
+  out:'<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/>', reload:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
+  new:'<path d="M12 5v14M5 12h14"/>', stage:'<path d="M5 12h13M13 6l6 6-6 6"/>', edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  money:'<path d="M8 20V4h5.5a4 4 0 0 1 0 8H6M6 16h8"/>', receipt:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/>',
+  task:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12h8M12 8v8"/>', done:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  chat:'<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2.5 2.5 0 0 1 4 13.5z"/>',
+  photo:'<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1.5-2h5L16 6h1.5A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.2"/>',
+  del:'<path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13"/>', phone:'<path d="M5 3.5h3.5l1.5 4.5-2 1.5a11 11 0 0 0 6.5 6.5l1.5-2 4.5 1.5V19a2 2 0 0 1-2 2A16.5 16.5 0 0 1 3 5.5a2 2 0 0 1 2-2z"/>',
+  left:'<path d="M15 5l-7 7 7 7"/>', right:'<path d="M9 5l7 7-7 7"/>'
+};
+function shpIco(k,sz){ return `<svg class="shp-ico" viewBox="0 0 24 24" width="${sz||22}" height="${sz||22}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SHP_I[k]||""}</svg>`; }
+
+/* задачи: кто что может */
+function shpTaskWhen(t,today){ if(t.status==="done") return "done"; if(!t.due) return "none"; const d=shpDays(t.due,today||shpToday()); return d<0?"late":d===0?"today":d===1?"tom":"later"; }
+function shpMyOpen(){ const me=shpMe(), today=shpToday(); const L=S.shop.tasks.filter(t=>t.status!=="done"&&shpNorm(t.to)===me); return {n:L.length,late:L.filter(t=>shpTaskWhen(t,today)==="late").length}; }
+function shpCanEditT(t){ return S.shop.full||shpNorm(t.by)===shpMe(); }
+function shpCanDoneT(t){ return S.shop.full||shpNorm(t.by)===shpMe()||shpNorm(t.to)===shpMe(); }
+function shpCanDelT(t){ return S.shop.tech||shpNorm(t.by)===shpMe(); }
+function shpTaskById(id){ return S.shop.tasks.find(t=>t.id===id)||null; }
+async function shpTasksLoad(quiet){ const j=await shpGet("action=tasks",quiet); if(j&&Array.isArray(j.tasks)){ S.shop.tasks=j.tasks; S.shop.v2=true; } return j; }
+function shpOldScript(){ return S.shop.v2?"":`<div class="banner warn">Задачи, лента и сотрудники заработают после обновления скрипта Google-таблицы (вставить новый код → «Управление развёртываниями» → «Новая версия»).</div>`; }
+
+/* нижние вкладки (Вертакс) / меню сверху (сайт) */
+function shpTab(){ const m=S.shop.mode; return m==="tasks"?"tasks":m==="chats"||m==="general"?"chats":m==="cal"?"cal":/^(more|feed|clients|client|staff|person)$/.test(m)?"more":"board"; }
+function shpChatUnread(){ const seen=shpSeen(); return S.shop.orders.filter(o=>shpUnread(o,seen)).length+(shpGenUnread(seen)?1:0); }
+function shpNavHtml(){
+  const cur=shpTab(), my=shpMyOpen(), un=shpChatUnread();
+  const it=[["board","Сделки","deals"],["tasks","Задачи","tasks",my.n?`<span class="bdg${my.late?" bad":""}" aria-label="${my.late?"просрочено "+my.late:"открытых "+my.n}">${my.late||my.n}</span>`:""],
+    ["chats","Чаты","chats",un?`<span class="bdg" aria-label="непрочитанных ${un}">${un}</span>`:""],["cal","Календарь","cal"],["more","Ещё","more"]];
+  return `<nav class="shp-tabs ${VTX?"bottom":"top"}" aria-label="Разделы Вертакса">${it.map(x=>`<button type="button" data-act="shp-tab" data-v="${x[0]}"${cur===x[0]?' aria-current="page"':""}>${shpIco(x[2])}<span class="lb">${x[1]}</span>${x[3]||""}</button>`).join("")}</nav>`;
+}
+function shpTaskStrip(){
+  if(!S.shop.v2) return "";
+  const my=shpMyOpen();
+  return `<button type="button" class="shp-strip${my.late?" bad":""}" data-act="shp-tab" data-v="tasks" data-tt="me">${shpIco("tasks",20)}<span>Мои задачи: <b>${my.n}</b>${my.late?`, просрочено <b>${my.late}</b>`:""}</span><span class="shp-strip-go" aria-hidden="true">›</span></button>`;
+}
+
+/* ---- перетаскивание карточек между этапами (мышь — сразу, палец — подержать 250 мс) ---- */
+const SHP_DR={st:null,justDragged:0};
+function shpDragBegin(){
+  const d=SHP_DR.st; if(!d||d.on) return; const r=d.card.getBoundingClientRect();
+  d.on=true; d.dx=d.x-r.left; d.dy=d.y-r.top;
+  const g=d.card.cloneNode(true); g.className="shp-card shp-ghost"; g.removeAttribute("data-act"); g.style.width=r.width+"px"; document.body.appendChild(g); d.g=g;
+  d.card.classList.add("dragging"); const kb=document.getElementById("shpKb"); if(kb) kb.classList.add("dragging"); document.body.classList.add("shp-dragging");
+  try{ navigator.vibrate&&navigator.vibrate(15); }catch(_){}
+  shpDragMove(d.x,d.y); d.raf=requestAnimationFrame(shpDragAuto);
+}
+function shpDragMove(x,y){
+  const d=SHP_DR.st; if(!d||!d.on) return; d.x=x; d.y=y;
+  d.g.style.transform=`translate(${x-d.dx}px,${y-d.dy}px) rotate(2deg)`;
+  // этап — по горизонтали: палец над колонкой (на любой высоте возле доски)
+  const kb=document.getElementById("shpKb"), kr=kb&&kb.getBoundingClientRect();
+  const col=kr&&x>=kr.left&&x<=kr.right&&y>=kr.top-60&&y<=Math.max(kr.bottom,kr.top+200)+60?[...kb.querySelectorAll(".shp-col:not([hidden])")].find(c=>{ const r=c.getBoundingClientRect(); return x>=r.left-5&&x<=r.right+5; }):null;
+  document.querySelectorAll(".shp-col.drop").forEach(c=>{ if(c!==col) c.classList.remove("drop"); });
+  if(col&&col.dataset.st!==d.from) col.classList.add("drop"); d.to=col?col.dataset.st:null;
+}
+function shpDragAuto(){   // у края — листаем доску (вбок) и страницу (вверх-вниз)
+  const d=SHP_DR.st; if(!d||!d.on) return; const kb=document.getElementById("shpKb");
+  if(kb){ const r=kb.getBoundingClientRect(), e=Math.min(56,r.width/6);
+    if(d.x<r.left+e) kb.scrollLeft-=Math.min(9,Math.ceil((r.left+e-d.x)/5)); else if(d.x>r.right-e) kb.scrollLeft+=Math.min(9,Math.ceil((d.x-(r.right-e))/5)); }
+  const bot=window.innerHeight-(VTX?70:0);
+  if(d.y<80) window.scrollBy(0,-Math.ceil((80-d.y)/5)); else if(d.y>bot-60) window.scrollBy(0,Math.ceil((d.y-(bot-60))/5));
+  shpDragMove(d.x,d.y); d.raf=requestAnimationFrame(shpDragAuto);
+}
+function shpDragEnd(drop){
+  const d=SHP_DR.st; SHP_DR.st=null; if(!d) return; clearTimeout(d.timer); if(!d.on) return;
+  cancelAnimationFrame(d.raf); d.g.remove(); d.card.classList.remove("dragging"); document.body.classList.remove("shp-dragging");
+  const kb=document.getElementById("shpKb"); if(kb){ kb.classList.remove("dragging"); S.shop.kbX=kb.scrollLeft; }
+  document.querySelectorAll(".shp-col.drop").forEach(c=>c.classList.remove("drop"));
+  SHP_DR.justDragged=Date.now();
+  if(drop&&d.to&&d.to!==d.from){ const o=shpById(d.id); if(o) shpMoveStage(o,d.to); }
+}
+document.addEventListener("pointerdown",ev=>{
+  const c=ev.target.closest&&ev.target.closest(".shp-kb .shp-card"); if(!c||ev.button>0||SHP_DR.st) return;
+  const o=shpById(c.dataset.id); if(!o) return;
+  SHP_DR.st={card:c,id:o.id,from:o.stage,x:ev.clientX,y:ev.clientY,x0:ev.clientX,y0:ev.clientY,type:ev.pointerType,on:false,timer:null};
+  if(ev.pointerType!=="mouse") SHP_DR.st.timer=setTimeout(shpDragBegin,250);
+});
+document.addEventListener("pointermove",ev=>{ const d=SHP_DR.st; if(!d) return;
+  if(!d.on){ const far=Math.hypot(ev.clientX-d.x0,ev.clientY-d.y0)>8;
+    if(far){ if(d.type==="mouse"){ d.x=ev.clientX; d.y=ev.clientY; shpDragBegin(); } else { clearTimeout(d.timer); SHP_DR.st=null; } }   // палец поехал раньше — это прокрутка
+    return; }
+  ev.preventDefault(); shpDragMove(ev.clientX,ev.clientY); });
+document.addEventListener("pointerup",()=>shpDragEnd(true));
+document.addEventListener("pointercancel",()=>shpDragEnd(false));
+document.addEventListener("touchmove",ev=>{ if(SHP_DR.st&&SHP_DR.st.on) ev.preventDefault(); },{passive:false});   // во время перетаскивания страница не едет
+document.addEventListener("contextmenu",ev=>{ if(SHP_DR.st||(ev.target.closest&&ev.target.closest(".shp-kb .shp-card"))) ev.preventDefault(); });
+document.addEventListener("click",ev=>{ if(Date.now()-SHP_DR.justDragged<400&&ev.target.closest&&ev.target.closest(".shp-kb")){ ev.preventDefault(); ev.stopImmediatePropagation(); SHP_DR.justDragged=0; } },true);
+document.addEventListener("scroll",ev=>{ if(ev.target&&ev.target.id==="shpKb") S.shop.kbX=ev.target.scrollLeft; },true);
+/* смена этапа: новый запрос shopStage (только этап); старый скрипт — прежним shopSave */
+function shpAskReason(o){ return new Promise(res=>{
+  const m=document.createElement("div"); m.className="modal"; m.id="shpLostModal";
+  m.innerHTML=`<form class="modal-card shp-mform" autocomplete="off"><h2>Закрыть неуспешно?</h2><p class="note" style="margin:0">${esc(shpTitle(o))}</p>
+    <label>Причина (по желанию)<textarea name="r" rows="3" maxlength="300" placeholder="Дорого, передумали, ушли к другим…"></textarea></label>
+    <div class="shp-qd">${["Дорого","Передумали","Ушли к другим","Не дозвонились"].map(x=>`<button type="button" class="btn sm" data-r="${x}">${x}</button>`).join("")}</div>
+    <div class="shp-mb"><button class="btn primary shp-lostgo" type="submit">Закрыть сделку</button><button type="button" class="btn" data-x="1">Отмена</button></div></form>`;
+  const done=v=>{ m.remove(); res(v); };
+  m.addEventListener("click",ev=>{ if(ev.target===m||ev.target.dataset.x) return done(null); const r=ev.target.dataset&&ev.target.dataset.r; if(r){ const ta=m.querySelector("textarea"); ta.value=ta.value.trim()?ta.value.trim()+", "+r.toLowerCase():r; ta.focus(); } });
+  m.querySelector("form").addEventListener("submit",ev=>{ ev.preventDefault(); done(m.querySelector("textarea").value.trim()); });
+  document.body.appendChild(m); setTimeout(()=>m.querySelector("textarea").focus(),50); }); }
+async function shpMoveStage(o,nx){
+  const prev=o.stage, prevAt=o.stageAt, prevR=o.reason; if(prev===nx) return true;
+  let reason="";
+  if(nx==="lost"){ const r=await shpAskReason(o); if(r===null){ if(S.view==="shop") shpRenderKeep(); return false; } reason=r; }
+  o.stage=nx; o.stageAt=Date.now(); o.reason=reason; if(S.view==="shop"&&S.shop.mode==="board") shpRenderKeep();
+  let j=await shpPostRaw(Object.assign({action:"shopStage",id:o.id,stage:nx},nx==="lost"?{reason}:{}));
+  if(j&&!j.ok&&j.error==="code") j=await shpPostRaw({action:"shopSave",order:Object.assign({},o,{stage:nx})});   // скрипт таблицы ещё старый
+  if(!j||!j.ok){ o.stage=prev; o.stageAt=prevAt; o.reason=prevR; if(j&&j.error==="pin") shpBadPin(); else toast(j?"Этап не сохранился. Попробуйте ещё раз.":"Нет связи с таблицей. Этап не сохранился."); if(S.view==="shop") shpRenderKeep(); return false; }
+  toast("Этап: "+shpStName(nx)); S.shop.hist[o.id]=null; if(S.shop.chat&&S.shop.chat.id===o.id) shpChatPoll(); return true;
+}
+
+/* ---- задачи ---- */
+const SHP_CHK='<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+function shpTaskRow(t,noOrder){
+  const w=shpTaskWhen(t), o=t.order?shpById(t.order):null, can=shpCanDoneT(t), done=t.status==="done";
+  const due=t.due?(w==="late"?"просрочено, срок "+shpDM(t.due):w==="today"?"сегодня":w==="tom"?"завтра":"до "+shpDM(t.due)):"";
+  const meta=[t.to?"→ "+t.to:"кому: не указано",due,o&&!noOrder?shpTitle(o):"",t.by?"поставил "+t.by:""].filter(Boolean);
+  return `<li class="shp-task ${w}"><button type="button" class="shp-tchk" data-act="shp-tdone" data-id="${esc(t.id)}" aria-pressed="${done}" aria-label="${done?"Вернуть в работу":"Отметить выполненной"}: ${esc(t.text)}"${can?"":` disabled title="Отметить может исполнитель, автор или технолог"`}>${SHP_CHK}</button>
+    <button type="button" class="shp-tbody" data-act="shp-topen" data-id="${esc(t.id)}"><span class="shp-tt">${esc(t.text)}</span><span class="shp-tm">${meta.map(x=>`<span${x===due&&w==="late"?' class="late"':""}>${esc(x)}</span>`).join("")}</span></button></li>`;
+}
+function shpTasksHtml(){
+  const me=shpMe(), today=shpToday(), tab=S.shop.ttab||"me";
+  let L=S.shop.tasks.filter(t=>tab==="me"?shpNorm(t.to)===me:tab==="by"?shpNorm(t.by)===me:true);
+  const cnt=k=>S.shop.tasks.filter(t=>t.status!=="done"&&(k==="me"?shpNorm(t.to)===me:k==="by"?shpNorm(t.by)===me:true)).length;
+  let h=`<div class="head"><div><h1>Задачи</h1><p class="muted" style="margin:4px 0 0">${esc(shpRoleLine())}</p></div><div class="head-actions"><button type="button" class="btn primary" data-act="shp-tnew">+ Задача</button></div></div>${shpOldScript()}
+    <div class="shp-seg shp-seg-w" role="tablist" aria-label="Чьи задачи">${[["me","Мне"],["by","Я поставил"],["all","Все"]].map(x=>`<button type="button" role="tab" data-act="shp-ttab" data-v="${x[0]}" aria-pressed="${tab===x[0]}" aria-selected="${tab===x[0]}">${x[1]} <span class="muted">${cnt(x[0])}</span></button>`).join("")}</div>`;
+  const open=L.filter(t=>t.status!=="done"), done=L.filter(t=>t.status==="done").sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+  const G=[["late","Просрочено"],["today","Сегодня"],["tom","Завтра"],["later","Позже"],["none","Без срока"]];
+  if(!open.length) h+=`<p class="note shp-tempty">${tab==="me"?"Открытых задач для вас нет.":tab==="by"?"Вы пока не ставили задач.":"Открытых задач нет."} Нажмите «+ Задача», чтобы поставить.</p>`;
+  G.forEach(g=>{ const x=open.filter(t=>shpTaskWhen(t,today)===g[0]).sort((a,b)=>(a.due||"").localeCompare(b.due||"")||(a.created||0)-(b.created||0)); if(!x.length) return;
+    h+=`<section class="shp-tg ${g[0]}"><h2>${g[1]} <span class="muted">${x.length}</span></h2><ul class="shp-tl">${x.map(t=>shpTaskRow(t)).join("")}</ul></section>`; });
+  if(done.length) h+=`<details class="shp-tdone"${S.shop.tdone?" open":""}><summary>Выполненные · ${done.length}</summary><ul class="shp-tl">${done.slice(0,100).map(t=>shpTaskRow(t)).join("")}</ul></details>`;
+  return h;
+}
+function shpPeopleDl(){ return `<datalist id="shpPeople">${shpPeople().map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist>`; }
+function shpTaskModal(t,preset){
+  const isNew=!t; t=t||Object.assign({text:"",to:"",due:"",order:""},preset||{});
+  const can=isNew||shpCanEditT(t), del=!isNew&&shpCanDelT(t), o=t.order?shpById(t.order):null, today=shpToday();
+  const ords=S.shop.orders.filter(x=>!shpClosed(x)||x.id===t.order).sort((a,b)=>String(a.num).localeCompare(String(b.num)));
+  const dis=can?"":" disabled";
+  const m=document.createElement("div"); m.className="modal"; m.id="shpTaskModal";
+  m.innerHTML=`<form class="modal-card shp-mform" id="shpTaskForm" data-id="${esc(t.id||"")}" autocomplete="off"><h2>${isNew?"Новая задача":can?"Задача":"Задача (менять может автор или технолог)"}</h2>
+    ${!isNew?`<p class="note" style="margin:0 0 10px">Поставил: ${esc(t.by||"—")}${t.created?" · "+esc(shpTime(t.created)):""}${t.status==="done"?" · выполнена"+(t.doneAt?" "+esc(shpTime(t.doneAt)):""):""}</p>`:""}
+    <label>Что сделать *<textarea name="text" rows="3" maxlength="500" required${dis}>${esc(t.text)}</textarea></label>
+    <label>Кому<input name="to" value="${esc(t.to)}" maxlength="40" list="shpPeople" placeholder="Имя"${dis}></label>
+    <label>Срок<input name="due" type="date" value="${esc(t.due)}"${dis}></label>
+    ${can?`<div class="shp-qd"><button type="button" class="btn sm" data-act="shp-tdue" data-v="${today}">Сегодня</button><button type="button" class="btn sm" data-act="shp-tdue" data-v="${shpAddDays(today,1)}">Завтра</button><button type="button" class="btn sm" data-act="shp-tdue" data-v="${shpAddDays(today,7)}">Через неделю</button><button type="button" class="btn sm" data-act="shp-tdue" data-v="">Без срока</button></div>`:""}
+    <label>Заказ<select name="order"${dis}><option value="">Без заказа</option>${ords.map(x=>`<option value="${esc(x.id)}"${x.id===t.order?" selected":""}>${esc(shpTitle(x))}</option>`).join("")}</select></label>
+    <div class="shp-mb">${can?`<button class="btn primary" type="submit">${isNew?"Поставить задачу":"Сохранить"}</button>`:""}
+      ${o&&S.shop.mode!=="order"?`<button type="button" class="btn" data-act="shp-topenorder" data-id="${esc(o.id)}">Открыть заказ</button>`:""}
+      ${del?`<button type="button" class="btn danger" data-act="shp-tdel" data-id="${esc(t.id)}">Удалить</button>`:""}
+      <button type="button" class="btn" data-act="shp-mclose">${can?"Отмена":"Закрыть"}</button></div>${shpPeopleDl()}</form>`;
+  m.addEventListener("click",ev=>{ if(ev.target===m) m.remove(); }); document.body.appendChild(m);
+  setTimeout(()=>{ const i=m.querySelector(isNew?"textarea":"button"); i&&i.focus(); },50);
+}
+async function shpTaskSubmit(f){
+  const g=n=>String(f.elements[n].value||"").trim(), id=f.dataset.id, t={text:g("text"),to:g("to"),due:g("due"),order:g("order")};
+  if(!t.text){ toast("Напишите, что сделать"); f.elements.text.focus(); return; }
+  if(id) t.id=id;
+  const btn=f.querySelector('[type="submit"]'); btn.disabled=true; btn.textContent="Сохраняю…";
+  const j=await shpPost({action:"taskSave",task:t}); if(!j){ btn.disabled=false; btn.textContent=id?"Сохранить":"Поставить задачу"; return; }
+  if(id){ const x=shpTaskById(id); if(x) Object.assign(x,t); } else S.shop.tasks.push(Object.assign({id:j.id,status:"open",by:shpWho(),created:Date.now(),doneAt:0},t));
+  document.getElementById("shpTaskModal")?.remove(); toast(id?"Задача сохранена":"Задача поставлена"+(t.to?": "+t.to:"")); shpRenderKeep(); shpTasksLoad(true).then(()=>{ if(S.view==="shop"&&!document.querySelector(".modal")) shpRenderKeep(); });
+}
+async function shpTaskToggle(id,btn){
+  const t=shpTaskById(id); if(!t||!shpCanDoneT(t)) return; const done=t.status!=="done"; btn.disabled=true;
+  const j=await shpPost({action:"taskDone",id,done}); btn.disabled=false; if(!j) return;
+  t.status=done?"done":"open"; t.doneAt=done?(j.doneAt||Date.now()):0; toast(done?"Задача выполнена":"Задача снова в работе"); shpRenderKeep();
+}
+function shpOrderTasksHtml(o){
+  if(!S.shop.v2) return "";
+  const L=S.shop.tasks.filter(t=>t.order===o.id), open=L.filter(t=>t.status!=="done"), done=L.filter(t=>t.status==="done");
+  return `<div class="card shp-otasks"><div class="shp-rc-h"><h2>Задачи по заказу</h2><button type="button" class="btn sm" data-act="shp-tnew" data-order="${esc(o.id)}">+ Задача</button></div>
+    ${L.length?`<ul class="shp-tl">${open.concat(done).map(t=>shpTaskRow(t,true)).join("")}</ul>`:`<p class="muted" style="margin:0">Задач нет. Например: «Замерить кухню» для Айтала на завтра.</p>`}</div>`;
+}
+
+/* ---- лента событий ---- */
+const SHP_EV={new:["new","Новый заказ"],stage:["stage","Этап"],edit:["edit","Правка"],money:["money","Деньги"],receipt:["receipt","Чек"],task:["task","Задача"],done:["done","Сделано"],chat:["chat","Сообщение"],photo:["photo","Фото"],del:["del","Удалено"]};
+function shpEvHtml(evs,inOrder){
+  if(!evs.length) return `<p class="muted shp-sys">Событий пока нет.</p>`;
+  const days={}; evs.slice().sort((a,b)=>b.when-a.when).forEach(e=>{ const d=shpToday(new Date(e.when)); (days[d]=days[d]||[]).push(e); });
+  return Object.keys(days).sort().reverse().map(d=>`<section class="shp-evd"><h3>${esc(shpDayName(d))}</h3><ul class="shp-evl">${days[d].map(e=>{
+    const T=SHP_EV[e.type]||["chat",""], o=!inOrder&&e.order?shpById(e.order):null, tm=new Date(e.when).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
+    const body=`<span class="shp-evi t-${T[0]}" title="${esc(T[1])}">${shpIco(T[0],18)}</span><span class="shp-evb"><span class="shp-evt">${esc(e.text)}</span><span class="shp-evm">${esc(e.who||"")} · ${esc(tm)}${o?` · <b>${esc(shpTitle(o))}</b>`:""}</span></span>`;
+    return `<li>${o?`<button type="button" class="shp-ev" data-act="shp-open" data-id="${esc(o.id)}">${body}</button>`:`<div class="shp-ev">${body}</div>`}</li>`; }).join("")}</ul></section>`).join("");
+}
+async function shpFeedLoad(quiet){
+  const F=S.shop.feed; if(F.busy) return; F.busy=true;
+  const j=await shpGet("action=feed&since="+(F.last||0),quiet||F.loaded); F.busy=false;
+  if(j){ const have=new Set(F.evs.map(e=>e.when+"|"+e.text)); (j.events||[]).forEach(e=>{ if(!have.has(e.when+"|"+e.text)){ F.evs.push(e); F.last=Math.max(F.last,e.when); } }); F.evs=F.evs.slice(-400); F.loaded=true; F.err=false; }
+  else if(!F.loaded) F.err=true;
+  if(S.view==="shop"&&S.shop.mode==="feed"&&!document.querySelector(".modal")) shpRenderKeep();
+}
+function shpFeedScreen(){
+  const F=S.shop.feed; if(!F.loaded&&!F.busy&&!F.err) setTimeout(()=>shpFeedLoad(),0);
+  return `<div class="head"><div><h1>Лента</h1><p class="muted" style="margin:4px 0 0">Что происходило по заказам — последние события</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button><button type="button" class="btn" data-act="shp-feedre">Обновить</button></div></div>${shpOldScript()}
+    <div class="shp-feed">${F.loaded?shpEvHtml(F.evs):`<p class="muted">${F.err?"Нет связи — лента не загрузилась. Нажмите «Обновить».":"Загружаю ленту…"}</p>`}</div>`;
+}
+async function shpHistLoad(id){
+  const j=await shpGet("action=feed&order="+encodeURIComponent(id));
+  S.shop.hist[id]=j?(j.events||[]):S.shop.hist[id]||"err";
+  if(S.view==="shop"&&S.shop.mode==="order"&&S.shop.cur===id&&S.shop.otab==="history") shpRenderKeep();
+}
+function shpHistHtml(o){
+  const H=S.shop.hist[o.id];
+  if(H==null){ S.shop.hist[o.id]=undefined; if(!S.shop.histBusy){ S.shop.histBusy=true; setTimeout(()=>shpHistLoad(o.id).finally(()=>{ S.shop.histBusy=false; }),0); } return `<p class="muted shp-sys">Загружаю историю…</p>`; }
+  if(H==="err") return `<p class="muted shp-sys">Нет связи — история не загрузилась.</p>`;
+  return `<div class="shp-hist">${shpEvHtml(H,true)}</div>`;
+}
+
+/* ---- календарь ---- */
+function shpCalItems(){
+  const M={}, today=shpToday(), add=(d,it)=>{ if(/^\d{4}-\d{2}-\d{2}$/.test(d||"")) (M[d]=M[d]||[]).push(it); };
+  S.shop.orders.forEach(o=>{ if(shpClosed(o)) return; const t=shpTitle(o);
+    add(o.zamerDate,{k:"zm",n:"Замер",t,id:o.id,late:o.zamerDate<today&&(o.stage==="dogovor"||o.stage==="zamer")});
+    add(o.montazhDate,{k:"mt",n:"Монтаж",t,id:o.id,late:o.montazhDate<today});
+    add(o.deadline,{k:"dl",n:"Срок",t,id:o.id,late:o.deadline<today}); });
+  S.shop.tasks.forEach(x=>add(x.due,{k:"tk",n:"Задача",t:x.text+(x.to?" → "+x.to:""),tid:x.id,done:x.status==="done",late:x.status!=="done"&&x.due<today}));
+  return M;
+}
+function shpCalItem(it){ return `<button type="button" class="shp-ci k-${it.k}${it.late?" late":""}${it.done?" done":""}" data-act="${it.tid?"shp-topen":"shp-open"}" data-id="${esc(it.tid||it.id)}"><b>${esc(it.n)}${it.late?" · просрочено":""}</b><span>${esc(it.t)}</span></button>`; }
+function shpCalHtml(){
+  const C=S.shop.cal, today=shpToday(); if(!C.a) C.a=today; const M=shpCalItems();
+  const a=new Date(C.a+"T00:00:00");
+  let h=`<div class="head"><div><h1>Календарь</h1><p class="muted" style="margin:4px 0 0">Замеры, монтажи, сроки заказов и задачи</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-calgo" data-v="0">Сегодня</button></div></div>
+    <div class="shp-calbar"><div class="shp-seg" role="group" aria-label="Вид календаря"><button type="button" data-act="shp-calv" data-v="week" aria-pressed="${C.v==="week"}">Неделя</button><button type="button" data-act="shp-calv" data-v="month" aria-pressed="${C.v==="month"}">Месяц</button></div>`;
+  if(C.v==="week"){
+    const st=shpAddDays(C.a,-((a.getDay()+6)%7)), en=shpAddDays(st,6), s1=new Date(st+"T00:00:00"), e1=new Date(en+"T00:00:00");
+    const rng=s1.getMonth()===e1.getMonth()?s1.getDate()+"–"+e1.getDate()+" "+SHP_MON[e1.getMonth()]:s1.getDate()+" "+SHP_MON[s1.getMonth()]+" – "+e1.getDate()+" "+SHP_MON[e1.getMonth()];
+    h+=`<div class="shp-calnav"><button type="button" class="btn" data-act="shp-calgo" data-v="-1" aria-label="Прошлая неделя">${shpIco("left",20)}</button><b>${esc(rng)}</b><button type="button" class="btn" data-act="shp-calgo" data-v="1" aria-label="Следующая неделя">${shpIco("right",20)}</button></div></div>${shpCalLegend()}`;
+    h+=`<div class="shp-cal-body shp-week">`+[0,1,2,3,4,5,6].map(i=>{ const d=shpAddDays(st,i), x=new Date(d+"T00:00:00"), L=M[d]||[];
+      return `<section class="shp-wd${d===today?" today":""}${d<today?" past":""}${L.length?"":" nil"}"><h3><span>${SHP_DOW[i]}</span> ${x.getDate()} ${SHP_MON[x.getMonth()]}${d===today?' <i>сегодня</i>':""}</h3>${L.length?L.map(shpCalItem).join(""):`<p class="muted shp-none">—</p>`}</section>`; }).join("")+`</div>`;
+  } else {
+    const y=a.getFullYear(), mo=a.getMonth(), first=shpToday(new Date(y,mo,1)), st=shpAddDays(first,-((new Date(y,mo,1).getDay()+6)%7)), days=new Date(y,mo+1,0).getDate();
+    const rows=Math.ceil((shpDays(first,st)+days)/7), sel=C.sel&&C.sel.slice(0,7)===first.slice(0,7)?C.sel:(today.slice(0,7)===first.slice(0,7)?today:first);
+    h+=`<div class="shp-calnav"><button type="button" class="btn" data-act="shp-calgo" data-v="-1" aria-label="Прошлый месяц">${shpIco("left",20)}</button><b>${SHP_MONN[mo]} ${y}</b><button type="button" class="btn" data-act="shp-calgo" data-v="1" aria-label="Следующий месяц">${shpIco("right",20)}</button></div></div>${shpCalLegend()}`;
+    h+=`<div class="shp-cal-body"><div class="shp-month" role="grid">${SHP_DOW.map(d=>`<span class="shp-mdh">${d}</span>`).join("")}`;
+    for(let i=0;i<rows*7;i++){ const d=shpAddDays(st,i), x=new Date(d+"T00:00:00"), L=M[d]||[], inM=x.getMonth()===mo, late=L.some(z=>z.late);
+      const ks=[...new Set(L.map(z=>z.k))];
+      h+=`<button type="button" class="shp-md${inM?"":" out"}${d===today?" today":""}${d===sel?" sel":""}${late?" late":""}" data-act="shp-calday" data-v="${d}" aria-label="${x.getDate()} ${SHP_MON[x.getMonth()]}: ${L.length?L.length+" событ.":"пусто"}"><span class="n">${x.getDate()}</span>${L.length?`<span class="dots">${ks.map(k=>`<i class="k-${k}"></i>`).join("")}${L.length>1?`<em>${L.length}</em>`:""}</span>`:""}</button>`; }
+    const L=M[sel]||[], sx=new Date(sel+"T00:00:00");
+    h+=`</div><section class="shp-wd shp-msel${sel===today?" today":""}"><h3>${esc(shpDayName(sel))}${sel===today||/^(Вчера|Завтра)$/.test(shpDayName(sel))?" · "+sx.getDate()+" "+SHP_MON[sx.getMonth()]:""}</h3>${L.length?L.map(shpCalItem).join(""):`<p class="muted shp-none">В этот день ничего не запланировано.</p>`}</section></div>`;
+  }
+  return h;
+}
+function shpCalLegend(){ return `<p class="shp-leg"><span class="k-zm">Замер</span><span class="k-mt">Монтаж</span><span class="k-dl">Срок заказа</span><span class="k-tk">Задача</span></p>`; }
+function shpCalShift(n){ const C=S.shop.cal; if(!n){ C.a=shpToday(); C.sel=C.a; } else if(C.v==="week") C.a=shpAddDays(C.a||shpToday(),7*n); else { const a=new Date((C.a||shpToday())+"T00:00:00"); C.a=shpToday(new Date(a.getFullYear(),a.getMonth()+n,1)); C.sel=""; } render(); }
+/* свайп по календарю: влево — дальше, вправо — назад */
+(function(){ let sx=null, sy=0;
+  document.addEventListener("pointerdown",ev=>{ if(ev.pointerType==="mouse"||!(ev.target.closest&&ev.target.closest(".shp-cal-body"))){ sx=null; return; } sx=ev.clientX; sy=ev.clientY; });
+  document.addEventListener("pointerup",ev=>{ if(sx==null) return; const dx=ev.clientX-sx, dy=ev.clientY-sy; sx=null; if(Math.abs(dx)>60&&Math.abs(dy)<45&&S.view==="shop"&&S.shop.mode==="cal"){ SHP_DR.justDragged=0; shpCalShift(dx<0?1:-1); } });
+  document.addEventListener("pointercancel",()=>{ sx=null; });
+})();
+
+/* ---- клиенты (собираются из заказов: по телефону, если нет — по имени) ---- */
+function shpDigits(p){ const d=String(p||"").replace(/\D/g,""); return d.length>=6?d.slice(-10):""; }
+function shpClients(){
+  const by=new Map(), L=S.shop.orders.slice().sort((a,b)=>(a.created||0)-(b.created||0));
+  const mk=k=>{ if(!by.has(k)) by.set(k,{key:k,name:"",names:new Set(),phones:[],addrs:[],orders:[],sum:0,last:0}); return by.get(k); };
+  const put=(c,o)=>{ c.orders.push(o); if(o.client) c.name=o.client; c.names.add(shpNorm(o.client)); c.last=Math.max(c.last,o.created||0);
+    if(o.phone&&!c.phones.some(p=>shpDigits(p)===shpDigits(o.phone))) c.phones.push(o.phone); if(o.address&&!c.addrs.includes(o.address)) c.addrs.push(o.address); if(S.shop.full) c.sum+=+o.sum||0; };
+  L.forEach(o=>{ const d=shpDigits(o.phone); if(d) put(mk("t"+d),o); });
+  L.forEach(o=>{ if(shpDigits(o.phone)) return; const n=shpNorm(o.client); if(!n) return; put([...by.values()].find(c=>c.names.has(n))||mk("n"+n),o); });
+  return [...by.values()].sort((a,b)=>b.last-a.last);
+}
+function shpClientMatch(name,phone,exceptId){
+  const d=shpDigits(phone), n=shpNorm(name);
+  return shpClients().find(c=>c.orders.some(o=>o.id!==exceptId)&&((d&&c.phones.some(p=>shpDigits(p)===d))||(n.length>=3&&c.names.has(n))))||null;
+}
+function shpClientsHtml(){
+  const C=shpClients();
+  return `<div class="head"><div><h1>Клиенты</h1><p class="muted" style="margin:4px 0 0">${C.length} · собраны из заказов (по телефону или имени)</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button></div></div>
+    <div class="shp-find"><input id="shpCQ" type="search" value="${esc(S.shop.cq||"")}" placeholder="Поиск: имя, телефон, адрес" aria-label="Поиск клиента" enterkeyhint="search" autocomplete="off"></div><p class="muted shp-cnofind" hidden>Никого не нашлось.</p>
+    ${C.length?`<ul class="shp-list">${C.map(c=>{ const act=c.orders.filter(o=>!shpClosed(o)).length;
+      return `<li data-s="${esc([c.name,...c.names,...c.phones,...c.phones.map(shpDigits),...c.addrs].join(" ").toLowerCase())}"><button type="button" class="shp-row" data-act="shp-client" data-k="${esc(c.key)}"><span class="shp-av" aria-hidden="true">${esc((c.name||"?").trim().charAt(0).toUpperCase())}</span><span class="shp-rb"><b>${esc(c.name||"Без имени")}</b><span class="muted">${esc(c.phones.join(", ")||"телефон не записан")}</span></span><span class="shp-rr"><b>${c.orders.length} ${shpPl(c.orders.length,"заказ","заказа","заказов")}</b>${S.shop.full&&c.sum?`<span class="mono">${esc(shpMoney(c.sum))}</span>`:act?`<span class="muted">в работе ${act}</span>`:""}</span></button></li>`; }).join("")}</ul>`:`<p class="note">Клиентов пока нет — они появятся из заказов.</p>`}`;
+}
+function shpPl(n,a,b,c){ n=Math.abs(n)%100; const m=n%10; return n>10&&n<20?c:m===1?a:m>1&&m<5?b:c; }
+function shpCFilter(){ const q=shpNorm(S.shop.cq), w=q.split(/\s+/).filter(Boolean); let n=0;
+  document.querySelectorAll(".shp-list li[data-s]").forEach(li=>{ const s=li.dataset.s; const ok=w.every(x=>s.includes(x)||(x.replace(/\D/g,"").length>=3&&s.includes(x.replace(/\D/g,"")))); li.hidden=!ok; if(ok) n++; });
+  const nf=document.querySelector(".shp-cnofind"); if(nf) nf.hidden=n>0||!q; }
+function shpClientHtml(){
+  const c=shpClients().find(x=>x.key===S.shop.curClient);
+  if(!c) return `<div class="empty"><h2>Клиент не найден</h2><button class="btn" data-act="shp-tab" data-v="clients">К клиентам</button></div>`;
+  const seen=shpSeen(), today=shpToday(), paid=S.shop.full?c.orders.reduce((a,o)=>a+(+o.prepay||0),0):0;
+  return `<div class="head"><div><h1>${esc(c.name||"Без имени")}</h1><p class="muted" style="margin:4px 0 0">Клиент · ${c.orders.length} ${shpPl(c.orders.length,"заказ","заказа","заказов")}</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="clients">← Клиенты</button><button type="button" class="btn primary" data-act="shp-cnew" data-k="${esc(c.key)}">+ Заказ</button></div></div>
+    <dl class="card shp-info">${c.phones.map(p=>{ const t=String(p).replace(/[^\d+]/g,""); return `<div><dt>Телефон</dt><dd>${t?`<a href="tel:${esc(t)}">${esc(p)}</a>`:esc(p)}</dd></div>`; }).join("")}
+      ${c.addrs.map(a=>`<div><dt>Адрес</dt><dd>${esc(a)} <a class="shp-map" href="${esc(shpMap(a))}" target="_blank" rel="noopener">На карте</a></dd></div>`).join("")}
+      ${S.shop.full?`<div><dt>Всего заказов на</dt><dd><b>${esc(shpMoney(c.sum))}</b>${paid?` · предоплаты ${esc(shpMoney(paid))}`:""}</dd></div>`:""}</dl>
+    <h2 class="shp-h2">Заказы клиента</h2><div class="shp-clist">${c.orders.slice().sort((a,b)=>(b.created||0)-(a.created||0)).map(o=>`<div class="shp-cst"><span class="shp-stl">${esc(shpStName(o.stage))}</span>${shpCard(o,seen,today)}</div>`).join("")}</div>`;
+}
+
+/* ---- сотрудники: из данных + лист «Сотрудники» ---- */
+function shpPeople(){
+  const m=new Map(), add=n=>{ n=String(n||"").trim(); if(!n||n.length>40) return null; const k=shpNorm(n); if(!m.has(k)) m.set(k,{name:n,role:"",phone:"",staff:false}); return m.get(k); };
+  (S.shop.staff||[]).forEach(s=>{ const p=add(s.name); if(p) Object.assign(p,{name:s.name,role:s.role||"",phone:s.phone||"",staff:true}); });
+  SHP_OWNERS.forEach(add); S.shop.orders.forEach(o=>{ add(o.owner); add(o.lastWho); }); S.shop.tasks.forEach(t=>{ add(t.to); add(t.by); });
+  Object.keys(S.shop.staffLast||{}).forEach(add); if(S.shop.general) add(S.shop.general.lastWho);
+  return [...m.values()];
+}
+function shpPersonInfo(p){ const k=shpNorm(p.name), today=shpToday();
+  const ords=S.shop.orders.filter(o=>!shpClosed(o)&&shpNorm(o.owner)===k), tasks=S.shop.tasks.filter(t=>t.status!=="done"&&shpNorm(t.to)===k);
+  let last=0; Object.keys(S.shop.staffLast||{}).forEach(n=>{ if(shpNorm(n)===k) last=Math.max(last,S.shop.staffLast[n]); });
+  return {ords,tasks,late:tasks.filter(t=>shpTaskWhen(t,today)==="late").length,last}; }
+async function shpStaffLoad(quiet){ const j=await shpGet("action=staff",quiet); if(j){ S.shop.staff=j.staff||[]; S.shop.staffLast=j.last||{}; S.shop.staffLoaded=true; } else S.shop.staffErr=true;
+  if(S.view==="shop"&&/^(staff|person)$/.test(S.shop.mode)&&!document.querySelector(".modal")) shpRenderKeep(); }
+function shpAgo(ms){ if(!ms) return "давно не заходил"; const m=Math.round((Date.now()-ms)/6e4); return m<2?"только что":m<60?m+" мин назад":m<1440?Math.round(m/60)+" ч назад":shpTime(ms); }
+function shpTelBtn(p){ const t=String(p.phone||"").replace(/[^\d+]/g,""); return t?`<a class="btn shp-tel" href="tel:${esc(t)}" aria-label="Позвонить: ${esc(p.name)}">${shpIco("phone",18)}</a>`:""; }
+function shpStaffHtml(){
+  if(!S.shop.staffLoaded&&!S.shop.staffBusy&&S.shop.v2){ S.shop.staffBusy=true; setTimeout(()=>shpStaffLoad().finally(()=>{ S.shop.staffBusy=false; }),0); }
+  const P=shpPeople().map(p=>Object.assign({},p,shpPersonInfo(p))).sort((a,b)=>(b.staff-a.staff)||(b.last-a.last)||a.name.localeCompare(b.name,"ru"));
+  return `<div class="head"><div><h1>Сотрудники</h1><p class="muted" style="margin:4px 0 0">${P.length} · ответственные, исполнители задач и все, кто пишет</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button>${S.shop.full&&S.shop.v2?`<button type="button" class="btn primary" data-act="shp-pedit">+ Сотрудник</button>`:""}</div></div>${shpOldScript()}
+    <ul class="shp-list">${P.map(p=>`<li class="shp-prow"><button type="button" class="shp-row" data-act="shp-person" data-k="${esc(p.name)}"><span class="shp-av" aria-hidden="true">${esc(p.name.charAt(0).toUpperCase())}</span><span class="shp-rb"><b>${esc(p.name)}</b><span class="muted">${esc([p.role,shpAgo(p.last)].filter(Boolean).join(" · "))}</span></span><span class="shp-rr"><span>заказов ${p.ords.length}</span><span class="${p.late?"shp-late":"muted"}">задач ${p.tasks.length}${p.late?", просроч. "+p.late:""}</span></span></button>${shpTelBtn(p)}</li>`).join("")}</ul>`;
+}
+function shpPersonHtml(){
+  const p0=shpPeople().find(x=>shpNorm(x.name)===shpNorm(S.shop.curPerson));
+  if(!p0) return `<div class="empty"><h2>Сотрудник не найден</h2><button class="btn" data-act="shp-tab" data-v="staff">К сотрудникам</button></div>`;
+  const p=Object.assign({},p0,shpPersonInfo(p0)), seen=shpSeen(), today=shpToday(), tel=String(p.phone||"").replace(/[^\d+]/g,"");
+  return `<div class="head"><div><h1>${esc(p.name)}</h1><p class="muted" style="margin:4px 0 0">${esc(p.role||"Сотрудник")} · ${esc(shpAgo(p.last))}</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="staff">← Сотрудники</button>${S.shop.full&&S.shop.v2?`<button type="button" class="btn" data-act="shp-pedit" data-k="${esc(p.name)}">Изменить</button>`:""}</div></div>
+    <dl class="card shp-info"><div><dt>Телефон</dt><dd>${tel?`<a href="tel:${esc(tel)}">${esc(p.phone)}</a>`:`<span class="muted">не записан${S.shop.full?" — «Изменить»":""}</span>`}</dd></div><div><dt>Последний раз</dt><dd>${esc(shpAgo(p.last))}</dd></div></dl>
+    <div class="shp-rc-h shp-h2"><h2>Открытые задачи · ${p.tasks.length}</h2><button type="button" class="btn sm" data-act="shp-tnew" data-to="${esc(p.name)}">+ Задача</button></div>
+    ${p.tasks.length?`<ul class="shp-tl">${p.tasks.map(t=>shpTaskRow(t)).join("")}</ul>`:`<p class="muted">Открытых задач нет.</p>`}
+    <h2 class="shp-h2">Ответственный за заказы · ${p.ords.length}</h2>${p.ords.length?`<div class="shp-clist">${p.ords.map(o=>`<div class="shp-cst"><span class="shp-stl">${esc(shpStName(o.stage))}</span>${shpCard(o,seen,today)}</div>`).join("")}</div>`:`<p class="muted">Нет активных заказов.</p>`}`;
+}
+function shpPersonModal(name){
+  const p=name?shpPeople().find(x=>shpNorm(x.name)===shpNorm(name)):null, isNew=!p;
+  const m=document.createElement("div"); m.className="modal"; m.id="shpPersonModal";
+  m.innerHTML=`<form class="modal-card shp-mform" id="shpPersonForm" data-was="${esc(p?p.name:"")}" autocomplete="off"><h2>${isNew?"Новый сотрудник":"Сотрудник"}</h2>
+    <label>Имя *<input name="name" value="${esc(p?p.name:"")}" maxlength="40" required placeholder="Как подписывается в приложении"></label>
+    <label>Роль / должность<input name="role" value="${esc(p?p.role:"")}" maxlength="60" placeholder="Мастер-сборщик, дизайнер…" list="shpRoles"></label>
+    <label>Телефон<input name="phone" type="tel" inputmode="tel" value="${esc(p?p.phone:"")}" maxlength="40" placeholder="+7 914 …"></label>
+    <div class="shp-mb"><button class="btn primary" type="submit">Сохранить</button>${p&&p.staff?`<button type="button" class="btn danger" data-act="shp-pdel" data-k="${esc(p.name)}">Убрать из списка</button>`:""}<button type="button" class="btn" data-act="shp-mclose">Отмена</button></div>
+    <datalist id="shpRoles">${["Мастер","Мастер-сборщик","Монтажник","Дизайнер","Снабженец","Закупщик","Технолог","Директор"].map(r=>`<option value="${r}">`).join("")}</datalist></form>`;
+  m.addEventListener("click",ev=>{ if(ev.target===m) m.remove(); }); document.body.appendChild(m); setTimeout(()=>{ const i=m.querySelector("input"); i&&i.focus(); },50);
+}
+
+/* ---- чаты: общий + заказы с перепиской ---- */
+function shpChatsHtml(){
+  const seen=shpSeen(), g=S.shop.general||{}, L=S.shop.orders.filter(o=>o.lastAt).sort((a,b)=>b.lastAt-a.lastAt);
+  const row=(act,id,title,sub,when,un)=>`<li><button type="button" class="shp-row${un?" un":""}" data-act="${act}" data-id="${esc(id)}"><span class="shp-av" aria-hidden="true">${shpIco("chats",18)}</span><span class="shp-rb"><b>${esc(title)}</b><span class="muted">${esc(sub)}</span></span><span class="shp-rr"><span class="muted">${when?esc(shpTime(when)):""}</span>${un?`<span class="bdg" aria-label="есть новые">новое</span>`:""}</span></button></li>`;
+  return `<div class="head"><div><h1>Чаты</h1><p class="muted" style="margin:4px 0 0">Общий чат и переписка по заказам</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-reload">Обновить</button></div></div>
+    <ul class="shp-list">${row("shp-general","general","Общий чат",g.lastAt?(g.lastWho?g.lastWho+": ":"")+(g.lastText||"…"):"Все мастера, офис и технолог",g.lastAt,shpGenUnread(seen))}
+    ${L.map(o=>row("shp-ochat",o.id,shpTitle(o),(o.lastWho?o.lastWho+": ":"")+(o.lastText||""),o.lastAt,shpUnread(o,seen))).join("")}</ul>
+    ${L.length?"":`<p class="note">По заказам пока никто не писал. Откройте заказ — внизу чат.</p>`}`;
+}
+
+/* ---- «Ещё» ---- */
+function shpMoreHtml(){
+  const it=(act,v,ic,t,sub)=>`<li><button type="button" class="shp-row" data-act="${act}" data-v="${v}"><span class="shp-av" aria-hidden="true">${shpIco(ic,20)}</span><span class="shp-rb"><b>${t}</b><span class="muted">${sub}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
+  return `<div class="head"><div><h1>Ещё</h1><p class="muted" style="margin:4px 0 0">${esc(shpRoleLine())}</p></div></div>
+    <ul class="shp-list">${it("shp-tab","feed","feed","Лента","Кто что сделал по заказам")}${it("shp-tab","clients","clients","Клиенты","Все клиенты и их заказы")}${it("shp-tab","staff","staff","Сотрудники","Задачи, заказы и телефоны")}
+    ${it("shp-myname","","staff","Моё имя: "+esc(shpWho()),"Так вас видят в задачах и чатах — нажмите, чтобы изменить")}${it("shp-reload","","reload","Обновить данные","Заказы и задачи из таблицы")}${it("shp-out","","out","Выйти из «Вертакса»","На этом телефоне")}</ul>`;
+}
+
+
+/* ---------- кнопка «В Вертакс» в заказе Технолог 3D: новая сделка или привязка к существующей ---------- */
+function vtxLinked(oid){ oid=String(oid||"").toUpperCase(); return S.shop.orders.find(o=>String(o.t3d||"").toUpperCase()===oid&&oid)||null; }
+function vtxBtnHtml(oid){
+  if(!shpOn()) return "";
+  if(shpPin()&&!S.shop.loaded&&!S.shop.loading&&!S.shop.err){ S.shop.loading=true; setTimeout(()=>shpLoad(true).then(vtxBtnSync),0); }
+  const d=shpPin()&&S.shop.loaded?vtxLinked(oid):null;
+  return `<button class="btn shp-vbtn" data-act="to-vertaks" type="button">${d?"Открыть в Вертаксе":"В Вертакс"}</button>`;
+}
+function vtxBtnSync(){ const b=document.querySelector('[data-act="to-vertaks"]'); if(b&&S.view==="order") b.textContent=vtxLinked(S.current.orderId)?"Открыть в Вертаксе":"В Вертакс"; }
+function vtxLoginModal(then){
+  const m=document.createElement("div"); m.className="modal"; m.id="vtxLogin";
+  m.innerHTML=`<div class="modal-card shp-mform" role="dialog" aria-label="Вход в Вертакс"><h2>Войдите в «Вертакс»</h2><p class="note" style="margin:0">Один раз на этом устройстве — потом заказ сразу уходит в сделку.</p>
+    <div class="shp-login-b" style="max-width:none;margin:6px 0 0"><button type="button" class="btn primary" data-act="shp-in-master">Я мастер</button><button type="button" class="btn" data-act="shp-in-tech">Я технолог</button><button type="button" class="btn" data-act="shp-in-office">Я дизайнер / офис</button><button type="button" class="btn" data-act="shp-in-sup">Я снабженец</button><button type="button" class="btn" data-act="shp-mclose">Отмена</button></div></div>`;
+  S.shop.afterLogin=()=>{ if(S.view==="order"&&S.current.orderId) then(); else shpGo("board"); };
+  m.addEventListener("click",ev=>{ if(ev.target===m){ m.remove(); S.shop.afterLogin=null; } });
+  document.body.appendChild(m);
+}
+async function vtxFromOrder(){
+  const oid=S.current.orderId; if(!oid) return;
+  if(!shpOn()){ toast("«Вертакс» не подключён: нет ссылки на таблицу"); return; }
+  if(!shpPin()) return vtxLoginModal(vtxFromOrder);
+  if(!S.shop.loaded){ const b=document.querySelector('[data-act="to-vertaks"]'); if(b) b.disabled=true; await shpLoad(true); if(b) b.disabled=false; if(!S.shop.loaded){ toast("Нет связи с таблицей. Проверьте интернет."); return; } }
+  const d=vtxLinked(oid); if(d) return shpGo("order",d.id);
+  vtxSheet(oid);
+}
+function vtxDealData(oid){ const o=S.orders[oid]||{}, u=typeof partUrl==="function"?partUrl(oid):""; return {name:o.name||"",client:o.client||"",link:/^https?:\/\//.test(u)?u:"",notes:typeof orderStatsLine==="function"?orderStatsLine():""}; }
+function vtxSheet(oid){
+  const act=S.shop.orders.filter(o=>!shpClosed(o)).sort((a,b)=>(b.created||0)-(a.created||0)), o=S.orders[oid]||{};
+  const m=document.createElement("div"); m.className="modal vtx-sheet"; m.id="vtxSheet";
+  m.innerHTML=`<div class="modal-card shp-mform" role="dialog" aria-label="В Вертакс"><h2>В Вертакс</h2><p class="note" style="margin:0">Заказ <b class="mono">${esc(oid)}</b>${o.name?" · "+esc(o.name):""}</p>
+    <button type="button" class="btn primary vtx-big" data-act="vtx-new">+ Новая сделка<span>изделие, 3D и объём работы подставятся сами</span></button>
+    <div class="vtx-or">или привязать к сделке</div>
+    <input id="vtxQ" type="search" placeholder="Поиск: клиент, №, телефон" aria-label="Поиск сделки" autocomplete="off">
+    <ul class="shp-list vtx-list">${act.map(d=>`<li data-s="${esc([d.client,d.num,d.kind,d.phone,String(d.phone||"").replace(/\D/g,"")].join(" ").toLowerCase())}"><button type="button" class="shp-row" data-act="vtx-link" data-id="${esc(d.id)}"><span class="shp-rb"><b>${esc(shpTitle(d))}</b><span class="muted">${esc([shpStName(d.stage),d.kind,d.t3d?"3D: "+d.t3d:""].filter(Boolean).join(" · "))}</span></span></button></li>`).join("")||`<li class="muted">Активных сделок нет.</li>`}</ul>
+    <button type="button" class="btn" data-act="shp-mclose">Отмена</button></div>`;
+  m.addEventListener("click",ev=>{ if(ev.target===m) m.remove(); });
+  m.addEventListener("input",ev=>{ if(ev.target.id!=="vtxQ") return; const w=shpNorm(ev.target.value).split(/\s+/).filter(Boolean);
+    m.querySelectorAll(".vtx-list li[data-s]").forEach(li=>{ li.hidden=!w.every(x=>li.dataset.s.includes(x)||(x.replace(/\D/g,"").length>=3&&li.dataset.s.includes(x.replace(/\D/g,"")))); }); });
+  document.body.appendChild(m);
+}
+document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest("[data-act^='vtx-']"); if(!t) return; ev.stopPropagation(); const oid=S.current.orderId, D=vtxDealData(oid);
+  if(t.dataset.act==="vtx-new"){ document.getElementById("vtxSheet")?.remove();
+    S.shop.edit={stage:"dogovor",client:D.client,kind:D.name,t3d:oid,link:D.link,notes:D.notes}; S.shop.backTo=null; return shpGo("form"); }
+  if(t.dataset.act==="vtx-link"){ const d=shpById(t.dataset.id); if(!d) return; t.disabled=true;
+    const j=await shpPost({action:"shopSave",order:Object.assign({},d,{t3d:oid,link:d.link||D.link})}); t.disabled=false; if(!j) return;
+    d.t3d=oid; if(!d.link) d.link=D.link; document.getElementById("vtxSheet")?.remove(); toast("Привязано к сделке "+shpTitle(d)); return shpGo("order",d.id); }
+},true);
+
+/* вкладка «Вертакс» в меню — перед «Как работать» */
+(function(){ const nav=document.getElementById("nav"); if(nav&&!document.getElementById("navShop")){ const b=document.createElement("button"); b.type="button"; b.dataset.view="shop"; b.id="navShop"; b.textContent="Вертакс"; b.hidden=true; const help=nav.querySelector('[data-view="help"]'); nav.insertBefore(b,help); } })();
 /* стили раздела */
 (function(){ if(document.getElementById("shpCss")) return; const st=document.createElement("style"); st.id="shpCss"; st.textContent=`
 .shp-login{padding:32px 16px}.shp-login p{max-width:440px;margin:8px auto 16px}
@@ -4168,15 +4630,171 @@ function shpFormRead(fm){
 .shp-form input,.shp-form select,.shp-form textarea{width:100%;box-sizing:border-box;min-height:44px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:15px var(--f-body,system-ui)}
 .shp-form-b{display:flex;gap:8px}.shp-form-b .btn{min-height:46px;padding:0 20px}
 body[data-page="shop"] .head-actions .btn{min-height:44px}
+/* вкладки: снизу в «Вертаксе», сверху на сайте */
+.shp-tabs{display:flex}
+.shp-tabs button{flex:1 1 0;min-width:0;min-height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:none;color:var(--muted);font:600 11.5px var(--f-body,system-ui);position:relative;cursor:pointer;padding:4px 2px;-webkit-tap-highlight-color:transparent}
+.shp-tabs .lb{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.shp-tabs.bottom{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--graphite,#1e2226);border-top:1px solid #000;padding:0 max(env(safe-area-inset-left),0px) env(safe-area-inset-bottom,0px) max(env(safe-area-inset-right),0px);box-shadow:0 -2px 12px rgba(0,0,0,.18)}
+.shp-tabs.bottom button{color:#aab1b8}.shp-tabs.bottom button[aria-current="page"]{color:var(--tape,#ffc21a)}
+.shp-tabs.bottom button[aria-current="page"]::before{content:"";position:absolute;top:0;left:28%;right:28%;height:3px;border-radius:0 0 3px 3px;background:var(--tape,#ffc21a)}
+@media (min-width:700px){.shp-tabs.bottom{justify-content:center}.shp-tabs.bottom button{flex:0 1 120px}}
+.shp-tabs.top{margin:0 0 16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.shp-tabs.top button{flex-direction:row;gap:6px;min-height:46px;font-size:13.5px;color:var(--ink)}.shp-tabs.top button+button{border-left:1px solid var(--line)}
+.shp-tabs.top button[aria-current="page"]{background:var(--graphite,#1e2226);color:var(--tape,#ffc21a)}
+@media (max-width:599px){.shp-tabs.top .shp-ico{display:none}.shp-tabs.top button{font-size:12px;letter-spacing:-.2px;padding:0 1px;gap:3px}.shp-tabs.top button[data-v="cal"]{flex-grow:1.35}.shp-tabs.top button[data-v="more"]{flex-grow:.8}}
+.shp-tabs .bdg{position:absolute;top:5px;left:calc(50% + 5px);min-width:18px;height:18px;border-radius:9px;background:#2e6fd0;color:#fff;font:700 11px/18px var(--f-body,system-ui);padding:0 5px;text-align:center}
+.shp-tabs.top .bdg{position:static;margin-left:2px}.bdg.bad,.shp-tabs .bdg.bad{background:#b3261e}
+body.vtx.shp-hasnav .wrap{padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))}
+body.vtx.shp-hasnav .toast{bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+@media (min-width:1100px){body.shp-wide .wrap{max-width:1440px}}
+/* полоска «Мои задачи» */
+.shp-strip{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;margin:0 0 12px;padding:8px 14px;border:1px solid var(--line);border-left:4px solid var(--tape,#ffc21a);border-radius:var(--r);background:var(--surface);color:var(--ink);font:500 15px var(--f-body,system-ui);text-align:left;cursor:pointer}
+.shp-strip span:first-of-type{flex:1}.shp-strip.bad{border-left-color:#b3261e}.shp-strip.bad b:last-of-type{color:#b3261e}.shp-strip-go{font-size:22px;color:var(--muted)}
+/* канбан */
+.shp-cltog{min-height:44px;font-size:13.5px}.shp-cltog[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.shp-kb{display:flex;gap:10px;align-items:stretch;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;margin:0 -16px;padding:2px 16px 12px;scroll-padding-inline:16px;-webkit-overflow-scrolling:touch}
+.shp-kb.dragging{scroll-snap-type:none}
+.shp-kb .shp-col{flex:0 0 85vw;max-width:360px;scroll-snap-align:start;gap:8px;transition:background .12s,box-shadow .12s}
+.shp-lostb{background:#fbe3e1;color:#5c1410}
+.vtx-big{display:grid;gap:2px;justify-items:start;text-align:left;min-height:60px;font-size:16px}.vtx-big span{font-size:12.5px;font-weight:500;opacity:.85;white-space:normal}
+.vtx-or{font-size:13px;color:var(--muted);margin-top:4px}
+#vtxQ{width:100%;box-sizing:border-box;min-height:44px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:15px var(--f-body,system-ui)}
+.vtx-list{max-height:40vh;overflow-y:auto;overscroll-behavior:contain}.vtx-list .shp-row{min-height:52px}
+.vtx-sheet{align-items:end}.vtx-sheet .modal-card{max-height:88vh}
+@media (max-width:600px){.vtx-sheet{padding:0}.vtx-sheet .modal-card{width:100%;border-radius:16px 16px 0 0;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px))}}
+.shp-colh{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;margin:2px 4px 2px;min-width:0}.shp-colh .shp-csum{flex-basis:100%}.shp-csum:empty{display:none}
+.shp-colh h2{font-size:14px;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:none}
+.shp-cnt{font-weight:700;font-size:13px;background:var(--surface);border-radius:999px;padding:0 8px;line-height:20px}
+.shp-csum{font-size:12px;color:var(--muted);white-space:nowrap}
+.shp-colb{display:flex;flex-direction:column;gap:8px;min-height:64px}
+.shp-col.drop{background:color-mix(in srgb,var(--tape,#ffc21a) 26%,var(--sunk));box-shadow:inset 0 0 0 2px var(--tape,#ffc21a)}
+.shp-kb .shp-card{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+.shp-card.dragging{opacity:.35}
+.shp-ghost{position:fixed!important;left:0;top:0;z-index:80;pointer-events:none;box-shadow:0 12px 28px rgba(0,0,0,.28);margin:0;opacity:.96}
+body.shp-dragging,body.shp-dragging *{cursor:grabbing!important;-webkit-user-select:none;user-select:none}
+.shp-csum2{font-size:12px;color:var(--muted);margin-left:auto}
+.shp-hint{font-size:12.5px;margin:6px 0 0}
+@media (min-width:900px){.shp-kb{margin:0;padding:2px 0 12px;scroll-snap-type:none}.shp-kb .shp-col{flex:1 1 0;min-width:170px;max-width:none}}
+/* вкладки чата в заказе */
+.shp-otabs{display:flex;gap:4px;margin:0 0 10px;border-bottom:1px solid var(--line)}
+.shp-otabs button{min-height:44px;padding:0 12px;border:0;border-bottom:3px solid transparent;background:none;color:var(--muted);font:600 15px var(--f-body,system-ui);cursor:pointer;margin-bottom:-1px}
+.shp-otabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--tape,#ffc21a)}
+.shp-hist{max-height:60vh;overflow-y:auto;overscroll-behavior:contain}
+/* задачи */
+.shp-seg-w{display:flex;width:100%;margin:0 0 14px}.shp-seg-w button{flex:1;min-width:0;padding:0 6px}
+.shp-tg h2{font-size:14px;margin:14px 2px 8px;text-transform:none}.shp-tg.late h2{color:#b3261e}.shp-tg.today h2{color:var(--ink)}
+.shp-tl{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.shp-task{display:flex;align-items:stretch;gap:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0;overflow:hidden}
+.shp-task.late{border-left:4px solid #b3261e}.shp-task.today{border-left:4px solid var(--tape,#ffc21a)}.shp-task.tom{border-left:4px solid color-mix(in srgb,var(--tape,#ffc21a) 50%,var(--line))}
+.shp-tchk{flex:none;width:52px;min-height:52px;border:0;background:none;display:grid;place-items:center;cursor:pointer;color:transparent;padding:0}
+.shp-tchk svg{width:26px;height:26px;padding:3px;border:2px solid var(--muted);border-radius:7px;box-sizing:border-box}
+.shp-tchk[aria-pressed="true"] svg{background:#2f8f4e;border-color:#2f8f4e;color:#fff}
+.shp-tchk:disabled{cursor:not-allowed;opacity:.45}
+.shp-tbody{flex:1;min-width:0;display:grid;gap:3px;padding:9px 12px 9px 0;border:0;background:none;color:var(--ink);text-align:left;font:inherit;cursor:pointer}
+.shp-tt{font-size:15px;font-weight:600;overflow-wrap:anywhere}.shp-task.done .shp-tt{text-decoration:line-through;color:var(--muted);font-weight:500}
+.shp-tm{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:12.5px;color:var(--muted)}.shp-tm .late{color:#b3261e;font-weight:700}
+.shp-task.today .shp-tm span:nth-child(2),.shp-task.tom .shp-tm span:nth-child(2){color:var(--ink);font-weight:700}
+.shp-tdone{margin-top:16px}.shp-tdone summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-weight:600}
+.shp-tempty{margin:8px 2px 0}
+.shp-otasks .shp-tl{gap:6px}.shp-otasks h2{margin:0;font-size:16px}.shp-otasks .btn.sm{min-height:40px}
+/* окна задачи / сотрудника */
+.shp-mform{display:grid;gap:10px}.shp-mform h2{margin:0;font-size:18px}
+.shp-mform label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.shp-mform input,.shp-mform textarea,.shp-mform select{width:100%;box-sizing:border-box;min-height:44px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:15px var(--f-body,system-ui)}
+.shp-mform :disabled{opacity:.75}
+.shp-qd{display:flex;gap:6px;flex-wrap:wrap}.shp-qd .btn{min-height:40px}
+.shp-mb{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}.shp-mb .btn{min-height:46px}
+/* лента */
+.shp-evd h3{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:16px 2px 8px}.shp-evd:first-child h3{margin-top:4px}
+.shp-evl{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.shp-ev{display:flex;gap:10px;align-items:flex-start;width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);text-align:left;font:inherit;min-height:44px}
+button.shp-ev{cursor:pointer}button.shp-ev:hover{border-color:var(--muted)}
+.shp-hist .shp-ev{border:0;padding:6px 2px;border-bottom:1px solid var(--line);border-radius:0}
+.shp-evi{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--sunk);color:var(--ink)}
+.shp-evi.t-new{background:#2e6fd0;color:#fff}.shp-evi.t-stage{background:var(--tape,#ffc21a);color:#1e2226}.shp-evi.t-done{background:#2f8f4e;color:#fff}
+.shp-evi.t-money,.shp-evi.t-receipt{background:color-mix(in srgb,#2f8f4e 18%,var(--surface));color:#2f7d32}.shp-evi.t-task{background:color-mix(in srgb,#2e6fd0 16%,var(--surface));color:#2e6fd0}.shp-evi.t-del{background:#b3261e;color:#fff}
+.shp-evb{display:grid;gap:2px;min-width:0}.shp-evt{font-size:14.5px;overflow-wrap:anywhere}.shp-evm{font-size:12.5px;color:var(--muted)}.shp-evm b{color:var(--ink);font-weight:600}
+/* списки: чаты, клиенты, сотрудники, «Ещё» */
+.shp-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.shp-list li{display:flex;gap:8px;min-width:0}
+.shp-row{flex:1;min-width:0;display:flex;align-items:center;gap:12px;min-height:60px;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);text-align:left;font:inherit;cursor:pointer}
+.shp-row:hover{border-color:var(--muted)}.shp-row.un{border-left:4px solid #2e6fd0}
+.shp-av{flex:none;width:40px;height:40px;border-radius:50%;background:var(--graphite,#1e2226);color:var(--tape,#ffc21a);display:grid;place-items:center;font-weight:700;font-size:16px}
+.shp-rb{flex:1;min-width:0;display:grid;gap:2px}.shp-rb b{font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shp-rb .muted{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shp-rr{flex:none;display:grid;justify-items:end;gap:2px;font-size:12.5px;text-align:right}.shp-rr .bdg{background:#2e6fd0;color:#fff;border-radius:999px;padding:0 8px;font-weight:700;font-size:11px;line-height:18px}
+.shp-tel{flex:none;width:52px;min-height:52px;display:grid;place-items:center;padding:0;align-self:stretch}
+.shp-h2{font-size:16px;margin:18px 2px 10px}.shp-h2 h2{font-size:16px;margin:0}
+.shp-clist{display:grid;gap:8px}@media (min-width:700px){.shp-clist{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.shp-cst{display:grid;gap:4px}.shp-stl{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-left:2px}
+.shp-repeat:empty{display:none}.shp-rep{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0;background:color-mix(in srgb,var(--tape,#ffc21a) 22%,var(--surface));color:var(--ink)}.shp-rep .btn{min-height:40px}
+/* календарь */
+.shp-calbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:0 0 8px}
+.shp-calnav{display:flex;align-items:center;gap:6px;flex:1 1 220px;justify-content:space-between;max-width:420px}
+.shp-calnav .btn{min-height:44px;min-width:44px;display:grid;place-items:center;padding:0}.shp-calnav b{font-size:15.5px;text-align:center}
+.shp-leg{display:flex;flex-wrap:wrap;gap:6px 12px;margin:0 0 10px;font-size:12.5px;color:var(--muted)}
+.shp-leg span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;background:var(--c)}
+.k-zm{--c:#2e6fd0}.k-mt{--c:#7b4bc4}.k-dl{--c:#e0a100}.k-tk{--c:#2f8f4e}
+.shp-cal-body{touch-action:pan-y}
+.shp-week{display:grid;gap:8px}
+@media (min-width:900px){.shp-week{grid-template-columns:repeat(7,minmax(0,1fr));align-items:start}}
+.shp-wd{background:var(--sunk);border-radius:var(--r);padding:8px;display:grid;gap:6px;min-width:0}
+.shp-wd h3{margin:0 2px;font-size:13.5px;display:flex;gap:6px;align-items:baseline}.shp-wd h3 span{color:var(--muted);font-weight:600;min-width:20px}.shp-wd h3 i{font-style:normal;background:var(--tape,#ffc21a);color:#1e2226;border-radius:999px;padding:0 8px;font-size:11.5px}
+.shp-wd.today{background:color-mix(in srgb,var(--tape,#ffc21a) 22%,var(--sunk));box-shadow:inset 0 0 0 2px var(--tape,#ffc21a)}
+.shp-wd.past:not(.today){opacity:.85}.shp-wd.nil{display:flex;align-items:center;justify-content:space-between;padding:6px 10px}.shp-wd.nil .shp-none{margin:0}
+@media (min-width:900px){.shp-wd.nil{display:grid;justify-content:stretch;align-items:start;padding:8px}}
+.shp-ci{display:grid;gap:1px;width:100%;min-height:44px;padding:6px 10px;border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;background:var(--surface);color:var(--ink);text-align:left;font:inherit;cursor:pointer;min-width:0}
+.shp-ci b{font-size:12px;color:var(--muted);font-weight:700}.shp-ci span{font-size:14px;overflow-wrap:anywhere}
+.shp-ci.late{border-color:#b3261e;border-left-color:#b3261e;background:color-mix(in srgb,#b3261e 8%,var(--surface))}.shp-ci.late b{color:#b3261e}
+.shp-ci.done span{text-decoration:line-through;color:var(--muted)}
+.shp-month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-bottom:10px}
+.shp-mdh{text-align:center;font-size:12px;font-weight:700;color:var(--muted);padding:2px 0}
+.shp-md{min-height:52px;min-width:0;padding:4px 2px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;font:inherit}
+.shp-md .n{font-size:14px;font-weight:600}.shp-md.out{opacity:.45}.shp-md.today{background:var(--tape,#ffc21a);color:#1e2226;border-color:var(--tape,#ffc21a)}
+.shp-md.sel{box-shadow:inset 0 0 0 2px var(--ink)}.shp-md.late .n{color:#b3261e}.shp-md.today.late .n{color:#7a0f0a}
+.shp-md .dots{display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center}.shp-md .dots i{width:7px;height:7px;border-radius:50%;background:var(--c)}.shp-md .dots em{font-style:normal;font-size:10.5px;font-weight:700;margin-left:1px}
+@media (min-width:700px){.shp-md{min-height:72px}}
+/* ===== тёмное оформление «Вертакса»: графитовый фон, светлые карточки, жёлтые акценты ===== */
+body[data-page="shop"]{background:#1e2226}
+body[data-page="shop"] .wrap{--bg:#1e2226;--ink:#eef0f2;--muted:#b9c0c7;--surface:#2b3036;--sunk:#2b3036;--line:#454c55;--bad2:#ff9b92;color:var(--ink)}
+body[data-page="shop"] :is(.card,.shp-card,.shp-row,.shp-task,.shp-ev,.shp-ci,.shp-md,.shp-strip,.modal-card,.empty,.banner,.tblock,.shp-find input,.shp-mform){--ink:#1e2226;--muted:#545a61;--surface:#f7f6f2;--sunk:#e8e6e0;--line:#d3d0c8;--bad2:#b3261e;color:var(--ink)}
+body[data-page="shop"] .shp-find input{background:#f7f6f2;border-color:#f7f6f2}
+body[data-page="shop"] .shp-find input::placeholder{color:#6a7077}
+body[data-page="shop"] .btn.primary,body[data-page="shop"] .modal .btn.primary{background:#ffc21a;border-color:#ffc21a;color:#1e2226}
+body[data-page="shop"] .wrap .shp-seg{border-color:#454c55}
+body[data-page="shop"] .wrap .shp-seg button[aria-pressed="true"],body[data-page="shop"] .wrap .shp-cltog[aria-pressed="true"]{background:#ffc21a;color:#1e2226;border-color:#ffc21a}
+body[data-page="shop"] #nav button{color:#cfd5db}body[data-page="shop"] #nav button[aria-current="true"]{color:#ffc21a;border-color:#ffc21a}
+body[data-page="shop"] .shp-kb .shp-col{background:#2b3036}
+body[data-page="shop"] .wrap .shp-seg button[aria-pressed="true"] .muted{color:#1e2226}
+body[data-page="shop"] .shp-colh h2{color:#f2f3f4}
+body[data-page="shop"] .shp-cnt{background:#ffc21a;color:#1e2226}
+body[data-page="shop"] .shp-csum{color:#c3c9cf}
+body[data-page="shop"] .shp-kb .shp-col[data-st="closed"]{background:#243a2d}body[data-page="shop"] .shp-col[data-st="closed"] .shp-colh h2{color:#9fe3b4}
+body[data-page="shop"] .shp-kb .shp-col[data-st="lost"]{background:#3d2627}body[data-page="shop"] .shp-col[data-st="lost"] .shp-colh h2{color:#ffaaa3}
+body[data-page="shop"] .shp-col.drop{background:#4a4321;box-shadow:inset 0 0 0 2px #ffc21a}
+body[data-page="shop"] .shp-tg.late h2,body[data-page="shop"] .shp-late{color:var(--bad2,#b3261e)}
+body[data-page="shop"] .shp-tabs.top{background:#2b3036;border-color:#454c55}body[data-page="shop"] .shp-tabs.top button{color:#e4e7ea}
+body[data-page="shop"] .shp-tabs.top button+button{border-color:#454c55}body[data-page="shop"] .shp-tabs.top button[aria-current="page"]{background:#ffc21a;color:#1e2226}
+body[data-page="shop"] .shp-wd{background:#2b3036}body[data-page="shop"] .shp-wd.today{background:#423c1f}
+body[data-page="shop"] .shp-md.today{background:#ffc21a;border-color:#ffc21a;--ink:#1e2226}
+body[data-page="shop"] .shp-md.out{opacity:.5}
+body[data-page="shop"] .shp-stage-l select{background:#2b3036;color:#eef0f2;border-color:#ffc21a}
+body[data-page="shop"] .shp-av{background:#1e2226;color:#ffc21a}
+body[data-page="shop"] .shp-chip.lost{background:#fbe3e1;border-color:#e4a29c;color:#5c1410}
+body[data-page="shop"] .shp-hint,body[data-page="shop"] .shp-leg{color:#c3c9cf}
+body[data-page="shop"] .wrap a:not(.btn){color:inherit}
+body[data-page="shop"] .home-foot .linkbtn{color:#c3c9cf}
+body[data-page="shop"] .toast{background:#f7f6f2;color:#1e2226;box-shadow:0 4px 18px rgba(0,0,0,.45)}
+
+
 @media (max-width:520px){body[data-page="shop"] .head-actions{width:100%}body[data-page="shop"] .head>.head-actions .btn{flex:1 1 auto}}
 `; document.head.appendChild(st); })();
 /* ссылка «#ceh» сразу открывает раздел */
 const _hashShop=hashHook;
-hashHook=h=>{ if(String(h||"").toLowerCase()==="ceh"){ history.replaceState(null,"",location.pathname+location.search); S.view="shop"; setTimeout(()=>{ if(S.view==="shop") render(); },0); return ""; } return _hashShop(h); };
+hashHook=h=>{ if(/^(ceh|vertaks|вертакс)$/i.test(decodeURIComponent(String(h||"")))){ history.replaceState(null,"",location.pathname+location.search); S.view="shop"; setTimeout(()=>{ if(S.view==="shop") render(); },0); return ""; } return _hashShop(h); };
 /* на главной — тихая ссылка в раздел для тех, у кого не видно вкладок */
 const _viewOrdersShop=viewOrders;
 viewOrders=function(){ const h=_viewOrdersShop(); if(!shpOn()) return h; const i=h.lastIndexOf("</p>"); if(i<0||h.indexOf("home-foot")<0) return h;
-  return h.slice(0,i)+`<span>·</span><button type="button" class="linkbtn" data-view="shop">Цех: заказы и чат</button>`+h.slice(i); };
+  return h.slice(0,i)+`<span>·</span><button type="button" class="linkbtn" data-view="shop">Вертакс: сделки и чат</button>`+h.slice(i); };
 const _renderShop=render;
 render=function(){
   const nb=document.getElementById("navShop"); if(nb) nb.hidden=!shpOn();
@@ -4189,23 +4807,33 @@ render=function(){
   if(want&&shpPin()&&(!S.shop.chat||S.shop.chat.id!==want||!shpTimer)) shpChatStart(want);
   const ae=document.activeElement, keepTa=ae&&ae.closest&&ae.closest(".shp-send")?ae.selectionStart:null;
   $("#view").innerHTML=viewShop();
+  const nav=!!document.querySelector("#view .shp-tabs"), md=S.shop.mode;
+  document.body.dataset.shp=shpPin()?md:"login";
+  document.body.classList.toggle("shp-hasnav",nav); document.body.classList.toggle("shp-wide",nav&&(md==="board"||md==="cal"));
   const box=document.getElementById("shpMsgs"); if(box){ box.scrollTop=box.scrollHeight; box.dataset.once="1"; }
-  if(document.querySelector(".shp-board")) shpApplyFilter();
+  const kb=document.getElementById("shpKb"); if(kb){ shpApplyFilter(); if(S.shop.kbX) kb.scrollLeft=S.shop.kbX; }
+  if(document.getElementById("shpCQ")) shpCFilter();
+  if(S.shop.focusChat){ S.shop.focusChat=false; const c=document.querySelector(".shp-chat"); if(c&&matchMedia("(max-width:899px)").matches) setTimeout(()=>c.scrollIntoView({block:"start"}),0); }
   if(keepTa!=null){ const ta=document.querySelector(".shp-send textarea"); if(ta){ ta.focus(); try{ ta.setSelectionRange(keepTa,keepTa); }catch(_){} } }
 };
 /* доска обновляется сама раз в минуту (новые заказы и сообщения), если не набирают поиск */
-setInterval(()=>{ if(S.view==="shop"&&S.shop.mode==="board"&&shpPin()&&S.shop.loaded&&document.visibilityState==="visible"&&document.activeElement&&document.activeElement.id!=="shpQ"&&!document.querySelector(".modal")) shpLoad(true); },60000);
+setInterval(()=>{ const ae=document.activeElement;
+  if(S.view==="shop"&&/^(board|tasks|chats|cal|more|clients|staff|person|client)$/.test(S.shop.mode)&&shpPin()&&S.shop.loaded&&document.visibilityState==="visible"&&!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&!document.querySelector(".modal")&&!SHP_DR.st) shpLoad(true); },60000);
+setInterval(()=>{ if(S.view==="shop"&&S.shop.mode==="feed"&&shpPin()&&document.visibilityState==="visible"&&!document.querySelector(".modal")) shpFeedLoad(true); },45000);
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"&&S.view==="shop"&&S.shop.loaded&&shpPin()&&S.shop.mode!=="form"&&!document.querySelector(".modal")) shpLoad(true); });
 /* нажатия */
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-view="shop"]'); if(t&&S.shop.mode!=="form"){ S.shop.mode="board"; S.shop.chat=null; } },true);
 document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest("[data-act^='shp-']"); if(!t) return; ev.stopPropagation(); const a=t.dataset.act;
-  if(a==="shp-in-master"){ siteLoginModal(()=>{ S.shop.loaded=false; S.shop.err=false; render(); }); return; }
+  if(/^shp-in-/.test(a)){ const vl=document.getElementById("vtxLogin"); if(vl) vl.remove(); }
+  if(a==="shp-mclose"&&t.closest("#vtxLogin")) S.shop.afterLogin=null;
+  if(a==="shp-in-master"){ siteLoginModal(()=>{ S.shop.loaded=false; S.shop.err=false; const f=S.shop.afterLogin; S.shop.afterLogin=null; if(f&&shpPin()) f(); else render(); }); return; }
   if(a==="shp-in-tech") return shpTechModal();
   if(a==="shp-in-office") return shpOfficeModal("office");
   if(a==="shp-in-sup") return shpOfficeModal("supply");
   if(a==="shp-mine"){ S.shop.mine=t.dataset.v==="1"; try{ localStorage.setItem("cehqr-shopmine",S.shop.mine?"1":"0"); }catch(_){} document.querySelectorAll('[data-act="shp-mine"]').forEach(b=>b.setAttribute("aria-pressed",String(b===t))); shpApplyFilter(); return; }
   if(a==="shp-rc-del"){ const id=t.dataset.id, oid=S.shop.cur; if(S.shop.rcDel!==id){ S.shop.rcDel=id; shpRenderKeep(); return; }
     t.disabled=true; const j=await shpPost({action:"receiptDel",order:oid,id}); S.shop.rcDel=null; if(j){ S.shop.rc[oid]=(S.shop.rc[oid]||[]).filter(r=>r.id!==id); const o=shpById(oid); if(o) o.receiptsTotal=S.shop.rc[oid].reduce((x,r)=>x+(+r.sum||0),0); toast("Чек удалён"); } shpRenderKeep(); return; }
-  if(a==="shp-out"){ if(!confirm(VTX?"Выйти из «Вертакса» на этом телефоне?":"Выйти из раздела «Цех» на этом телефоне?")) return;
+  if(a==="shp-out"){ if(!confirm("Выйти из «Вертакса» на этом телефоне?")) return;
     const wasT=!!S.shop.techPin, wasO=!!S.shop.officePin, wasS=!!S.shop.supPin;
     if(wasT){ S.shop.techPin=""; try{ localStorage.removeItem("cehqr-techpin"); }catch(_){} }
     if(wasO){ S.shop.officePin=""; try{ localStorage.removeItem("cehqr-officepin"); }catch(_){} }
@@ -4213,10 +4841,41 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
     if(!wasT&&!wasO&&!wasS){ S.pin=""; try{ localStorage.removeItem("cehqr-pin"); }catch(_){} }
     S.shop.loaded=false; S.shop.orders=[]; S.shop.rc={}; S.shop.tech=false; S.shop.full=false; S.shop.rcpt=false; S.shop.role=""; shpGo("board"); return; }
   if(a==="shp-reload"){ S.shop.err=false; t.disabled=true; await shpLoad(); t.disabled=false; if(S.shop.loaded) toast("Обновлено"); return; }
-  if(a==="shp-open") return shpGo("order",t.dataset.id);
-  if(a==="shp-back"){ shpGo("board"); shpLoad(true); return; }
-  if(a==="shp-general") return shpGo("general");
-  if(a==="shp-new"){ S.shop.edit={stage:"zamer"}; S.shop.backTo=null; return shpGo("form"); }
+  if(a==="shp-open"){ document.querySelectorAll("#shpTaskModal").forEach(x=>x.remove()); return shpGo("order",t.dataset.id); }
+  if(a==="shp-back"){ const b=S.shop.back&&S.shop.back!=="order"?S.shop.back:"board"; shpGo(b); shpLoad(true); return; }
+  if(a==="shp-tab"){ const v=t.dataset.v; if(t.dataset.tt) S.shop.ttab=t.dataset.tt; S.shop.chat=null;
+    if(v==="feed"){ S.shop.feed.loaded&&shpFeedLoad(true); } if(v==="staff"){ S.shop.staffLoaded=false; } if(v==="cal"&&!S.shop.cal.a) S.shop.cal.a=shpToday();
+    if(v==="tasks"&&S.shop.v2) shpTasksLoad(true).then(()=>{ if(S.view==="shop"&&S.shop.mode==="tasks"&&!document.querySelector(".modal")) shpRenderKeep(); });
+    return shpGo(v); }
+  if(a==="shp-closed"){ S.shop.showClosed=!S.shop.showClosed; try{ localStorage.setItem("cehqr-shopclosed",S.shop.showClosed?"1":"0"); }catch(_){} t.setAttribute("aria-pressed",String(S.shop.showClosed)); t.textContent=(S.shop.showClosed?"Скрыть закрытые":"Показать закрытые")+" · "+S.shop.orders.filter(shpClosed).length; shpApplyFilter();
+    if(S.shop.showClosed){ const kb=document.getElementById("shpKb"), c=kb&&kb.querySelector('[data-st="closed"]'); if(c) kb.scrollTo({left:c.offsetLeft-kb.offsetLeft-16,behavior:"smooth"}); } return; }
+  if(a==="shp-ttab"){ S.shop.ttab=t.dataset.v; render(); return; }
+  if(a==="shp-tnew"){ if(!S.shop.v2){ toast("Сначала обновите скрипт таблицы — тогда заработают задачи"); return; } return shpTaskModal(null,{order:t.dataset.order||(S.shop.mode==="order"?S.shop.cur:""),to:t.dataset.to||""}); }
+  if(a==="shp-topen"){ const x=shpTaskById(t.dataset.id); if(x) shpTaskModal(x); else toast("Задача не найдена — обновите"); return; }
+  if(a==="shp-tdone") return shpTaskToggle(t.dataset.id,t);
+  if(a==="shp-tdue"){ const f=t.closest("form"); if(f) f.elements.due.value=t.dataset.v; return; }
+  if(a==="shp-topenorder"){ document.getElementById("shpTaskModal")?.remove(); return shpGo("order",t.dataset.id); }
+  if(a==="shp-tdel"){ if(!confirm("Удалить задачу?")) return; t.disabled=true; const j=await shpPost({action:"taskDel",id:t.dataset.id}); t.disabled=false; if(!j) return;
+    S.shop.tasks=S.shop.tasks.filter(x=>x.id!==t.dataset.id); document.getElementById("shpTaskModal")?.remove(); toast("Задача удалена"); shpRenderKeep(); return; }
+  if(a==="shp-mclose"){ t.closest(".modal")?.remove(); return; }
+  if(a==="shp-otab"){ S.shop.otab=t.dataset.v; if(t.dataset.v==="history") S.shop.hist[S.shop.cur]=null; shpRenderKeep(); return; }
+  if(a==="shp-feedre"){ t.disabled=true; await shpFeedLoad(); t.disabled=false; return; }
+  if(a==="shp-ochat"){ S.shop.focusChat=true; S.shop.otab="chat"; return shpGo("order",t.dataset.id); }
+  if(a==="shp-calv"){ S.shop.cal.v=t.dataset.v; try{ localStorage.setItem("cehqr-calv",t.dataset.v); }catch(_){} render(); return; }
+  if(a==="shp-calgo") return shpCalShift(+t.dataset.v);
+  if(a==="shp-calday"){ S.shop.cal.sel=t.dataset.v; shpRenderKeep(); const s=document.querySelector(".shp-msel"); if(s&&s.getBoundingClientRect().top>innerHeight-120) s.scrollIntoView({block:"nearest",behavior:"smooth"}); return; }
+  if(a==="shp-client"){ S.shop.curClient=t.dataset.k; return shpGo("client"); }
+  if(a==="shp-cnew"){ const c=shpClients().find(x=>x.key===t.dataset.k); S.shop.edit={stage:"dogovor",client:c?c.name:"",phone:c?c.phones[0]||"":"",address:c?c.addrs[c.addrs.length-1]||"":""}; S.shop.backTo=null; return shpGo("form"); }
+  if(a==="shp-fillcl"){ const c=shpClients().find(x=>x.key===t.dataset.k), f=document.getElementById("shpForm"); if(!c||!f) return;
+    f.elements.client.value=c.name; if(!f.elements.phone.value.trim()&&c.phones[0]) f.elements.phone.value=c.phones[0]; if(c.addrs.length) f.elements.address.value=c.addrs[c.addrs.length-1]; toast("Заполнено: "+c.name); shpRepeatHint(); return; }
+  if(a==="shp-myname"){ const n=prompt("Как вас зовут? Это имя видно в задачах и чатах.",shpWho()); if(n==null) return; const v=n.trim().slice(0,40); if(!v){ toast("Имя не может быть пустым"); return; }
+    S.who=v; try{ localStorage.setItem("cehqr-who",v); }catch(_){} toast("Теперь вы: "+v); render(); return; }
+  if(a==="shp-person"){ S.shop.curPerson=t.dataset.k; return shpGo("person"); }
+  if(a==="shp-pedit") return shpPersonModal(t.dataset.k||"");
+  if(a==="shp-pdel"){ if(!confirm("Убрать «"+t.dataset.k+"» из списка сотрудников?")) return; const j=await shpPost({action:"staffDel",name:t.dataset.k}); if(!j) return;
+    S.shop.staff=S.shop.staff.filter(x=>shpNorm(x.name)!==shpNorm(t.dataset.k)); document.getElementById("shpPersonModal")?.remove(); toast("Убран из списка"); shpRenderKeep(); return; }
+  if(a==="shp-general"){ S.shop.chat=null; return shpGo("general"); }
+  if(a==="shp-new"){ S.shop.edit={stage:"dogovor"}; S.shop.backTo=null; return shpGo("form"); }
   if(a==="shp-edit"){ const o=shpById(S.shop.cur); if(!o) return; S.shop.edit=Object.assign({},o); S.shop.backTo=o.id; S.shop.chat=null; S.shop.mode="form"; render(); window.scrollTo(0,0); return; }
   if(a==="shp-cancel"){ const b=S.shop.backTo; S.shop.edit=null; return b?shpGo("order",b):shpGo("board"); }
   if(a==="shp-del-no"){ S.shop.delAsk=false; render(); return; }
@@ -4225,17 +4884,27 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
     S.shop.orders=S.shop.orders.filter(o=>o.id!==id); toast("Заказ удалён"); shpGo("board"); return; }
 },true);
 document.addEventListener("change",async ev=>{ const sel=ev.target; if(!sel||sel.id!=="shpStage") return;
-  const o=shpById(sel.dataset.id); if(!o) return; const prev=o.stage, nx=sel.value; if(prev===nx) return;
-  o.stage=nx; sel.disabled=true;
-  const j=await shpPost({action:"shopSave",order:Object.assign({},o,{stage:nx})});
-  if(!j){ o.stage=prev; if(S.view==="shop"&&S.shop.mode==="order") shpRenderKeep(); return; }
-  o.stageAt=Date.now(); toast("Этап: "+shpStName(nx)); sel.disabled=false; shpChatPoll(); });
-document.addEventListener("input",ev=>{ const ta=ev.target; if(ta&&ta.id==="shpQ"){ S.shop.q=ta.value; shpApplyFilter(); return; } if(ta&&ta.closest&&ta.closest(".shp-send")&&ta.tagName==="TEXTAREA"){ S.shop.draft[ta.closest(".shp-send").dataset.chat]=ta.value; } });
+  const o=shpById(sel.dataset.id); if(!o||o.stage===sel.value) return; sel.disabled=true;
+  await shpMoveStage(o,sel.value); sel.disabled=false; });
+function shpRepeatHint(){ const f=document.getElementById("shpForm"), box=document.getElementById("shpRepeat"); if(!f||!box) return;
+  const c=shpClientMatch(f.elements.client.value,f.elements.phone.value,(S.shop.edit||{}).id||"");
+  if(!c){ box.innerHTML=""; return; }
+  const same=shpNorm(f.elements.client.value)===shpNorm(c.name)&&(!c.addrs.length||f.elements.address.value.trim()===c.addrs[c.addrs.length-1]);
+  box.innerHTML=`<div class="banner shp-rep"><span>Повторный клиент: <b>${esc(c.name)}</b> (${c.orders.length} ${shpPl(c.orders.length,"заказ","заказа","заказов")}${c.phones[0]?", "+esc(c.phones[0]):""})</span>${same?"":`<button type="button" class="btn sm" data-act="shp-fillcl" data-k="${esc(c.key)}">Заполнить имя и адрес</button>`}</div>`; }
+document.addEventListener("input",ev=>{ const ta=ev.target; if(ta&&ta.id==="shpQ"){ S.shop.q=ta.value; shpApplyFilter(); return; }
+  if(ta&&ta.id==="shpCQ"){ S.shop.cq=ta.value; shpCFilter(); return; }
+  if(ta&&ta.closest&&ta.closest("#shpForm")&&(ta.name==="client"||ta.name==="phone")){ shpRepeatHint(); return; } if(ta&&ta.closest&&ta.closest(".shp-send")&&ta.tagName==="TEXTAREA"){ S.shop.draft[ta.closest(".shp-send").dataset.chat]=ta.value; } });
+document.addEventListener("change",ev=>{ const t=ev.target; if(t&&t.name==="stage"&&t.closest&&t.closest("#shpForm")){ const l=document.getElementById("shpReasonL"); if(l) l.hidden=t.value!=="lost"; } });
 document.addEventListener("change",ev=>{ const fi=ev.target; if(fi&&fi.type==="file"&&fi.closest&&(fi.closest(".shp-send")||fi.closest("#shpRcForm"))) shpFileMark(fi); });
 document.addEventListener("toggle",ev=>{ if(ev.target&&ev.target.classList&&ev.target.classList.contains("shp-rc-add")) S.shop.rcOpen=ev.target.open; },true);
 document.addEventListener("keydown",ev=>{ const ta=ev.target; if(ev.key!=="Enter"||ev.shiftKey||ev.isComposing||!ta||!ta.closest||!ta.closest(".shp-send")||ta.tagName!=="TEXTAREA") return; ev.preventDefault(); shpSend(ta.closest("form")); });
 document.addEventListener("submit",async ev=>{ const f=ev.target;
   if(f.classList&&f.classList.contains("shp-send")){ ev.preventDefault(); shpSend(f); return; }
+  if(f.id==="shpTaskForm"){ ev.preventDefault(); shpTaskSubmit(f); return; }
+  if(f.id==="shpPersonForm"){ ev.preventDefault(); const g=n=>String(f.elements[n].value||"").trim(), st={name:g("name"),role:g("role"),phone:g("phone")}; if(!st.name){ toast("Впишите имя"); return; }
+    const btn=f.querySelector('[type="submit"]'); btn.disabled=true; const j=await shpPost({action:"staffSave",was:f.dataset.was||st.name,staff:st}); btn.disabled=false; if(!j) return;
+    const k=shpNorm(f.dataset.was||st.name); S.shop.staff=S.shop.staff.filter(x=>shpNorm(x.name)!==k).concat([st]); if(S.shop.mode==="person") S.shop.curPerson=st.name;
+    document.getElementById("shpPersonModal")?.remove(); toast("Сохранено: "+st.name); shpRenderKeep(); return; }
   if(f.id==="shpRcForm"){ ev.preventDefault(); const oid=f.dataset.id, sum=String(f.elements.sum.value||"").replace(/\s/g,"").replace(",","."), text=String(f.elements.text.value||"").trim(), file=f.elements.f.files[0];
     if(!(+sum>0)){ toast("Впишите сумму чека в рублях"); f.elements.sum.focus(); return; }
     const btn=f.querySelector('[type="submit"]'); btn.disabled=true; btn.textContent="Сохраняю…";
@@ -4297,11 +4966,10 @@ document.addEventListener("click", async ev=>{
   else if(a==="order-qr"){ orderQrModal(S.current.orderId); }
   else if(a==="order-qr-id"){ orderQrModal(t.dataset.id); }
   else if(a==="qr-close"){ const m=$("#qrModal"); m&&m.remove(); }
-  else if(a==="to-verstak"){ verstakCopy(); }
+  else if(a==="to-vertaks"){ const dm=t.closest(".dq-menu"); if(dm) dm.hidden=true; if(typeof vtxFromOrder==="function") vtxFromOrder(); }
   else if(a==="refresh"){ pageRefresh(); }
   else if(a==="haptic"){ const on=!hapticOn(); try{ localStorage.setItem("cehqr-haptic",on?"1":"0"); }catch(_){} if(on) haptic("ok"); toast(on?"Вибрация включена":"Вибрация выключена"); }
   else if(a==="hole-hi"){ holeHi(+t.dataset.i, t); }
-  else if(a==="vs-x"){ const m=$("#vsModal"); m&&m.remove(); }
   else if(a==="qr-copy"){ const inp=$("#qrLink"); try{ await navigator.clipboard.writeText(inp.value); toast("Ссылка скопирована"); }catch(e){ inp.select(); toast("Выделил ссылку — скопируйте её"); } }
   else if(a==="qr-pdf"){ t.disabled=true; await orderSheetPdf(t.dataset.id); t.disabled=false; }
   else if(a==="dq-close"){ S.dqFull=false; document.body.classList.remove("has-full"); try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){} if(S.backShop){ S.backShop=false; S.dqOid=null; S.introOid=null; setView("shop"); } else setView("orders"); }
