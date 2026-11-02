@@ -3982,7 +3982,7 @@ function viewSupply(){
   let all=[0,0,0,0], tot=0, small=0; allIds.forEach(o=>{ const L=supItems(o), p=supProgress(L); p.c.forEach((k,i)=>all[i]+=k); tot+=p.n; small+=supSmallN(L); });
   const sum=S.sup.tab==="sum";
   let h=`<div class="head"><div><h1>Снабжение</h1><p class="muted" style="margin:4px 0 0">Заказов: ${ids.length} · позиций: ${tot} · ${SUP_ST.map((s,i)=>`${s.name}: ${all[i]}`).join(" · ")}</p></div>
-    <button class="btn sm" data-act="sup-reload">Обновить</button></div>${S.sup.pending>0?`<p class="sup-pend">⏳ Догружаю заказы: ${S.sup.total-S.sup.pending} из ${S.sup.total}…</p>`:""}${tot?supBar(all,tot):""}
+    <span class="sup-hbtn"><button class="btn sm" data-act="sup-vendors">Поставщики</button><button class="btn sm" data-act="sup-reload">Обновить</button></span></div>${S.sup.pending>0?`<p class="sup-pend">⏳ Догружаю заказы: ${S.sup.total-S.sup.pending} из ${S.sup.total}…</p>`:""}${tot?supBar(all,tot):""}
     <div class="seg cat-mode sup-seg" role="group" aria-label="Вид"><button type="button" class="${!S.sup.tab||S.sup.tab==="orders"?"on":""}" aria-pressed="${!S.sup.tab||S.sup.tab==="orders"}" data-act="sup-tab" data-t="orders">Заказы</button><button type="button" class="${S.sup.tab==="table"?"on":""}" aria-pressed="${S.sup.tab==="table"}" data-act="sup-tab" data-t="table">Таблица</button><button type="button" class="${S.sup.tab==="buy"?"on":""}" aria-pressed="${S.sup.tab==="buy"}" data-act="sup-tab" data-t="buy">Купить</button><button type="button" class="${sum?"on":""}" aria-pressed="${sum}" data-act="sup-tab" data-t="sum">Всего</button></div>
     ${supSmallLine(small)}`;
   if(!S.sup.pin) h+=`<div class="banner warn" style="margin:10px 0">Чтобы отмечать и менять позиции, нужен PIN снабженца. <button class="btn sm" data-act="sup-pin">Ввести PIN</button></div>`;
@@ -4694,6 +4694,89 @@ document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.clo
 .cat2-t i{font-style:normal;font-size:22px;opacity:.8}.cat2-t b{font-size:15px;line-height:1.2}.cat2-t span{font-size:12.5px;color:var(--muted);margin-top:auto}
 .cat2-crumb{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:6px 0 10px}.cat2-crumb b{font-size:17px}
 .cat2-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:6px 0 10px}.cat2-sort{display:flex;gap:6px;flex-wrap:wrap}.chip small{opacity:.6;font-size:11px}`; document.head.appendChild(st); })();
+
+/* ---------- Заявка поставщикам: окно по поставщикам (номер, WhatsApp), правка строк, запоминание «что у кого берём». Справочник «Поставщики» ---------- */
+async function supVendLoad(force){ if(S.sup.vend&&!force) return S.sup.vend; const pin=supPricePin(); if(!pin) return null;
+  try{ const j=await (await fetch(supUrl("action=vend&pin="+encodeURIComponent(pin)),{cache:"no-cache"})).json(); if(j&&j.ok){ S.sup.vend=j; return j; } }catch(_){} return null; }
+async function supVendPost(body){ const pin=supPricePin(); try{ const j=await (await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify(Object.assign({pin,who:S.who||"Снабженец"},body))})).json(); if(j&&j.ok) return j; toast(j&&j.error==="pin"?"Нужен PIN снабженца, технолога или офиса":"Не сохранилось"); }catch(_){ toast("Нет связи — не сохранилось"); } return null; }
+const supDigits=p=>String(p||"").replace(/\D/g,"").replace(/^8(\d{10})$/,"7$1");
+function supVendFor(name){ const V=(S.sup.vend||{}).vendors||[], B=(S.sup.vend||{}).binds||{}, b=B[supPKey(name)]; if(b&&V.some(v=>v.id===b)) return b;
+  const n=supNorm(name); const v=V.find(v=>String(v.kw||"").split(/[,;]/).map(x=>supNorm(x)).filter(x=>x.length>1).some(k=>n.includes(k))); return v?v.id:""; }
+function supReqCollect(){ const by=new Map(); [...S.sup.sel].forEach(ref=>{ const {oid,key}=supUnref(ref), it=supItems(oid).find(x=>x.key===key); if(!it||it.del) return;
+  const k=oid+"|"+supPKey(it.name)+"|"+it.unit, r=by.get(k)||{id:"r"+by.size,oid,name:it.name,unit:it.unit,qty:0,refs:[]}; /* по заказам отдельно — магазину видно, что это разные заказы */ r.qty=Math.round((r.qty+(+it.qty||0))*100)/100; r.refs.push({oid,key,it}); by.set(k,r); });
+  return [...by.values()].map(r=>Object.assign(r,{vid:supVendFor(r.name)})).sort((a,b)=>String(a.oid).localeCompare(String(b.oid))||a.name.localeCompare(b.name,"ru")); }
+function supReqOrd(oid){ if(!oid) return "Дополнительно"; const d=typeof supDeal==="function"?supDeal(oid):null, nm=supOidName(oid); return "Заказ "+(d?"№ "+d.num:oid)+(nm?" — "+nm:""); }
+function supReqText2(v,rows){ const R=rows.filter(r=>r.name&&+r.qty>0), ords=[...new Set(R.map(r=>r.oid||""))];   // по заказам: у каждого заказа свой список
+  return "Заявка ТИ Мебель от "+supDate()+(v?"\nПоставщику: "+v.name:"")+"\n"+ords.map(o=>"\n"+supReqOrd(o)+":\n"+R.filter(r=>(r.oid||"")===o).map((r,i)=>(i+1)+". "+r.name+" — "+supNum(r.qty)+" "+r.unit).join("\n")).join("\n"); }
+async function supCopy(t){ try{ if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(t); return true; } }catch(_){}
+  const a=document.createElement("textarea"); a.value=t; a.style.cssText="position:fixed;left:-9999px;top:0"; document.body.appendChild(a); a.select(); let ok=false; try{ ok=document.execCommand("copy"); }catch(_){} a.remove(); return ok; }
+supReqModal=async function(){ if(!S.sup.sel.size){ toast("Отметьте галочками, что заказать"); return; }
+  await supVendLoad(); const st={lines:supReqCollect(),sent:{},mark:true}; if(!st.lines.length){ toast("Отметьте галочками, что заказать"); return; }
+  document.getElementById("supReq")?.remove(); const m=document.createElement("div"); m.className="modal sup-req2"; m.id="supReq"; document.body.appendChild(m);
+  const V=()=>(S.sup.vend||{}).vendors||[];
+  const draw=()=>{ const groups=V().map(v=>({v,rows:st.lines.filter(l=>l.vid===v.id)})).filter(g=>g.rows.length); const none=st.lines.filter(l=>!l.vid||!V().some(v=>v.id===l.vid));
+    const opt=l=>`<select class="rq-v" data-l="${l.id}" aria-label="Поставщик">${V().map(v=>`<option value="${esc(v.id)}"${v.id===l.vid?" selected":""}>${esc(v.name)}</option>`).join("")}<option value=""${!l.vid?" selected":""}>— не выбран —</option><option value="+">＋ Новый поставщик…</option></select>`;
+    const row=l=>`<div class="rq-r">${l.refs.length?`<span class="rq-n">${esc(l.name)}<small>${esc(supReqOrd(l.oid))}</small></span>`:`<input class="rq-nm" data-l="${l.id}" value="${esc(l.name)}" placeholder="Что заказать">`}
+      <span class="rq-q"><input inputmode="decimal" class="rq-qty" data-l="${l.id}" value="${esc(supNum(l.qty))}" aria-label="Количество"><small>${esc(l.unit)}</small></span>${opt(l)}<button type="button" class="rq-x" data-del="${l.id}" aria-label="Убрать строку">✕</button></div>`;
+    const card=(v,rows)=>{ const ph=v&&supDigits(v.phone), txt=supReqText2(v,rows), sent=v&&st.sent[v.id];
+      return `<section class="rq-g${sent?" sent":""}"><div class="rq-h"><span class="rq-av${v?"":" q"}">${v?esc(v.name.trim().charAt(0).toUpperCase()):"?"}</span><span class="rq-hn"><b>${v?esc(v.name):"Без поставщика"}</b><small>${v?(v.phone?esc(v.phone):"номер не записан")+(v.kw?" · "+esc(v.kw):""):"выберите справа — запомню на следующий раз"}</small></span>${v?`<button type="button" class="btn sm" data-ve="${esc(v.id)}">✎</button>`:""}</div>
+        ${rows.map(row).join("")}<button type="button" class="rq-add" data-add="${v?esc(v.id):""}">＋ Строка</button>
+        ${v?`<div class="rq-b">${ph&&v.via!=="tg"?`<a class="btn rq-wa" data-send="${esc(v.id)}" data-k="wa" target="_blank" rel="noopener" href="https://wa.me/${ph}?text=${encodeURIComponent(txt)}">WhatsApp → ${esc(v.name)}</a>`:""}<a class="btn" data-send="${esc(v.id)}" data-k="tg" target="_blank" rel="noopener" href="${ph?"https://t.me/+"+ph:"https://t.me/"}">Телеграм</a><button type="button" class="btn" data-send="${esc(v.id)}" data-k="copy">Скопировать</button><button type="button" class="btn" data-send="${esc(v.id)}" data-k="pdf">PDF</button></div>${sent?`<p class="rq-ok">✓ Отправлено${st.mark?" · отмечено «Заказано»":""}</p>`:""}`:""}</section>`; };
+    m.innerHTML=`<div class="modal-card"><div class="rq-top"><h2 style="margin:0">Заявка поставщикам</h2><button type="button" class="btn sm" data-vlist>Поставщики</button></div><p class="note" style="margin:2px 0 10px">${st.lines.length} поз. · от ${supDate()} · количество можно поправить, ✕ — убрать</p>
+      ${groups.map(g=>card(g.v,g.rows)).join("")}${none.length?card(null,none):""}
+      <label class="rq-mk"><input type="checkbox" id="rqMark"${st.mark?" checked":""}> После отправки отметить «Заказано»</label>
+      <button type="button" class="btn" data-x style="width:100%;margin-top:8px">Закрыть</button></div>`; };
+  const L=id=>st.lines.find(l=>l.id===id);
+  const sendDone=async vid=>{ const v=V().find(x=>x.id===vid), rows=st.lines.filter(l=>l.vid===vid), txt=supReqText2(v,rows); st.sent[vid]=true; supVendPost({action:"reqLog",vendor:v?v.name:"",n:rows.length,text:txt});
+    if(st.mark){ const recs=[]; rows.forEach(r=>r.refs.forEach(x=>{ if(x.it.status===0) supRecs(x.oid,x.key).forEach(q=>recs.push(Object.assign(q,{status:1}))); })); if(recs.length){ const ok=await supSave(recs,()=>{}); if(ok!==false) rows.forEach(r=>r.refs.forEach(x=>S.sup.sel.delete(supRef(x.oid,x.key)))); } }
+    draw(); };
+  m.addEventListener("input",e=>{ const t=e.target, l=L(t.dataset.l); if(!l) return; if(t.classList.contains("rq-qty")) l.qty=parseFloat(String(t.value).replace(",","."))||0; if(t.classList.contains("rq-nm")) l.name=t.value;
+    const g=t.closest(".rq-g"); const a=g&&g.querySelector(".rq-wa"); if(a){ const v=V().find(x=>x.id===l.vid); a.href="https://wa.me/"+supDigits(v.phone)+"?text="+encodeURIComponent(supReqText2(v,st.lines.filter(x=>x.vid===l.vid))); } });
+  m.addEventListener("change",async e=>{ const t=e.target; if(t.id==="rqMark"){ st.mark=t.checked; return; } if(!t.classList.contains("rq-v")) return; const l=L(t.dataset.l);
+    if(t.value==="+"){ const id=await supVendForm(null); if(id){ l.vid=id; if(l.refs.length) supVendPost({action:"vendBind",name:l.name,vendor:id}).then(()=>{ (S.sup.vend.binds=S.sup.vend.binds||{})[supPKey(l.name)]=id; }); } draw(); return; }
+    l.vid=t.value; if(l.refs.length){ supVendPost({action:"vendBind",name:l.name,vendor:t.value}); (S.sup.vend.binds=S.sup.vend.binds||{})[supPKey(l.name)]=t.value; } draw(); });
+  m.addEventListener("click",async e=>{ const t=e.target; if(t===m||t.closest("[data-x]")){ m.remove(); supRenderKeep(); return; }
+    if(t.closest("[data-vlist]")){ await supVendList(); draw(); return; }
+    const del=t.closest("[data-del]"); if(del){ st.lines=st.lines.filter(l=>l.id!==del.dataset.del); if(!st.lines.length){ m.remove(); return; } draw(); return; }
+    const add=t.closest("[data-add]"); if(add){ st.lines.push({id:"n"+Date.now(),name:"",unit:"шт",qty:1,refs:[],vid:add.dataset.add}); draw(); setTimeout(()=>{ const i=[...m.querySelectorAll(".rq-nm")].pop(); i&&i.focus(); },30); return; }
+    const ve=t.closest("[data-ve]"); if(ve){ await supVendForm(V().find(v=>v.id===ve.dataset.ve)); draw(); return; }
+    const sb=t.closest("[data-send]"); if(!sb) return; const vid=sb.dataset.send, k=sb.dataset.k, v=V().find(x=>x.id===vid), rows=st.lines.filter(l=>l.vid===vid), txt=supReqText2(v,rows);
+    if(k==="wa"){ setTimeout(()=>sendDone(vid),100); return; }
+    if(k==="tg"||k==="copy"){ const ok=await supCopy(txt);
+      toast(ok?(k==="tg"?"Текст скопирован — вставьте в чат Телеграма":"Заявка скопирована"):"Не скопировалось — выделите текст вручную"); if(k==="copy"){ e.preventDefault(); } if(ok) setTimeout(()=>sendDone(vid),100); return; }
+    if(k==="pdf"){ const R=rows.filter(r=>r.name&&+r.qty>0), secs=[...new Set(R.map(r=>r.oid||""))].map(o=>({n:supReqOrd(o),rows:R.filter(r=>(r.oid||"")===o)}));
+      if(supPrint(txt,secs,v?v.name:"")) sendDone(vid); else toast("Разрешите всплывающие окна для печати"); } });
+  draw(); };
+function supVendForm(v){ return new Promise(res=>{ const m=document.createElement("div"); m.className="modal"; m.id="supVF"; m.style.zIndex=120;
+  m.innerHTML=`<form class="modal-card" autocomplete="off"><h2 style="margin:0 0 10px">${v?"Поставщик":"Новый поставщик"}</h2><div class="form" style="grid-template-columns:1fr;margin:0">
+    <label>Имя / магазин<input name="name" required maxlength="80" value="${esc(v?v.name:"")}" placeholder="Например: Яндреев"></label>
+    <label>Телефон (WhatsApp)<input name="phone" inputmode="tel" maxlength="30" value="${esc(v?v.phone:"")}" placeholder="+7 914 …"></label>
+    <label>Как отправлять<select name="via"><option value="wa"${!v||v.via==="wa"?" selected":""}>WhatsApp</option><option value="tg"${v&&v.via==="tg"?" selected":""}>Телеграм</option><option value="mail"${v&&v.via==="mail"?" selected":""}>Копировать текст</option></select></label>
+    <label>Что у него берём — слова через запятую<input name="kw" maxlength="300" value="${esc(v?v.kw:"")}" placeholder="ЛДСП, ДВПО, Egger  или  Blum, петли, направляющие"></label></div>
+    <p class="note" style="margin:8px 0 0;font-size:12.5px">По этим словам позиции сами попадут к нему в заявку.</p>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-c>Отмена</button>${v?`<button class="btn danger" type="button" data-d style="margin-left:auto">Удалить</button>`:""}</div></form>`;
+  const done=x=>{ m.remove(); res(x); }; m.addEventListener("click",async e=>{ if(e.target===m||e.target.closest("[data-c]")) done(null);
+    if(e.target.closest("[data-d]")&&confirm("Удалить поставщика «"+v.name+"»?")){ if(await supVendPost({action:"vendDel",id:v.id})){ await supVendLoad(true); done(null); } } });
+  document.body.appendChild(m); setTimeout(()=>m.querySelector("input").focus(),30);
+  m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target; const j=await supVendPost({action:"vendSave",vendor:{id:v?v.id:"",name:f.name.value.trim(),phone:f.phone.value.trim(),via:f.via.value,kw:f.kw.value.trim()}});
+    if(j){ await supVendLoad(true); toast("Поставщик сохранён"); done(j.id); } }); }); }
+async function supVendList(){ await supVendLoad(true); return new Promise(res=>{ const draw=()=>{ const V=(S.sup.vend||{}).vendors||[], LG=(S.sup.vend||{}).log||[];
+    m.innerHTML=`<div class="modal-card"><h2 style="margin:0 0 4px">Поставщики</h2><p class="note" style="margin:0 0 10px">Номер и «что берём» — по ним заявка раскладывается сама.</p>
+      ${V.length?`<ul class="shp-list">${V.map(v=>{ const n=LG.filter(x=>x.vendor===v.name), last=n[n.length-1]; return `<li><button type="button" class="shp-row" data-ve="${esc(v.id)}"><span class="shp-av" aria-hidden="true">${esc(v.name.charAt(0).toUpperCase())}</span><span class="shp-rb"><b>${esc(v.name)}</b><span class="muted">${esc(v.phone||"нет номера")}${v.kw?" · "+esc(v.kw):""}${last?" · заявка "+esc(shpTime(last.when)):""}</span></span><span class="shp-rr">›</span></button></li>`; }).join("")}</ul>`:`<p class="muted">Пока никого. Добавьте поставщика — имя, номер и что у него берёте.</p>`}
+      <div style="display:flex;gap:8px;margin-top:12px"><button type="button" class="btn primary" data-new>＋ Поставщик</button><button type="button" class="btn" data-c>Готово</button></div></div>`; };
+  const m=document.createElement("div"); m.className="modal"; m.id="supVL"; m.style.zIndex=110; document.body.appendChild(m); draw();
+  m.addEventListener("click",async e=>{ if(e.target===m||e.target.closest("[data-c]")){ m.remove(); res(); return; }
+    if(e.target.closest("[data-new]")){ await supVendForm(null); draw(); return; } const ve=e.target.closest("[data-ve]"); if(ve){ await supVendForm(((S.sup.vend||{}).vendors||[]).find(v=>v.id===ve.dataset.ve)); draw(); } }); }); }
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="sup-vendors"]'); if(!t) return; ev.stopPropagation(); supVendList(); },true);
+(function(){ const st=document.createElement("style"); st.textContent=`.sup-req2 .modal-card{width:min(680px,100%)}.rq-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.rq-g{background:color-mix(in srgb,var(--ink) 5%,transparent);border-radius:14px;margin:10px 0;overflow:hidden}.rq-g.sent{outline:2px solid #30d158}
+.rq-h{display:flex;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent)}.rq-hn{flex:1;min-width:0}.rq-hn b{display:block;font-size:16px}.rq-hn small{color:var(--muted);font-size:12.5px}
+.rq-av{width:34px;height:34px;border-radius:50%;background:rgba(10,132,255,.2);color:#0a84ff;display:grid;place-items:center;font-weight:700;flex:none}.rq-av.q{background:rgba(255,159,10,.2);color:#ff9f0a}
+.rq-r{display:grid;grid-template-columns:minmax(0,1fr) 92px 150px 30px;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid color-mix(in srgb,var(--line) 40%,transparent)}.rq-r:first-of-type{border-top:0}
+.rq-n small{display:block;color:var(--muted);font-size:12px}.rq-q{display:flex;align-items:center;gap:4px}.rq-q input,.rq-nm,.rq-v{width:100%;min-height:36px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:14px var(--f-body,system-ui)}.rq-q input{text-align:right;font-weight:600}.rq-q small{color:var(--muted)}
+.rq-x{border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer;min-height:36px}.rq-add{border:0;background:none;color:#0a84ff;padding:8px 12px;cursor:pointer;font:14px var(--f-body,system-ui)}
+.rq-b{display:flex;gap:6px;flex-wrap:wrap;padding:4px 12px 12px}.rq-wa{background:#25d366!important;color:#04210f!important;font-weight:600}.rq-ok{margin:0;padding:0 12px 10px;color:#30d158;font-weight:600;font-size:13px}.rq-mk{display:flex;gap:8px;align-items:center;margin-top:6px}
+@media (max-width:599px){.rq-r{grid-template-columns:minmax(0,1fr) 84px 30px;grid-template-areas:"n q x" "v v v"}.rq-r .rq-n,.rq-r .rq-nm{grid-area:n}.rq-r .rq-q{grid-area:q}.rq-r .rq-v{grid-area:v}.rq-r .rq-x{grid-area:x}}`; document.head.appendChild(st); })();
 
 /* ---------- «Цех»: заказы клиентов по этапам (замер → монтаж) и чат по заказу (данные — Google-таблица, листы «Цех» и «Чат») ---------- */
 const SHP_ST=[{k:"dogovor",n:"Договор и предоплата",s:"Договор"},{k:"zamer",n:"Замер",s:"Замер"},{k:"proekt",n:"Проект у технолога",s:"Проект"},{k:"proekt_ok",n:"Проект готов",s:"Готов"},{k:"zakup",n:"Материалы закуплены",s:"Закуп"},{k:"cex",n:"В производстве",s:"Произв."},{k:"montazh",n:"Монтаж",s:"Монтаж"},{k:"closed",n:"Закрыт · успешно",s:"Успешно"},{k:"lost",n:"Закрыт · не успешно",s:"Не усп."}];
