@@ -5106,7 +5106,7 @@ function shpFormHtml(){
   const f=(label,name,val,extra)=>`<label>${label}<input name="${name}" value="${esc(val==null?"":String(val))}" ${extra||""}></label>`;
   return `<div class="head"><h1>${isNew?"Новый заказ":"Изменить заказ № "+esc(o.num)}</h1></div>
   <form class="card shp-form" id="shpForm" autocomplete="off">
-    ${f("Клиент *","client",o.client,'required maxlength="120" placeholder="Фамилия или как записан"')}
+    ${f("Клиент *","client",o.client,'required maxlength="120" list="shpClientsL" autocomplete="off" placeholder="Начните вводить — выберите из списка или впишите нового"')}
     ${f("Телефон","phone",o.phone,'type="tel" inputmode="tel" maxlength="40" placeholder="+7 914 …"')}
     <div class="wide shp-repeat" id="shpRepeat" aria-live="polite"></div>
     ${f("Что делаем","kind",o.kind,'maxlength="120" placeholder="Кухня, шкаф-купе, прихожая…" list="shpKinds"')}
@@ -5130,7 +5130,7 @@ function shpFormHtml(){
     ${f("Ссылка на 3D (если нет в списке)","link",o.link,'type="url" inputmode="url" maxlength="500" placeholder="https://…"')}
     <label class="wide">Заметки<textarea name="notes" rows="3" maxlength="2000">${esc(o.notes||"")}</textarea></label>
     <div class="wide shp-form-b"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="shp-cancel">Отмена</button></div>
-  </form><datalist id="shpOwners">${shpPeople().map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist><datalist id="shpDesigners">${(S.shop.staff||[]).filter(p=>/дизайн|офис/i.test(p.role||"")).map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist><datalist id="shpPayers">${[...new Set(S.shop.orders.map(x=>x.payer).filter(Boolean))].map(n=>`<option value="${esc(n)}">`).join("")}</datalist><datalist id="shpNums">${S.shop.orders.map(x=>`<option value="${esc(x.num)}">${esc(x.client||"")}</option>`).join("")}</datalist><datalist id="shpMasters">${shpMasters().map(n=>`<option value="${esc(n)}">`).join("")}</datalist><datalist id="shpKinds">${["Кухня","Шкаф-купе","Прихожая","Гардеробная","Детская","Спальня","Ванная","Офисная мебель"].map(n=>`<option value="${n}">`).join("")}</datalist>`;
+  </form><datalist id="shpOwners">${shpPeople().map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist><datalist id="shpDesigners">${(S.shop.staff||[]).filter(p=>/дизайн|офис/i.test(p.role||"")).map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist><datalist id="shpClientsL">${shpClients().filter(c=>c.name).map(c=>`<option value="${esc(c.name)}">${esc([c.phones[0],c.addrs[c.addrs.length-1]].filter(Boolean).join(" · "))}</option>`).join("")}</datalist><datalist id="shpPayers">${[...new Set(S.shop.orders.map(x=>x.payer).filter(Boolean))].map(n=>`<option value="${esc(n)}">`).join("")}</datalist><datalist id="shpNums">${S.shop.orders.map(x=>`<option value="${esc(x.num)}">${esc(x.client||"")}</option>`).join("")}</datalist><datalist id="shpMasters">${shpMasters().map(n=>`<option value="${esc(n)}">`).join("")}</datalist><datalist id="shpKinds">${["Кухня","Шкаф-купе","Прихожая","Гардеробная","Детская","Спальня","Ванная","Офисная мебель"].map(n=>`<option value="${n}">`).join("")}</datalist>`;
 }
 function viewShop(){
   if(!shpOn()) return `<div class="empty"><h2>«Вертакс» не подключён</h2><p class="muted">Нужна ссылка на Google-таблицу в config.json (stagesUrl).</p></div>`;
@@ -5501,6 +5501,10 @@ function shpClients(){
   L.forEach(o=>{ if(shpDigits(o.phone)) return; const n=shpNorm(o.client); if(!n) return; put([...by.values()].find(c=>c.names.has(n))||mk("n"+n),o); });
   return [...by.values()].sort((a,b)=>b.last-a.last);
 }
+function shpClientPick(inp){   // выбрали клиента из списка — подставляем телефон и адрес, если поля пустые
+  const c=shpClients().find(x=>x.name&&x.name===inp.value); if(!c) return; const f=inp.form; if(!f) return;
+  if(f.elements.phone&&!f.elements.phone.value&&c.phones[0]) f.elements.phone.value=c.phones[0];
+  if(f.elements.address&&!f.elements.address.value&&c.addrs.length) f.elements.address.value=c.addrs[c.addrs.length-1]; }
 function shpClientMatch(name,phone,exceptId){
   const d=shpDigits(phone), n=shpNorm(name);
   return shpClients().find(c=>c.orders.some(o=>o.id!==exceptId)&&((d&&c.phones.some(p=>shpDigits(p)===d))||(n.length>=3&&c.names.has(n))))||null;
@@ -6464,7 +6468,7 @@ function shpRepeatHint(){ const f=document.getElementById("shpForm"), box=docume
 document.addEventListener("input",ev=>{ const ta=ev.target; if(ta&&ta.id==="shpQ"){ S.shop.q=ta.value; shpApplyFilter(); return; }
   if(ta&&ta.id==="shpCQ"){ S.shop.cq=ta.value; shpCFilter(); return; }
   if(ta&&ta.id==="shpXQ"){ S.shop.q=ta.value; shpChessFilter(); return; }
-  if(ta&&ta.closest&&ta.closest("#shpForm")&&(ta.name==="client"||ta.name==="phone")){ shpRepeatHint(); return; } if(ta&&ta.closest&&ta.closest(".shp-send")&&ta.tagName==="TEXTAREA"){ S.shop.draft[ta.closest(".shp-send").dataset.chat]=ta.value; } });
+  if(ta&&ta.closest&&ta.closest("#shpForm")&&(ta.name==="client"||ta.name==="phone")){ if(ta.name==="client") shpClientPick(ta); shpRepeatHint(); return; } if(ta&&ta.closest&&ta.closest(".shp-send")&&ta.tagName==="TEXTAREA"){ S.shop.draft[ta.closest(".shp-send").dataset.chat]=ta.value; } });
 document.addEventListener("change",ev=>{ const t=ev.target; if(t&&t.name==="stage"&&t.closest&&t.closest("#shpForm")){ const l=document.getElementById("shpReasonL"); if(l) l.hidden=t.value!=="lost"; }
   if(t&&t.name==="otype"&&t.closest&&t.closest("#shpForm")){ const a=document.getElementById("shpPayerL"), b=document.getElementById("shpRepL"); if(a) a.hidden=t.value!=="gift"; if(b) b.hidden=t.value!=="repair"; } });
 document.addEventListener("change",ev=>{ const fi=ev.target; if(fi&&fi.type==="file"&&fi.closest&&(fi.closest(".shp-send")||fi.closest("#shpRcForm"))) shpFileMark(fi); });
