@@ -3759,9 +3759,13 @@ function supItemsRaw(oid){
     if(r){ if(r.op==="del") it.del=true; if(r.name&&r.name!==b.name) it.name=r.name; if(r.qty!=null&&r.qty!==b.qty) it.qty=r.qty; it.who=r.who; }
     out.push(it); });
   Object.values(st).filter(r=>/^A:/.test(r.key)&&r.op!=="del").forEach(r=>out.push({key:r.key,type:"A",name:r.name,qty:r.qty,unit:r.unit||"шт",status:r.status,added:true,who:r.who}));
-  out.forEach(i=>{ i.small=supIsSmall(i); });
+  const nv=S.sup.st["@NEVER"]||{};
+  out.forEach(i=>{ i.small=supIsSmall(i); const r=nv[supNeverKey(i.name)]; if(r&&r.op==="never"&&!i.added){ i.del=true; i.never=true; } });
   return out;
 }
+/* «Не закупаем никогда»: общий список по названию (лист «Снабжение», заказ @NEVER) */
+function supNeverKey(name){ return "N:"+supNorm(name).replace(/[«»"'`]/g,"").slice(0,190); }
+function supNeverList(){ return Object.values(S.sup.st["@NEVER"]||{}).filter(r=>r.op==="never").sort((a,b)=>String(a.name).localeCompare(String(b.name),"ru")); }
 /* итоговый список с учётом примерной спецификации сделки:
    — блок «D:<сделка>» (только спецификация): если у сделки уже есть заказ из Базиса, оставляем только заказанное/пришедшее
    — заказ из Базиса: заказанное по спецификации вычитаем из точного количества (докупить — только разница) */
@@ -3809,16 +3813,21 @@ async function supNeedLoad(oid){ if(S.sup.needs[oid]) return S.sup.needs[oid];
     S.sup.needs[oid]={name:res.order||(S.orders[oid]||{}).name||oid,items:supBase(oid,res)}; }catch(_){ S.sup.needs[oid]={name:oid,items:[],err:true}; }
   return S.sup.needs[oid]; }
 async function supStLoad(){ try{ const r=await fetch(supUrl("action=supply"),{cache:"no-cache"}); const j=await r.json();
-  if(j&&j.ok){ const st={}; (j.items||[]).forEach(x=>{ (st[x.order]=st[x.order]||{})[x.key]=x; }); S.sup.st=st; S.sup.stAt=Date.now(); return true; } }catch(_){} return false; }
+  if(j&&j.ok){ S.sup.st=supStMap(j.items); S.sup.stAt=Date.now(); return true; } }catch(_){} return false; }
+/* статусы → по заказам. Таблица раньше хранила «0002» как 2: такие строки отдаём заказу 0002 (более поздняя строка важнее) */
+function supOrdN(v){ v=String(v==null?"":v).trim().toUpperCase(); return /^\d+$/.test(v)?String(+v):v; }
+function supStMap(items){ const st={}, ids=Object.keys(S.orders||{}).concat((S.shop&&S.shop.orders||[]).map(o=>String(o.t3d||"").toUpperCase()).filter(Boolean)), byN={};
+  ids.forEach(id=>{ byN[supOrdN(id)]=byN[supOrdN(id)]||id; });
+  (items||[]).forEach(x=>{ const id=byN[supOrdN(x.order)]||String(x.order); x.order=id; (st[id]=st[id]||{})[x.key]=x; }); return st; }
 async function supLoad(force){
   if(S.sup.loading&&!force) return; S.sup.loading=true;
   const ids=Object.keys(S.orders);
   try{ const r=await fetch(supUrl("action=supply"),{cache:"no-cache"}); const j=await r.json();
-    if(j&&j.ok){ const st={}; (j.items||[]).forEach(x=>{ (st[x.order]=st[x.order]||{})[x.key]=x; }); S.sup.st=st; } }catch(_){ toast("Нет связи с таблицей — статусы не загрузились"); }
+    if(j&&j.ok) S.sup.st=supStMap(j.items); }catch(_){ toast("Нет связи с таблицей — статусы не загрузились"); }
   await Promise.all(ids.map(async oid=>{ if(S.sup.needs[oid]&&!force) return;
     try{ const r=await fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"}); const txt=await siteOrderText(oid,await r.text()); const res=parseJSON(txt);
       S.sup.needs[oid]={name:res.order||(S.orders[oid]||{}).name||oid,items:supBase(oid,res)}; }catch(_){ S.sup.needs[oid]={name:(S.orders[oid]||{}).name||oid,items:[],err:true}; } }));
-  S.sup.loading=false; S.sup.loaded=true; if(S.view==="supply") render();
+  S.sup.loading=false; S.sup.loaded=true; if(S.view==="supply") render(); try{ supSumSync(Object.keys(S.sup.needs)); }catch(_){}
 }
 /* мелочёвка цеха (крепёж, клей…) — по умолчанию скрыта в снабжении. Список слов — начало слова, регистр не важен. Правьте здесь. */
 const SUP_SMALL=["конфирмат","евровинт","evrovint","eurovint","confirmat","шкант","саморез","шуруп","минификс","эксцентрик","стяжк","полкодержател","заглушк",
@@ -3883,14 +3892,19 @@ function supCk(oid,it){ if(it.del||it.status>=2) return `<span class="sup-ck non
 function supChips(oid,it){ return `<div class="sup-st">${SUP_ST.map((s,i)=>`<button type="button" class="sup-chip${it.status===i?" on":""}" style="--c:${s.c}" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${i}" aria-pressed="${it.status===i}">${s.name}</button>`).join("")}</div>`; }
 function supIco(it){ const cat=typeof catFind==="function"?catFind(it.name):null; return cat?catSw(cat,"cat-sw sm"):`<span class="cat-sw sm none">${it.type==="F"||it.type==="A"?"⚙":it.type==="E"?"▬":"▦"}</span>`; }
 function supRow(oid,it){
-  const ek=oid+"|"+it.key, ed=S.sup.edit===ek;
+  const ek=oid+"|"+it.key, ed=S.sup.edit===ek, menu=S.sup.menu===ek;
   if(ed) return `<div class="sup-row ed"><form class="sup-ed" data-o="${esc(oid)}" data-k="${esc(it.key)}"><input name="n" value="${esc(it.name)}" list="supNames" aria-label="Название"><input name="q" value="${esc(String(it.qty))}" inputmode="decimal" aria-label="Количество" style="width:80px"> <span class="muted">${esc(it.unit)}</span>
     <button class="btn sm primary" type="submit">Сохранить</button><button class="btn sm" type="button" data-act="sup-cancel">Отмена</button></form></div>`;
-  return `<div class="sup-row${it.del?" del":""}">${supCk(oid,it)}
-    <div class="sup-n">${supIco(it)}<b>${esc(it.name)}</b>${it.name!==it.orig&&it.orig?`<span class="muted"> · было: ${esc(it.orig)}</span>`:""}${it.added?`<span class="sup-tag">добавлено</span>`:""}${it.spec&&!it.added?`<span class="sup-tag spec">примерно</span>`:""}${it.cov?`<span class="sup-tag">ещё ${esc(supNum(it.qty))} — ${esc(supNum(it.cov))} уже заказано по примерной</span>`:""}${it.comment?`<span class="muted"> · ${esc(it.comment)}</span>`:""}${it.small?`<span class="sup-tag mute">мелочь</span>`:""}${it.auto?`<span class="sup-tag">авто: петли без пружины</span>`:""}${(it.name!==it.orig&&it.orig)||(it.qty!==it.origQty&&it.origQty!=null)?`<span class="sup-tag">изменено снабженцем</span>`:""}</div>
-    <div class="sup-q mono">${esc(supNum(it.qty))} ${esc(it.unit)}${it.qty!==it.origQty&&it.origQty!=null?`<span class="muted"> (было ${esc(supNum(it.origQty))})</span>`:""}</div>
-    ${it.del?`<button class="btn sm" data-act="sup-undel" data-o="${esc(oid)}" data-k="${esc(it.key)}">Вернуть</button>`:supChips(oid,it)+`
-    <div class="sup-tools"><button type="button" class="btn sm" data-act="sup-edit" data-o="${esc(oid)}" data-k="${esc(it.key)}" title="Изменить название или количество" aria-label="Изменить">✎</button><button type="button" class="btn sm" data-act="sup-del" data-o="${esc(oid)}" data-k="${esc(it.key)}" title="Убрать позицию" aria-label="Убрать">✕</button></div>`}</div>`;
+  const tags=`${it.name!==it.orig&&it.orig?`<small class="muted">было: ${esc(it.orig)}</small>`:""}${it.added?`<span class="sup-tag">добавлено</span>`:""}${it.spec&&!it.added?`<span class="sup-tag spec">примерно</span>`:""}${it.cov?`<span class="sup-tag">${esc(supNum(it.cov))} уже заказано по примерной</span>`:""}${it.comment?`<small class="muted">${esc(it.comment)}</small>`:""}${it.small?`<span class="sup-tag mute">мелочь</span>`:""}${it.auto?`<span class="sup-tag">авто: петли без пружины</span>`:""}`;
+  const SN=["Нужно","Заказано","Пришло","В цеху"], nx=Math.min(3,it.status+1);
+  const ck=it.status===0?supCk(oid,it):`<span class="sup-ck none" aria-hidden="true"></span>`;
+  const m=menu?`<div class="sup-menu" role="menu">${SN.map((n,i)=>i===it.status?"":`<button type="button" role="menuitem" class="btn sm" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${i}">${i<it.status?"↩ ":""}${n}</button>`).join("")}
+      <button type="button" role="menuitem" class="btn sm" data-act="sup-edit" data-o="${esc(oid)}" data-k="${esc(it.key)}">✎ Изменить</button>
+      <button type="button" role="menuitem" class="btn sm" data-act="sup-del" data-o="${esc(oid)}" data-k="${esc(it.key)}">Убрать из этого заказа</button>
+      ${it.added?"":`<button type="button" role="menuitem" class="btn sm danger" data-act="sup-never" data-o="${esc(oid)}" data-k="${esc(it.key)}">Не закупаем никогда</button>`}</div>`:"";
+  return `<div class="sup-row3${menu?" open":""}">${ck}<span class="sup-nm">${esc(it.name)}${tags}</span><span class="sup-qq">${esc(supNum(it.qty))} ${esc(it.unit)}${it.qty!==it.origQty&&it.origQty!=null?`<small>было ${esc(supNum(it.origQty))}</small>`:""}</span>
+    <button type="button" class="sup-pill p${it.status}" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${nx}"${it.status===3?' data-noop="1"':""} title="${it.status<3?"Нажмите: → "+SN[nx]:"В цеху"}" aria-label="${esc(SN[it.status])}${it.status<3?", нажмите — "+SN[nx]:""}">${SN[it.status]}</button>
+    <button type="button" class="sup-dots" data-act="sup-menu" data-o="${esc(oid)}" data-k="${esc(it.key)}" aria-expanded="${menu}" aria-label="Ещё: ${esc(it.name)}">⋯</button>${m}</div>`;
 }
 /* «Выбрать всё нужное»: refs — позиции со статусом «Нужно»; если все уже выбраны — снимаем */
 function supSelBtn(refs,label){ if(!refs.length) return ""; const all=refs.every(r=>S.sup.sel.has(r));
@@ -3914,18 +3928,57 @@ function viewSupply(){
   if(nReq) h+=`<div class="sup-bar" role="region" aria-label="Заявка поставщику"><span>Заявка: <b>${nReq}</b> поз.</span><button type="button" class="btn sm" data-act="sup-selclr">Очистить</button><button type="button" class="btn primary" data-act="sup-req">Открыть заявку</button></div>`;
   return `<div class="supv${nReq?" has-bar":""}">${h}</div>`;
 }
+/* ---- карточка заказа: «можно начинать?» + 4 полки ---- */
+const SUP_TN={L:"Листы",E:"Кромка",F:"Фурнитура"}, SUP_SH=["Нужно","Заказано","Пришло","В цеху"], SUP_NEXT=["Заказано","Пришло","В цех"];
+function supT(i){ return i.type==="A"?"F":i.type; }
+function supLive(A){ return A.filter(i=>!i.del&&!i.covered&&(S.sup.small||!i.small)); }
+/* итог по заказу: что есть, чего ждём, можно ли начинать. ok — статус «Пришло» или «В цеху» */
+function supVerdict(A){
+  const L=A.filter(i=>!i.del&&!i.covered&&!i.small), by={L:[0,0],E:[0,0],F:[0,0]};
+  L.forEach(i=>{ const t=by[supT(i)]||by.F; t[1]++; if(i.status>=2) t[0]++; });
+  const miss=k=>by[k][1]-by[k][0], n=L.length, okN=L.filter(i=>i.status>=2).length, wait=n-okN;
+  let lv="none", txt="Позиции появятся после выгрузки заказа из Базиса";
+  if(n){ if(!wait){ lv="ok"; txt="Всё есть — можно начинать"; }
+    else if(miss("L")){ const nL=L.filter(i=>supT(i)==="L"&&i.status===0).length; lv=nL?"bad":"w"; txt=nL?"Не закуплены листы ("+nL+") — начинать нельзя":"Листы заказаны ("+miss("L")+"), ждём — начинать пока нельзя"; }
+    else if(miss("E")&&miss("F")){ lv="w"; txt="Листы есть — ждём кромку ("+miss("E")+") и фурнитуру ("+miss("F")+")"; }
+    else if(miss("E")){ lv="w"; txt="Листы есть — ждём кромку: "+miss("E")+" поз. Распил можно начинать"; }
+    else { lv="w"; txt="Листы и кромка есть — ждём фурнитуру: "+miss("F")+" поз. Распил и кромку можно начинать"; } }
+  return {lv,txt,by,n,ok:okN,wait,ordered:L.filter(i=>i.status===1).length};
+}
+function supCatsHtml(v){ return `<div class="sup-cats">${["L","E","F"].filter(k=>v.by[k][1]).map(k=>{ const [a,n]=v.by[k]; return `<span class="sup-cat ${a>=n?"ok":"bad"}">${SUP_TN[k]} ${a}/${n}${a>=n?" ✓":""}</span>`; }).join("")}</div>`; }
+function supVerdictHtml(v){ return `<div class="sup-vd v-${v.lv}" role="status"><i aria-hidden="true"></i><span>${esc(v.txt)}</span></div>`; }
+function supWide(){ try{ return matchMedia("(min-width: 900px)").matches; }catch(_){ return false; } }
+/* полоски по разделам: зелёный — есть (пришло / в цеху), жёлтый — заказано, красный — нужно купить */
+function supBarsHtml(L){ const cats=["L","E","F"].filter(k=>L.some(i=>supT(i)===k)); if(!cats.length) return "";
+  return `<div class="sup-bars">${cats.map(k=>{ const g=L.filter(i=>supT(i)===k), n=g.length, c=[g.filter(i=>i.status>=2).length,g.filter(i=>i.status===1).length,g.filter(i=>i.status===0).length], pc=x=>(x/n*100).toFixed(2)+"%";
+    return `<div class="sb-r${c[0]>=n?" done":""}"><b>${SUP_TN[k]}</b><div class="sb" role="img" aria-label="${SUP_TN[k]}: есть ${c[0]}, заказано ${c[1]}, нужно купить ${c[2]}">${c[0]?`<i class="g" style="width:${pc(c[0])}"></i>`:""}${c[1]?`<i class="y" style="width:${pc(c[1])}"></i>`:""}${c[2]?`<i class="r" style="width:${pc(c[2])}"></i>`:""}</div><span>${c[0]>=n?"✓ ":""}${c[0]}/${n}</span></div>`; }).join("")}
+    <p class="sb-leg"><span class="g">есть</span><span class="y">заказано</span><span class="r">нужно купить</span></p></div>`; }
+function supRing(v){ const p=v.n?Math.round(v.ok/v.n*100):0; return `<span class="sup-ring v-${v.lv}" style="--p:${p}" aria-hidden="true"><span>${p}%</span></span>`; }
 function supOrders(ids){
-  const h=ids.map(oid=>{ const A=supItems(oid), L=supVis(A), p=supProgress(A), open=!!S.sup.open[oid], miss=p.n-p.ok, sm=supSmallN(A);
-    return `<div class="card sup-card"><button type="button" class="sup-head" data-act="sup-open" data-o="${esc(oid)}" aria-expanded="${open}"><span><b>${esc(S.sup.needs[oid].name)}</b>${S.sup.needs[oid].spec?"":` <span class="muted mono">${esc(oid)}</span>`}${supSent(oid)?` <span class="sup-new">новое · ${esc(supSent(oid).who||"")}</span>`:""}</span>
-      <span class="mono">${p.ok}/${p.n} пришло${miss?` · <span style="color:var(--bad)">не хватает ${miss}</span>`:""}</span></button>${supDealHtml(oid)}${p.n?supBar(p.c,p.n):""}
-      ${open?`<div class="sup-list">${S.sup.needs[oid].err?`<p class="note">Заказ не открылся.</p>`:""}${["L","E","F"].map(t=>{ const g=A.filter(i=>(i.type===t||(t==="F"&&i.type==="A"))&&!i.covered&&(i.del||S.sup.small||!i.small)); if(!g.length) return "";
-          const need=g.filter(i=>!i.del&&i.status===0).map(i=>supRef(oid,i.key));
-          return `<div class="sup-sh"><h3>${t==="L"?"Листы и плиты":t==="E"?"Кромка":"Фурнитура"}</h3>${supSelBtn(need)}</div>`+g.map(i=>supRow(oid,i)).join(""); }).join("")}
-        ${supSmallLine(sm)}${supSpecInB(oid)}
+  S.sup.more=S.sup.more||{}; S.sup.have=S.sup.have||{};
+  const nv=supNeverList().length;
+  const h=ids.map(oid=>{ const A=supItems(oid), v=supVerdict(A), open=!!S.sup.open[oid], nd=S.sup.needs[oid], L=supLive(A), dels=A.filter(i=>i.del), sm=supSmallN(A);
+    const srt=g=>g.sort((a,b)=>"LEFA".indexOf(a.type)-"LEFA".indexOf(b.type)||a.name.localeCompare(b.name,"ru"));
+    let body="";
+    if(open){
+      const need=srt(L.filter(i=>i.status===0)), ord=srt(L.filter(i=>i.status===1)), have=srt(L.filter(i=>i.status>=2)), MAX=5, all=!!S.sup.more[oid];
+      const refs=need.map(i=>supRef(oid,i.key)), allSel=refs.length&&refs.every(r=>S.sup.sel.has(r));
+      if(need.length) body+=`<section class="sup-grp"><div class="sup-gh"><b>Нужно купить · ${need.length}</b>${refs.length>1?`<button type="button" class="linkbtn sup-gsel" data-act="sup-selall" data-refs="${esc(refs.join("\n"))}" data-on="${allSel?"0":"1"}">${allSel?"Снять выбор":"Выбрать все → заявка"}</button>`:""}</div>
+        ${(all?need:need.slice(0,MAX)).map(i=>supRow(oid,i)).join("")}${need.length>MAX?`<button type="button" class="sup-gmore" data-act="sup-more" data-o="${esc(oid)}">${all?"Свернуть":"Показать ещё "+(need.length-MAX)}</button>`:""}</section>`;
+      if(ord.length) body+=`<section class="sup-grp"><div class="sup-gh"><b>Заказано, ждём · ${ord.length}</b></div>${ord.map(i=>supRow(oid,i)).join("")}</section>`;
+      if(have.length) body+=`<section class="sup-grp have"><button type="button" class="sup-gh sup-hv" data-act="sup-have" data-o="${esc(oid)}" aria-expanded="${!!S.sup.have[oid]}"><b>✓ Есть · ${have.length}</b><span>${S.sup.have[oid]?"скрыть":"показать"}</span></button>${S.sup.have[oid]?have.map(i=>supRow(oid,i)).join(""):""}</section>`;
+      if(!L.length) body+=`<p class="sup-empty">${nd.err?"Заказ не открылся.":"Позиций нет."}</p>`;
+      body+=`<div class="sup-foot"><p class="sup-hint">Нажмите на статус — он сменится на следующий. Удержите или нажмите «⋯» — другие действия.</p>${supSmallLine(sm)}${dels.length?`<details class="sup-dels"><summary>Убрано из этого заказа · ${dels.length}</summary>${dels.map(i=>`<div class="sup-drow"><span>${esc(i.name)}${i.never?` <span class="sup-tag mute">не закупаем никогда</span>`:""}</span><button type="button" class="btn sm" data-act="${i.never?"sup-unnever":"sup-undel"}" data-o="${esc(oid)}" data-k="${esc(i.key)}" data-n="${esc(i.name)}">Вернуть</button></div>`).join("")}</details>`:""}</div>`
+        +`${supSpecInB(oid)}
         <form class="sup-add" data-o="${esc(oid)}"><input name="n" list="supNames" placeholder="Добавить позицию: название" required aria-label="Название новой позиции"><input name="q" inputmode="decimal" placeholder="Кол-во" style="width:80px" required aria-label="Количество">
-        <select name="u" aria-label="Единица"><option>шт</option><option>м</option><option>л.</option><option>м²</option><option>компл.</option></select><button class="btn sm primary" type="submit">Добавить</button></form></div>`:""}</div>`; }).join("");
+        <select name="u" aria-label="Единица"><option>шт</option><option>м</option><option>л.</option><option>м²</option><option>компл.</option></select><button class="btn sm primary" type="submit">Добавить</button></form>`;
+    }
+    return `<div class="card sup-card v-${v.lv}"><button type="button" class="sup-head2" data-act="sup-open" data-o="${esc(oid)}" aria-expanded="${open}">${v.n?supRing(v):""}
+        <span class="sup-ttl"><b>${esc(nd.name)}</b>${supSent(oid)?` <span class="sup-new">новое · ${esc(supSent(oid).who||"")}</span>`:""}<small>${v.n?v.ok+" из "+v.n+" позиций есть":"нет позиций"}${nd.spec?"":" · "+esc(oid)}</small></span>
+        <span class="sup-chev" aria-hidden="true">${open?"▴":"▾"}</span></button>
+      ${supVerdictHtml(v)}${v.n?supBarsHtml(L.filter(i=>!i.small)):""}${supDealHtml(oid)}${body}</div>`; }).join("");
   const names=S.cat&&S.cat.data?S.cat.data.items.filter(x=>/^(Листовой|Кромочные|Погонные|Фурнитура|Каталог|Расходные)/.test(x.g)).map(x=>x.n):[];
-  return h+`<datalist id="supNames">${names.slice(0,3000).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`;
+  return (nv?`<p class="sup-nvl"><button type="button" class="linkbtn" data-act="sup-nevlist">Не закупаем никогда: ${nv} поз.</button></p>`:"")+h+`<datalist id="supNames">${names.slice(0,3000).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`;
 }
 /* заказ из Базиса + примерная спецификация сделки: заказанное заранее и сравнение */
 function supSpecInB(oid){ const d=/^D:/.test(oid)?null:supDeal(oid), rows=d&&typeof dealSpecRows==="function"?dealSpecRows(d.id):null; if(!rows||!rows.length) return "";
@@ -4055,6 +4108,80 @@ function supPrint(text,secs,vendor){
 .sup-rbtn{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sup-rbtn .btn,.sup-rclose{min-height:48px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:15px}
 .sup-rbtn a.btn{color:var(--accent-ink)}
 .sup-tag.spec{background:#fff1c2;color:#6b4e00}
+/* карточка заказа: «можно начинать?» + полки */
+.sup-card{padding:0;overflow:hidden}
+.sup-head2{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:12px 14px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.sup-ttl{flex:1;min-width:0;overflow-wrap:anywhere}.sup-ttl b{font-size:16px}.sup-cnt{font-size:14px;color:var(--muted)}.sup-chev{color:var(--muted);width:16px;text-align:center}
+.sup-vd{display:flex;gap:10px;align-items:flex-start;padding:10px 14px;font-weight:700;font-size:15px;line-height:1.35}
+.sup-vd i{width:12px;height:12px;border-radius:50%;flex:none;margin-top:4px}
+.sup-vd.v-ok{background:#e2f1e3;color:#2a6e2d}.sup-vd.v-ok i{background:#2f7d32}
+.sup-vd.v-w{background:#fff1d6;color:#8a4b00}.sup-vd.v-w i{background:#e08a00}
+.sup-vd.v-bad{background:#fbe3e1;color:#a3221b}.sup-vd.v-bad i{background:#b3261e}
+.sup-vd.v-none{background:var(--sunk,#eee);color:var(--muted);font-weight:500}.sup-vd.v-none i{background:#9aa0a6}
+.sup-cats{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px 4px}
+.sup-cat{border-radius:999px;padding:4px 10px;font:600 13px var(--f-body,system-ui);border:1px solid var(--line);background:var(--surface)}
+.sup-cat.ok{color:#2a6e2d;border-color:#bfe0c1}.sup-cat.bad{color:#a3221b;border-color:#f0c1bc}
+.sup-card .sup-deal{padding-top:8px}
+.sup-shelf{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:10px}
+.sup-shb{display:flex;flex-direction:column;align-items:center;gap:1px;min-height:58px;padding:8px 2px 6px;border:0;border-bottom:3px solid transparent;background:none;color:var(--muted);font:600 12.5px var(--f-body,system-ui);cursor:pointer}
+.sup-shb b{font-size:20px;line-height:1.1}.sup-shb.s0 b{color:#b3261e}.sup-shb.s1 b{color:#b06300}.sup-shb.s2 b{color:#2f7d32}.sup-shb.s3 b{color:#2d4f8a}
+.sup-shb.on{color:var(--ink);background:var(--surface)}.sup-shb.s0.on{border-bottom-color:#b3261e}.sup-shb.s1.on{border-bottom-color:#e08a00}.sup-shb.s2.on{border-bottom-color:#2f7d32}.sup-shb.s3.on{border-bottom-color:#2d4f8a}
+.sup-list2{padding:2px 0 4px}.sup-empty{margin:0;padding:16px 14px;color:var(--muted);font-size:14px}
+.sup-sh2{padding:8px 14px 0}
+.sup-row2{display:grid;grid-template-columns:44px minmax(0,1fr) auto;grid-template-areas:"ck n q" "ck act act";gap:2px 10px;align-items:center;padding:8px 14px 8px 4px;border-top:1px solid var(--line)}
+.sup-row2>.sup-ck{grid-area:ck}.sup-n2{grid-area:n;min-width:0;display:flex;gap:8px;align-items:flex-start;overflow-wrap:anywhere;font-size:14.5px;line-height:1.3}.sup-n2 b{font-weight:600}
+.sup-q2{grid-area:q;font-size:13px;color:var(--muted);white-space:nowrap;text-align:right}.sup-q2 small{display:block;font-size:11px}
+.sup-act{grid-area:act;display:flex;gap:6px;justify-content:flex-end;align-items:center;margin-top:4px}
+.sup-next{min-height:40px;padding:0 14px;border:0;border-radius:999px;font:600 13.5px var(--f-body,system-ui);cursor:pointer;background:#fff1d6;color:#8a4b00}
+.sup-next.n2{background:#e2f1e3;color:#2a6e2d}.sup-next.n3{background:#dfe6f3;color:#2d4f8a}
+.sup-done{font-size:13px;color:#2d4f8a;font-weight:600;padding:0 6px}
+.sup-more{min-width:40px;min-height:40px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font:700 16px var(--f-body,system-ui);cursor:pointer;line-height:1}
+.sup-menu{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 4px 44px}.sup-menu .btn{min-height:40px}.sup-menu .btn.danger{color:#b3261e}
+@media (min-width:700px){.sup-row2{grid-template-columns:44px minmax(0,1fr) auto auto;grid-template-areas:"ck n q act";padding-top:6px;padding-bottom:6px}.sup-act{margin-top:0}}
+.sup-row2.open{background:color-mix(in srgb,var(--accent,#ffc21a) 8%,transparent)}
+.sup-foot{padding:0 14px}.sup-dels summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--muted);font-size:13.5px}
+.sup-drow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:14px}.sup-drow span{min-width:0;overflow-wrap:anywhere}
+.sup-card .sup-add{padding:8px 14px 14px}
+.sup-nvl{margin:4px 0 8px}.sup-nvl .linkbtn{min-height:44px}.sup-nvl2{max-height:60vh;overflow:auto}
+.sup-mx{margin:10px 14px 4px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.mx-r{display:grid;grid-template-columns:minmax(92px,1.3fr) repeat(4,minmax(0,1fr));align-items:stretch;border-top:1px solid var(--line)}.mx-top{border-top:0;background:var(--sunk,#f0efea)}
+.mx-sh{padding:6px 2px;text-align:center;font:600 11.5px var(--f-body,system-ui);color:var(--muted)}.mx-sh.s0{color:#b3261e}.mx-sh.s1{color:#b06300}.mx-sh.s2{color:#2f7d32}.mx-sh.s3{color:#2d4f8a}
+.mx-h{padding:8px 10px;font:700 13.5px var(--f-body,system-ui);display:flex;flex-direction:column;justify-content:center;line-height:1.2}.mx-h small{font-weight:600;font-size:11.5px}
+.mx-h.ok small{color:#2f7d32}.mx-h.bad small{color:#b3261e}.mx-r.all .mx-h{color:var(--muted)}
+.mx-c{min-height:48px;border:0;border-left:1px solid var(--line);background:none;font:700 18px var(--f-body,system-ui);cursor:pointer;color:var(--ink)}
+.mx-c.s0:not(.z){background:#fbe3e1;color:#a3221b}.mx-c.s1:not(.z){background:#fff1d6;color:#8a4b00}.mx-c.s2:not(.z){background:#e2f1e3;color:#2a6e2d}.mx-c.s3:not(.z){background:#dfe6f3;color:#2d4f8a}
+.mx-c.z{color:var(--line);cursor:default;font-weight:400}.mx-c.on{box-shadow:inset 0 0 0 3px var(--ink)}
+.sup-pick{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;padding:12px 14px 4px}.sup-pick .sup-selall{margin-left:auto}
+
+.sup-head2{align-items:center}.sup-ttl small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.sup-ring{--c:#2f7d32;width:48px;height:48px;border-radius:50%;flex:none;display:grid;place-items:center;background:conic-gradient(var(--c) calc(var(--p)*1%),var(--sunk,#e5e3dd) 0)}
+.sup-ring.v-w{--c:#d48300}.sup-ring.v-bad{--c:#c4312a}.sup-ring span{width:38px;height:38px;border-radius:50%;background:var(--surface);display:grid;place-items:center;font:700 12.5px var(--f-body,system-ui)}
+.sup-card .sup-vd{margin:0 14px;border-radius:10px;font-weight:600}
+.sup-bars{padding:12px 14px 2px;display:grid;gap:9px}
+.sb-r{display:grid;grid-template-columns:88px minmax(0,1fr) 54px;gap:10px;align-items:center;font-size:14px}.sb-r b{font-weight:600}.sb-r>span{font-size:13px;color:var(--muted);text-align:right;white-space:nowrap}.sb-r.done>span{color:#2f7d32;font-weight:600}
+.sb{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--sunk,#e5e3dd)}.sb i{display:block}.sb .g,.sb-leg .g::before{background:#2f7d32}.sb .y,.sb-leg .y::before{background:#d48300}.sb .r,.sb-leg .r::before{background:#c4312a}
+.sb-leg{display:flex;gap:12px;margin:0;font-size:12px;color:var(--muted)}.sb-leg span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:0}
+.sup-grp{border-top:1px solid var(--line);margin-top:12px}
+.sup-gh{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px 6px;width:100%;border:0;background:none;color:inherit;font:inherit;text-align:left}.sup-gh b{font-size:14.5px}
+.sup-gsel{font-size:13px;font-weight:600;min-height:40px}
+.sup-hv{cursor:pointer;min-height:48px;padding-bottom:12px}.sup-hv b{color:#2f7d32}.sup-hv span{color:#2f7d32;font-weight:600;font-size:13.5px}
+.sup-row3{display:grid;grid-template-columns:40px minmax(0,1fr) auto auto 36px;gap:8px;align-items:center;padding:7px 8px 7px 2px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+.sup-row3 .sup-ck{width:40px;height:40px}
+@media (max-width:599px){.sup-row3{grid-template-columns:40px minmax(0,1fr) auto 32px;grid-template-areas:"ck nm pill dots" "ck qq pill dots";row-gap:1px}.sup-row3>.sup-ck{grid-area:ck}.sup-row3 .sup-nm{grid-area:nm}.sup-row3 .sup-qq{grid-area:qq;text-align:left}.sup-row3 .sup-pill{grid-area:pill}.sup-row3 .sup-dots{grid-area:dots;width:32px}.sup-qq small{display:inline;margin-left:6px}}
+.sup-nm{min-width:0;overflow-wrap:anywhere;font-size:14.5px;line-height:1.3}.sup-nm small{display:block;font-size:12px}.sup-nm .sup-tag{margin-left:4px}
+.sup-qq{font-size:13px;color:var(--muted);white-space:nowrap;text-align:right}.sup-qq small{display:block;font-size:11px}
+.sup-pill{min-width:84px;min-height:36px;padding:0 10px;border:0;border-radius:8px;font:600 12.5px var(--f-body,system-ui);cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+.sup-pill.p0{background:#fde4e1;color:#b3261e}.sup-pill.p1{background:#fff0d4;color:#8a4b00}.sup-pill.p2{background:#e2f1e3;color:#2a6e2d}.sup-pill.p3{background:#dfe6f3;color:#2d4f8a}
+.sup-dots{width:36px;height:40px;border:0;background:none;color:var(--muted);font:700 18px var(--f-body,system-ui);cursor:pointer;border-radius:8px}.sup-dots:hover,.sup-dots[aria-expanded="true"]{background:var(--sunk,#eee)}
+.sup-row3 .sup-menu{grid-column:1/-1;padding:6px 0 4px 40px}.sup-row3.open{background:color-mix(in srgb,var(--accent,#ffc21a) 8%,transparent)}
+.sup-gmore{display:block;width:100%;min-height:44px;padding:0 14px;border:0;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);background:none;color:#2d4f8a;font:600 14px var(--f-body,system-ui);text-align:left;cursor:pointer}
+.sup-hint{margin:10px 0 0;font-size:12.5px;color:var(--muted)}
+.sup-cols{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:10px 10px 6px;border-top:1px solid var(--line);margin-top:10px}
+.sup-col{background:var(--surface);border:1px solid var(--line);border-radius:10px;min-width:0;overflow:hidden}
+.sup-col h3{display:flex;justify-content:space-between;margin:0;padding:8px 10px;font-size:13px;border-bottom:3px solid var(--c)}
+.sup-col.s0{--c:#b3261e}.sup-col.s1{--c:#e08a00}.sup-col.s2{--c:#2f7d32}.sup-col.s3{--c:#2d4f8a}.sup-col h3 b{color:var(--c)}
+.sup-col .sup-row2{grid-template-columns:36px minmax(0,1fr);grid-template-areas:"ck n" "ck q" "ck act";padding:8px 8px 8px 0}.sup-col .sup-q2{text-align:left}.sup-col .sup-act{justify-content:flex-start}.sup-col .sup-menu{padding-left:36px}
+.sup-col .sup-ck{width:36px}.sup-col .sup-sh2{padding:8px 8px 0}.sup-col .sup-empty{padding:12px 10px;font-size:13px}
 .spec-cmp{margin:8px 0;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .spec-cmp summary{min-height:44px;display:flex;align-items:center;padding:6px 12px;cursor:pointer;font-weight:600;font-size:14px}
 .spec-cmp ul{list-style:none;margin:0;padding:0 8px 8px;display:grid;gap:4px}
@@ -4062,12 +4189,25 @@ function supPrint(text,secs,vendor){
 .spec-cmp .nm{min-width:0;overflow-wrap:anywhere}.spec-cmp small{display:block;color:var(--muted);font-size:12px}
 .spec-cmp .q{font-size:13px;white-space:nowrap}.spec-cmp .k-add .q{color:#a35a00}.spec-cmp .k-extra .q{color:#b3261e}.spec-cmp .k-nob .q{color:var(--muted)}.spec-cmp .k-ok .q{color:#2f7d32}
 `; document.head.appendChild(st); })();
+function supNeverModal(){
+  const L=supNeverList(); document.getElementById("supNvModal")?.remove();
+  const m=document.createElement("div"); m.className="modal"; m.id="supNvModal";
+  m.innerHTML=`<div class="modal-card" role="dialog" aria-label="Не закупаем никогда"><h2 style="margin:0 0 6px">Не закупаем никогда</h2><p class="note" style="margin:0 0 10px">Эти позиции скрыты во всех заказах. «Вернуть» — снова появятся в закупке.</p>
+    ${L.length?`<div class="sup-nvl2">${L.map(r=>`<div class="sup-drow"><span>${esc(r.name)}<small class="muted"> · ${esc(r.who||"")}</small></span><button type="button" class="btn sm" data-act="sup-unnever" data-n="${esc(r.name)}">Вернуть</button></div>`).join("")}</div>`:`<p class="muted">Список пуст.</p>`}
+    <div style="margin-top:12px"><button type="button" class="btn" data-act="qr-close">Закрыть</button></div></div>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m);
+}
+/* итог «можно начинать?» по заказу → строка @SUM в таблице: Вертакс показывает его на карточке сделки */
+function supSumRec(oid){ const v=supVerdict(supItems(oid)); return {order:oid,key:"@SUM",name:[v.lv,v.ok,v.n,v.by.L.join("/"),v.by.E.join("/"),v.by.F.join("/")].join("|"),qty:null,unit:"",status:v.lv==="ok"?2:v.lv==="w"?1:0,op:"sum"}; }
+function supSumSync(oids){ if(!S.sup.pin) return; const out=[]; (oids||[]).forEach(o=>{ if(/^D:/.test(o)||!S.sup.needs[o]||S.sup.needs[o].err) return; const r=supSumRec(o), old=(S.sup.st[o]||{})["@SUM"]; if(!old||old.name!==r.name) out.push(r); });
+  if(out.length) fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"supply",pin:S.sup.pin,who:S.who||"Снабженец",items:out})}).then(r=>r.json()).then(j=>{ if(j&&j.ok) out.forEach(r=>{ (S.sup.st[r.order]=S.sup.st[r.order]||{})["@SUM"]=r; }); }).catch(()=>{}); }
 async function supSave(items,quiet){   // quiet — своя перерисовка вместо всей страницы (страница заказа с 3D)
   if(!S.sup.pin){ supPinModal(()=>supSave(items,quiet)); return false; }
   try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"supply",pin:S.sup.pin,who:S.who||"Снабженец",items})}); const j=await r.json();
     if(!j.ok){ if(j.error==="pin"){ S.sup.pin=""; try{ localStorage.removeItem("cehqr-suppin"); }catch(_){} toast("PIN снабженца не подошёл"); } else toast("Не сохранилось. Попробуйте ещё раз."); return false; }
     items.forEach(it=>{ const o=it.order; (S.sup.st[o]=S.sup.st[o]||{})[it.key]={order:o,key:it.key,name:it.name,qty:it.qty,unit:it.unit,status:it.status,op:it.op,who:S.who,when:new Date().toISOString()}; });
-    if(quiet) quiet(); else supRenderKeep(); [...new Set(items.filter(it=>+it.status>=2).map(it=>it.order))].forEach(o=>supAutoStage(o)); return true; }catch(_){ toast("Нет связи с таблицей. Не сохранилось."); return false; }
+    if(quiet) quiet(); else supRenderKeep(); [...new Set(items.filter(it=>+it.status>=2).map(it=>it.order))].forEach(o=>supAutoStage(o));
+    const aff=[...new Set(items.map(it=>it.order))]; supSumSync(aff.includes("@NEVER")?Object.keys(S.sup.needs):aff.filter(o=>o!=="@SUM")); return true; }catch(_){ toast("Нет связи с таблицей. Не сохранилось."); return false; }
 }
 function supRec(oid,key){ const it=supItems(oid).find(x=>x.key===key)||{}; const r=(S.sup.st[oid]||{})[key]||{};
   return {order:oid,key,name:r.name||it.name||"",qty:r.qty!=null?r.qty:(it.added?it.qty:null),unit:it.unit||r.unit||"",status:it.status||0,op:r.op||""}; }
@@ -4121,11 +4261,25 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
     return; }
   if(a==="sup-pin") return supPinModal();
   if(a==="sup-cancel"){ S.sup.edit=null; supRenderKeep(); return; }
-  if(a==="sup-edit"){ S.sup.edit=o+"|"+k; supRenderKeep(); return; }
-  if(a==="sup-st"){ const r=supRec(o,k); r.status=+t.dataset.s; supSave([r]); return; }
-  if(a==="sup-del"){ const r=supRec(o,k); if(!confirm("Убрать «"+r.name+"» из закупки заказа?")) return; r.op="del"; supSave([r]); return; }
+  if(a==="sup-edit"){ S.sup.edit=o+"|"+k; S.sup.menu=null; supRenderKeep(); return; }
+  if(a==="sup-st"&&(t.dataset.noop||supLP.fired)){ supLP.fired=false; if(t.dataset.noop){ S.sup.menu=o+"|"+k; supRenderKeep(); } return; }
+  if(a==="sup-st"){ const r=supRec(o,k); r.status=+t.dataset.s; S.sup.menu=null; supSave([r]); return; }
+  if(a==="sup-menu"){ const e=o+"|"+k; S.sup.menu=S.sup.menu===e?null:e; supRenderKeep(); return; }
+  if(a==="sup-more"){ S.sup.more[o]=!S.sup.more[o]; supRenderKeep(); return; }
+  if(a==="sup-have"){ S.sup.have[o]=!S.sup.have[o]; supRenderKeep(); return; }
+  if(a==="sup-never"){ const r=supRec(o,k); if(!confirm("«"+r.name+"» больше не будет в закупке ни одного заказа. Вернуть можно в списке «Не закупаем никогда». Убрать?")) return;
+    S.sup.menu=null; supSave([{order:"@NEVER",key:supNeverKey(r.name),name:r.name,qty:null,unit:r.unit||"",status:0,op:"never"}]); return; }
+  if(a==="sup-unnever"){ const n=t.dataset.n||""; supSave([{order:"@NEVER",key:supNeverKey(n),name:n,qty:null,unit:"",status:0,op:""}]); document.getElementById("supNvModal")?.remove(); return; }
+  if(a==="sup-nevlist") return supNeverModal();
+  if(a==="sup-del"){ const r=supRec(o,k); if(!confirm("Убрать «"+r.name+"» из закупки заказа?")) return; r.op="del"; S.sup.menu=null; supSave([r]); return; }
   if(a==="sup-undel"){ const r=supRec(o,k); r.op=""; supSave([r]); return; }
 },true);
+/* удержание статуса — меню действий */
+const supLP={t:0,fired:false};
+document.addEventListener("pointerdown",ev=>{ const b=ev.target.closest&&ev.target.closest(".sup-pill"); if(!b) return; supLP.fired=false; clearTimeout(supLP.t);
+  supLP.t=setTimeout(()=>{ supLP.fired=true; S.sup.menu=b.dataset.o+"|"+b.dataset.k; supRenderKeep(); try{ navigator.vibrate&&navigator.vibrate(15); }catch(_){} },550); });
+["pointerup","pointercancel","pointerleave"].forEach(e=>document.addEventListener(e,()=>clearTimeout(supLP.t),true));
+document.addEventListener("contextmenu",ev=>{ if(ev.target.closest&&ev.target.closest(".sup-pill")) ev.preventDefault(); });
 /* галочки «в заявку» */
 document.addEventListener("change",ev=>{ const c=ev.target; if(!c.classList) return;
   if(c.classList.contains("sup-cb")){ const r=supRef(c.dataset.o,c.dataset.k); c.checked?S.sup.sel.add(r):S.sup.sel.delete(r); supRenderKeep(); }
@@ -4305,7 +4459,14 @@ async function shpLoad(quiet){
   S.shop.loading=false;
   if(S.shop.loaded) shpAutoProject();
   if(S.view==="shop"&&!(S.shop.mode==="form")) shpRenderKeep();
+  if(S.shop.loaded&&typeof supStLoad==="function"&&S.sup&&!(S.sup.stAt>Date.now()-60000)) supStLoad().then(ok=>{ if(ok&&S.view==="shop"&&S.shop.mode==="board"&&!document.querySelector(".modal")) shpRenderKeep(); });
 }
+/* материалы по сделке — итог снабжения (строка @SUM, её пишет экран «Снабжение»): «всё есть» или чего ждём */
+function shpMatChip(o){ if(!o.t3d||!S.sup||!S.sup.st||shpClosed(o)||shpRank(o.stage)>shpRank("montazh")) return "";
+  const r=(S.sup.st[String(o.t3d).toUpperCase()]||{})["@SUM"]; if(!r||!r.name) return ""; const p=String(r.name).split("|"); if(+p[2]<1) return "";
+  if(p[0]==="ok") return `<span class="shp-chip ok">материалы: всё есть</span>`;
+  const nm=["листы","кромка","фурнитура"], miss=[3,4,5].map((i,k)=>{ const [a,n]=String(p[i]||"0/0").split("/").map(Number); return n-a>0?nm[k]+" "+(n-a):""; }).filter(Boolean);
+  return `<span class="shp-chip ${p[0]==="bad"?"bad":"warn"}">ждём: ${esc(miss.join(", "))}</span>`; }
 async function shpPostRaw(body){   // без подсказок: null — нет связи
   try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify(Object.assign({pin:shpPin(),who:shpWho()},body))}); return await r.json(); }catch(_){ return null; }
 }
@@ -4378,7 +4539,12 @@ function shpCard(o,seen,today){
   const nt=S.shop.tasks.filter(t=>t.order===o.id&&t.status!=="done").length; if(nt) chips.push(`<span class="shp-chip">задач: ${nt}</span>`);
   if(o.stage==="lost"&&o.reason) chips.push(`<span class="shp-chip lost">${esc(o.reason.length>40?o.reason.slice(0,40)+"…":o.reason)}</span>`);
   if(shpUnread(o,seen)) chips.push(`<span class="shp-chip new">новое в чате</span>`);
+  if(o.otype==="gift") chips.unshift(`<span class="shp-chip gift">подарок${o.payer?" · "+esc(o.payer):""}</span>`);
+  if(o.otype==="repair") chips.unshift(`<span class="shp-chip rep">ремонт${o.repairOf?" · к № "+esc(o.repairOf):""}</span>`);
   if(shpKUnread(o,seen)) chips.push(`<span class="shp-chip new">клиент написал</span>`);
+  const hs=shpHandState(o); if(hs==="rem") chips.push(`<span class="shp-chip bad">замечание клиента</span>`); else if(hs==="acc") chips.push(`<span class="shp-chip ok">принят клиентом</span>`);
+  if(o.master&&!shpClosed(o)) chips.push(`<span class="shp-chip">мастер: ${esc(o.master)}</span>`);
+  const mc=shpMatChip(o); if(mc) chips.push(mc);
   if(o.t3d||o.link) chips.push(`<span class="shp-chip">3D</span>`);
   if(S.shop.rcpt&&o.receiptsTotal>0) chips.push(`<span class="shp-chip buy">закупка ${esc(shpMoney(o.receiptsTotal))}</span>`);
   const key=[o.client,o.num,"№"+o.num,o.phone,String(o.phone||"").replace(/\D/g,""),o.address,o.kind].join(" ").toLowerCase();
@@ -4387,7 +4553,8 @@ function shpCard(o,seen,today){
 }
 function shpKbSum(n){ return n?Number(n).toLocaleString("ru-RU")+" ₽":""; }
 function shpBoardHtml(){
-  const L=S.shop.orders, seen=shpSeen(), today=shpToday();
+  const tf=S.shop.tf||"all", L=S.shop.orders.filter(o=>tf==="all"||(tf==="norm"?!o.otype:o.otype===tf)), seen=shpSeen(), today=shpToday();
+  const nT=t=>S.shop.orders.filter(o=>!shpClosed(o)&&o.otype===t).length;
   const sortF=(a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999")||String(a.num).localeCompare(String(b.num));
   let h=`<div class="head shp-bhead"><div><h1>Сделки</h1><p class="muted" style="margin:4px 0 0">${esc(shpRoleLine())} · в работе: ${L.filter(o=>!shpClosed(o)).length}</p></div>
     <div class="head-actions"><button type="button" class="btn primary" data-act="shp-new">+ Заказ</button><button type="button" class="btn shp-chbtn" data-act="shp-tab" data-v="chess">▦ Шахматка</button><button type="button" class="btn" data-act="shp-reload">Обновить</button></div></div>`;
@@ -4397,6 +4564,7 @@ function shpBoardHtml(){
   const cl=L.filter(shpClosed);
   h+=`<div class="shp-find"><input id="shpQ" type="search" value="${esc(S.shop.q||"")}" placeholder="Поиск: клиент, №, телефон, адрес" aria-label="Поиск заказа" enterkeyhint="search" autocomplete="off">
     <div class="shp-seg" role="group" aria-label="Какие заказы показать"><button type="button" data-act="shp-mine" data-v="0" aria-pressed="${!S.shop.mine}">Все</button><button type="button" data-act="shp-mine" data-v="1" aria-pressed="${!!S.shop.mine}">Мои</button></div>
+    ${S.shop.orders.some(o=>o.otype)?`<div class="shp-seg shp-tseg" role="group" aria-label="Тип заказов">${[["all","Все"],["norm","Обычные"],["gift","Подарки"],["repair","Ремонты"]].map(([k,n])=>`<button type="button" data-act="shp-tf" data-v="${k}" aria-pressed="${tf===k}">${n}${k==="gift"||k==="repair"?(nT(k)?" "+nT(k):""):""}</button>`).join("")}</div>`:""}
     <button type="button" class="btn shp-cltog" data-act="shp-closed" aria-pressed="${!!S.shop.showClosed}">${S.shop.showClosed?"Скрыть закрытые":"Показать закрытые"} · ${cl.length}</button></div><p class="muted shp-nofind" hidden>Ничего не нашлось.</p>`;
   const col=(s,g)=>{ const sum=S.shop.full?g.reduce((a,o)=>a+(+o.sum||0),0):0;
     return `<section class="shp-col" data-st="${s.k}" aria-label="${esc(s.n)}"><header class="shp-colh"><h2>${esc(s.n)}</h2><span class="shp-cnt">${g.length}</span>${S.shop.full?`<span class="shp-csum mono">${esc(shpKbSum(sum))}</span>`:""}</header>
@@ -4430,7 +4598,7 @@ function shpOrderHtml(){
     h+=`<div class="card shp-money" aria-label="Деньги по заказу">${it("Сумма",has?shpMoney(sum):"—")}${it("Предоплата",shpMoney(o.prepay))}${it("Остаток клиента",has?shpMoney(rest):"—",rest>0?"due":"")}${it("Закупка по чекам",shpMoney(buy))}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has&&sum-buy<0?"neg":"")}</div>`; }
   h+=`<div class="shp-cols"><div><dl class="card shp-info">${row("Что делаем",esc(o.kind||""))}${row("Описание",esc(o.desc||"").replace(/\n/g,"<br>"))}
     ${o.phone?row("Телефон",tel?`<a href="tel:${esc(tel)}">${esc(o.phone)}</a>`:esc(o.phone)):""}${o.address?row("Адрес",`${esc(o.address)} <a class="shp-map" href="${esc(shpMap(o.address))}" target="_blank" rel="noopener">На карте</a>`):""}
-    ${row("Дата замера",o.zamerDate?esc(shpDM(o.zamerDate)):"")}${row("Дата монтажа",o.montazhDate?esc(shpDM(o.montazhDate)):"")}
+    ${row("Дата замера",o.zamerDate?esc(shpDM(o.zamerDate)):"")}${row("Мастер заказа",esc(o.master||""))}${row("Производство",o.prodFrom||o.prodTo?esc(shpRange(o.prodFrom,o.prodTo)):"")}${row("Монтаж",o.montazhDate?esc(shpRange(o.montazhDate,o.montazhTo)):"")}
     ${row("Заметки",esc(o.notes||"").replace(/\n/g,"<br>"))}
     ${!(o.kind||o.desc||o.address||o.notes||o.phone||(full&&o.sum))?`<p class="muted" style="margin:0">Подробностей пока нет. Нажмите «Изменить», чтобы дописать.</p>`:""}</dl>`;
   const lk=shpSafeLink(o.link), in3d=o.t3d&&S.orders&&S.orders[o.t3d];
@@ -4441,6 +4609,7 @@ function shpOrderHtml(){
   h+=shpOrderTasksHtml(o);
   h+=specBlockHtml(o);
   h+=shpRcHtml(o);
+  h+=shpHandHtml(o);
   const ot=S.shop.otab==="history"||S.shop.otab==="client"?S.shop.otab:"chat", kNew=shpKUnread(o,shpSeen());
   const tabs=`<div class="shp-otabs" role="tablist" aria-label="Чат, клиент или история"><button type="button" role="tab" data-act="shp-otab" data-v="chat" aria-selected="${ot==="chat"}">Чат цеха</button><button type="button" role="tab" data-act="shp-otab" data-v="client" aria-selected="${ot==="client"}">Клиент${kNew?' <span class="bdg" aria-label="клиент написал">новое</span>':""}</button><button type="button" role="tab" data-act="shp-otab" data-v="history" aria-selected="${ot==="history"}">История</button></div>`;
   const kbar=`<div class="shp-kbar"><p class="muted">Переписка с клиентом — он видит только этот чат, не чат цеха.${o.kOn?"":" Клиент ещё не получил ссылку."}</p><button type="button" class="btn${o.kOn?"":" primary"}" data-act="shp-klink" data-id="${esc(o.id)}">${o.kOn?"Ссылка клиента":"Дать ссылку клиенту"}</button></div>`;
@@ -4505,9 +4674,17 @@ function shpFormHtml(){
     ${f("Что делаем","kind",o.kind,'maxlength="120" placeholder="Кухня, шкаф-купе, прихожая…" list="shpKinds"')}
     <label class="wide">Описание<textarea name="desc" rows="3" maxlength="2000">${esc(o.desc||"")}</textarea></label>
     ${f("Адрес","address",o.address,'maxlength="200"')}
+    ${full?`<label>Тип заказа<select name="otype"><option value="">Обычный</option><option value="gift"${o.otype==="gift"?" selected":""}>Подарок — от ремонтной компании</option><option value="repair"${o.otype==="repair"?" selected":""}>Ремонт / гарантия</option></select></label>
+      <label id="shpPayerL"${o.otype==="gift"?"":" hidden"}>Кто платит (ремонтная компания)<input name="payer" value="${esc(o.payer||"")}" maxlength="80" list="shpPayers" placeholder="Название компании"></label>
+      <label id="shpRepL"${o.otype==="repair"?"":" hidden"}>Ремонт к заказу №<input name="repairOf" value="${esc(o.repairOf||"")}" maxlength="20" list="shpNums" placeholder="0002"></label>`:""}
     ${full?f("Сумма, ₽","sum",o.sum,'inputmode="decimal" maxlength="15"')+f("Предоплата, ₽","prepay",o.prepay,'inputmode="decimal" maxlength="15"'):""}
+    ${full?`<fieldset class="wide shp-plan"><legend>Зарплата по заказу</legend><div class="shp-plan-d">${f("ЗП бригаде, ₽","zpBr",o.zpBr,'inputmode="decimal" maxlength="12" placeholder="из сметы"')}${f("Бригада (кто получает)","brigade",o.brigade,'maxlength="80" list="shpMasters" placeholder="мастер заказа"')}</div>
+      ${f("Дизайнер заказа (его %)","designer",o.designer,'maxlength="40" list="shpDesigners" placeholder="ответственный, если он дизайнер"')}<p class="muted" style="margin:0;font-size:13px">Начисляется, когда заказ «Закрыт · успешно». Видит только технолог и сам получатель.</p></fieldset>`:""}
     ${f("Срок","deadline",o.deadline,'type="date"')}
-    ${f("Дата замера","zamerDate",o.zamerDate,'type="date"')}${f("Дата монтажа","montazhDate",o.montazhDate,'type="date"')}
+    ${f("Дата замера","zamerDate",o.zamerDate,'type="date"')}
+    ${full?`<fieldset class="wide shp-plan"><legend>План цеха</legend>${f("Мастер заказа","master",o.master,'maxlength="40" list="shpMasters" placeholder="Кто делает заказ"')}
+      <div class="shp-plan-d">${f("Производство с","prodFrom",o.prodFrom,'type="date"')}${f("по","prodTo",o.prodTo,'type="date"')}</div>
+      <div class="shp-plan-d">${f("Монтаж с","montazhDate",o.montazhDate,'type="date"')}${f("по","montazhTo",o.montazhTo,'type="date"')}</div></fieldset>`:f("Дата монтажа","montazhDate",o.montazhDate,'type="date"')}
     ${f("Ответственный","owner",o.owner,'maxlength="40" list="shpOwners"')}
     <label>Этап<select name="stage">${SHP_ST.map(s=>{ const cur=s.k===(o.stage||"dogovor"), ok=cur||(isNew?s.k==="dogovor"||shpCanStage(null,s.k):shpCanStage(o,s.k)); return `<option value="${s.k}"${cur?" selected":""}${ok?"":" disabled"}>${esc(s.n)}${ok?"":" — "+esc(shpStWho(s.k))}</option>`; }).join("")}</select></label>
     <label id="shpReasonL"${o.stage==="lost"?"":" hidden"}>Причина (почему не успешно)<input name="reason" value="${esc(o.reason||"")}" maxlength="300" placeholder="Дорого, передумали, ушли к другим…"></label>
@@ -4515,7 +4692,7 @@ function shpFormHtml(){
     ${f("Ссылка на 3D (если нет в списке)","link",o.link,'type="url" inputmode="url" maxlength="500" placeholder="https://…"')}
     <label class="wide">Заметки<textarea name="notes" rows="3" maxlength="2000">${esc(o.notes||"")}</textarea></label>
     <div class="wide shp-form-b"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="shp-cancel">Отмена</button></div>
-  </form><datalist id="shpOwners">${shpPeople().map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist><datalist id="shpKinds">${["Кухня","Шкаф-купе","Прихожая","Гардеробная","Детская","Спальня","Ванная","Офисная мебель"].map(n=>`<option value="${n}">`).join("")}</datalist>`;
+  </form><datalist id="shpOwners">${shpPeople().map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist><datalist id="shpDesigners">${(S.shop.staff||[]).filter(p=>/дизайн|офис/i.test(p.role||"")).map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist><datalist id="shpPayers">${[...new Set(S.shop.orders.map(x=>x.payer).filter(Boolean))].map(n=>`<option value="${esc(n)}">`).join("")}</datalist><datalist id="shpNums">${S.shop.orders.map(x=>`<option value="${esc(x.num)}">${esc(x.client||"")}</option>`).join("")}</datalist><datalist id="shpMasters">${shpMasters().map(n=>`<option value="${esc(n)}">`).join("")}</datalist><datalist id="shpKinds">${["Кухня","Шкаф-купе","Прихожая","Гардеробная","Детская","Спальня","Ванная","Офисная мебель"].map(n=>`<option value="${n}">`).join("")}</datalist>`;
 }
 function viewShop(){
   if(!shpOn()) return `<div class="empty"><h2>«Вертакс» не подключён</h2><p class="muted">Нужна ссылка на Google-таблицу в config.json (stagesUrl).</p></div>`;
@@ -4538,9 +4715,17 @@ function viewShop(){
   if(m==="person") return nav+shpPersonHtml();
   if(m==="more") return nav+shpMoreHtml();
   if(m==="money") return nav+shpMoneyHtml();
+  if(m==="zp") return nav+shpZpHtml();
+  if(m==="pnl") return nav+shpPnlHtml();
+  if(m==="zpp") return nav+shpZpPersonHtml();
   return nav+shpBoardHtml();
 }
-function shpRenderKeep(){ const y=window.scrollY; render(); window.scrollTo(0,y); }
+function shpRenderKeep(){ const y=window.scrollY;
+  /* открытая форма «+ Добавить чек» переживает перерисовку: сумма, комментарий, выбранное фото и курсор остаются (раньше форма сбрасывалась, когда страница обновлялась после камеры или раз в минуту) */
+  const oldF=S.shop.rcOpen&&document.getElementById("shpRcForm"), oldD=oldF&&oldF.closest("details.shp-rc-add"), ae=document.activeElement, foc=oldD&&ae&&oldD.contains(ae)?ae:null;
+  render();
+  if(oldD){ const nf=document.getElementById("shpRcForm"), nd=nf&&nf.closest("details.shp-rc-add"); if(nd&&nf.dataset.id===oldF.dataset.id){ nd.replaceWith(oldD); oldD.open=true; if(foc) try{ foc.focus({preventScroll:true}); }catch(_){ } } }
+  window.scrollTo(0,y); }
 function shpGo(mode,id){ if(mode==="order"&&S.shop.mode!=="order"&&S.shop.mode!=="form") S.shop.back=S.shop.mode; if(mode==="order"&&id!==S.shop.cur) S.shop.otab="chat"; S.shop.mode=mode; S.shop.delAsk=false; S.shop.rcDel=null; S.shop.rcOpen=false; if(mode==="order"&&id!==undefined) delete S.shop.rc[id]; if(mode==="order"&&id!==undefined&&S.shop.spec) S.shop.spec[id]=undefined; if(id!==undefined) S.shop.cur=id;
   if(mode!=="order"&&mode!=="general") S.shop.chat=null;
   if(S.view!=="shop") setView("shop"); else { render(); window.scrollTo(0,0); } }
@@ -4583,7 +4768,10 @@ function shpFormRead(fm){
   const g=n=>fm.elements[n]?String(fm.elements[n].value||"").trim():"";
   const base=S.shop.edit||{}, o={id:base.id||"",client:g("client"),kind:g("kind"),desc:g("desc"),address:g("address"),deadline:g("deadline"),zamerDate:g("zamerDate"),montazhDate:g("montazhDate"),owner:g("owner"),stage:g("stage")||"dogovor",t3d:g("t3d"),link:g("link"),notes:g("notes")};
   o.phone=g("phone"); o.v3=1; if(o.stage==="lost") o.reason=g("reason");
-  if(S.shop.full){ o.sum=g("sum").replace(/\s/g,"").replace(",","."); o.prepay=g("prepay").replace(/\s/g,"").replace(",","."); }
+  if(S.shop.full){ o.sum=g("sum").replace(/\s/g,"").replace(",","."); o.prepay=g("prepay").replace(/\s/g,"").replace(",",".");
+    o.master=g("master"); o.prodFrom=g("prodFrom"); o.prodTo=g("prodTo"); o.montazhTo=g("montazhTo");
+    o.otype=g("otype"); o.payer=o.otype==="gift"?g("payer"):""; o.repairOf=o.otype==="repair"?g("repairOf"):""; o.zpBr=g("zpBr").replace(/\s/g,"").replace(",","."); o.brigade=g("brigade"); o.designer=g("designer");
+    if(o.prodFrom&&o.prodTo&&o.prodTo<o.prodFrom){ const x=o.prodTo; o.prodTo=o.prodFrom; o.prodFrom=x; } if(o.montazhDate&&o.montazhTo&&o.montazhTo<o.montazhDate) o.montazhTo=""; }
   return o;
 }
 
@@ -4628,7 +4816,7 @@ async function shpTasksLoad(quiet){ const j=await shpGet("action=tasks",quiet); 
 function shpOldScript(){ return S.shop.v2?"":`<div class="banner warn">Задачи, лента и сотрудники заработают после обновления скрипта Google-таблицы (вставить новый код → «Управление развёртываниями» → «Новая версия»).</div>`; }
 
 /* нижние вкладки (Вертакс) / меню сверху (сайт) */
-function shpTab(){ const m=S.shop.mode; return m==="tasks"?"tasks":m==="chats"||m==="general"?"chats":m==="cal"?"cal":/^(more|feed|clients|client|staff|person|money)$/.test(m)?"more":"board"; }
+function shpTab(){ const m=S.shop.mode; return m==="tasks"?"tasks":m==="chats"||m==="general"?"chats":m==="cal"?"cal":/^(more|feed|clients|client|staff|person|money|zp|zpp|pnl)$/.test(m)?"more":"board"; }
 function shpChatUnread(){ const seen=shpSeen(); return S.shop.orders.filter(o=>shpUnread(o,seen)).length+(shpGenUnread(seen)?1:0); }
 function shpNavHtml(){
   const cur=shpTab(), my=shpMyOpen(), un=shpChatUnread();
@@ -4832,7 +5020,8 @@ function shpCalHtml(){
   const C=S.shop.cal, today=shpToday(); if(!C.a) C.a=today; const M=shpCalItems();
   const a=new Date(C.a+"T00:00:00");
   let h=`<div class="head"><div><h1>Календарь</h1><p class="muted" style="margin:4px 0 0">Замеры, монтажи, сроки заказов и задачи</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-calgo" data-v="0">Сегодня</button></div></div>
-    <div class="shp-calbar"><div class="shp-seg" role="group" aria-label="Вид календаря"><button type="button" data-act="shp-calv" data-v="week" aria-pressed="${C.v==="week"}">Неделя</button><button type="button" data-act="shp-calv" data-v="month" aria-pressed="${C.v==="month"}">Месяц</button></div>`;
+    <div class="shp-calbar"><div class="shp-seg" role="group" aria-label="Вид календаря"><button type="button" data-act="shp-calv" data-v="week" aria-pressed="${C.v==="week"}">Неделя</button><button type="button" data-act="shp-calv" data-v="month" aria-pressed="${C.v==="month"}">Месяц</button><button type="button" data-act="shp-calv" data-v="load" aria-pressed="${C.v==="load"}">Загрузка</button></div>`;
+  if(C.v==="load") return h+shpLoadHtml();
   if(C.v==="week"){
     const st=shpAddDays(C.a,-((a.getDay()+6)%7)), en=shpAddDays(st,6), s1=new Date(st+"T00:00:00"), e1=new Date(en+"T00:00:00");
     const rng=s1.getMonth()===e1.getMonth()?s1.getDate()+"–"+e1.getDate()+" "+SHP_MON[e1.getMonth()]:s1.getDate()+" "+SHP_MON[s1.getMonth()]+" – "+e1.getDate()+" "+SHP_MON[e1.getMonth()];
@@ -4853,7 +5042,7 @@ function shpCalHtml(){
   return h;
 }
 function shpCalLegend(){ return `<p class="shp-leg"><span class="k-zm">Замер</span><span class="k-mt">Монтаж</span><span class="k-dl">Срок заказа</span><span class="k-tk">Задача</span></p>`; }
-function shpCalShift(n){ const C=S.shop.cal; if(!n){ C.a=shpToday(); C.sel=C.a; } else if(C.v==="week") C.a=shpAddDays(C.a||shpToday(),7*n); else { const a=new Date((C.a||shpToday())+"T00:00:00"); C.a=shpToday(new Date(a.getFullYear(),a.getMonth()+n,1)); C.sel=""; } render(); }
+function shpCalShift(n){ const C=S.shop.cal; if(!n){ C.a=shpToday(); C.sel=C.a; } else if(C.v==="load") C.a=shpAddDays(C.a||shpToday(),14*n); else if(C.v==="week") C.a=shpAddDays(C.a||shpToday(),7*n); else { const a=new Date((C.a||shpToday())+"T00:00:00"); C.a=shpToday(new Date(a.getFullYear(),a.getMonth()+n,1)); C.sel=""; } render(); }
 /* свайп по календарю: влево — дальше, вправо — назад */
 (function(){ let sx=null, sy=0;
   document.addEventListener("pointerdown",ev=>{ if(ev.pointerType==="mouse"||!(ev.target.closest&&ev.target.closest(".shp-cal-body"))){ sx=null; return; } sx=ev.clientX; sy=ev.clientY; });
@@ -4953,6 +5142,67 @@ function shpChatsHtml(){
     ${L.length?"":`<p class="note">По заказам пока никто не писал. Откройте заказ — внизу чат.</p>`}`;
 }
 
+/* ---- план цеха: мастер заказа, производство и монтаж «с — по»; вид «Загрузка» ---- */
+function shpRange(a,b){ return a&&b&&b!==a?shpDM(a)+"–"+shpDM(b):shpDM(a||b); }
+function shpMasters(){ const st=(S.shop.staff||[]).filter(p=>/мастер/i.test(p.role||"")).map(p=>p.name); const L=[...new Set(st.concat(S.shop.orders.map(o=>o.master).filter(Boolean)))]; return L.length?L:shpPeople().map(p=>p.name); }
+function shpLoadBars(){
+  const today=shpToday(), B=[];
+  S.shop.orders.forEach(o=>{ if(o.stage==="lost") return; const done=o.stage==="closed";
+    const late=o.deadline&&!done&&((o.prodTo&&o.prodTo>o.deadline)||(o.montazhDate&&(o.montazhTo||o.montazhDate)>o.deadline));
+    if(o.prodFrom||o.prodTo){ const a=o.prodFrom||o.prodTo, b=o.prodTo||o.prodFrom; B.push({o,k:"prod",a,b,late:late||(!done&&(o.stage==="cex"||shpRank(o.stage)<shpRank("cex"))&&b<today),done}); }
+    if(o.montazhDate){ const b=o.montazhTo||o.montazhDate; B.push({o,k:"mt",a:o.montazhDate,b,late:late||(!done&&o.stage!=="closed"&&b<today),done}); } });
+  return B;
+}
+function shpLoadHtml(){
+  const C=S.shop.cal, today=shpToday(); if(!C.a) C.a=today;
+  const a0=new Date(C.a+"T00:00:00"), st=shpAddDays(C.a,-((a0.getDay()+6)%7)), N=21, en=shpAddDays(st,N-1), days=[...Array(N)].map((_,i)=>shpAddDays(st,i));
+  const s1=new Date(st+"T00:00:00"), e1=new Date(en+"T00:00:00");
+  let h=`<div class="shp-calnav"><button type="button" class="btn" data-act="shp-calgo" data-v="-1" aria-label="Раньше на 2 недели">${shpIco("left",20)}</button><b>${s1.getDate()} ${SHP_MON[s1.getMonth()]} – ${e1.getDate()} ${SHP_MON[e1.getMonth()]}</b><button type="button" class="btn" data-act="shp-calgo" data-v="1" aria-label="Позже на 2 недели">${shpIco("right",20)}</button></div></div>`;
+  h+=`<p class="shp-leg"><span class="k-prod">Производство</span><span class="k-mt">Монтаж</span><span class="k-over">Наложение или опоздание</span></p>`;
+  const bars=shpLoadBars(), rows=new Map(), mk=n=>{ const k=shpNorm(n); if(!rows.has(k)) rows.set(k,{name:n,bars:[]}); return rows.get(k); };
+  shpMasters().forEach(n=>{ if((S.shop.staff||[]).some(p=>shpNorm(p.name)===shpNorm(n)&&/мастер/i.test(p.role||""))||bars.some(b=>shpNorm(b.o.master)===shpNorm(n))) mk(n); });
+  bars.forEach(b=>{ if(b.o.master) mk(b.o.master).bars.push(b); });
+  const none=bars.filter(b=>!b.o.master), noPlan=S.shop.orders.filter(o=>!shpClosed(o)&&shpRank(o.stage)>=shpRank("proekt_ok")&&!o.prodFrom&&!o.prodTo&&!o.montazhDate);
+  const vis=b=>b.b>=st&&b.a<=en, col=d=>Math.max(1,Math.min(N,shpDays(d,st)+1));
+  const lane=L=>{ const lanes=[]; L.slice().sort((x,y)=>x.a.localeCompare(y.a)).forEach(b=>{ let i=lanes.findIndex(e=>e<b.a); if(i<0){ i=lanes.length; lanes.push(""); } lanes[i]=b.b; b.lane=i; }); return lanes.length||1; };
+  const over=L=>{ L.forEach(b=>b.over=false); for(let i=0;i<L.length;i++) for(let j=i+1;j<L.length;j++){ const x=L[i], y=L[j]; if(x.o.id!==y.o.id&&!x.done&&!y.done&&x.a<=y.b&&y.a<=x.b){ x.over=y.over=true; } } };
+  const head=`<div class="shp-ld-n shp-ld-hd"></div>`+days.map(d=>{ const x=new Date(d+"T00:00:00"), wd=(x.getDay()+6)%7; return `<div class="shp-ld-d${wd>4?" we":""}${d===today?" td":""}"><span>${SHP_DOW[wd]}</span><b>${x.getDate()}</b></div>`; }).join("");
+  const rowHtml=(r,isNone)=>{ const L=r.bars.filter(vis); over(r.bars); const n=lane(L);
+    const busyTo=r.bars.filter(b=>!b.done).reduce((m,b)=>b.b>m?b.b:m,""), free=!busyTo||busyTo<today?"свободен":"занят до "+shpDM(busyTo);
+    const cells=days.map((d,i)=>{ const x=new Date(d+"T00:00:00"), wd=(x.getDay()+6)%7; return `<div class="shp-ld-c${wd>4?" we":""}${d===today?" td":""}" style="grid-column:${i+2};grid-row:1/span ${n}"></div>`; }).join("");
+    const bb=L.map(b=>{ const c1=col(b.a<st?st:b.a), c2=col(b.b>en?en:b.b); return `<button type="button" class="shp-ld-b k-${b.k}${b.over||b.late?" over":""}${b.done?" done":""}" style="grid-column:${c1+1}/${c2+2};grid-row:${b.lane+1}" data-act="shp-open" data-id="${esc(b.o.id)}" title="${esc((b.k==="prod"?"Производство ":"Монтаж ")+shpRange(b.a,b.b)+" · "+shpTitle(b.o)+(b.over?" · наложение":"")+(b.late?" · позже срока":""))}"><span>${esc("№"+b.o.num+" "+(b.o.client||""))}</span></button>`; }).join("");
+    return `<div class="shp-ld-r" style="grid-template-rows:repeat(${n},minmax(${n>1?36:44}px,auto))"><div class="shp-ld-n" style="grid-row:1/span ${n}"><b>${esc(isNone?"Без мастера":r.name)}</b>${isNone?"":`<span class="${busyTo>=today?"":"free"}">${esc(free)}</span>`}</div>${cells}${bb}</div>`; };
+  const R=[...rows.values()].sort((a,b)=>a.name.localeCompare(b.name,"ru"));
+  h+=`<div class="shp-ld" style="--n:${N}"><div class="shp-ld-r shp-ld-head">${head}</div>${R.map(r=>rowHtml(r)).join("")}${none.length?rowHtml({name:"",bars:none},true):""}</div>`;
+  if(!R.length&&!none.length) h+=`<p class="note">Пока нет плана. Откройте заказ → «Изменить» → «План цеха»: мастер заказа и даты производства и монтажа.</p>`;
+  if(noPlan.length) h+=`<div class="card shp-ld-np"><h2>Без дат в цеху · ${noPlan.length}</h2><p class="muted" style="margin:0 0 8px">Проект готов или дальше, но производство не запланировано</p>${noPlan.map(o=>`<button type="button" class="shp-chip" data-act="shp-open" data-id="${esc(o.id)}">№${esc(o.num)} ${esc(o.client||"")} · ${esc(shpStName(o.stage))}</button>`).join(" ")}</div>`;
+  setTimeout(()=>{ const box=document.querySelector(".shp-ld"), td=box&&box.querySelector(".shp-ld-head .td"); if(box&&td&&!box.dataset.sc){ box.dataset.sc="1"; box.scrollLeft=Math.max(0,td.offsetLeft-132-40*2); } },0);
+  return h;
+}
+
+/* ---- сдача заказа: фото монтажа (мастер), приёмка и замечания клиента ---- */
+function shpHandState(o){ const x=o.hand; if(!x) return ""; return x.rem&&x.last>(x.acc||0)?"rem":x.acc?"acc":""; }
+function shpHandHtml(o){
+  const show=o.hand||shpRank(o.stage)>=shpRank("cex")||o.stage==="closed"; if(!show||o.stage==="lost") return "";
+  S.shop.hd=S.shop.hd||{}; const H=S.shop.hd[o.id];
+  if(H===undefined&&!S.shop.hdBusy){ S.shop.hdBusy=true; setTimeout(()=>shpHandLoad(o.id),0); }
+  const me=shpNorm(shpWho()), st=H&&H.hand, ph=st?st.photos:[];
+  const stLine=!st?`<p class="muted">Загружаю…</p>`:st.accepted&&!st.remarks.length?`<p class="shp-hd-ok">✓ Клиент принял заказ ${esc(shpTime(st.accepted))} — претензий нет</p>`
+    :st.remarks.length?`<div class="shp-hd-rem"><b>Замечания клиента</b>${st.remarks.map(r=>`<p>${esc(r.text)}${shpSafeLink(r.photo)?` <a href="${esc(r.photo)}" target="_blank" rel="noopener">фото</a>`:""} <span class="muted">${esc(shpTime(r.when))}</span></p>`).join("")}<span class="muted">По замечанию поставлена задача мастеру заказа.</span></div>`
+    :`<p class="muted">${ph.length?"Клиент видит фото на своей странице и может принять заказ.":"Загрузите фото после монтажа — клиент увидит их и подтвердит приёмку."}${o.kOn?"":" Ссылку клиенту дайте во вкладке «Клиент»."}</p>`;
+  const grid=ph.length?`<ul class="shp-hd-g">${ph.map(p=>`<li><a href="${esc(p.photo)}" target="_blank" rel="noopener"><img src="${esc(shpThumb(p.photo,360))}" alt="Фото монтажа" loading="lazy"></a>${S.shop.full||shpNorm(p.who)===me?`<button type="button" class="shp-hd-x" data-act="shp-hddel" data-id="${esc(o.id)}" data-w="${p.when}" aria-label="Убрать фото">✕</button>`:""}</li>`).join("")}</ul>`:"";
+  return `<div class="card shp-hd"><h2>Сдача заказа</h2>${stLine}${grid}<label class="btn shp-hd-add"><input type="file" accept="image/*" multiple data-hd="${esc(o.id)}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1.5-2h5L16 6h1.5A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.2"/></svg> Добавить фото монтажа</label></div>`;
+}
+async function shpHandLoad(id){ const j=await shpGet("action=hand&order="+encodeURIComponent(id),true); S.shop.hdBusy=false; S.shop.hd[id]=j||{hand:{photos:[],accepted:0,remarks:[]}};
+  if(S.view==="shop"&&S.shop.mode==="order"&&S.shop.cur===id&&!document.querySelector(".modal")) shpRenderKeep(); }
+document.addEventListener("change",async ev=>{ const fi=ev.target; if(!fi||!fi.dataset||!fi.dataset.hd||!fi.files||!fi.files.length) return; const id=fi.dataset.hd, L=[...fi.files].slice(0,10);
+  const lb=fi.closest("label"); if(lb) lb.classList.add("busy"); let n=0;
+  for(const f of L){ toast("Загружаю фото "+(n+1)+" из "+L.length+"…"); let b64=""; try{ b64=await siteShrink(f); }catch(_){ continue; } const j=await shpPost({action:"handPhoto",id,photo:b64}); if(j) n++; }
+  fi.value=""; if(n) toast("Фото монтажа: добавлено "+n); delete S.shop.hd[id]; const o=shpById(id); if(o&&n){ o.hand=o.hand||{photos:0,acc:0,rem:0,last:0}; o.hand.photos+=n; } shpRenderKeep(); });
+document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="shp-hddel"]'); if(!t) return; ev.stopPropagation();
+  if(!t.dataset.sure){ t.dataset.sure="1"; t.textContent="Убрать?"; t.classList.add("sure"); return; }
+  const j=await shpPost({action:"handDel",id:t.dataset.id,when:+t.dataset.w}); if(j){ delete S.shop.hd[t.dataset.id]; shpRenderKeep(); } },true);
+
 /* ---- «Деньги по заказам»: сумма, предоплата, закупка по чекам снабженца, что остаётся. Только технолог и офис ---- */
 const SHP_MP=[["m0","Этот месяц"],["m1","Прошлый"],["y","Год"],["all","Всё"]];
 function shpMoneyRange(v){ const d=new Date(), y=d.getFullYear(), m=d.getMonth();
@@ -4962,11 +5212,12 @@ function shpMoneyHtml(){
   const back=`<button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button>`;
   if(!S.shop.full) return `<div class="head"><h1>Деньги по заказам</h1><div class="head-actions">${back}</div></div><p class="note">Суммы видят только технолог и офис.</p>`;
   const per=S.shop.mper||"all", [a,b]=shpMoneyRange(per), lost=!!S.shop.mlost;
-  const L=S.shop.orders.filter(o=>{ const t=+o.created||0; return (per==="all"||(t>=a&&t<b))&&(lost||o.stage!=="lost"); }).sort((x,y)=>(+y.created||0)-(+x.created||0));
+  const tf=S.shop.mtf||"all", L=S.shop.orders.filter(o=>{ const t=+o.created||0; return (per==="all"||(t>=a&&t<b))&&(lost||o.stage!=="lost")&&(tf==="all"||(tf==="norm"?!o.otype:o.otype===tf)); }).sort((x,y)=>(+y.created||0)-(+x.created||0));
   let sum=0,pre=0,buy=0,nos=0; L.forEach(o=>{ const has=o.sum!==""&&o.sum!=null; if(has) sum+=+o.sum||0; else nos++; pre+=+o.prepay||0; buy+=+o.receiptsTotal||0; });
   const it=(l,v,c)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b></div>`, pc=(x,y)=>y>0?Math.round(x/y*100)+"%":"—";
   let h=`<div class="head"><div><h1>Деньги по заказам</h1><p class="muted" style="margin:4px 0 0">Закупка — сумма чеков снабженца по заказу</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-reload">Обновить</button>${back}</div></div>
   <div class="shp-mbar"><div class="shp-seg" role="group" aria-label="За какой период (по дате создания заказа)">${SHP_MP.map(([k,t])=>`<button type="button" data-act="shp-mper" data-v="${k}" aria-pressed="${per===k}">${t}</button>`).join("")}</div>
+  ${S.shop.orders.some(o=>o.otype)?`<div class="shp-seg" role="group" aria-label="Тип заказов">${[["all","Все"],["norm","Обычные"],["gift","Подарки"],["repair","Ремонты"]].map(([k,n])=>`<button type="button" data-act="shp-mtf" data-v="${k}" aria-pressed="${tf===k}">${n}</button>`).join("")}</div>`:""}
   <label class="shp-mlost"><input type="checkbox" data-act="shp-mlost" ${lost?"checked":""}> с отказами</label></div>
   <div class="card shp-money" aria-label="Итого">${it("Заказов",String(L.length))}${it("Сумма заказов",shpMoney(sum))}${it("Получено предоплат",shpMoney(pre))}${it("Закупка по чекам",shpMoney(buy)+(sum?" · "+pc(buy,sum):""))}${it("Остаётся (сумма − закупка)",shpMoney(sum-buy),sum-buy<0?"neg":"")}</div>`;
   if(nos) h+=`<p class="note" style="margin:-4px 0 12px">У ${nos} ${shpPl(nos,"заказа","заказов","заказов")} не указана сумма — они не входят в «Сумму заказов».</p>`;
@@ -4998,11 +5249,118 @@ function shpKModal(o,url){
   document.body.appendChild(m); m.addEventListener("click",e=>{ if(e.target===m){ m.remove(); } });
 }
 
+/* ---- «Зарплата»: бригадам «ЗП бригаде» по закрытым заказам, офису — проценты; выплаты. Технолог видит всех, остальные — только себя ---- */
+function shpZpRange(){ const v=S.shop.zper||"m0", d=new Date(), y=d.getFullYear(), m=d.getMonth();
+  if(v==="m0") return [new Date(y,m,1).getTime(),new Date(y,m+1,1).getTime(),SHP_MONN[m]+" "+y]; if(v==="m1") return [new Date(y,m-1,1).getTime(),new Date(y,m,1).getTime(),SHP_MONN[(m+11)%12]+" "+(m?y:y-1)]; return [0,9e15,"всё время"]; }
+async function shpZpLoad(){ if(S.shop.zpBusy) return; S.shop.zpBusy=true; const [a,b]=shpZpRange(); const j=await shpGet("action=zp&who="+encodeURIComponent(shpWho())+"&from="+a+"&to="+b,true); S.shop.zpBusy=false;
+  S.shop.zp=j||{err:1}; if(S.view==="shop"&&/^zp/.test(S.shop.mode)&&!document.querySelector(".modal")) shpRenderKeep(); }
+const shpRub=v=>Math.round(+v||0).toLocaleString("ru-RU")+" ₽";
+function shpZpTop(acc,paid,all){ const rest=Math.round(all.accrAll-all.paidAll); return `<div class="shp-zpt"><div><span>Начислено</span><b>${esc(shpRub(acc))}</b></div><div><span>Выплачено</span><b>${esc(shpRub(paid))}</b></div><div><span>Осталось всего</span><b class="${rest>0?"due":"ok"}">${esc(shpRub(rest))}</b></div></div>`; }
+function shpZpHtml(){
+  const back=`<button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button>`, [,,lbl]=shpZpRange(), per=S.shop.zper||"m0";
+  let h=`<div class="head"><div><h1>${S.shop.tech?"Зарплата":"Моя зарплата"}</h1><p class="muted" style="margin:4px 0 0">${esc(lbl)} · по закрытым заказам</p></div><div class="head-actions">${back}</div></div>
+    <div class="shp-seg shp-wseg" role="group" aria-label="Период">${[["m1","Прошлый месяц"],["m0","Этот месяц"],["all","Всё время"]].map(([k,n])=>`<button type="button" data-act="shp-zper" data-v="${k}" aria-pressed="${per===k}">${n}</button>`).join("")}</div>`;
+  const Z=S.shop.zp; if(!Z){ shpZpLoad(); return h+`<p class="muted">Считаю…</p>`; } if(Z.err) return h+`<p class="note">Не загрузилось. Обновите скрипт таблицы или проверьте связь.</p>`;
+  const P=Z.persons||[];
+  if(!S.shop.tech){ const me=P[0]; if(!me) return h+`<p class="note">Начислений пока нет. ЗП появляется, когда ваш заказ «Закрыт · успешно». Имя в «Ещё → Моё имя» должно совпадать с именем в заказе.</p>`; S.shop.zpWho=me.name; return h+shpZpPersonBody(me); }
+  const sumA=P.reduce((x,p)=>x+p.accr,0), sumP=P.reduce((x,p)=>x+p.paid,0), all={accrAll:P.reduce((x,p)=>x+p.accrAll,0),paidAll:P.reduce((x,p)=>x+p.paidAll,0)};
+  h+=shpZpTop(sumA,sumP,all);
+  const grp=(k,t)=>{ const L=P.filter(p=>p.kind===k).sort((a,b)=>b.accr-a.accr||a.name.localeCompare(b.name,"ru")); if(!L.length) return "";
+    return `<p class="shp-zcap">${t}</p><ul class="shp-list">${L.map(p=>{ const rest=Math.round(p.accrAll-p.paidAll), nOrd=new Set(p.items.filter(i=>i.order).map(i=>i.order)).size, nSal=p.items.filter(i=>i.kind==="salary").length, roles=[...new Set(p.items.map(i=>i.role).filter(Boolean))];
+      return `<li><button type="button" class="shp-row" data-act="shp-zpp" data-n="${esc(p.name)}"><span class="shp-av" aria-hidden="true">${esc(p.name.trim().charAt(0).toUpperCase())}</span><span class="shp-rb"><b>${esc(p.name)}</b><span class="muted">${k==="office"&&roles.length?esc(roles.join(" · "))+" · ":""}${nOrd?nOrd+" "+shpPl(nOrd,"заказ","заказа","заказов"):""}${nOrd&&nSal?" · ":""}${nSal?"оклад":""}</span></span><span class="shp-rr shp-zr"><b>${esc(shpRub(p.accr))}</b><span class="${rest>0?"due":"ok"}">${rest>0?"осталось "+esc(shpRub(rest)):"выплачено ✓"}</span></span></button></li>`; }).join("")}</ul>`; };
+  h+=grp("brigade","Цех — бригады")+grp("office","Офис — проценты от суммы заказов")+grp("salary","Оклады");
+  if(!P.length) h+=`<p class="note">За этот период начислений нет. В заказе впишите «ЗП бригаде» (Изменить → Зарплата по заказу), начисление появится, когда заказ «Закрыт · успешно».</p>`;
+  h+=`<div class="shp-zpb"><button type="button" class="btn primary" data-act="shp-zpay">+ Выплата или аванс</button><button type="button" class="btn" data-act="shp-zpct">Проценты офиса</button><button type="button" class="btn" data-act="shp-zsal">Оклады</button></div>`;
+  return h;
+}
+function shpZpPersonBody(p){ const ty={gift:"подарок",repair:"ремонт"};
+  return shpZpTop(p.accr,p.paid,p)+`<p class="shp-zcap">Начисления</p>${p.items.length?`<ul class="shp-zl">${p.items.slice().sort((a,b)=>b.when-a.when).map(i=>i.kind==="salary"?`<li><div class="shp-zli"><span>${esc(i.text)}<small class="muted">оклад</small></span><b>${esc(shpRub(i.amount))}</b></div></li>`:`<li><button type="button" class="shp-zli" data-act="shp-open" data-id="${esc(i.order)}"><span>${esc(i.text)}${i.otype?` <span class="shp-chip ${i.otype==="gift"?"gift":"rep"}">${ty[i.otype]}</span>`:""}<small class="muted">закрыт ${esc(shpTime(i.when))}</small></span><b>${esc(shpRub(i.amount))}</b></button></li>`).join("")}</ul>`:`<p class="muted">Нет за этот период.</p>`}
+    <p class="shp-zcap">Выплаты</p>${p.pays.length?`<ul class="shp-zl">${p.pays.slice().sort((a,b)=>b.when-a.when).map(i=>`<li><div class="shp-zli"><span>${esc(i.text||"выплата")}<small class="muted">${esc(shpTime(i.when))}${i.by?" · внёс "+esc(i.by):""}</small></span><b>${esc(shpRub(i.amount))}</b>${S.shop.tech?`<button type="button" class="btn sm" data-act="shp-zpdel" data-id="${esc(i.id)}" aria-label="Удалить выплату">✕</button>`:""}</div></li>`).join("")}</ul>`:`<p class="muted">Нет за этот период.</p>`}
+    ${S.shop.tech?`<div class="shp-zpb"><button type="button" class="btn primary" data-act="shp-zpay" data-n="${esc(p.name)}">+ Выплата: ${esc(p.name)}</button></div>`:""}`; }
+function shpZpPersonHtml(){ const Z=S.shop.zp; if(!Z){ shpZpLoad(); return `<p class="muted">Считаю…</p>`; } if(Z.err){ S.shop.mode="zp"; return shpZpHtml(); } const p=(Z.persons||[]).find(x=>x.name===S.shop.zpWho);
+  const [,,lbl]=shpZpRange(); return `<div class="head"><div><h1>${esc(S.shop.zpWho||"")}</h1><p class="muted" style="margin:4px 0 0">${esc(lbl)}</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="zp">← Зарплата</button></div></div>`+(p?shpZpPersonBody(p):`<p class="muted">Нет данных за этот период.</p>`); }
+function shpZpPayModal(name){
+  const names=[...new Set(((S.shop.zp&&S.shop.zp.persons)||[]).map(p=>p.name).concat((S.shop.staff||[]).map(p=>p.name)))];
+  const m=document.createElement("div"); m.className="modal"; m.id="shpZpM";
+  m.innerHTML=`<form class="modal-card" id="shpZpF" autocomplete="off"><h2 style="margin:0 0 10px">Выплата или аванс</h2><div class="form" style="grid-template-columns:1fr;margin:0">
+    <label>Кому<input name="to" value="${esc(name)}" list="shpZpN" required maxlength="40"></label><datalist id="shpZpN">${names.map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+    <label>Сумма, ₽<input name="sum" inputmode="decimal" required maxlength="12"></label><label>Комментарий<input name="text" maxlength="200" placeholder="аванс, за № 0003…"></label></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m);
+  m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target, b=f.querySelector("[type=submit]"); b.disabled=true;
+    const j=await shpPost({action:"zpPay",to:f.elements.to.value.trim(),sum:f.elements.sum.value.replace(/\s/g,"").replace(",","."),text:f.elements.text.value.trim()}); b.disabled=false; if(!j) return; m.remove(); toast("Выплата сохранена"); S.shop.zp=null; shpRenderKeep(); });
+}
+function shpZpSalModal(){ const P=(S.shop.zp&&S.shop.zp.sal)||[], ym=shpToday().slice(0,7);
+  const row=(r,i)=>`<div class="shp-pct sal"><input name="t${i}" value="${esc(r.to||"")}" list="shpSalTo" placeholder="кому" aria-label="Кому"><input name="s${i}" value="${esc(r.sum==null?"":String(r.sum))}" inputmode="decimal" placeholder="₽ в месяц" aria-label="Сумма в месяц"><input name="f${i}" type="month" value="${esc(r.from||(r.to?"":ym))}" aria-label="С месяца"><input name="u${i}" type="month" value="${esc(r.till||"")}" aria-label="По месяц (пусто — по сей день)"></div>`;
+  const L=P.concat([{},{}]);
+  const m=document.createElement("div"); m.className="modal"; m.id="shpSalM";
+  m.innerHTML=`<form class="modal-card" id="shpSalF" autocomplete="off" style="width:min(620px,100%)"><h2 style="margin:0 0 6px">Оклады</h2><p class="note" style="margin:0 0 10px">Начисляется 1-го числа за каждый месяц: кому, сколько в месяц, с какого месяца и по какой (пусто — по сей день). Уволился — поставьте «по».</p>
+    <div class="shp-pct sal hd"><span>Кому</span><span>₽ в месяц</span><span>С месяца</span><span>По</span></div>${L.map(row).join("")}<datalist id="shpSalTo">${(S.shop.staff||[]).map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m);
+  m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target.elements, rows=L.map((_,i)=>({to:f["t"+i].value.trim(),sum:f["s"+i].value.replace(/\s/g,"").replace(",","."),from:f["f"+i].value,till:f["u"+i].value})).filter(r=>r.to&&+r.sum>0);
+    const j=await shpPost({action:"zpSal",rows}); if(!j) return; m.remove(); toast("Оклады сохранены"); S.shop.zp=null; shpRenderKeep(); });
+}
+function shpZpPctModal(){ const P=(S.shop.zp&&S.shop.zp.pct)||[];
+  const row=(r,i)=>`<div class="shp-pct"><input name="n${i}" value="${esc(r.name||"")}" placeholder="Статья" aria-label="Статья"><input name="p${i}" value="${esc(r.pct==null?"":String(r.pct))}" inputmode="decimal" aria-label="Процент" placeholder="%"><input name="t${i}" value="${esc(r.to||"")}" list="shpPctTo" placeholder="кому" aria-label="Кому"></div>`;
+  const L=P.concat([{},{}]);
+  const m=document.createElement("div"); m.className="modal"; m.id="shpPctM";
+  m.innerHTML=`<form class="modal-card" id="shpPctF" autocomplete="off" style="width:min(560px,100%)"><h2 style="margin:0 0 6px">Проценты офиса</h2><p class="note" style="margin:0 0 10px">От суммы заказа. «Кому»: имя, «дизайнер заказа» или «снабженец». Пусто — не начислять.</p>
+    ${L.map(row).join("")}<datalist id="shpPctTo"><option value="дизайнер заказа"><option value="снабженец">${(S.shop.staff||[]).map(p=>`<option value="${esc(p.name)}">`).join("")}</datalist>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m);
+  m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target, rows=L.map((_,i)=>({name:f.elements["n"+i].value.trim(),pct:f.elements["p"+i].value.trim(),to:f.elements["t"+i].value.trim()})).filter(r=>r.name);
+    const j=await shpPost({action:"zpPct",rows}); if(!j) return; m.remove(); toast("Проценты сохранены"); S.shop.zp=null; shpRenderKeep(); });
+}
+
+/* ---- «Итог месяца» (только технолог): выручка по закрытым заказам − закупка − ЗП − аренда и постоянные − разовые = прибыль ---- */
+async function shpPnlLoad(){ if(S.shop.pnlBusy) return; S.shop.pnlBusy=true; const [a,b]=shpPnlRange(); const j=await shpGet("action=pnl&from="+a+"&to="+b,true); S.shop.pnlBusy=false; S.shop.pnl=j||{err:1};
+  if(S.view==="shop"&&S.shop.mode==="pnl"&&!document.querySelector(".modal")) shpRenderKeep(); }
+function shpPnlRange(){ const v=S.shop.pper||"m0", d=new Date(), y=d.getFullYear(), m=d.getMonth();
+  if(v==="m0") return [new Date(y,m,1).getTime(),new Date(y,m+1,1).getTime(),SHP_MONN[m]+" "+y]; if(v==="m1") return [new Date(y,m-1,1).getTime(),new Date(y,m,1).getTime(),SHP_MONN[(m+11)%12]+" "+(m?y:y-1)];
+  if(v==="y") return [new Date(y,0,1).getTime(),new Date(y+1,0,1).getTime(),y+" год"]; return [0,0,"всё время"]; }
+function shpPnlHtml(){
+  const back=`<button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button>`, [,,lbl]=shpPnlRange(), per=S.shop.pper||"m0";
+  let h=`<div class="head"><div><h1>Итог месяца</h1><p class="muted" style="margin:4px 0 0">${esc(lbl)} · по закрытым заказам</p></div><div class="head-actions">${back}</div></div>
+    <div class="shp-seg shp-wseg" role="group" aria-label="Период">${[["m1","Прошлый"],["m0","Этот месяц"],["y","Год"],["all","Всё"]].map(([k,n])=>`<button type="button" data-act="shp-pper" data-v="${k}" aria-pressed="${per===k}">${n}</button>`).join("")}</div>`;
+  if(!S.shop.tech) return h+`<p class="note">Итог месяца видит только технолог.</p>`;
+  const P=S.shop.pnl; if(!P){ shpPnlLoad(); return h+`<p class="muted">Считаю…</p>`; } if(P.err) return h+`<p class="note">Не загрузилось. Обновите скрипт таблицы или проверьте связь.</p>`;
+  const pc=v=>P.rev>0?" · "+Math.round(v/P.rev*100)+"%":"", line=(t,v,cls,sub)=>`<li><div class="shp-zli"><span>${t}${sub?`<small class="muted">${sub}</small>`:""}</span><b class="${cls||""}">${esc(v)}</b></div></li>`;
+  const gifts=P.orders.filter(o=>o.otype==="gift");
+  h+=`<div class="shp-pnl-big ${P.profit>=0?"ok":"bad"}"><span>Прибыль</span><b>${esc(shpRub(P.profit))}</b><small>${P.rev>0?Math.round(P.profit/P.rev*100)+"% от выручки":""}</small></div>`;
+  h+=`<ul class="shp-zl">${line("Выручка",shpRub(P.rev),"",P.orders.length+" "+shpPl(P.orders.length,"закрытый заказ","закрытых заказа","закрытых заказов")+(gifts.length?" · из них подарков "+gifts.length+" на "+shpRub(gifts.reduce((a,o)=>a+o.sum,0)):""))}
+    ${line("− Закупка по чекам","−"+shpRub(P.buy),"neg","чеки снабженца этих заказов"+pc(P.buy))}
+    ${line("− Зарплата","−"+shpRub(P.zpTotal),"neg","бригады "+shpRub(P.zp.brigade||0)+" · офис "+shpRub(P.zp.office||0)+" · оклады "+shpRub(P.zp.salary||0)+pc(P.zpTotal))}
+    ${line("− Аренда и постоянные","−"+shpRub(P.fixedTotal),"neg",P.fixed.length?P.fixed.map(f=>esc(f.name)+" "+shpRub(f.sum)+(f.months>1?" ("+f.months+" мес.)":"")).join(" · "):"не заданы — кнопка ниже")}
+    ${line("− Разовые расходы","−"+shpRub(P.onceTotal),"neg",P.once.length?P.once.length+" "+shpPl(P.once.length,"запись","записи","записей"):"нет")}
+    <li><div class="shp-zli tot"><span><b>= Прибыль</b></span><b class="${P.profit>=0?"okc":"badc"}">${esc(shpRub(P.profit))}</b></div></li></ul>`;
+  h+=`<div class="shp-zpb"><button type="button" class="btn primary" data-act="shp-expadd">+ Разовый расход</button><button type="button" class="btn" data-act="shp-expm">Аренда и постоянные</button></div>`;
+  if(P.once.length) h+=`<p class="shp-zcap">Разовые расходы</p><ul class="shp-zl">${P.once.sort((a,b)=>b.when-a.when).map(e=>`<li><div class="shp-zli"><span>${esc(e.name)}<small class="muted">${esc(shpTime(e.when))}${e.text?" · "+esc(e.text):""}</small></span><b>${esc(shpRub(e.sum))}</b><button type="button" class="btn sm" data-act="shp-expdel" data-id="${esc(e.id)}" aria-label="Удалить расход">✕</button></div></li>`).join("")}</ul>`;
+  if(P.orders.length) h+=`<p class="shp-zcap">Закрытые заказы</p><ul class="shp-zl">${P.orders.sort((a,b)=>b.when-a.when).map(o=>`<li><button type="button" class="shp-zli" data-act="shp-open" data-id="${esc(o.id)}"><span>№ ${esc(o.num)} · ${esc(o.client||"")}${o.otype==="gift"?` <span class="shp-chip gift">подарок</span>`:o.otype==="repair"?` <span class="shp-chip rep">ремонт</span>`:""}<small class="muted">закупка ${esc(shpRub(o.buy))} · бригаде ${esc(shpRub(o.zp))}</small></span><b>${esc(shpRub(o.sum))}</b></button></li>`).join("")}</ul>`;
+  return h;
+}
+function shpExpAddModal(){ const m=document.createElement("div"); m.className="modal"; m.id="shpExpM";
+  m.innerHTML=`<form class="modal-card" autocomplete="off"><h2 style="margin:0 0 10px">Разовый расход</h2><div class="form" style="grid-template-columns:1fr;margin:0">
+    <label>Статья<input name="name" required maxlength="60" list="shpExpN" placeholder="Ремонт станка, свет, интернет…"></label><datalist id="shpExpN"><option value="Свет и отопление"><option value="Ремонт станка"><option value="Инструмент"><option value="Бензин"><option value="Реклама"><option value="Налоги"></datalist>
+    <label>Сумма, ₽<input name="sum" inputmode="decimal" required maxlength="12"></label><label>Дата<input name="date" type="date" value="${shpToday()}"></label><label>Комментарий<input name="text" maxlength="200"></label></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m);
+  m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target.elements; const j=await shpPost({action:"expAdd",name:f.name.value.trim(),sum:f.sum.value.replace(/\s/g,"").replace(",","."),date:f.date.value,text:f.text.value.trim()}); if(!j) return; m.remove(); toast("Расход записан"); S.shop.pnl=null; shpRenderKeep(); }); }
+function shpExpMModal(){ const P=(S.shop.pnl&&S.shop.pnl.monthly)||[], ym=shpToday().slice(0,7), L=(P.length?P:[{name:"Аренда офиса"},{name:"Аренда цеха"}]).concat([{},{}]);
+  const row=(r,i)=>`<div class="shp-pct sal"><input name="t${i}" value="${esc(r.name||"")}" placeholder="Статья" aria-label="Статья"><input name="s${i}" value="${esc(r.sum==null?"":String(r.sum))}" inputmode="decimal" placeholder="₽ в месяц" aria-label="Сумма в месяц"><input name="f${i}" type="month" value="${esc(r.from||ym)}" aria-label="С месяца"><input name="u${i}" type="month" value="${esc(r.till||"")}" aria-label="По месяц"></div>`;
+  const m=document.createElement("div"); m.className="modal"; m.id="shpExpMM";
+  m.innerHTML=`<form class="modal-card" autocomplete="off" style="width:min(620px,100%)"><h2 style="margin:0 0 6px">Аренда и постоянные расходы</h2><p class="note" style="margin:0 0 10px">Сумма в месяц, с какого месяца и по какой (пусто — по сей день). Считается в итог каждого месяца.</p>
+    <div class="shp-pct sal hd"><span>Статья</span><span>₽ в месяц</span><span>С месяца</span><span>По</span></div>${L.map(row).join("")}
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m);
+  m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target.elements, rows=L.map((_,i)=>({name:f["t"+i].value.trim(),sum:f["s"+i].value.replace(/\s/g,"").replace(",","."),from:f["f"+i].value,till:f["u"+i].value})).filter(r=>r.name&&+r.sum>0);
+    const j=await shpPost({action:"expMonthly",rows}); if(!j) return; m.remove(); toast("Сохранено"); S.shop.pnl=null; shpRenderKeep(); }); }
+
 /* ---- «Ещё» ---- */
 function shpMoreHtml(){
   const it=(act,v,ic,t,sub)=>`<li><button type="button" class="shp-row" data-act="${act}" data-v="${v}"><span class="shp-av" aria-hidden="true">${shpIco(ic,20)}</span><span class="shp-rb"><b>${t}</b><span class="muted">${sub}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
   return `<div class="head"><div><h1>Ещё</h1><p class="muted" style="margin:4px 0 0">${esc(shpRoleLine())}</p></div></div>
-    <ul class="shp-list">${it("shp-tab","feed","feed","Лента","Кто что сделал по заказам")}${it("shp-tab","clients","clients","Клиенты","Все клиенты и их заказы")}${it("shp-tab","staff","staff","Сотрудники","Задачи, заказы и телефоны")}${S.shop.full?it("shp-tab","money","money","Деньги по заказам","Сумма, закупка по чекам и что остаётся"):""}
+    <ul class="shp-list">${it("shp-tab","feed","feed","Лента","Кто что сделал по заказам")}${it("shp-tab","clients","clients","Клиенты","Все клиенты и их заказы")}${it("shp-tab","staff","staff","Сотрудники","Задачи, заказы и телефоны")}${S.shop.full?it("shp-tab","money","money","Деньги по заказам","Сумма, закупка по чекам и что остаётся"):""}${S.shop.tech?it("shp-tab","pnl","money","Итог месяца","Выручка, закупка, зарплата, аренда — прибыль"):""}${it("shp-tab","zp","money",S.shop.tech?"Зарплата":"Моя зарплата",S.shop.tech?"Бригады, офис, авансы и выплаты":"Начислено, выплачено и сколько осталось")}
     ${it("shp-myname","","staff","Моё имя: "+esc(shpWho()),"Так вас видят в задачах и чатах — нажмите, чтобы изменить")}${it("shp-reload","","reload","Обновить данные","Заказы и задачи из таблицы")}${it("shp-out","","out","Выйти из «Вертакса»","На этом телефоне")}</ul>`;
 }
 
@@ -5335,6 +5693,41 @@ body.shp-dragging,body.shp-dragging *{cursor:grabbing!important;-webkit-user-sel
 .shp-msg.kl{background:color-mix(in srgb,#2e6fd0 14%,var(--surface));border-left:3px solid #2e6fd0}
 .shp-kurl{width:100%;min-height:48px;padding:10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);font:14px/1.3 ui-monospace,monospace}
 .shp-kbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.shp-kbtns .btn{min-height:44px}
+.shp-plan{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px 12px;margin:0;display:grid;gap:10px}.shp-plan legend{padding:0 6px;font-weight:700}.shp-plan-d{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.shp-plan-d label{min-width:0}.shp-plan-d input{width:100%;min-width:0;box-sizing:border-box}.shp-plan input{box-sizing:border-box;max-width:100%}
+.shp-chip.ok{background:color-mix(in srgb,#2f8f4e 18%,var(--surface));color:#3fae5f;border-color:transparent}
+.shp-chip.gift{background:color-mix(in srgb,#5856d6 16%,var(--surface));color:#5856d6;border-color:transparent}.shp-chip.rep{background:color-mix(in srgb,#ff9500 20%,var(--surface));color:#b35a00;border-color:transparent}
+.shp-tseg{flex-wrap:wrap}.shp-wseg{margin:0 0 14px}
+.shp-zpt{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border-radius:12px;padding:12px 6px;margin:0 0 6px;text-align:center}.shp-zpt span{display:block;font-size:12.5px;color:var(--muted)}.shp-zpt b{font-size:18px;font-variant-numeric:tabular-nums}
+.shp-zpt .due,.shp-zr .due{color:#c93400}.shp-zpt .ok,.shp-zr .ok{color:#248a3d}
+.shp-zcap{margin:18px 4px 6px;font-size:13px;color:var(--muted)}
+.shp-zr{display:flex;flex-direction:column;align-items:flex-end;gap:2px;text-align:right}.shp-zr b{font-variant-numeric:tabular-nums}.shp-zr span{font-size:12.5px}
+.shp-zl{list-style:none;margin:0;padding:0;background:var(--surface);border-radius:12px;overflow:hidden}.shp-zl li+li{border-top:.5px solid var(--line)}
+.shp-zli{display:flex;gap:10px;align-items:center;justify-content:space-between;width:100%;min-height:52px;padding:10px 14px;border:0;background:none;color:inherit;font:inherit;text-align:left}button.shp-zli{cursor:pointer}
+.shp-zli>span{min-width:0;overflow-wrap:anywhere}.shp-zli small{display:block;font-size:12.5px}.shp-zli b{white-space:nowrap;font-variant-numeric:tabular-nums}
+.shp-pnl-big{background:var(--surface);border-radius:14px;padding:16px;margin:0 0 10px;text-align:center}.shp-pnl-big span{display:block;color:var(--muted);font-size:14px}.shp-pnl-big b{display:block;font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em}.shp-pnl-big small{color:var(--muted)}
+.shp-pnl-big.ok b,.shp-zli .okc{color:#248a3d}.shp-pnl-big.bad b,.shp-zli .badc{color:#d70015}.shp-zli .neg{color:var(--muted)}.shp-zli.tot{background:color-mix(in srgb,var(--ink) 4%,transparent)}
+.shp-zpb{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.shp-zpb .btn{min-height:48px;flex:1 1 200px}
+.shp-pct.sal{grid-template-columns:minmax(0,1.2fr) minmax(0,.9fr) minmax(0,1fr) minmax(0,1fr)}.shp-pct.hd span{font-size:12px;color:var(--muted)}
+@media (max-width:560px){#shpExpMM .shp-pct.sal{grid-template-columns:1fr 1fr 1fr;padding-bottom:8px;border-bottom:1px solid var(--line)}#shpExpMM .shp-pct.sal>input:first-child{grid-column:1/-1}#shpExpMM .shp-pct.hd{display:none}}
+.shp-pct{display:grid;grid-template-columns:minmax(0,1.2fr) 64px minmax(0,1.4fr);gap:6px;margin-bottom:6px}.shp-pct input{min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:15px var(--f-body,system-ui);min-width:0}
+
+.shp-ld{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);margin:0 0 14px;-webkit-overflow-scrolling:touch}
+.shp-ld{--dw:40px}@media (min-width:1100px){.shp-ld{--dw:calc((min(1248px,100vw - 32px) - 134px)/21)}}
+.shp-ld-r{display:grid;grid-template-columns:132px repeat(var(--n),var(--dw));column-gap:0;row-gap:4px;padding:5px 0;border-bottom:1px solid var(--line);min-width:max-content;position:relative}
+.shp-ld-head{position:sticky;top:0;z-index:2;background:var(--surface);padding:6px 0}
+.shp-ld-n{position:sticky;left:0;z-index:1;background:var(--surface);padding:2px 10px;display:flex;flex-direction:column;justify-content:center;border-right:1px solid var(--line);min-width:0}
+.shp-ld-n b{font-size:14px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shp-ld-n span{line-height:1.2}.shp-ld-n span{font-size:12px;color:#ff8a7e}.shp-ld-n span.free{color:#3fae5f}
+.shp-ld-d{text-align:center;font-size:11px;color:var(--muted);line-height:1.15}.shp-ld-d span{display:block}.shp-ld-d b{display:block;font-size:14px;color:var(--ink)}.shp-ld-d.we{opacity:.6}.shp-ld-d.td b{background:var(--tape,#ffc21a);color:#1d1f22;border-radius:999px;display:inline-block;min-width:24px}
+.shp-ld-c{border-left:1px dashed color-mix(in srgb,var(--line) 70%,transparent)}.shp-ld-c.we{background:color-mix(in srgb,var(--ink) 4%,transparent)}.shp-ld-c.td{background:color-mix(in srgb,#ffc21a 12%,transparent)}
+.shp-ld-b{z-index:1;margin:0 2px;min-width:0;height:30px;align-self:center;border:0;border-radius:7px;padding:0 6px;font:600 12px var(--f-body,system-ui);text-align:left;cursor:pointer;overflow:hidden;color:#1d1f22;background:#ffc21a}
+.shp-ld-b span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shp-ld-b.k-mt{background:#7b4bc4;color:#fff}.shp-ld-b.over{box-shadow:inset 0 0 0 2px #ff4d3d;background-image:repeating-linear-gradient(135deg,transparent 0 6px,rgba(255,77,61,.22) 6px 12px)}.shp-ld-b.done{opacity:.45}
+.shp-leg .k-prod{--c:#ffc21a}.shp-leg .k-over{--c:#ff4d3d}
+.shp-ld-np .shp-chip{cursor:pointer;margin:0 4px 6px 0;border:1px solid var(--line)}
+.shp-hd-ok{color:#3fae5f;font-weight:600}.shp-hd-rem{border-left:3px solid #ff4d3d;padding:4px 0 4px 10px;margin:0 0 10px}.shp-hd-rem p{margin:4px 0}
+.shp-hd-g{list-style:none;margin:0 0 10px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}.shp-hd-g li{position:relative}.shp-hd-g img{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px}
+.shp-hd-x{position:absolute;top:4px;right:4px;min-width:32px;height:32px;border:0;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;font:600 13px var(--f-body,system-ui);cursor:pointer;padding:0 8px}
+.shp-hd-add{position:relative;min-height:44px}.shp-hd-add input{position:absolute;inset:0;opacity:0;cursor:pointer}.shp-hd-add.busy{opacity:.6;pointer-events:none}
 .shp-otabs button{min-height:44px;padding:0 12px;border:0;border-bottom:3px solid transparent;background:none;color:var(--muted);font:600 15px var(--f-body,system-ui);cursor:pointer;margin-bottom:-1px}
 .shp-otabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--tape,#ffc21a)}
 .shp-hist{max-height:60vh;overflow-y:auto;overscroll-behavior:contain}
@@ -5412,36 +5805,36 @@ button.shp-ev{cursor:pointer}button.shp-ev:hover{border-color:var(--muted)}
 .shp-md .dots{display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center}.shp-md .dots i{width:7px;height:7px;border-radius:50%;background:var(--c)}.shp-md .dots em{font-style:normal;font-size:10.5px;font-weight:700;margin-left:1px}
 @media (min-width:700px){.shp-md{min-height:72px}}
 /* ===== тёмное оформление «Вертакса»: графитовый фон, светлые карточки, жёлтые акценты ===== */
-body[data-page="shop"]{background:#1e2226}
-body[data-page="shop"] .wrap{--bg:#1e2226;--ink:#eef0f2;--muted:#b9c0c7;--surface:#2b3036;--sunk:#2b3036;--line:#454c55;--bad2:#ff9b92;color:var(--ink)}
-body[data-page="shop"] :is(.card,.shp-card,.shp-row,.shp-task,.shp-ev,.shp-ci,.shp-md,.shp-strip,.modal-card,.empty,.banner,.tblock,.shp-find input,.shp-mform){--ink:#1e2226;--muted:#545a61;--surface:#f7f6f2;--sunk:#e8e6e0;--line:#d3d0c8;--bad2:#b3261e;color:var(--ink)}
-body[data-page="shop"] .shp-find input{background:#f7f6f2;border-color:#f7f6f2}
-body[data-page="shop"] .shp-find input::placeholder{color:#6a7077}
-body[data-page="shop"] .btn.primary,body[data-page="shop"] .modal .btn.primary{background:#ffc21a;border-color:#ffc21a;color:#1e2226}
-body[data-page="shop"] .wrap .shp-seg{border-color:#454c55}
-body[data-page="shop"] .wrap .shp-seg button[aria-pressed="true"],body[data-page="shop"] .wrap .shp-cltog[aria-pressed="true"]{background:#ffc21a;color:#1e2226;border-color:#ffc21a}
-body[data-page="shop"] #nav button{color:#cfd5db}body[data-page="shop"] #nav button[aria-current="true"]{color:#ffc21a;border-color:#ffc21a}
-body[data-page="shop"] .shp-kb .shp-col{background:#2b3036}
-body[data-page="shop"] .wrap .shp-seg button[aria-pressed="true"] .muted{color:#1e2226}
-body[data-page="shop"] .shp-colh h2{color:#f2f3f4}
-body[data-page="shop"] .shp-cnt{background:#ffc21a;color:#1e2226}
-body[data-page="shop"] .shp-csum{color:#c3c9cf}
-body[data-page="shop"] .shp-kb .shp-col[data-st="closed"]{background:#243a2d}body[data-page="shop"] .shp-col[data-st="closed"] .shp-colh h2{color:#9fe3b4}
-body[data-page="shop"] .shp-kb .shp-col[data-st="lost"]{background:#3d2627}body[data-page="shop"] .shp-col[data-st="lost"] .shp-colh h2{color:#ffaaa3}
-body[data-page="shop"] .shp-col.drop{background:#4a4321;box-shadow:inset 0 0 0 2px #ffc21a}
-body[data-page="shop"] .shp-tg.late h2,body[data-page="shop"] .shp-late{color:var(--bad2,#b3261e)}
-body[data-page="shop"] .shp-tabs.top{background:#2b3036;border-color:#454c55}body[data-page="shop"] .shp-tabs.top button{color:#e4e7ea}
-body[data-page="shop"] .shp-tabs.top button+button{border-color:#454c55}body[data-page="shop"] .shp-tabs.top button[aria-current="page"]{background:#ffc21a;color:#1e2226}
-body[data-page="shop"] .shp-wd{background:#2b3036}body[data-page="shop"] .shp-wd.today{background:#423c1f}
-body[data-page="shop"] .shp-md.today{background:#ffc21a;border-color:#ffc21a;--ink:#1e2226}
-body[data-page="shop"] .shp-md.out{opacity:.5}
-body[data-page="shop"] .shp-stage-l select{background:#2b3036;color:#eef0f2;border-color:#ffc21a}
-body[data-page="shop"] .shp-av{background:#1e2226;color:#ffc21a}
-body[data-page="shop"] .shp-chip.lost{background:#fbe3e1;border-color:#e4a29c;color:#5c1410}
-body[data-page="shop"] .shp-hint,body[data-page="shop"] .shp-leg{color:#c3c9cf}
-body[data-page="shop"] .wrap a:not(.btn){color:inherit}
-body[data-page="shop"] .home-foot .linkbtn{color:#c3c9cf}
-body[data-page="shop"] .toast{background:#f7f6f2;color:#1e2226;box-shadow:0 4px 18px rgba(0,0,0,.45)}
+body.vtxdark[data-page="shop"]{background:#1e2226}
+body.vtxdark[data-page="shop"] .wrap{--bg:#1e2226;--ink:#eef0f2;--muted:#b9c0c7;--surface:#2b3036;--sunk:#2b3036;--line:#454c55;--bad2:#ff9b92;color:var(--ink)}
+body.vtxdark[data-page="shop"] :is(.card,.shp-card,.shp-row,.shp-task,.shp-ev,.shp-ci,.shp-md,.shp-strip,.modal-card,.empty,.banner,.tblock,.shp-find input,.shp-mform){--ink:#1e2226;--muted:#545a61;--surface:#f7f6f2;--sunk:#e8e6e0;--line:#d3d0c8;--bad2:#b3261e;color:var(--ink)}
+body.vtxdark[data-page="shop"] .shp-find input{background:#f7f6f2;border-color:#f7f6f2}
+body.vtxdark[data-page="shop"] .shp-find input::placeholder{color:#6a7077}
+body.vtxdark[data-page="shop"] .btn.primary,body.vtxdark[data-page="shop"] .modal .btn.primary{background:#ffc21a;border-color:#ffc21a;color:#1e2226}
+body.vtxdark[data-page="shop"] .wrap .shp-seg{border-color:#454c55}
+body.vtxdark[data-page="shop"] .wrap .shp-seg button[aria-pressed="true"],body.vtxdark[data-page="shop"] .wrap .shp-cltog[aria-pressed="true"]{background:#ffc21a;color:#1e2226;border-color:#ffc21a}
+body.vtxdark[data-page="shop"] #nav button{color:#cfd5db}body.vtxdark[data-page="shop"] #nav button[aria-current="true"]{color:#ffc21a;border-color:#ffc21a}
+body.vtxdark[data-page="shop"] .shp-kb .shp-col{background:#2b3036}
+body.vtxdark[data-page="shop"] .wrap .shp-seg button[aria-pressed="true"] .muted{color:#1e2226}
+body.vtxdark[data-page="shop"] .shp-colh h2{color:#f2f3f4}
+body.vtxdark[data-page="shop"] .shp-cnt{background:#ffc21a;color:#1e2226}
+body.vtxdark[data-page="shop"] .shp-csum{color:#c3c9cf}
+body.vtxdark[data-page="shop"] .shp-kb .shp-col[data-st="closed"]{background:#243a2d}body.vtxdark[data-page="shop"] .shp-col[data-st="closed"] .shp-colh h2{color:#9fe3b4}
+body.vtxdark[data-page="shop"] .shp-kb .shp-col[data-st="lost"]{background:#3d2627}body.vtxdark[data-page="shop"] .shp-col[data-st="lost"] .shp-colh h2{color:#ffaaa3}
+body.vtxdark[data-page="shop"] .shp-col.drop{background:#4a4321;box-shadow:inset 0 0 0 2px #ffc21a}
+body.vtxdark[data-page="shop"] .shp-tg.late h2,body.vtxdark[data-page="shop"] .shp-late{color:var(--bad2,#b3261e)}
+body.vtxdark[data-page="shop"] .shp-tabs.top{background:#2b3036;border-color:#454c55}body.vtxdark[data-page="shop"] .shp-tabs.top button{color:#e4e7ea}
+body.vtxdark[data-page="shop"] .shp-tabs.top button+button{border-color:#454c55}body.vtxdark[data-page="shop"] .shp-tabs.top button[aria-current="page"]{background:#ffc21a;color:#1e2226}
+body.vtxdark[data-page="shop"] .shp-wd{background:#2b3036}body.vtxdark[data-page="shop"] .shp-wd.today{background:#423c1f}
+body.vtxdark[data-page="shop"] .shp-md.today{background:#ffc21a;border-color:#ffc21a;--ink:#1e2226}
+body.vtxdark[data-page="shop"] .shp-md.out{opacity:.5}
+body.vtxdark[data-page="shop"] .shp-stage-l select{background:#2b3036;color:#eef0f2;border-color:#ffc21a}
+body.vtxdark[data-page="shop"] .shp-av{background:#1e2226;color:#ffc21a}
+body.vtxdark[data-page="shop"] .shp-chip.lost{background:#fbe3e1;border-color:#e4a29c;color:#5c1410}
+body.vtxdark[data-page="shop"] .shp-hint,body.vtxdark[data-page="shop"] .shp-leg{color:#c3c9cf}
+body.vtxdark[data-page="shop"] .wrap a:not(.btn){color:inherit}
+body.vtxdark[data-page="shop"] .home-foot .linkbtn{color:#c3c9cf}
+body.vtxdark[data-page="shop"] .toast{background:#f7f6f2;color:#1e2226;box-shadow:0 4px 18px rgba(0,0,0,.45)}
 
 
 @media (max-width:520px){body[data-page="shop"] .head-actions{width:100%}body[data-page="shop"] .head>.head-actions .btn{flex:1 1 auto}}
@@ -5502,6 +5895,18 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="shp-reload"){ S.shop.err=false; t.disabled=true; await shpLoad(); t.disabled=false; if(S.shop.loaded) toast("Обновлено"); return; }
   if(a==="shp-open"){ document.querySelectorAll("#shpTaskModal").forEach(x=>x.remove()); return shpGo("order",t.dataset.id); }
   if(a==="shp-back"){ const b=S.shop.back&&S.shop.back!=="order"?S.shop.back:"board"; shpGo(b); shpLoad(true); return; }
+  if(a==="shp-tf"){ S.shop.tf=t.dataset.v; return shpRenderKeep(); }
+  if(a==="shp-mtf"){ S.shop.mtf=t.dataset.v; return shpRenderKeep(); }
+  if(a==="shp-zper"){ S.shop.zper=t.dataset.v; S.shop.zp=null; return shpRenderKeep(); }
+  if(a==="shp-zpp"){ S.shop.zpWho=t.dataset.n; return shpGo("zpp"); }
+  if(a==="shp-zpay") return shpZpPayModal(t.dataset.n||"");
+  if(a==="shp-zpdel"){ if(!t.dataset.sure){ t.dataset.sure="1"; t.textContent="Удалить?"; return; } const j=await shpPost({action:"zpPayDel",id:t.dataset.id}); if(j){ S.shop.zp=null; shpRenderKeep(); } return; }
+  if(a==="shp-zpct") return shpZpPctModal();
+  if(a==="shp-zsal") return shpZpSalModal();
+  if(a==="shp-pper"){ S.shop.pper=t.dataset.v; S.shop.pnl=null; return shpRenderKeep(); }
+  if(a==="shp-expadd") return shpExpAddModal();
+  if(a==="shp-expm") return shpExpMModal();
+  if(a==="shp-expdel"){ if(!t.dataset.sure){ t.dataset.sure="1"; t.textContent="Удалить?"; return; } const j=await shpPost({action:"expDel",id:t.dataset.id}); if(j){ S.shop.pnl=null; shpRenderKeep(); } return; }
   if(a==="shp-mper"){ S.shop.mper=t.dataset.v; return shpRenderKeep(); }
   if(a==="shp-mlost"){ S.shop.mlost=!!t.checked; return shpRenderKeep(); }
   if(a==="shp-tab"){ const v=t.dataset.v; if(t.dataset.tt) S.shop.ttab=t.dataset.tt; S.shop.chat=null;
@@ -5567,7 +5972,8 @@ document.addEventListener("input",ev=>{ const ta=ev.target; if(ta&&ta.id==="shpQ
   if(ta&&ta.id==="shpCQ"){ S.shop.cq=ta.value; shpCFilter(); return; }
   if(ta&&ta.id==="shpXQ"){ S.shop.q=ta.value; shpChessFilter(); return; }
   if(ta&&ta.closest&&ta.closest("#shpForm")&&(ta.name==="client"||ta.name==="phone")){ shpRepeatHint(); return; } if(ta&&ta.closest&&ta.closest(".shp-send")&&ta.tagName==="TEXTAREA"){ S.shop.draft[ta.closest(".shp-send").dataset.chat]=ta.value; } });
-document.addEventListener("change",ev=>{ const t=ev.target; if(t&&t.name==="stage"&&t.closest&&t.closest("#shpForm")){ const l=document.getElementById("shpReasonL"); if(l) l.hidden=t.value!=="lost"; } });
+document.addEventListener("change",ev=>{ const t=ev.target; if(t&&t.name==="stage"&&t.closest&&t.closest("#shpForm")){ const l=document.getElementById("shpReasonL"); if(l) l.hidden=t.value!=="lost"; }
+  if(t&&t.name==="otype"&&t.closest&&t.closest("#shpForm")){ const a=document.getElementById("shpPayerL"), b=document.getElementById("shpRepL"); if(a) a.hidden=t.value!=="gift"; if(b) b.hidden=t.value!=="repair"; } });
 document.addEventListener("change",ev=>{ const fi=ev.target; if(fi&&fi.type==="file"&&fi.closest&&(fi.closest(".shp-send")||fi.closest("#shpRcForm"))) shpFileMark(fi); });
 document.addEventListener("toggle",ev=>{ if(ev.target&&ev.target.classList&&ev.target.classList.contains("shp-rc-add")) S.shop.rcOpen=ev.target.open; },true);
 document.addEventListener("keydown",ev=>{ const ta=ev.target; if(ev.key!=="Enter"||ev.shiftKey||ev.isComposing||!ta||!ta.closest||!ta.closest(".shp-send")||ta.tagName!=="TEXTAREA") return; ev.preventDefault(); shpSend(ta.closest("form")); });
@@ -5937,6 +6343,154 @@ render();
   document.body.prepend(bar);
   const upd=()=>{ bar.hidden=navigator.onLine!==false; };
   addEventListener("online",()=>{ upd(); toast("Интернет снова есть"); }); addEventListener("offline",upd); upd();
+})();
+
+</script>
+<script>
+/* ===== оформление «как на iPhone»: системный шрифт и цвета iOS, светлая/тёмная — как на телефоне, синий акцент ===== */
+(function(){
+  const de=document.documentElement; de.classList.add("ios"); de.removeAttribute("data-theme");
+  const cs=document.querySelector('meta[name="color-scheme"]'); if(cs) cs.setAttribute("content","light dark");
+  const tc=()=>{ const dark=matchMedia("(prefers-color-scheme: dark)").matches; let m=document.querySelector('meta[name="theme-color"]'); if(!m){ m=document.createElement("meta"); m.name="theme-color"; document.head.appendChild(m); } m.content=dark?"#000000":"#f2f2f7"; };
+  tc(); try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change",tc); }catch(_){}
+  const st=document.createElement("style"); st.id="iosTheme"; st.textContent=`
+html.ios:not(.no-ios){
+  --bg:#f2f2f7; --surface:#ffffff; --sunk:#e9e9ee; --line:#d8d8dd; --hair:rgba(60,60,67,.18); --ink:#000000; --muted:#6c6c70;
+  --accent:#007aff; --accent-ink:#ffffff; --accent-soft:rgba(0,122,255,.12);
+  --tape:#007aff; --tape-ink:#ffffff; --graphite:#f2f2f7; --graphite-2:#e9e9ee;
+  --ok:#248a3d; --warn:#c93400; --bad:#d70015; --bad2:#d70015;
+  --sys-green:#34c759; --sys-orange:#ff9500; --sys-red:#ff3b30; --sys-blue:#007aff; --sys-indigo:#5856d6; --sys-fill:rgba(118,118,128,.12);
+  --glass:rgba(249,249,249,.86);
+  --f-body:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --f-brand:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --r:12px; --shadow:none; --shadow-lg:0 10px 40px rgba(0,0,0,.18);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){html.ios:not(.no-ios){
+  --bg:#000000; --surface:#1c1c1e; --sunk:#2c2c2e; --line:#38383a; --hair:rgba(84,84,88,.6); --ink:#ffffff; --muted:#98989f;
+  --accent:#0a84ff; --accent-ink:#ffffff; --accent-soft:rgba(10,132,255,.2);
+  --tape:#0a84ff; --tape-ink:#ffffff; --graphite:#000000; --graphite-2:#1c1c1e;
+  --ok:#30d158; --warn:#ff9f0a; --bad:#ff453a; --bad2:#ff453a;
+  --sys-green:#30d158; --sys-orange:#ff9f0a; --sys-red:#ff453a; --sys-blue:#0a84ff; --sys-indigo:#5e5ce6; --sys-fill:rgba(118,118,128,.24);
+  --glass:rgba(22,22,24,.82);
+  color-scheme:dark;
+}}
+html.ios:not(.no-ios) body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;letter-spacing:-.01em;-webkit-font-smoothing:antialiased}
+html.ios:not(.no-ios) h1{font-family:var(--f-brand);font-size:30px;font-weight:700;letter-spacing:.005em;line-height:1.15}
+html.ios:not(.no-ios) h2{font-size:19px;font-weight:600;letter-spacing:-.01em}
+html.ios:not(.no-ios) .muted,html.ios:not(.no-ios) .note{color:var(--muted)}
+/* шапка: полупрозрачная, как навигационная панель iOS */
+html.ios:not(.no-ios) .top{background:var(--glass);color:var(--ink);border-bottom:.5px solid var(--hair);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+html.ios:not(.no-ios) .brand{color:var(--ink)}
+html.ios:not(.no-ios) .brand-mark{background:var(--accent);color:#fff;border-radius:8px}
+html.ios:not(.no-ios) .brand-mark svg{color:#fff;stroke:#fff}
+html.ios:not(.no-ios) .brand-word{font-family:var(--f-brand);font-weight:700;font-size:17px;letter-spacing:-.01em}
+html.ios:not(.no-ios) .brand-word b{color:var(--accent)}
+html.ios:not(.no-ios) .top .find input{background:var(--sys-fill);border:0;color:var(--ink);border-radius:10px}
+html.ios:not(.no-ios) .top .find input::placeholder{color:var(--muted)}
+html.ios:not(.no-ios) .top .btn{background:transparent;border:0;color:var(--accent)}
+html.ios:not(.no-ios) .top .role{color:var(--muted);border-color:var(--hair)}
+/* вкладки сверху — как сегменты */
+html.ios:not(.no-ios) .nav{border-bottom:0;gap:2px;background:var(--sys-fill);border-radius:10px;padding:2px;margin-block:12px 16px;width:max-content;max-width:100%}
+html.ios:not(.no-ios) .nav button{color:var(--ink);border:0!important;border-radius:8px;font-weight:500;margin:0!important;padding:7px 14px}
+html.ios:not(.no-ios) .nav button[aria-current="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04)}
+/* кнопки */
+html.ios:not(.no-ios) .btn{border:0;border-radius:12px;background:var(--sys-fill);color:var(--accent);font-weight:600;box-shadow:none}
+html.ios:not(.no-ios) .btn:hover{filter:none;background:color-mix(in srgb,var(--sys-fill) 100%,var(--ink) 4%)}
+html.ios:not(.no-ios) .btn.primary,html.ios:not(.no-ios) .modal .btn.primary{background:var(--accent);color:#fff;border:0;box-shadow:none}
+html.ios:not(.no-ios) .btn.primary:hover{filter:brightness(1.06)}
+html.ios:not(.no-ios) .btn.danger,html.ios:not(.no-ios) .btn.sm.danger{color:var(--sys-red)}
+html.ios:not(.no-ios) .linkbtn{color:var(--accent)}
+html.ios:not(.no-ios) a:not(.btn){color:var(--accent)}
+/* карточки и списки — сгруппированные блоки iOS */
+html.ios:not(.no-ios) :is(.card,.order,.tablebox,.facts,.empty,.tblock,.banner){background:var(--surface);border:0;border-radius:var(--r);box-shadow:none}
+html.ios:not(.no-ios) .order{border-left:0}
+html.ios:not(.no-ios) .chip,html.ios:not(.no-ios) .tag{border-radius:999px}
+html.ios:not(.no-ios) table th{color:var(--muted);font-weight:600}
+html.ios:not(.no-ios) tbody tr{border-color:var(--hair)}
+/* поля ввода */
+html.ios:not(.no-ios) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),select,textarea){border-radius:10px;border-color:var(--line);background:var(--surface);color:var(--ink)}
+html.ios:not(.no-ios) input[type=checkbox]{accent-color:var(--accent)}
+html.ios:not(.no-ios) :is(input,select,textarea,button):focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:1px}
+/* сегменты */
+html.ios:not(.no-ios) :is(.seg,.shp-seg){background:var(--sys-fill);border:0;border-radius:9px;padding:2px;gap:0}
+html.ios:not(.no-ios) :is(.seg,.shp-seg) button{background:transparent;border:0!important;border-radius:7px;color:var(--ink);font-weight:500}
+html.ios:not(.no-ios) :is(.seg,.shp-seg) button[aria-pressed="true"],html.ios:not(.no-ios) .seg button.on{background:var(--surface)!important;color:var(--ink)!important;font-weight:600;box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04)}
+@media (prefers-color-scheme: dark){html.ios:not(.no-ios) :is(.seg,.shp-seg) button[aria-pressed="true"],html.ios:not(.no-ios) .seg button.on{background:#636366!important}}
+/* окна — шторка снизу на телефоне, как в iOS */
+html.ios:not(.no-ios) .modal{background:rgba(0,0,0,.4);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+html.ios:not(.no-ios) .modal-card{background:var(--surface);color:var(--ink);border-radius:14px;box-shadow:var(--shadow-lg)}
+@media (max-width:600px){html.ios:not(.no-ios) .modal{place-items:end stretch;padding:0}
+  html.ios:not(.no-ios) .modal-card{width:100%!important;max-width:none;border-radius:14px 14px 0 0;padding:22px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:92vh;position:relative}
+  html.ios:not(.no-ios) .modal-card::before{content:"";position:absolute;top:7px;left:50%;width:36px;height:5px;margin-left:-18px;border-radius:3px;background:var(--line)}
+  @media (prefers-reduced-motion:no-preference){html.ios:not(.no-ios) .modal-card{animation:iosUp .28s cubic-bezier(.2,.9,.3,1)}}}
+@keyframes iosUp{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+html.ios:not(.no-ios) .toast{background:rgba(30,30,32,.9);color:#fff;border-radius:14px;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 8px 30px rgba(0,0,0,.25)}
+/* ===== Вертакс ===== */
+html.ios:not(.no-ios) body[data-page="shop"]{background:var(--bg)}
+html.ios:not(.no-ios) .shp-tabs.bottom{background:var(--glass);border-top:.5px solid var(--hair);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+html.ios:not(.no-ios) .shp-tabs.bottom button{color:#8e8e93;font-weight:500}
+html.ios:not(.no-ios) .shp-tabs.bottom button[aria-current="page"]{color:var(--accent)}
+html.ios:not(.no-ios) .shp-tabs.bottom button[aria-current="page"]::before{display:none}
+html.ios:not(.no-ios) .shp-tabs.top{background:var(--sys-fill);border:0;border-radius:10px;padding:2px}
+html.ios:not(.no-ios) .shp-tabs.top button{border:0!important;border-radius:8px;color:var(--ink)}
+html.ios:not(.no-ios) .shp-tabs.top button[aria-current="page"]{background:var(--surface);color:var(--ink);box-shadow:0 3px 8px rgba(0,0,0,.12)}
+html.ios:not(.no-ios) .shp-tabs .bdg,html.ios:not(.no-ios) .bdg{background:var(--sys-red);color:#fff}
+html.ios:not(.no-ios) :is(.shp-card,.shp-row,.shp-task,.shp-ev,.shp-ci,.shp-strip,.shp-mform){background:var(--surface);border:0;border-radius:12px;box-shadow:none}
+html.ios:not(.no-ios) .shp-card{border-left:0;padding:12px 14px}
+html.ios:not(.no-ios) .shp-card:hover{background:color-mix(in srgb,var(--surface) 94%,var(--ink))}
+html.ios:not(.no-ios) .shp-kb .shp-col{background:transparent}
+html.ios:not(.no-ios) .shp-colh h2{color:var(--ink)}
+html.ios:not(.no-ios) .shp-cnt{background:var(--sys-fill);color:var(--muted)}
+html.ios:not(.no-ios) .shp-col.drop{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent)}
+html.ios:not(.no-ios) .shp-chip{border:0;background:var(--sys-fill);color:var(--ink);border-radius:999px}
+html.ios:not(.no-ios) .shp-chip.bad{background:color-mix(in srgb,var(--sys-red) 16%,transparent);color:var(--bad)}
+html.ios:not(.no-ios) .shp-chip.warn{background:color-mix(in srgb,var(--sys-orange) 18%,transparent);color:var(--warn)}
+html.ios:not(.no-ios) .shp-chip.new{background:var(--accent);color:#fff}
+html.ios:not(.no-ios) .shp-chip.ok{background:color-mix(in srgb,var(--sys-green) 18%,transparent);color:var(--ok)}
+html.ios:not(.no-ios) .shp-chip.buy{background:color-mix(in srgb,var(--sys-indigo) 15%,transparent);color:var(--sys-indigo)}
+html.ios:not(.no-ios) .shp-chip.lost{background:var(--sys-fill);color:var(--muted)}
+html.ios:not(.no-ios) .shp-av{background:var(--accent-soft);color:var(--accent)}
+html.ios:not(.no-ios) .shp-msg{background:var(--sys-fill);border-radius:18px}
+html.ios:not(.no-ios) .shp-msg.me{background:var(--accent);color:#fff;border-radius:18px 18px 4px 18px}
+html.ios:not(.no-ios) .shp-msg.me .shp-mh,html.ios:not(.no-ios) .shp-msg.me .shp-mh b,html.ios:not(.no-ios) .shp-msg.me .shp-mh span{color:rgba(255,255,255,.85)}
+html.ios:not(.no-ios) .shp-msg.kl{background:color-mix(in srgb,var(--sys-green) 16%,var(--surface));border-left:0}
+html.ios:not(.no-ios) .shp-otabs{border-bottom:0;background:var(--sys-fill);border-radius:9px;padding:2px;gap:0}
+html.ios:not(.no-ios) .shp-otabs button{border:0;border-radius:7px;color:var(--ink);font-size:14px;margin:0;flex:1}
+html.ios:not(.no-ios) .shp-otabs button[aria-selected="true"]{background:var(--surface);box-shadow:0 3px 8px rgba(0,0,0,.12);border:0}
+html.ios:not(.no-ios) .shp-stage-l select{border-color:var(--line)}
+html.ios:not(.no-ios) .shp-wd{background:var(--surface);border:0}html.ios:not(.no-ios) .shp-wd.today{box-shadow:inset 0 0 0 2px var(--accent)}
+html.ios:not(.no-ios) .shp-md{background:var(--surface);border:0}html.ios:not(.no-ios) .shp-md.today{background:var(--accent);color:#fff;--ink:#fff}
+html.ios:not(.no-ios) .shp-ld{background:var(--surface);border:0}html.ios:not(.no-ios) .shp-ld-n,html.ios:not(.no-ios) .shp-ld-head{background:var(--surface)}
+html.ios:not(.no-ios) .shp-ld-d.td b{background:var(--sys-red);color:#fff}
+html.ios:not(.no-ios) .shp-ld-b{background:var(--sys-orange);color:#fff}html.ios:not(.no-ios) .shp-ld-b.k-mt{background:var(--sys-indigo)}
+html.ios:not(.no-ios) .shp-leg .k-prod{--c:var(--sys-orange)}
+html.ios:not(.no-ios) .shp-ld-c.td{background:color-mix(in srgb,var(--sys-red) 8%,transparent)}
+html.ios:not(.no-ios) .shp-find input{background:var(--sys-fill);border:0;border-radius:10px}
+html.ios:not(.no-ios) .shp-evi.t-stage{background:var(--accent);color:#fff}
+html.ios:not(.no-ios) .shp-cl-new,html.ios:not(.no-ios) .shp-fab{background:var(--accent);color:#fff}
+html.ios:not(.no-ios) .shp-list{gap:0;background:var(--surface);border-radius:12px;overflow:hidden}
+html.ios:not(.no-ios) .shp-list>li>.shp-row{border-radius:0;background:transparent}
+html.ios:not(.no-ios) .shp-list>li+li>.shp-row{box-shadow:inset 64px .5px 0 var(--surface),inset 0 .5px 0 var(--hair)}
+/* ===== Снабжение ===== */
+html.ios:not(.no-ios) .sup-card{border-radius:14px}
+html.ios:not(.no-ios) .sup-vd.v-ok{background:color-mix(in srgb,var(--sys-green) 15%,transparent);color:var(--ok)}html.ios:not(.no-ios) .sup-vd.v-ok i{background:var(--sys-green)}
+html.ios:not(.no-ios) .sup-vd.v-w{background:color-mix(in srgb,var(--sys-orange) 15%,transparent);color:var(--warn)}html.ios:not(.no-ios) .sup-vd.v-w i{background:var(--sys-orange)}
+html.ios:not(.no-ios) .sup-vd.v-bad{background:color-mix(in srgb,var(--sys-red) 13%,transparent);color:var(--bad)}html.ios:not(.no-ios) .sup-vd.v-bad i{background:var(--sys-red)}
+html.ios:not(.no-ios) .sup-ring{--c:var(--sys-green)}html.ios:not(.no-ios) .sup-ring.v-w{--c:var(--sys-orange)}html.ios:not(.no-ios) .sup-ring.v-bad{--c:var(--sys-red)}
+html.ios:not(.no-ios) .sb .g,html.ios:not(.no-ios) .sb-leg .g::before{background:var(--sys-green)}html.ios:not(.no-ios) .sb .y,html.ios:not(.no-ios) .sb-leg .y::before{background:var(--sys-orange)}html.ios:not(.no-ios) .sb .r,html.ios:not(.no-ios) .sb-leg .r::before{background:var(--sys-red)}
+html.ios:not(.no-ios) .sup-pill.p0{background:color-mix(in srgb,var(--sys-red) 14%,transparent);color:var(--bad)}
+html.ios:not(.no-ios) .sup-pill.p1{background:color-mix(in srgb,var(--sys-orange) 16%,transparent);color:var(--warn)}
+html.ios:not(.no-ios) .sup-pill.p2{background:color-mix(in srgb,var(--sys-green) 16%,transparent);color:var(--ok)}
+html.ios:not(.no-ios) .sup-pill.p3{background:var(--accent-soft);color:var(--accent)}
+html.ios:not(.no-ios) .sup-hv b,html.ios:not(.no-ios) .sup-hv span,html.ios:not(.no-ios) .sb-r.done>span{color:var(--ok)}
+html.ios:not(.no-ios) .sup-gmore{color:var(--accent)}
+html.ios:not(.no-ios) .sup-row3{border-top-color:var(--hair)}html.ios:not(.no-ios) .sup-grp{border-top-color:var(--hair)}
+html.ios:not(.no-ios) .sup-bar{background:var(--glass);border-top:.5px solid var(--hair);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+html.ios:not(.no-ios) .sup-new{background:var(--accent)}
+`;
+  document.head.appendChild(st);
 })();
 
 </script>

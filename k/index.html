@@ -67,6 +67,11 @@ form.send textarea{flex:1;min-width:0;min-height:48px;max-height:160px;padding:1
 .att{position:relative;min-width:48px;padding:0}
 .att input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .fhint{font-size:14px;color:var(--muted);margin:6px 0 0}
+.ph{list-style:none;margin:0 0 12px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}.ph img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px}
+.hb{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.okk{margin:0;font-weight:600;color:var(--done)}
+.rem{border-left:3px solid var(--bad);padding:2px 0 2px 12px;margin:0}.rem p{margin:6px 0}
+.remf{margin-top:12px}.remf label[for]{display:block;margin-bottom:6px}.remf textarea{width:100%;min-height:90px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:16px/1.35 var(--f)}
+.muted{color:var(--muted)}
 .empty{text-align:center;padding:48px 8px}
 .empty p{color:var(--muted)}
 .foot{color:var(--muted);font-size:13px;margin:20px 0 0;text-align:center}
@@ -79,12 +84,14 @@ form.send textarea{flex:1;min-width:0;min-height:48px;max-height:160px;padding:1
 <script>
 (function(){
 "use strict";
-var TOK=(location.hash||"").replace(/^#/,"").trim().toLowerCase(), URLS="", ORD=null, MSGS=[], LAST=0, BUSY=false, MYNAME="";
+var TOK=(location.hash||"").replace(/^#/,"").trim().toLowerCase(), URLS="", ORD=null, HAND=null, MSGS=[], LAST=0, BUSY=false, REM=false;
 var ROUTE=[["dogovor","Договор и предоплата","Оформили заказ"],["zamer","Замер","Приезжаем и замеряем помещение"],["proekt","Проект","Делаем проект и чертежи"],["zakup","Материалы","Закупаем материалы"],["cex","Производство","Изготавливаем мебель в цеху"],["montazh","Монтаж","Привозим и собираем"],["closed","Готово","Заказ сдан"]];
 var IDX={dogovor:0,zamer:1,proekt:2,proekt_ok:2,zakup:3,cex:4,montazh:5,closed:6};
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 function money(v){return v===""||v==null||isNaN(+v)?"—":Number(v).toLocaleString("ru-RU")+" ₽";}
 function dlong(d){var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d||"");if(!m)return "";var x=new Date(+m[1],+m[2]-1,+m[3]);return x.toLocaleDateString("ru-RU",{day:"numeric",month:"long",weekday:"short"});}
+function dshort(d){var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d||"");if(!m)return "";return new Date(+m[1],+m[2]-1,+m[3]).toLocaleDateString("ru-RU",{day:"numeric",month:"long"});}
+function span(a,b){return a&&b&&a!==b?dshort(a)+" — "+dshort(b):dlong(a||b);}
 function tm(ms){var d=new Date(ms),t=d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});return d.toDateString()===new Date().toDateString()?t:d.toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"})+" "+t;}
 function safe(u){return /^https:\/\/[^\s"<>]+$/.test(String(u||""));}
 function thumb(u,w){return String(u||"").replace(/([?&]sz=)w\d+/,"$1w"+(w||480));}
@@ -106,9 +113,11 @@ function routeHtml(o){
 function factsHtml(o){
   var f=[];
   if(o.zamerDate) f.push(["Замер",dlong(o.zamerDate)]);
-  if(o.montazhDate) f.push(["Монтаж",dlong(o.montazhDate)]);
+  if(o.prodFrom||o.prodTo) f.push(["Изготовление",span(o.prodFrom,o.prodTo)]);
+  if(o.montazhDate) f.push(["Монтаж",span(o.montazhDate,o.montazhTo)]);
   if(o.deadline) f.push(["Срок готовности",dlong(o.deadline)]);
   if(o.owner) f.push(["Ведёт заказ",o.owner]);
+  if(o.master&&o.master!==o.owner) f.push(["Мастер",o.master]);
   return f.length?'<section class="card" aria-labelledby="h-d"><h2 id="h-d">Даты</h2><dl class="facts">'+f.map(function(x){return '<div><dt>'+esc(x[0])+'</dt><dd>'+esc(x[1])+'</dd></div>';}).join("")+'</dl></section>':"";
 }
 function moneyHtml(o){
@@ -118,6 +127,17 @@ function moneyHtml(o){
 function d3Html(o){
   if(!safe(o.link3d)) return "";
   return '<section class="card d3" aria-labelledby="h-3"><h2 id="h-3">Проект в 3D</h2><p>Покрутите мебель пальцем, посмотрите со всех сторон.</p><a class="btn primary" href="'+esc(o.link3d)+'" target="_blank" rel="noopener">Открыть 3D</a></section>';
+}
+function handHtml(o){
+  var H=HAND||{photos:[],accepted:0,remarks:[]}; if(o.stage==="lost") return "";
+  if(!H.photos.length&&o.stage!=="montazh"&&o.stage!=="closed") return "";
+  var g=H.photos.length?'<ul class="ph">'+H.photos.map(function(p){return safe(p.photo)?'<li><a href="'+esc(p.photo)+'" target="_blank" rel="noopener"><img src="'+esc(thumb(p.photo,640))+'" alt="Фото готовой мебели" loading="lazy"></a></li>':"";}).join("")+'</ul>':'<p class="muted">Мастер загрузит сюда фото после монтажа.</p>';
+  var st="";
+  if(H.remarks.length) st='<div class="rem"><b>Ваши замечания переданы мастеру</b>'+H.remarks.map(function(r){return '<p>'+esc(r.text)+' <span class="muted">'+esc(tm(r.when))+'</span></p>';}).join("")+'<p class="muted">Когда всё исправим — нажмите «Принимаю».</p></div>';
+  else if(H.accepted) st='<p class="okk">✓ Вы приняли заказ '+esc(tm(H.accepted))+'. Спасибо, что выбрали нас!</p>';
+  var btns=(!H.accepted||H.remarks.length)&&(H.photos.length||o.stage==="montazh"||o.stage==="closed")?'<div class="hb"><button class="btn primary" type="button" id="acc">Принимаю, претензий нет</button><button class="btn" type="button" id="remb">Есть замечание</button></div>':(H.accepted?'<div class="hb"><button class="btn" type="button" id="remb">Есть замечание</button></div>':"");
+  var form=REM?'<form class="remf" id="remf"><label for="remt">Что не так? Опишите, по возможности приложите фото — мастер приедет и исправит.</label><textarea id="remt" rows="3" maxlength="1000" required></textarea><div class="hb"><label class="btn att" aria-label="Прикрепить фото"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1.5-2h5L16 6h1.5A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><circle cx="12" cy="12.5" r="3.5"/></svg><input type="file" accept="image/*" id="remph"></label><button class="btn primary" type="submit">Отправить замечание</button><button class="btn" type="button" id="remx">Отмена</button></div><p class="fhint" id="rfh" hidden></p></form>':"";
+  return '<section class="card" aria-labelledby="h-h"><h2 id="h-h">Сдача заказа</h2>'+g+st+btns+form+'</section>';
 }
 function msgsHtml(){
   if(!MSGS.length) return '<p class="sys">Напишите нам — ответим здесь. Можно прислать фото помещения.</p>';
@@ -135,7 +155,7 @@ function render(){
   document.getElementById("ttl").textContent=o.stage==="lost"?"Заказ закрыт":(o.stage==="closed"?"Заказ готов":"Сейчас: "+(ROUTE[IDX[o.stage]==null?0:IDX[o.stage]][1]));
   var k=document.getElementById("kind"); k.hidden=!o.kind; k.textContent=o.kind||"";
   var ta=document.getElementById("ta"), draft=ta?ta.value:"";
-  main.innerHTML='<section class="card" aria-labelledby="h-r"><h2 id="h-r">Как идёт заказ</h2>'+routeHtml(o)+'</section>'+factsHtml(o)+moneyHtml(o)+d3Html(o)+chatHtml()+'<p class="foot">Это личная ссылка на ваш заказ — не пересылайте её посторонним.</p>';
+  main.innerHTML='<section class="card" aria-labelledby="h-r"><h2 id="h-r">Как идёт заказ</h2>'+routeHtml(o)+'</section>'+handHtml(o)+factsHtml(o)+moneyHtml(o)+d3Html(o)+chatHtml()+'<p class="foot">Это личная ссылка на ваш заказ — не пересылайте её посторонним.</p>';
   if(draft) document.getElementById("ta").value=draft;
   bind(); drawMsgs(true);
 }
@@ -145,10 +165,10 @@ function load(first){
   fetch(api("action=client&t="+encodeURIComponent(TOK)+"&since="+(first?0:LAST)),{cache:"no-cache"}).then(function(r){return r.json();}).then(function(j){
     BUSY=false;
     if(!j||!j.ok){ if(first) fail("Ссылка не работает","Возможно, мы выдали вам новую ссылку. Попросите её у мастерской."); return; }
-    var stageWas=ORD&&ORD.stage; ORD=j.order;
+    var stageWas=ORD&&ORD.stage, handWas=JSON.stringify(HAND); ORD=j.order; if(j.hand) HAND=j.hand;
     var have={}; MSGS.forEach(function(m){have[m.when+"|"+m.text]=1;});
     (j.messages||[]).forEach(function(m){ if(!have[m.when+"|"+m.text]){ MSGS.push(m); LAST=Math.max(LAST,m.when);} });
-    if(first||stageWas!==ORD.stage) render(); else drawMsgs(false);
+    if(first||stageWas!==ORD.stage||(handWas!==JSON.stringify(HAND)&&!REM)) render(); else drawMsgs(false);
   }).catch(function(){ BUSY=false; if(first) fail("Нет связи","Проверьте интернет и обновите страницу."); });
 }
 function shrink(file){return new Promise(function(ok,bad){var im=new Image(),u=URL.createObjectURL(file);im.onload=function(){var k=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext("2d").drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);ok(c.toDataURL("image/jpeg",0.8).split(",")[1]);};im.onerror=bad;im.src=u;});}
@@ -165,7 +185,23 @@ function send(){
     ta.value=""; fi.value=""; fh.hidden=true; load(false);
   }).catch(function(){ btn.disabled=false; btn.textContent="Отправить"; fh.hidden=false; fh.textContent="Не отправилось. Проверьте интернет и попробуйте ещё раз."; });
 }
+function post(body){ body.t=TOK; return fetch(URLS,{method:"POST",body:JSON.stringify(body)}).then(function(r){return r.json();}); }
+function errText(j){ return j&&j.error==="often"?"Слишком много сообщений подряд. Подождите несколько минут.":j&&j.error==="big"?"Фото слишком большое. Выберите другое.":"Не отправилось. Проверьте интернет и попробуйте ещё раз."; }
+function bindHand(){
+  var a=document.getElementById("acc"), rb=document.getElementById("remb"), rf=document.getElementById("remf"), rx=document.getElementById("remx");
+  if(a) a.addEventListener("click",function(){ if(!a.dataset.sure){ a.dataset.sure="1"; a.textContent="Подтвердить: мебель принята, претензий нет"; return; }
+    a.disabled=true; post({action:"clientAccept"}).then(function(j){ a.disabled=false; if(!j||!j.ok){ a.textContent=errText(j); return; } HAND=HAND||{photos:[],remarks:[]}; HAND.accepted=j.when; HAND.remarks=[]; render(); load(false); }).catch(function(){ a.disabled=false; a.textContent="Нет связи — нажмите ещё раз"; }); });
+  if(rb) rb.addEventListener("click",function(){ REM=true; render(); var t=document.getElementById("remt"); if(t) t.focus(); });
+  if(rx) rx.addEventListener("click",function(){ REM=false; render(); });
+  if(rf) rf.addEventListener("submit",function(e){ e.preventDefault(); var t=document.getElementById("remt"), fi=document.getElementById("remph"), b=rf.querySelector("[type=submit]"), fh=document.getElementById("rfh"), text=t.value.trim(); if(!text||b.disabled) return;
+    b.disabled=true; b.textContent="Отправляю…";
+    (fi.files[0]?shrink(fi.files[0]):Promise.resolve("")).then(function(ph){ var body={action:"clientRemark",text:text}; if(ph) body.photo=ph; return post(body); }).then(function(j){
+      b.disabled=false; b.textContent="Отправить замечание"; if(!j||!j.ok){ fh.hidden=false; fh.textContent=errText(j); return; }
+      REM=false; HAND=HAND||{photos:[],remarks:[]}; HAND.remarks=(HAND.remarks||[]).concat([{when:j.when,text:text}]); render(); load(false); })
+    .catch(function(){ b.disabled=false; b.textContent="Отправить замечание"; fh.hidden=false; fh.textContent=errText(null); }); });
+}
 function bind(){
+  bindHand();
   var f=document.getElementById("send"); if(!f) return;
   f.addEventListener("submit",function(e){e.preventDefault();send();});
   document.getElementById("ta").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&matchMedia("(pointer:fine)").matches){e.preventDefault();send();} });
