@@ -3761,7 +3761,8 @@ function supItemsRaw(oid){
     if(x){ x.qty=Math.round(((+x.qty||0)+(+r.qty||0))*100)/100; x.keys.push(r.key); x.dup=x.keys.length; if(r.comment&&!x.comment.includes(r.comment)) x.comment+=(x.comment?"; ":"зачем: ")+r.comment; return; }
     const it={key:r.key,keys:[r.key],type:supAddT(r.unit),name:r.name,qty:r.qty,unit:r.unit||"шт",status:+r.status||0,added:true,who:r.who,comment:r.comment?"зачем: "+r.comment:""}; mg.set(k,it); out.push(it); });
   const nv=S.sup.st["@NEVER"]||{};
-  out.forEach(i=>{ i.small=supIsSmall(i); const r=nv[supNeverKey(i.name)]; if(r&&r.op==="never"&&!i.added){ i.del=true; i.never=true; } });
+  out.forEach(i=>{ i.small=supIsSmall(i); const r=nv[supNeverKey(i.name)]; if(r&&r.op==="never"&&!i.added){ i.del=true; i.never=true; }
+    if(!i.added&&supIsBuild(i.name)){ i.del=true; i.build=true; } });   // «Материалы для построения» (сталь, стекло-виртуальные…) и инструменты — не закупка, не показываем
   return out;
 }
 /* «Не закупаем никогда»: общий список по названию (лист «Снабжение», заказ @NEVER) */
@@ -3774,6 +3775,9 @@ function supDatalists(){ const d=S.cat&&S.cat.data; if(!d) return `<datalist id=
   if(!S.sup.dlHtml){ const opt=L=>L.map(x=>`<option value="${esc(x.n)}">`).join(""), by=k=>d.items.filter(x=>SUP_DL[k].test(x.g));
     S.sup.dlHtml=`<datalist id="supNamesL">${opt(by("L"))}</datalist><datalist id="supNamesE">${opt(by("E"))}</datalist><datalist id="supNamesF">${opt(by("F"))}</datalist><datalist id="supNames">${opt(d.items.filter(x=>/^(Листов|Кромоч|Фурнитур|Каталог|Расходн|Погонн)/.test(x.g)))}</datalist>`; }
   return S.sup.dlHtml; }
+/* служебные материалы Базиса (раздел «Материалы для построения», «Инструменты»): в закупке не нужны */
+const SUP_JUNK=/^(параллельн\S* лини|лини[яи](\s|$)|размер|выноск|осев\S* лини|контур(\s|$)|вспомогательн)|посудомо|посудомое|духов(ой|ка)|варочн|вытяжк|холодильн|стиральн|микроволн|морозильн/i;   // элементы чертежа и бытовая техника — клиент покупает сам
+function supIsBuild(name){ if(SUP_JUNK.test(String(name||"").trim())) return true; const c=typeof catFind==="function"?catFind(name):null; return !!(c&&/^(Материалы для построения|Инструменты|Фурнитура и крепёж\/Бытовая техника)/.test(c.g)); }
 function supNeverList(){ return Object.values(S.sup.st["@NEVER"]||{}).filter(r=>r.op==="never").sort((a,b)=>String(a.name).localeCompare(String(b.name),"ru")); }
 /* итоговый список с учётом примерной спецификации сделки:
    — блок «D:<сделка>» (только спецификация): если у сделки уже есть заказ из Базиса, оставляем только заказанное/пришедшее
@@ -3817,7 +3821,7 @@ function supSpecSync(){
       items:rows.map(r=>({key:"S:"+r.key,type:r.type==="O"?"A":r.type,name:r.name,qty:Number(r.qty)||0,unit:r.unit||"шт",comment:r.comment||""}))}; });
 }
 /* загрузка заказа из Базиса для одной сделки (карточка сделки в «Вертаксе») */
-async function supNeedLoad(oid){ if(S.sup.needs[oid]) return S.sup.needs[oid];
+async function supNeedLoad(oid){ if(S.sup.needs[oid]) return S.sup.needs[oid]; const c=typeof supCacheGet==="function"?supCacheGet(oid):null; if(c){ S.sup.needs[oid]={name:c.name,items:c.items}; return S.sup.needs[oid]; }
   try{ const r=await fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"}); if(!r.ok) throw 0; const res=parseJSON(await siteOrderText(oid,await r.text()));
     S.sup.needs[oid]={name:res.order||(S.orders[oid]||{}).name||oid,items:supBase(oid,res)}; }catch(_){ S.sup.needs[oid]={name:oid,items:[],err:true}; }
   return S.sup.needs[oid]; }
@@ -3860,16 +3864,34 @@ function supOrdN(v){ v=String(v==null?"":v).trim().toUpperCase(); return /^\d+$/
 function supStMap(items){ const st={}, ids=Object.keys(S.orders||{}).concat((S.shop&&S.shop.orders||[]).map(o=>String(o.t3d||"").toUpperCase()).filter(Boolean)), byN={};
   ids.forEach(id=>{ byN[supOrdN(id)]=byN[supOrdN(id)]||id; });
   (items||[]).forEach(x=>{ const id=byN[supOrdN(x.order)]||String(x.order); x.order=id; (st[id]=st[id]||{})[x.key]=x; }); return st; }
+/* ---------- загрузка снабжения: сначала из памяти телефона (сразу), потом по одному заказу в фоне ----------
+   Посчитанная закупка заказа хранится в localStorage с «версией» = время выгрузки из Базиса: перекачиваем только перевыгруженные заказы.
+   Сначала — заказы в работе и свежие, закрытые сделки — в конце. Экран дорисовывается по мере загрузки. */
+const SUP_CV="n4";   // поменять при изменении правил подсчёта (supBase) — кэш пересчитается
+function supVer(oid){ const o=S.orders[oid]||{}; return SUP_CV+"|"+(o.createdAt||o.exportedAt||"")+"|"+(o.count||""); }
+function supCacheGet(oid){ try{ const x=JSON.parse(localStorage.getItem("cehqr-sn:"+oid)||"null"); return x&&x.v===supVer(oid)?x:null; }catch(_){ return null; } }
+function supCachePut(oid,nd){ try{ localStorage.setItem("cehqr-sn:"+oid,JSON.stringify({v:supVer(oid),name:nd.name,items:nd.items})); }catch(_){ try{ Object.keys(localStorage).filter(k=>/^cehqr-sn:/.test(k)).slice(0,20).forEach(k=>localStorage.removeItem(k)); }catch(__){} } }
+function supLoadOrder(oid){ return fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"}).then(r=>{ if(!r.ok) throw 0; return r.text(); }).then(t=>siteOrderText(oid,t)).then(txt=>{ const res=parseJSON(txt);
+  const nd={name:res.order||(S.orders[oid]||{}).name||oid,items:supBase(oid,res)}; S.sup.needs[oid]=nd; supCachePut(oid,nd); return nd; })
+  .catch(()=>{ if(!S.sup.needs[oid]||S.sup.needs[oid].err) S.sup.needs[oid]={name:(S.orders[oid]||{}).name||oid,items:[],err:true}; }); }
+function supPaint(){ if(S.view!=="supply"||document.querySelector(".modal")||S.sup.edit||S.sup.menu) { S.sup.dirty=true; return; } const ae=document.activeElement; if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)){ S.sup.dirty=true; return; } S.sup.dirty=false; supRenderKeep(); }
 async function supLoad(force){
   if(S.sup.loading&&!force) return; S.sup.loading=true;
   const ids=Object.keys(S.orders);
-  try{ const r=await fetch(supUrl("action=supply"),{cache:"no-cache"}); const j=await r.json();
-    if(j&&j.ok) S.sup.st=supStMap(j.items); }catch(_){ toast("Нет связи с таблицей — статусы не загрузились"); }
-  await supPriceLoad(); if(typeof catLoad==="function") catLoad();
-  await Promise.all(ids.map(async oid=>{ if(S.sup.needs[oid]&&!force) return;
-    try{ const r=await fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"}); const txt=await siteOrderText(oid,await r.text()); const res=parseJSON(txt);
-      S.sup.needs[oid]={name:res.order||(S.orders[oid]||{}).name||oid,items:supBase(oid,res)}; }catch(_){ S.sup.needs[oid]={name:(S.orders[oid]||{}).name||oid,items:[],err:true}; } }));
-  S.sup.loading=false; S.sup.loaded=true; if(S.view==="supply") render(); try{ supSumSync(Object.keys(S.sup.needs)); }catch(_){}
+  try{ const c=JSON.parse(localStorage.getItem("cehqr-supst")||"null"); if(c&&!Object.keys(S.sup.st||{}).length) S.sup.st=supStMap(c); }catch(_){}
+  let fromCache=0; ids.forEach(oid=>{ if(S.sup.needs[oid]&&!force) return; const c=supCacheGet(oid); if(c){ S.sup.needs[oid]={name:c.name,items:c.items}; fromCache++; } });
+  const todo=ids.filter(oid=>force||!S.sup.needs[oid]||S.sup.needs[oid].err||!supCacheGet(oid));
+  S.sup.pending=todo.length; S.sup.total=ids.length;
+  if(fromCache||!todo.length){ S.sup.loaded=true; supPaint(); }
+  const stP=fetch(supUrl("action=supply"),{cache:"no-cache"}).then(r=>r.json()).then(j=>{ if(j&&j.ok){ S.sup.st=supStMap(j.items); try{ localStorage.setItem("cehqr-supst",JSON.stringify(j.items)); }catch(_){} } }).catch(()=>toast("Нет связи с таблицей — статусы не загрузились"));
+  const prP=supPriceLoad(); if(typeof catLoad==="function"){ catLoad(); if(!S.cat.data){ let n=0; const w=setInterval(()=>{ if(S.cat.data||++n>40){ clearInterval(w); if(S.cat.data) supPaint(); } },500); } }   // справочник пришёл — убираем служебные материалы
+  await Promise.all([stP,prP]); S.sup.loaded=true; supPaint();
+  // порядок: сделка в работе → новее; закрытые — в конце
+  const rank=oid=>{ const d=typeof supDeal==="function"?supDeal(oid):null; return (d&&typeof shpClosed==="function"&&shpClosed(d))?1:0; };
+  todo.sort((a,b)=>rank(a)-rank(b)||String((S.orders[b]||{}).createdAt||"").localeCompare(String((S.orders[a]||{}).createdAt||"")));
+  let i=0, last=0; const worker=async()=>{ while(i<todo.length){ const oid=todo[i++]; await supLoadOrder(oid); S.sup.pending--; if(Date.now()-last>700||!S.sup.pending){ last=Date.now(); supPaint(); } } };
+  await Promise.all([worker(),worker(),worker()]);
+  S.sup.loading=false; S.sup.pending=0; supPaint(); try{ supSumSync(Object.keys(S.sup.needs)); }catch(_){}
 }
 /* мелочёвка цеха (крепёж, клей…) — по умолчанию скрыта в снабжении. Список слов — начало слова, регистр не важен. Правьте здесь. */
 const SUP_SMALL=["конфирмат","евровинт","evrovint","eurovint","confirmat","шкант","саморез","шуруп","минификс","эксцентрик","стяжк","полкодержател","заглушк",
@@ -3960,7 +3982,7 @@ function viewSupply(){
   let all=[0,0,0,0], tot=0, small=0; allIds.forEach(o=>{ const L=supItems(o), p=supProgress(L); p.c.forEach((k,i)=>all[i]+=k); tot+=p.n; small+=supSmallN(L); });
   const sum=S.sup.tab==="sum";
   let h=`<div class="head"><div><h1>Снабжение</h1><p class="muted" style="margin:4px 0 0">Заказов: ${ids.length} · позиций: ${tot} · ${SUP_ST.map((s,i)=>`${s.name}: ${all[i]}`).join(" · ")}</p></div>
-    <button class="btn sm" data-act="sup-reload">Обновить</button></div>${tot?supBar(all,tot):""}
+    <button class="btn sm" data-act="sup-reload">Обновить</button></div>${S.sup.pending>0?`<p class="sup-pend">⏳ Догружаю заказы: ${S.sup.total-S.sup.pending} из ${S.sup.total}…</p>`:""}${tot?supBar(all,tot):""}
     <div class="seg cat-mode sup-seg" role="group" aria-label="Вид"><button type="button" class="${!S.sup.tab||S.sup.tab==="orders"?"on":""}" aria-pressed="${!S.sup.tab||S.sup.tab==="orders"}" data-act="sup-tab" data-t="orders">Заказы</button><button type="button" class="${S.sup.tab==="table"?"on":""}" aria-pressed="${S.sup.tab==="table"}" data-act="sup-tab" data-t="table">Таблица</button><button type="button" class="${S.sup.tab==="buy"?"on":""}" aria-pressed="${S.sup.tab==="buy"}" data-act="sup-tab" data-t="buy">Купить</button><button type="button" class="${sum?"on":""}" aria-pressed="${sum}" data-act="sup-tab" data-t="sum">Всего</button></div>
     ${supSmallLine(small)}`;
   if(!S.sup.pin) h+=`<div class="banner warn" style="margin:10px 0">Чтобы отмечать и менять позиции, нужен PIN снабженца. <button class="btn sm" data-act="sup-pin">Ввести PIN</button></div>`;
@@ -3979,7 +4001,7 @@ function supTable(ids){ const act=supActiveIds(ids), fo=S.sup.tfo||"", fs=S.sup.
   if(fo) R=R.filter(x=>x.oid===fo); if(fs!=="all") R=R.filter(x=>x.it.status===+fs); if(q) R=R.filter(x=>supNorm(x.it.name).includes(q));
   const chip=(act,v,on,t)=>`<button type="button" class="sup-fc${on?" on":""}" aria-pressed="${on}" data-act="${act}" data-t="${esc(v)}">${t}</button>`;
   let h=`<div class="sup-fil">${chip("sup-tfs","0",fs==="0","Нужно · "+cnt(0))}${chip("sup-tfs","1",fs==="1","Заказано · "+cnt(1))}${chip("sup-tfs","2",fs==="2","Пришло · "+cnt(2))}${chip("sup-tfs","3",fs==="3","В цеху · "+cnt(3))}${chip("sup-tfs","all",fs==="all","Все")}</div>
-    <div class="sup-fil">${chip("sup-tfo","",!fo,"Все заказы")}${act.map(o=>chip("sup-tfo",o,fo===o,esc(supOidLabel(o)))).join("")}<input class="sup-tq" type="search" placeholder="🔍 поиск" value="${esc(S.sup.tq||"")}" aria-label="Поиск позиции"></div>`;
+    <div class="sup-fil">${chip("sup-tfo","",!fo,"Все заказы")}${act.map(o=>chip("sup-tfo",o,fo===o,esc(supOidChip(o)))).join("")}<input class="sup-tq" type="search" placeholder="🔍 поиск" value="${esc(S.sup.tq||"")}" aria-label="Поиск позиции"></div>`;
   if(!R.length) return h+`<div class="empty"><h2>Пусто</h2><p class="muted">С такими фильтрами позиций нет.</p></div>`;
   const SN=["Нужно","Заказано","Пришло","В цеху"];
   h+=`<div class="sup-tw"><table class="sup-tbl"><thead><tr><th></th><th>Позиция</th><th>Заказ</th><th class="n">Кол-во</th><th class="n">Цена</th><th class="n">Сумма</th><th>Статус</th></tr></thead><tbody>`;
@@ -3988,7 +4010,7 @@ function supTable(ids){ const act=supActiveIds(ids), fo=S.sup.tfo||"", fs=S.sup.
     h+=`<tr class="grp"><td><input type="checkbox" class="sup-cbg" data-refs="${esc(refs.join("\n"))}"${all?" checked":""} aria-label="Выбрать все: ${n}"></td><td colspan="6"><b>${n}</b> · ${G.length} поз.${gs?" · "+esc(supRub(gs)):""}</td></tr>`;
     G.forEach(({oid,it})=>{ const pr=supPriceOf(it), r=supRef(oid,it.key);
       h+=`<tr class="${S.sup.sel.has(r)?"sel":""}"><td><input type="checkbox" class="sup-cb" data-o="${esc(oid)}" data-k="${esc(it.key)}"${S.sup.sel.has(r)?" checked":""} aria-label="Выбрать: ${esc(it.name)}"></td>
-        <td>${esc(it.name)}${it.added?` <span class="sup-tag">добавлено</span>`:""}${it.dup?` <span class="sup-tag">×${it.dup}</span>`:""}</td><td class="muted">${esc(supOidLabel(oid))}</td>
+        <td>${esc(it.name)}${it.added?` <span class="sup-tag">добавлено</span>`:""}${it.dup?` <span class="sup-tag">×${it.dup}</span>`:""}</td><td class="muted" title="${esc(supOidName(oid))}">${esc(supOidChip(oid))}</td>
         <td class="n"><button type="button" class="sup-qb" data-act="sup-tedit" data-o="${esc(oid)}" data-k="${esc(it.key)}">${esc(supNum(it.qty))} ${esc(it.unit)}</button></td>
         <td class="n">${S.sup.priceOk?`<button type="button" class="sup-qb${pr?"":" none"}" data-act="sup-price" data-o="${esc(oid)}" data-k="${esc(it.key)}">${pr?esc(Math.round(pr.p).toLocaleString("ru-RU")):"+ цена"}</button>`:""}</td><td class="n">${pr?esc(Math.round(pr.p*(+it.qty||0)).toLocaleString("ru-RU")):""}</td>
         <td><div class="sup-st4 sm">${SN.map((n2,i)=>`<button type="button" class="s${i}${it.status===i?" on":""}" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${i}" aria-pressed="${it.status===i}">${n2}</button>`).join("")}</div></td></tr>`; }); });
@@ -4003,7 +4025,7 @@ function supBuy(ids){ const bt=S.sup.btab||0, act=supActiveIds(ids), m=new Map()
   [["L","Листы"],["E","Кромка"],["F","Фурнитура и прочее"]].forEach(([t,n])=>{ const L=G.filter(g=>g.t===t).sort((a,b)=>a.name.localeCompare(b.name,"ru")); if(!L.length) return;
     const sum=L.reduce((a,g)=>{ const pr=supPriceOf(g.rows[0].it); return a+(pr?pr.p*g.qty:0); },0);
     h+=`<div class="card sup-buy"><div class="sup-bh"><b>${n}</b><span class="muted">${L.length} поз.${sum?" · "+esc(supRub(sum)):""}</span></div>${L.map(g=>{ const refs=g.rows.map(x=>supRef(x.oid,x.it.key)), on=refs.every(r=>S.sup.sel.has(r)), pr=supPriceOf(g.rows[0].it);
-      const per=g.rows.map(x=>`${supOidLabel(x.oid)}${g.rows.length>1?" ("+supNum(x.it.qty)+")":""}`).join(" + ");
+      const per=g.rows.map(x=>`${(n=>n.length>22?n.slice(0,21)+"…":n)(supOidName(x.oid)||x.oid)}${g.rows.length>1?" ("+supNum(x.it.qty)+")":""}`).join(" + ");
       return `<button type="button" class="sup-bi${on?" on":""}" data-act="sup-bsel" data-refs="${esc(refs.join("\n"))}" aria-pressed="${on}"><i class="sup-bc" aria-hidden="true">${on?"✓":""}</i><span class="sup-bn"><b>${esc(g.name)}</b><small>${esc(supNum(g.qty))} ${esc(g.unit)} · ${esc(per)}</small></span><span class="sup-bs">${pr?`<b>${esc(supRub(pr.p*g.qty))}</b><small>${esc(supRub(pr.p))}</small>`:""}</span></button>`; }).join("")}</div>`; });
   return h; }
 /* ---- карточка заказа: «можно начинать?» + 4 полки ---- */
@@ -4035,7 +4057,7 @@ function supRing(v){ const p=v.n?Math.round(v.ok/v.n*100):0; return `<span class
 function supOrders(ids){
   S.sup.more=S.sup.more||{}; S.sup.have=S.sup.have||{};
   const nv=supNeverList().length;
-  const h=ids.map(oid=>{ const A=supItems(oid), v=supVerdict(A), open=!!S.sup.open[oid], nd=S.sup.needs[oid], L=supLive(A), dels=A.filter(i=>i.del), sm=supSmallN(A);
+  const h=ids.map(oid=>{ const A=supItems(oid), v=supVerdict(A), open=!!S.sup.open[oid], nd=S.sup.needs[oid], L=supLive(A), dels=A.filter(i=>i.del&&!i.build), sm=supSmallN(A);
     const srt=g=>g.sort((a,b)=>"LEFA".indexOf(a.type)-"LEFA".indexOf(b.type)||a.name.localeCompare(b.name,"ru"));
     let body="";
     if(open){
@@ -4062,6 +4084,9 @@ function supOrders(ids){
 function supSpecInB(oid){ const d=/^D:/.test(oid)?null:supDeal(oid), rows=d&&typeof dealSpecRows==="function"?dealSpecRows(d.id):null; if(!rows||!rows.length) return "";
   const D="D:"+d.id, A=S.sup.needs[D]?supItems(D):[];
   return `<div class="sup-sh"><h3>Примерная спецификация (от дизайнера)</h3></div>${A.length?A.map(i=>supRow(D,i)).join(""):`<p class="note" style="margin:0 0 6px">По примерной ничего не заказано — закупка идёт по точной (Базис).</p>`}${specCmpHtml(d.id,oid,true)}`; }
+/* название заказа для фильтров и таблицы: клиент из сделки Вертакса или имя заказа из Базиса */
+function supOidName(oid){ const d=typeof supDeal==="function"?supDeal(oid):null; const nm=d&&d.client?d.client+(d.kind?" — "+d.kind:""):((S.sup.needs[oid]||{}).name||(S.orders[oid]||{}).name||""); return nm; }
+function supOidChip(oid){ const nm=supOidName(oid), d=typeof supDeal==="function"?supDeal(oid):null, n=d?"№ "+d.num:oid; return nm?`${n} · ${nm.length>28?nm.slice(0,27)+"…":nm}`:n; }
 function supOidLabel(oid){ const n=S.sup.needs[oid]; if(n&&n.spec){ const d=shpById(n.deal); return d?"№ "+d.num+" (примерно)":"примерно"; } return oid; }
 let supSpecTried=false;
 function supSpecLoadOnce(){ if(supSpecTried||!supDealsOn()||!S.shop.loaded||typeof specLoadAll!=="function") return; supSpecTried=true;
@@ -4268,7 +4293,7 @@ function supPrint(text,secs,vendor){
 .sup-st4{display:flex;background:color-mix(in srgb,var(--ink) 8%,transparent);border-radius:9px;padding:2px;max-width:420px}.sup-st4 button{flex:1;border:0;background:none;border-radius:7px;padding:6px 2px;font:500 12.5px var(--f-body,system-ui);color:var(--muted);cursor:pointer;white-space:nowrap}
 .sup-st4 button.on.s0{background:rgba(255,69,58,.22);color:#ff453a;font-weight:600}.sup-st4 button.on.s1{background:rgba(255,159,10,.22);color:#ff9f0a;font-weight:600}.sup-st4 button.on.s2,.sup-st4 button.on.s3{background:rgba(48,209,88,.2);color:#30d158;font-weight:600}
 .sup-st4.sm button{font-size:11.5px;padding:4px 6px}
-.sup-money.m3{grid-template-columns:repeat(3,1fr)}
+.sup-money.m3{grid-template-columns:repeat(3,1fr)}.sup-pend{margin:4px 0 0;font-size:13px;color:#ff9f0a}
 @media (min-width:1000px){.supv.wide{width:min(1400px,calc(100vw - 48px));margin-left:calc(50% - min(700px,50vw - 24px))}}
 .sup-tq{min-height:34px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font:13px var(--f-body,system-ui);min-width:120px}
 .sup-tw{overflow-x:auto;background:var(--surface);border-radius:12px}.sup-tbl{width:100%;border-collapse:collapse;font-size:13.5px}.sup-tbl th{text-align:left;color:var(--muted);font-weight:500;font-size:12px;padding:8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
@@ -4361,7 +4386,7 @@ render=function(){
 document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest("[data-act^='sup-']"); if(!t) return; ev.stopPropagation(); const a=t.dataset.act, o=t.dataset.o, k=t.dataset.k;
   if(a==="sup-in") return supLoginModal();
   if(a==="sup-out"){ if(confirm("Выйти из режима снабженца на этом устройстве?")){ delete _ks.supply; keySave(); await siteLoadIndex(); setView("orders"); } return; }
-  if(a==="sup-reload"){ supSpecTried=false; S.sup.loaded=false; S.sup.needs={}; S.sup.dealTried=true; render(); supLoad(true); if(supDealsOn()) shpLoad(true).then(()=>{ if(S.view==="supply") supRenderKeep(); }); return; }
+  if(a==="sup-reload"){ supSpecTried=false; S.sup.dealTried=true; supLoad(true); if(supDealsOn()) shpLoad(true).then(()=>{ if(S.view==="supply") supRenderKeep(); }); return; }
   if(a==="sup-small"){ S.sup.small=!S.sup.small; try{ localStorage.setItem("cehqr-supsmall",S.sup.small?"1":"0"); }catch(_){} supRenderKeep(); return; }
   if(a==="sup-sec"){ S.sup.sec=t.dataset.t; supRenderKeep(); return; }
   if(a==="sup-sopen"){ const g=t.dataset.g; S.sup.sopen[g]=!S.sup.sopen[g]; supRenderKeep(); return; }
