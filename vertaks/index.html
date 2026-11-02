@@ -3749,7 +3749,7 @@ function supBaseP(parts,fs){
   const other=new Map(); parts.forEach(p=>{ const k=String(p.material||"").split(/[\r\n]/)[0]; if(!k||onSheet.has(k)||!p.L||!p.W||/^\s*стена/i.test(k)) return; other.set(k,(other.get(k)||0)+p.L*p.W/1e6); });
   other.forEach((a,k)=>out.push({key:"L:"+k,type:"L",name:k,qty:Math.round(a*100)/100,unit:"м²"}));
   edgeMeters(parts).forEach(e=>out.push({key:"E:"+e.name,type:"E",name:e.name,qty:e.m,unit:"м"}));
-  furnAll(fs,parts).forEach(f=>out.push({key:"F:"+f.name,type:"F",name:f.name,qty:f.qty,unit:"шт",auto:!!f.auto}));
+  furnAll(fs,parts).forEach(f=>out.push({key:"F:"+f.name,type:"F",name:f.name,qty:f.qty,unit:"шт",auto:!!f.auto,bprice:+f.price||0}));
   return out;
 }
 /* итоговый список заказа: из Базиса + правки снабженца */
@@ -3758,13 +3758,15 @@ function supItemsRaw(oid){
   base.forEach(b=>{ const r=st[b.key]; const it={...b,status:r?r.status:0,orig:b.name,origQty:b.qty};
     if(r){ if(r.op==="del") it.del=true; if(r.name&&r.name!==b.name) it.name=r.name; if(r.qty!=null&&r.qty!==b.qty) it.qty=r.qty; it.who=r.who; }
     out.push(it); });
-  Object.values(st).filter(r=>/^A:/.test(r.key)&&r.op!=="del").forEach(r=>out.push({key:r.key,type:"A",name:r.name,qty:r.qty,unit:r.unit||"шт",status:r.status,added:true,who:r.who}));
+  Object.values(st).filter(r=>/^A:/.test(r.key)&&r.op!=="del").forEach(r=>out.push({key:r.key,type:supAddT(r.unit),name:r.name,qty:r.qty,unit:r.unit||"шт",status:r.status,added:true,who:r.who}));
   const nv=S.sup.st["@NEVER"]||{};
   out.forEach(i=>{ i.small=supIsSmall(i); const r=nv[supNeverKey(i.name)]; if(r&&r.op==="never"&&!i.added){ i.del=true; i.never=true; } });
   return out;
 }
 /* «Не закупаем никогда»: общий список по названию (лист «Снабжение», заказ @NEVER) */
 function supNeverKey(name){ return "N:"+supNorm(name).replace(/[«»"'`]/g,"").slice(0,190); }
+/* добавленная вручную позиция: по единице — листы (л., м²) к ЛДСП, метры к кромке, остальное — фурнитура/другое */
+function supAddT(u){ u=String(u||"").trim().toLowerCase(); return /^(л\.?|лист\w*|м²|м2)$/.test(u)?"L":/^(м|п\.?м\.?)$/.test(u)?"E":"A"; }
 function supNeverList(){ return Object.values(S.sup.st["@NEVER"]||{}).filter(r=>r.op==="never").sort((a,b)=>String(a.name).localeCompare(String(b.name),"ru")); }
 /* итоговый список с учётом примерной спецификации сделки:
    — блок «D:<сделка>» (только спецификация): если у сделки уже есть заказ из Базиса, оставляем только заказанное/пришедшее
@@ -3812,8 +3814,30 @@ async function supNeedLoad(oid){ if(S.sup.needs[oid]) return S.sup.needs[oid];
   try{ const r=await fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"}); if(!r.ok) throw 0; const res=parseJSON(await siteOrderText(oid,await r.text()));
     S.sup.needs[oid]={name:res.order||(S.orders[oid]||{}).name||oid,items:supBase(oid,res)}; }catch(_){ S.sup.needs[oid]={name:oid,items:[],err:true}; }
   return S.sup.needs[oid]; }
+/* ---------- прайс закупки: цена за единицу по названию. Порядок: прайс таблицы → цена из Базиса (если выгрузка её несёт) → нет цены ---------- */
+const supPKey=n=>String(n||"").toLowerCase().replace(/ё/g,"е").replace(/["'«»]/g,"").replace(/\s+/g," ").trim();
+function supPricePin(){ return S.sup.pin||(typeof shpPin==="function"?shpPin():"")||""; }
+async function supPriceLoad(){ const pin=supPricePin(); if(!pin||!S.site||!S.site.stagesUrl) return;
+  try{ const r=await fetch(supUrl("action=price&pin="+encodeURIComponent(pin)),{cache:"no-cache"}); const j=await r.json();
+    if(j&&j.ok){ S.sup.price={}; (j.items||[]).forEach(x=>{ S.sup.price[supPKey(x.name)]=x; }); S.sup.priceOk=true; } else S.sup.priceOk=false; }catch(_){} }
+function supPriceOf(it){ const r=(S.sup.price||{})[supPKey(it.name)]; if(r&&r.price>0) return {p:r.price,src:"прайс"}; if(it.bprice>0) return {p:it.bprice,src:"Базис"}; return null; }
+const supRub=v=>Math.round(+v||0).toLocaleString("ru-RU")+" ₽";
+async function supPriceSave(items){ const pin=supPricePin();
+  try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"priceSet",pin,who:S.who||"Снабженец",items})}); const j=await r.json();
+    if(j&&j.ok){ S.sup.price=S.sup.price||{}; items.forEach(x=>{ S.sup.price[supPKey(x.name)]={name:x.name,unit:x.unit,price:+x.price||0}; }); return true; }
+    toast(j&&j.error==="pin"?"Цены правят снабженец, технолог и офис":"Цена не сохранилась"); }catch(_){ toast("Нет связи — цена не сохранилась"); } return false; }
+function supPriceModal(name,unit,cur){ const m=document.createElement("div"); m.className="modal"; m.id="supPrM";
+  m.innerHTML=`<form class="modal-card" autocomplete="off"><h2 style="margin:0 0 6px">Цена</h2><p class="note" style="margin:0 0 10px">${esc(name)}<br>Цена за 1 ${esc(unit||"шт")} — запомнится в прайсе и подставится во все заказы.</p>
+    <input name="p" inputmode="decimal" value="${cur?esc(String(cur)):""}" placeholder="₽ за ${esc(unit||"шт")}" aria-label="Цена" style="width:100%;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:16px var(--f-body,system-ui)">
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m); setTimeout(()=>{ const i=m.querySelector("input"); i&&i.focus(); },50);
+  m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const v=String(e.target.p.value).replace(/\s/g,"").replace(",","."); if(v!==""&&!(+v>=0)){ toast("Впишите цену числом"); return; }
+    if(await supPriceSave([{name,unit,price:v}])){ m.remove(); toast(v?"Цена сохранена":"Цена убрана"); render(); } }); }
+/* итог по заказу: по плану, уже куплено (заказано/пришло/в цеху), осталось докупить; сколько позиций без цены */
+function supMoneyHtml(L){ if(!S.sup.priceOk) return ""; let all=0,left=0,no=0; L.forEach(i=>{ const pr=supPriceOf(i); if(!pr){ no++; return; } const v=pr.p*(+i.qty||0); all+=v; if(i.status===0) left+=v; });
+  return `<div class="sup-money"><div><span>Закупка по плану</span><b>${esc(supRub(all))}</b></div><div><span>Осталось докупить</span><b class="${left>0?"due":""}">${esc(supRub(left))}</b></div>${no?`<p>Без цены: ${no} поз. — нажмите «+ цена» у позиции</p>`:""}</div>`; }
 async function supStLoad(){ try{ const r=await fetch(supUrl("action=supply"),{cache:"no-cache"}); const j=await r.json();
-  if(j&&j.ok){ S.sup.st=supStMap(j.items); S.sup.stAt=Date.now(); return true; } }catch(_){} return false; }
+  if(j&&j.ok){ S.sup.st=supStMap(j.items); S.sup.stAt=Date.now(); supPriceLoad(); return true; } }catch(_){} return false; }
 /* статусы → по заказам. Таблица раньше хранила «0002» как 2: такие строки отдаём заказу 0002 (более поздняя строка важнее) */
 function supOrdN(v){ v=String(v==null?"":v).trim().toUpperCase(); return /^\d+$/.test(v)?String(+v):v; }
 function supStMap(items){ const st={}, ids=Object.keys(S.orders||{}).concat((S.shop&&S.shop.orders||[]).map(o=>String(o.t3d||"").toUpperCase()).filter(Boolean)), byN={};
@@ -3824,6 +3848,7 @@ async function supLoad(force){
   const ids=Object.keys(S.orders);
   try{ const r=await fetch(supUrl("action=supply"),{cache:"no-cache"}); const j=await r.json();
     if(j&&j.ok) S.sup.st=supStMap(j.items); }catch(_){ toast("Нет связи с таблицей — статусы не загрузились"); }
+  await supPriceLoad();
   await Promise.all(ids.map(async oid=>{ if(S.sup.needs[oid]&&!force) return;
     try{ const r=await fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"}); const txt=await siteOrderText(oid,await r.text()); const res=parseJSON(txt);
       S.sup.needs[oid]={name:res.order||(S.orders[oid]||{}).name||oid,items:supBase(oid,res)}; }catch(_){ S.sup.needs[oid]={name:(S.orders[oid]||{}).name||oid,items:[],err:true}; } }));
@@ -3902,7 +3927,7 @@ function supRow(oid,it){
       <button type="button" role="menuitem" class="btn sm" data-act="sup-edit" data-o="${esc(oid)}" data-k="${esc(it.key)}">✎ Изменить</button>
       <button type="button" role="menuitem" class="btn sm" data-act="sup-del" data-o="${esc(oid)}" data-k="${esc(it.key)}">Убрать из этого заказа</button>
       ${it.added?"":`<button type="button" role="menuitem" class="btn sm danger" data-act="sup-never" data-o="${esc(oid)}" data-k="${esc(it.key)}">Не закупаем никогда</button>`}</div>`:"";
-  return `<div class="sup-row3${menu?" open":""}">${ck}<span class="sup-nm">${esc(it.name)}${tags}</span><span class="sup-qq">${esc(supNum(it.qty))} ${esc(it.unit)}${it.qty!==it.origQty&&it.origQty!=null?`<small>было ${esc(supNum(it.origQty))}</small>`:""}</span>
+  return `<div class="sup-row3${menu?" open":""}">${ck}<span class="sup-nm">${esc(it.name)}${tags}</span><span class="sup-qq">${esc(supNum(it.qty))} ${esc(it.unit)}${it.qty!==it.origQty&&it.origQty!=null?`<small>было ${esc(supNum(it.origQty))}</small>`:""}${S.sup.priceOk?(()=>{ const pr=supPriceOf(it); return `<button type="button" class="sup-pr${pr?"":" none"}" data-act="sup-price" data-o="${esc(oid)}" data-k="${esc(it.key)}" title="${pr?"Цена из: "+pr.src+". Нажмите — изменить":"Указать цену"}">${pr?esc(supRub(pr.p))+" × "+esc(supNum(it.qty))+" = "+esc(supRub(pr.p*(+it.qty||0))):"+ цена"}</button>`; })():""}</span>
     <button type="button" class="sup-pill p${it.status}" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${nx}"${it.status===3?' data-noop="1"':""} title="${it.status<3?"Нажмите: → "+SN[nx]:"В цеху"}" aria-label="${esc(SN[it.status])}${it.status<3?", нажмите — "+SN[nx]:""}">${SN[it.status]}</button>
     <button type="button" class="sup-dots" data-act="sup-menu" data-o="${esc(oid)}" data-k="${esc(it.key)}" aria-expanded="${menu}" aria-label="Ещё: ${esc(it.name)}">⋯</button>${m}</div>`;
 }
@@ -3961,6 +3986,7 @@ function supOrders(ids){
     const srt=g=>g.sort((a,b)=>"LEFA".indexOf(a.type)-"LEFA".indexOf(b.type)||a.name.localeCompare(b.name,"ru"));
     let body="";
     if(open){
+      body+=supMoneyHtml(L);
       const need=srt(L.filter(i=>i.status===0)), ord=srt(L.filter(i=>i.status===1)), have=srt(L.filter(i=>i.status>=2)), MAX=5, all=!!S.sup.more[oid];
       const refs=need.map(i=>supRef(oid,i.key)), allSel=refs.length&&refs.every(r=>S.sup.sel.has(r));
       if(need.length) body+=`<section class="sup-grp"><div class="sup-gh"><b>Нужно купить · ${need.length}</b>${refs.length>1?`<button type="button" class="linkbtn sup-gsel" data-act="sup-selall" data-refs="${esc(refs.join("\n"))}" data-on="${allSel?"0":"1"}">${allSel?"Снять выбор":"Выбрать все → заявка"}</button>`:""}</div>
@@ -3970,7 +3996,7 @@ function supOrders(ids){
       if(!L.length) body+=`<p class="sup-empty">${nd.err?"Заказ не открылся.":"Позиций нет."}</p>`;
       body+=`<div class="sup-foot"><p class="sup-hint">Нажмите на статус — он сменится на следующий. Удержите или нажмите «⋯» — другие действия.</p>${supSmallLine(sm)}${dels.length?`<details class="sup-dels"><summary>Убрано из этого заказа · ${dels.length}</summary>${dels.map(i=>`<div class="sup-drow"><span>${esc(i.name)}${i.never?` <span class="sup-tag mute">не закупаем никогда</span>`:""}</span><button type="button" class="btn sm" data-act="${i.never?"sup-unnever":"sup-undel"}" data-o="${esc(oid)}" data-k="${esc(i.key)}" data-n="${esc(i.name)}">Вернуть</button></div>`).join("")}</details>`:""}</div>`
         +`${supSpecInB(oid)}
-        <form class="sup-add" data-o="${esc(oid)}"><input name="n" list="supNames" placeholder="Добавить позицию: название" required aria-label="Название новой позиции"><input name="q" inputmode="decimal" placeholder="Кол-во" style="width:80px" required aria-label="Количество">
+        <form class="sup-add" data-o="${esc(oid)}"><p class="sup-addh">Докупить / добавить: доп. фурнитура, лист ЛДСП взамен испорченного, кромка</p><select name="t" aria-label="Что добавить"><option value="шт">Фурнитура</option><option value="л.">ЛДСП / плита</option><option value="м">Кромка</option><option value="компл.">Другое</option></select><input name="n" list="supNames" placeholder="Название: петля, ЛДСП 16 Белый…" required aria-label="Название новой позиции"><input name="q" inputmode="decimal" placeholder="Кол-во" style="width:80px" required aria-label="Количество">${S.sup.priceOk?`<input name="p" inputmode="decimal" placeholder="Цена ₽" style="width:96px" aria-label="Цена за единицу">`:""}
         <select name="u" aria-label="Единица"><option>шт</option><option>м</option><option>л.</option><option>м²</option><option>компл.</option></select><button class="btn sm primary" type="submit">Добавить</button></form>`;
     }
     return `<div class="card sup-card v-${v.lv}"><button type="button" class="sup-head2" data-act="sup-open" data-o="${esc(oid)}" aria-expanded="${open}">${v.n?supRing(v):""}
@@ -4141,7 +4167,7 @@ function supPrint(text,secs,vendor){
 .sup-row2.open{background:color-mix(in srgb,var(--accent,#ffc21a) 8%,transparent)}
 .sup-foot{padding:0 14px}.sup-dels summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--muted);font-size:13.5px}
 .sup-drow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:14px}.sup-drow span{min-width:0;overflow-wrap:anywhere}
-.sup-card .sup-add{padding:8px 14px 14px}
+.sup-card .sup-add{padding:8px 14px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}.sup-card .sup-add input[name=n]{flex:1 1 200px;min-width:0}.sup-addh{flex-basis:100%;margin:0;font-size:13px;color:var(--muted)}
 .sup-nvl{margin:4px 0 8px}.sup-nvl .linkbtn{min-height:44px}.sup-nvl2{max-height:60vh;overflow:auto}
 .sup-mx{margin:10px 14px 4px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
 .mx-r{display:grid;grid-template-columns:minmax(92px,1.3fr) repeat(4,minmax(0,1fr));align-items:stretch;border-top:1px solid var(--line)}.mx-top{border-top:0;background:var(--sunk,#f0efea)}
@@ -4169,7 +4195,10 @@ function supPrint(text,secs,vendor){
 .sup-row3 .sup-ck{width:40px;height:40px}
 @media (max-width:599px){.sup-row3{grid-template-columns:40px minmax(0,1fr) auto 32px;grid-template-areas:"ck nm pill dots" "ck qq pill dots";row-gap:1px}.sup-row3>.sup-ck{grid-area:ck}.sup-row3 .sup-nm{grid-area:nm}.sup-row3 .sup-qq{grid-area:qq;text-align:left}.sup-row3 .sup-pill{grid-area:pill}.sup-row3 .sup-dots{grid-area:dots;width:32px}.sup-qq small{display:inline;margin-left:6px}}
 .sup-nm{min-width:0;overflow-wrap:anywhere;font-size:14.5px;line-height:1.3}.sup-nm small{display:block;font-size:12px}.sup-nm .sup-tag{margin-left:4px}
-.sup-qq{font-size:13px;color:var(--muted);white-space:nowrap;text-align:right}.sup-qq small{display:block;font-size:11px}
+.sup-qq{font-size:13px;color:var(--muted);white-space:nowrap;text-align:right}
+.sup-pr{display:block;margin:2px 0 0 auto;border:0;background:none;padding:2px 0;font:500 12px var(--f-body,system-ui);color:var(--ink);cursor:pointer;min-height:24px}.sup-pr.none{color:#0a84ff}
+@media (max-width:599px){.sup-pr{margin-left:0;display:inline-block;margin-left:8px}}
+.sup-money{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:10px 14px 4px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--ink) 5%,transparent)}.sup-money span{display:block;font-size:12px;color:var(--muted)}.sup-money b{font-size:17px;font-variant-numeric:tabular-nums}.sup-money b.due{color:#ff9f0a}.sup-money p{grid-column:1/-1;margin:0;font-size:12px;color:var(--muted)}.sup-qq small{display:block;font-size:11px}
 .sup-pill{min-width:84px;min-height:36px;padding:0 10px;border:0;border-radius:8px;font:600 12.5px var(--f-body,system-ui);cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 .sup-pill.p0{background:#fde4e1;color:#b3261e}.sup-pill.p1{background:#fff0d4;color:#8a4b00}.sup-pill.p2{background:#e2f1e3;color:#2a6e2d}.sup-pill.p3{background:#dfe6f3;color:#2d4f8a}
 .sup-dots{width:36px;height:40px;border:0;background:none;color:var(--muted);font:700 18px var(--f-body,system-ui);cursor:pointer;border-radius:8px}.sup-dots:hover,.sup-dots[aria-expanded="true"]{background:var(--sunk,#eee)}
@@ -4260,6 +4289,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
     const sn=supSent(o); if(S.sup.open[o]&&sn&&S.sup.pin&&(siteIsSupply()||(S.shop&&S.shop.role==="supply"))) supSave([{order:o,key:"@SENT",name:sn.name||"Отправлено в закупку",qty:sn.qty,unit:"",status:1,op:"seen"}]);
     return; }
   if(a==="sup-pin") return supPinModal();
+  if(a==="sup-price"){ const it=supItems(o).find(x=>x.key===k); if(!it) return; const pr=supPriceOf(it); return supPriceModal(it.name,it.unit,pr?pr.p:""); }
   if(a==="sup-cancel"){ S.sup.edit=null; supRenderKeep(); return; }
   if(a==="sup-edit"){ S.sup.edit=o+"|"+k; S.sup.menu=null; supRenderKeep(); return; }
   if(a==="sup-st"&&(t.dataset.noop||supLP.fired)){ supLP.fired=false; if(t.dataset.noop){ S.sup.menu=o+"|"+k; supRenderKeep(); } return; }
@@ -4282,6 +4312,7 @@ document.addEventListener("pointerdown",ev=>{ const b=ev.target.closest&&ev.targ
 document.addEventListener("contextmenu",ev=>{ if(ev.target.closest&&ev.target.closest(".sup-pill")) ev.preventDefault(); });
 /* галочки «в заявку» */
 document.addEventListener("change",ev=>{ const c=ev.target; if(!c.classList) return;
+  if(c.name==="t"&&c.closest&&c.closest("form.sup-add")){ const u=c.form.u; if(u) u.value=c.value; return; }   // выбрали «ЛДСП» — единица «л.», «Кромка» — «м»
   if(c.classList.contains("sup-cb")){ const r=supRef(c.dataset.o,c.dataset.k); c.checked?S.sup.sel.add(r):S.sup.sel.delete(r); supRenderKeep(); }
   else if(c.classList.contains("sup-cbg")){ String(c.dataset.refs||"").split("\n").filter(Boolean).forEach(r=>c.checked?S.sup.sel.add(r):S.sup.sel.delete(r)); supRenderKeep(); } });
 document.addEventListener("submit",ev=>{ const f=ev.target;
@@ -4289,6 +4320,7 @@ document.addEventListener("submit",ev=>{ const f=ev.target;
     r.name=f.n.value.trim()||r.name; const q=parseFloat(String(f.q.value).replace(",",".")); r.qty=isNaN(q)?r.qty:q; if(base&&r.qty===base.qty) r.qty=null; if(base&&r.name===base.name&&r.op!=="del") r.op=r.qty!=null?"qty":"";
     else if(base) r.op="rep"; S.sup.edit=null; supSave([r]); }
   if(f.classList&&f.classList.contains("sup-add")){ ev.preventDefault(); const o=f.dataset.o, q=parseFloat(String(f.q.value).replace(",","."));
+    const pv=f.p?String(f.p.value).replace(/\s/g,"").replace(",","."):""; if(pv!==""&&+pv>=0) supPriceSave([{name:f.n.value.trim(),unit:f.u.value,price:pv}]);
     supSave([{order:o,key:"A:"+Date.now().toString(36),name:f.n.value.trim(),qty:isNaN(q)?1:q,unit:f.u.value,status:0,op:"add"}]); }
 },true);
 
@@ -4421,7 +4453,7 @@ function shpPin(){ return S.shop.techPin||S.shop.officePin||S.shop.supPin||S.pin
 function shpWho(){ return S.who||(S.shop.techPin?"Технолог":S.shop.officePin?"Офис":S.shop.supPin?"Снабженец":"Мастер"); }
 /* роли: tech — всё; office — всё, кроме удаления; supply — как мастер + чеки закупки; master — всё, кроме денег */
 function shpFixStages(L){ (L||[]).forEach(o=>{ o.stage=SHP_OLDST[o.stage]||(SHP_ST.some(x=>x.k===o.stage)?o.stage:"dogovor"); }); return L; }
-function shpSetRole(j){ shpFixStages(j.orders); S.shop.tech=!!j.tech; S.shop.role=j.role||(j.tech?"tech":"master"); S.shop.full=S.shop.tech||S.shop.role==="office"; S.shop.rcpt=S.shop.full||S.shop.role==="supply"; S.shop.general=j.general||S.shop.general||{lastAt:0,lastWho:""};
+function shpSetRole(j){ shpFixStages(j.orders); S.shop.tech=!!j.tech; S.shop.role=j.role||(j.tech?"tech":"master"); S.shop.full=S.shop.tech||S.shop.role==="office"; S.shop.sumSee=S.shop.full||S.shop.role==="supply"; S.shop.rcpt=S.shop.full||S.shop.role==="supply"; S.shop.general=j.general||S.shop.general||{lastAt:0,lastWho:""};
   if(Array.isArray(j.tasks)){ S.shop.tasks=j.tasks; S.shop.v2=true; } if(Array.isArray(j.staff)) S.shop.staff=j.staff; }
 const SHP_ROLE={tech:"Технолог",office:"Офис",supply:"Снабженец",master:"Мастер"};
 function shpRoleLine(){ return S.shop.tech?"Технолог"+(S.who?": "+S.who:""):(SHP_ROLE[S.shop.role]||"Мастер")+": "+shpWho(); }
@@ -4548,8 +4580,8 @@ function shpCard(o,seen,today){
   if(o.t3d||o.link) chips.push(`<span class="shp-chip">3D</span>`);
   if(S.shop.rcpt&&o.receiptsTotal>0) chips.push(`<span class="shp-chip buy">закупка ${esc(shpMoney(o.receiptsTotal))}</span>`);
   const key=[o.client,o.num,"№"+o.num,o.phone,String(o.phone||"").replace(/\D/g,""),o.address,o.kind].join(" ").toLowerCase();
-  return `<button type="button" class="shp-card" data-act="shp-open" data-id="${esc(o.id)}" data-s="${esc(key)}" data-own="${esc(String(o.owner||"").trim().toLowerCase())}"${S.shop.full&&+o.sum?` data-sum="${esc(String(+o.sum))}"`:""}><span class="shp-c1"><b>${esc(o.client||"Без имени")}</b><span class="mono muted">№ ${esc(o.num)}</span></span>
-    <span class="shp-c2">${o.kind?`<span class="shp-kind">${esc(o.kind)}</span>`:""}${o.owner?`<span class="muted">${esc(o.owner)}</span>`:`<span class="muted">без ответственного</span>`}${S.shop.full&&+o.sum?`<span class="shp-csum2 mono">${esc(shpMoney(o.sum))}</span>`:""}</span>${chips.length?`<span class="shp-chips">${chips.join("")}</span>`:""}</button>`;
+  return `<button type="button" class="shp-card" data-act="shp-open" data-id="${esc(o.id)}" data-s="${esc(key)}" data-own="${esc(String(o.owner||"").trim().toLowerCase())}"${S.shop.sumSee&&+o.sum?` data-sum="${esc(String(+o.sum))}"`:""}><span class="shp-c1"><b>${esc(o.client||"Без имени")}</b><span class="mono muted">№ ${esc(o.num)}</span></span>
+    <span class="shp-c2">${o.kind?`<span class="shp-kind">${esc(o.kind)}</span>`:""}${o.owner?`<span class="muted">${esc(o.owner)}</span>`:`<span class="muted">без ответственного</span>`}${S.shop.sumSee&&+o.sum?`<span class="shp-csum2 mono">${esc(shpMoney(o.sum))}</span>`:""}</span>${chips.length?`<span class="shp-chips">${chips.join("")}</span>`:""}</button>`;
 }
 function shpKbSum(n){ return n?Number(n).toLocaleString("ru-RU")+" ₽":""; }
 function shpBoardHtml(){
@@ -4566,8 +4598,8 @@ function shpBoardHtml(){
     <div class="shp-seg" role="group" aria-label="Какие заказы показать"><button type="button" data-act="shp-mine" data-v="0" aria-pressed="${!S.shop.mine}">Все</button><button type="button" data-act="shp-mine" data-v="1" aria-pressed="${!!S.shop.mine}">Мои</button></div>
     ${S.shop.orders.some(o=>o.otype)?`<div class="shp-seg shp-tseg" role="group" aria-label="Тип заказов">${[["all","Все"],["norm","Обычные"],["gift","Подарки"],["repair","Ремонты"]].map(([k,n])=>`<button type="button" data-act="shp-tf" data-v="${k}" aria-pressed="${tf===k}">${n}${k==="gift"||k==="repair"?(nT(k)?" "+nT(k):""):""}</button>`).join("")}</div>`:""}
     <button type="button" class="btn shp-cltog" data-act="shp-closed" aria-pressed="${!!S.shop.showClosed}">${S.shop.showClosed?"Скрыть закрытые":"Показать закрытые"} · ${cl.length}</button></div><p class="muted shp-nofind" hidden>Ничего не нашлось.</p>`;
-  const col=(s,g)=>{ const sum=S.shop.full?g.reduce((a,o)=>a+(+o.sum||0),0):0;
-    return `<section class="shp-col" data-st="${s.k}" aria-label="${esc(s.n)}"><header class="shp-colh"><h2>${esc(s.n)}</h2><span class="shp-cnt">${g.length}</span>${S.shop.full?`<span class="shp-csum mono">${esc(shpKbSum(sum))}</span>`:""}</header>
+  const col=(s,g)=>{ const sum=S.shop.sumSee?g.reduce((a,o)=>a+(+o.sum||0),0):0;
+    return `<section class="shp-col" data-st="${s.k}" aria-label="${esc(s.n)}"><header class="shp-colh"><h2>${esc(s.n)}</h2><span class="shp-cnt">${g.length}</span>${S.shop.sumSee?`<span class="shp-csum mono">${esc(shpKbSum(sum))}</span>`:""}</header>
       <div class="shp-colb">${g.map(o=>shpCard(o,seen,today)).join("")}<p class="muted shp-none"${g.length?" hidden":""}>${s.k==="closed"||s.k==="lost"?"пока нет — можно перетащить сюда":"пусто — перетащите сюда карточку"}</p></div></section>`; };
   const byAt=(a,b)=>(b.stageAt||0)-(a.stageAt||0);
   h+=`<div class="shp-kb" id="shpKb">`+SHP_ST.map(s=>col(s,L.filter(o=>o.stage===s.k).sort(s.k==="closed"||s.k==="lost"?byAt:sortF))).join("")+`</div>`;
@@ -4596,6 +4628,9 @@ function shpOrderHtml(){
   if(full){ const sum=+o.sum||0, buy=+o.receiptsTotal||0, has=o.sum!==""&&o.sum!=null;
     const it=(l,v,c)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b></div>`;
     h+=`<div class="card shp-money" aria-label="Деньги по заказу">${it("Сумма",has?shpMoney(sum):"—")}${it("Предоплата",shpMoney(o.prepay))}${it("Остаток клиента",has?shpMoney(rest):"—",rest>0?"due":"")}${it("Закупка по чекам",shpMoney(buy))}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has&&sum-buy<0?"neg":"")}</div>`; }
+  else if(S.shop.sumSee){ const sum=+o.sum||0, buy=+o.receiptsTotal||0, has=o.sum!==""&&o.sum!=null;   /* снабженец: сумма заказа и закупка */
+    const it=(l,v,c)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b></div>`;
+    h+=`<div class="card shp-money" aria-label="Сумма заказа">${it("Сумма заказа",has?shpMoney(sum):"—")}${it("Закупка по чекам",shpMoney(buy))}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has&&sum-buy<0?"neg":"")}</div>`; }
   h+=`<div class="shp-cols"><div><dl class="card shp-info">${row("Что делаем",esc(o.kind||""))}${row("Описание",esc(o.desc||"").replace(/\n/g,"<br>"))}
     ${o.phone?row("Телефон",tel?`<a href="tel:${esc(tel)}">${esc(o.phone)}</a>`:esc(o.phone)):""}${o.address?row("Адрес",`${esc(o.address)} <a class="shp-map" href="${esc(shpMap(o.address))}" target="_blank" rel="noopener">На карте</a>`):""}
     ${row("Дата замера",o.zamerDate?esc(shpDM(o.zamerDate)):"")}${row("Мастер заказа",esc(o.master||""))}${row("Производство",o.prodFrom||o.prodTo?esc(shpRange(o.prodFrom,o.prodTo)):"")}${row("Монтаж",o.montazhDate?esc(shpRange(o.montazhDate,o.montazhTo)):"")}
@@ -4688,7 +4723,7 @@ function shpFormHtml(){
     ${f("Ответственный","owner",o.owner,'maxlength="40" list="shpOwners"')}
     <label>Этап<select name="stage">${SHP_ST.map(s=>{ const cur=s.k===(o.stage||"dogovor"), ok=cur||(isNew?s.k==="dogovor"||shpCanStage(null,s.k):shpCanStage(o,s.k)); return `<option value="${s.k}"${cur?" selected":""}${ok?"":" disabled"}>${esc(s.n)}${ok?"":" — "+esc(shpStWho(s.k))}</option>`; }).join("")}</select></label>
     <label id="shpReasonL"${o.stage==="lost"?"":" hidden"}>Причина (почему не успешно)<input name="reason" value="${esc(o.reason||"")}" maxlength="300" placeholder="Дорого, передумали, ушли к другим…"></label>
-    <label>Проект 3D<select name="t3d">${opt3d}</select></label>
+    <label>Проект 3D<select name="t3d">${opt3d}</select></label>${ids.length?"":`<p class="note" style="margin:0;grid-column:1/-1">Список заказов из Базиса пуст: на этом телефоне ещё не открывали ссылку от технолога (для снабженца — «ссылка снабженца»). Откройте её один раз — заказы появятся здесь и в Технолог 3D.</p>`}
     ${f("Ссылка на 3D (если нет в списке)","link",o.link,'type="url" inputmode="url" maxlength="500" placeholder="https://…"')}
     <label class="wide">Заметки<textarea name="notes" rows="3" maxlength="2000">${esc(o.notes||"")}</textarea></label>
     <div class="wide shp-form-b"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="shp-cancel">Отмена</button></div>
@@ -5891,7 +5926,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
     if(wasO){ S.shop.officePin=""; try{ localStorage.removeItem("cehqr-officepin"); }catch(_){} }
     if(wasS) shpSupOut();
     if(!wasT&&!wasO&&!wasS){ S.pin=""; try{ localStorage.removeItem("cehqr-pin"); }catch(_){} }
-    S.shop.loaded=false; S.shop.orders=[]; S.shop.rc={}; S.shop.tech=false; S.shop.full=false; S.shop.rcpt=false; S.shop.role=""; shpGo("board"); return; }
+    S.shop.loaded=false; S.shop.orders=[]; S.shop.rc={}; S.shop.tech=false; S.shop.full=false; S.shop.sumSee=false; S.shop.rcpt=false; S.shop.role=""; shpGo("board"); return; }
   if(a==="shp-reload"){ S.shop.err=false; t.disabled=true; await shpLoad(); t.disabled=false; if(S.shop.loaded) toast("Обновлено"); return; }
   if(a==="shp-open"){ document.querySelectorAll("#shpTaskModal").forEach(x=>x.remove()); return shpGo("order",t.dataset.id); }
   if(a==="shp-back"){ const b=S.shop.back&&S.shop.back!=="order"?S.shop.back:"board"; shpGo(b); shpLoad(true); return; }
