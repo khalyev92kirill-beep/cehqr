@@ -5153,6 +5153,7 @@ function viewShop(){
   if(m==="money") return nav+shpMoneyHtml();
   if(m==="zp") return nav+shpZpHtml();
   if(m==="pnl") return nav+shpPnlHtml();
+  if(m==="gifts") return nav+shpGiftsHtml();
   if(m==="help") return nav+helpListHtml();
   if(m==="zpp") return nav+shpZpPersonHtml();
   return nav+shpBoardHtml();
@@ -5253,12 +5254,12 @@ async function shpTasksLoad(quiet){ const j=await shpGet("action=tasks",quiet); 
 function shpOldScript(){ return S.shop.v2?"":`<div class="banner warn">Задачи, лента и сотрудники заработают после обновления скрипта Google-таблицы (вставить новый код → «Управление развёртываниями» → «Новая версия»).</div>`; }
 
 /* нижние вкладки (Вертакс) / меню сверху (сайт) */
-function shpTab(){ const m=S.shop.mode; return m==="tasks"?"tasks":m==="chats"||m==="general"?"chats":m==="cal"?"cal":/^(more|feed|clients|client|staff|person|money|zp|zpp|pnl|help)$/.test(m)?"more":"board"; }
+function shpTab(){ const m=S.shop.mode; return m==="gifts"?"gifts":m==="tasks"?"tasks":m==="chats"||m==="general"?"chats":m==="cal"?"cal":/^(more|feed|clients|client|staff|person|money|zp|zpp|pnl|help)$/.test(m)?"more":"board"; }
 function shpChatUnread(){ const seen=shpSeen(); return S.shop.orders.filter(o=>shpUnread(o,seen)).length+(shpGenUnread(seen)?1:0); }
 function shpNavHtml(){
   const cur=shpTab(), my=shpMyOpen(), un=shpChatUnread();
   const it=[["board","Сделки","deals"],["tasks","Задачи","tasks",my.n?`<span class="bdg${my.late?" bad":""}" aria-label="${my.late?"просрочено "+my.late:"открытых "+my.n}">${my.late||my.n}</span>`:""],
-    ["chats","Чаты","chats",un?`<span class="bdg" aria-label="непрочитанных ${un}">${un}</span>`:""],["cal","Календарь","cal"],["more","Ещё","more"]];
+    ["chats","Чаты","chats",un?`<span class="bdg" aria-label="непрочитанных ${un}">${un}</span>`:""],["cal","Календарь","cal"]].concat(S.shop.full?[["gifts","Подарки","gift"]]:[]).concat([["more","Ещё","more"]]);
   return `<nav class="shp-tabs ${VTX?"bottom":"top"}" aria-label="Разделы Вертакса">${it.map(x=>`<button type="button" data-act="shp-tab" data-v="${x[0]}"${cur===x[0]?' aria-current="page"':""}>${shpIco(x[2])}<span class="lb">${x[1]}</span>${x[3]||""}</button>`).join("")}</nav>`;
 }
 function shpTaskStrip(){
@@ -5793,6 +5794,50 @@ function shpExpMModal(){ const P=(S.shop.pnl&&S.shop.pnl.monthly)||[], ym=shpTod
   m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target.elements, rows=L.map((_,i)=>({name:f["t"+i].value.trim(),sum:f["s"+i].value.replace(/\s/g,"").replace(",","."),from:f["f"+i].value,till:f["u"+i].value})).filter(r=>r.name&&+r.sum>0);
     const j=await shpPost({action:"expMonthly",rows}); if(!j) return; m.remove(); toast("Сохранено"); S.shop.pnl=null; shpRenderKeep(); }); }
 
+/* ---- «Подарки» (технолог и офис): мебель, которую дарит ремонтная компания. Сколько сделали, сколько компания вернула, остаток долга ---- */
+SHP_I.gift='<path d="M4 11h16v9H4zM3 7h18v4H3zM12 7v13M12 7C10 3 6.5 3 6.5 5S9.5 7 12 7s5.5 0 5.5-2S14 3 12 7z"/>';
+function shpGifts(){ return S.shop.orders.filter(o=>o.otype==="gift"); }
+async function shpGiftLoad(){ if(S.shop.giftBusy) return; S.shop.giftBusy=true; const j=await shpGet("action=gift",true); S.shop.giftBusy=false; S.shop.gift=j&&j.ok?j:{err:1,pays:[]};
+  if(S.view==="shop"&&S.shop.mode==="gifts"&&!document.querySelector(".modal")) shpRenderKeep(); }
+function shpGiftCost(o){ return (Number(o.receiptsTotal)||0)+(Number(o.zpBr)||0); }   // закупка по чекам + бригаде
+function shpGiftVal(o){ return Number(o.sum)>0?Number(o.sum):shpGiftCost(o); }   // на сколько сделали: сумма заказа, а если не указана — себестоимость
+function shpGiftComps(){ const pays=(S.shop.gift&&S.shop.gift.pays)||[]; return [...new Set(shpGifts().map(o=>o.payer||"").concat(pays.map(p=>p.payer)).filter(Boolean))]; }
+function shpGiftsHtml(){
+  if(!S.shop.full) return `<div class="head"><h1>Подарки</h1></div><p class="note">Подарки видят технолог и офис.</p>`;
+  if(!S.shop.gift) shpGiftLoad();
+  const pays=(S.shop.gift&&S.shop.gift.pays)||[], comps=shpGiftComps(); let co=S.shop.gco||""; if(co&&!comps.includes(co)) co="";
+  const inCo=x=>!co||(x.payer||"")===co, G=shpGifts().filter(o=>inCo(o)&&o.stage!=="lost"), P=pays.filter(inCo);
+  const done=G.reduce((a,o)=>a+shpGiftVal(o),0), cost=G.reduce((a,o)=>a+shpGiftCost(o),0), paid=P.reduce((a,p)=>a+p.sum,0), debt=done-paid, tab=S.shop.gtab||"orders";
+  let h=`<div class="head"><div><h1>Подарки</h1><p class="muted" style="margin:4px 0 0">Мебель в подарок от ремонтной компании</p></div><div class="head-actions"><button type="button" class="btn primary" data-act="shp-gnew">+ Подарок</button></div></div>`;
+  if(comps.length>1) h+=`<div class="shp-seg shp-wseg" role="group" aria-label="Компания">${[["","Все компании"]].concat(comps.map(c=>[c,c])).map(([k,n])=>`<button type="button" data-act="shp-gco" data-v="${esc(k)}" aria-pressed="${co===k}">${esc(n)}</button>`).join("")}</div>`;
+  h+=`<div class="shp-seg shp-wseg" role="group" aria-label="Раздел">${[["orders","Заказы · "+G.length],["calc","Расчёт с компанией"]].map(([k,n])=>`<button type="button" data-act="shp-gtab" data-v="${k}" aria-pressed="${tab===k}">${n}</button>`).join("")}</div>`;
+  h+=`<div class="shp-gsum"><div><span>Сделали на</span><b>${esc(shpRub(done))}</b><small>себестоимость ${esc(shpRub(cost))}</small></div><div><span>Компания вернула</span><b class="okc">${esc(shpRub(paid))}</b><small>${P.length} ${shpPl(P.length,"оплата","оплаты","оплат")}</small></div></div>
+    <div class="shp-gdebt ${debt>0?"bad":"ok"}"><span>${debt>0?"Остаток долга":debt<0?"Переплата":"Долга нет"}</span><b>${esc(shpRub(Math.abs(debt)))}</b></div>`;
+  if(S.shop.gift&&S.shop.gift.err) h+=`<p class="note">Оплаты не загрузились — обновите скрипт таблицы или проверьте связь.</p>`;
+  if(tab==="orders"){
+    if(!G.length) return h+`<p class="note">Подарков пока нет. Нажмите «+ Подарок» — или в любом заказе: «Изменить» → «Тип заказа» → «Подарок».</p>`;
+    const L=G.slice().sort((a,b)=>(shpClosed(a)-shpClosed(b))||(b.created-a.created)), N=SHP_ST.findIndex(x=>x.k==="closed");
+    h+=`<ul class="shp-zl">${L.map(o=>{ const i=Math.max(0,SHP_ST.findIndex(x=>x.k===o.stage)), pc=Math.round(Math.min(i,N)/N*100), noSum=!(Number(o.sum)>0);
+      return `<li><button type="button" class="shp-zli shp-gli" data-act="shp-open" data-id="${esc(o.id)}"><span>№ ${esc(o.num)} · ${esc(o.client||"")}${o.payer&&!co&&comps.length>1?` <span class="shp-chip gift">${esc(o.payer)}</span>`:""}
+        <small class="muted">${esc([o.kind,o.address].filter(Boolean).join(" · ")||"—")}</small><small class="${o.stage==="closed"?"okc":""}">${esc(shpStName(o.stage))} · закупка ${esc(shpRub(o.receiptsTotal))} · бригаде ${esc(shpRub(o.zpBr))}</small>
+        <i class="shp-gbar"><i style="width:${pc}%"></i></i></span><b>${esc(shpRub(shpGiftVal(o)))}${noSum?`<small class="muted">себест.</small>`:""}</b></button></li>`; }).join("")}</ul>`;
+    return h;
+  }
+  const M=G.map(o=>({when:o.created||0,o})).concat(P.map(p=>({when:p.when,p}))).sort((a,b)=>b.when-a.when), d=ms=>ms?new Date(ms).toLocaleDateString("ru-RU",{day:"numeric",month:"short"}):"";
+  h+=`<div class="shp-zpb"><button type="button" class="btn primary" data-act="shp-gpay">+ Записать оплату от компании</button></div>`;
+  if(!M.length) return h+`<p class="note">Пока пусто: здесь будут подарочные заказы и оплаты от компании.</p>`;
+  h+=`<p class="shp-zcap">Движения</p><ul class="shp-zl">${M.map(m=>m.o?`<li><button type="button" class="shp-zli" data-act="shp-open" data-id="${esc(m.o.id)}"><span>№ ${esc(m.o.num)} · ${esc(m.o.client||"")}${m.o.kind?" · "+esc(m.o.kind):""}<small class="muted">${Number(m.o.sum)>0?"сумма заказа":"себестоимость (сумма не указана)"} · ${esc(d(m.when))}</small></span><b>${esc(shpRub(shpGiftVal(m.o)))}</b></button></li>`
+    :`<li><div class="shp-zli"><span>Оплата от ${esc(m.p.payer)}<small class="muted">${esc(d(m.when))}${m.p.text?" · "+esc(m.p.text):""}${m.p.who?" · внёс "+esc(m.p.who):""}</small></span><b class="okc">−${esc(shpRub(m.p.sum))}</b><button type="button" class="btn sm" data-act="shp-gpdel" data-id="${esc(m.p.id)}" aria-label="Удалить оплату">✕</button></div></li>`).join("")}</ul>`;
+  return h;
+}
+function shpGiftPayModal(){ const comps=shpGiftComps(), m=document.createElement("div"); m.className="modal"; m.id="shpGPayM";
+  m.innerHTML=`<form class="modal-card" autocomplete="off"><h2 style="margin:0 0 10px">Оплата от компании</h2><div class="form" style="grid-template-columns:1fr;margin:0">
+    <label>Компания<input name="payer" required maxlength="80" list="shpGComps" value="${esc(S.shop.gco||(comps.length===1?comps[0]:""))}" placeholder="Название ремонтной компании"></label><datalist id="shpGComps">${comps.map(c=>`<option value="${esc(c)}">`).join("")}</datalist>
+    <label>Сумма, ₽<input name="sum" inputmode="decimal" required maxlength="12"></label><label>Дата<input name="date" type="date" value="${shpToday()}"></label><label>Комментарий<input name="text" maxlength="200" placeholder="Перевод, наличные, за какой заказ…"></label></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m);
+  m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target.elements; const j=await shpPost({action:"giftPay",payer:f.payer.value.trim(),sum:f.sum.value.replace(/\s/g,"").replace(",","."),date:f.date.value,text:f.text.value.trim()}); if(!j) return; m.remove(); toast("Оплата записана"); S.shop.gift=null; shpRenderKeep(); }); }
+
 /* ---- «Ещё» ---- */
 function shpMoreHtml(){
   const it=(act,v,ic,t,sub)=>`<li><button type="button" class="shp-row" data-act="${act}" data-v="${v}"><span class="shp-av" aria-hidden="true">${shpIco(ic,20)}</span><span class="shp-rb"><b>${t}</b><span class="muted">${sub}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
@@ -6133,6 +6178,9 @@ body.shp-dragging,body.shp-dragging *{cursor:grabbing!important;-webkit-user-sel
 .shp-kbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.shp-kbtns .btn{min-height:44px}
 .shp-plan{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px 12px;margin:0;display:grid;gap:10px}.shp-plan legend{padding:0 6px;font-weight:700}.shp-plan-d{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.shp-plan-d label{min-width:0}.shp-plan-d input{width:100%;min-width:0;box-sizing:border-box}.shp-plan input{box-sizing:border-box;max-width:100%}
 .shp-chip.ok{background:color-mix(in srgb,#2f8f4e 18%,var(--surface));color:#3fae5f;border-color:transparent}
+.shp-gsum{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px}.shp-gsum>div{background:var(--surface);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}.shp-gsum span{color:var(--muted);font-size:13px}.shp-gsum b{font-size:20px}.shp-gsum small{color:var(--muted);font-size:12px}
+.shp-gdebt{display:flex;justify-content:space-between;align-items:center;background:var(--surface);border-radius:12px;padding:12px 14px;margin:0 0 12px}.shp-gdebt b{font-size:20px}.shp-gdebt.bad b{color:#ff453a}.shp-gdebt.ok b{color:#30d158}
+.shp-gli .shp-chip{align-self:flex-start}.shp-gli>span{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}.shp-gli b{text-align:right;white-space:nowrap}.shp-gli b small{display:block;font-weight:400;font-size:11px}.shp-gbar{display:block;height:4px;border-radius:2px;background:var(--line);margin-top:5px;overflow:hidden}.shp-gbar i{display:block;height:100%;background:#30d158}
 .shp-chip.gift{background:color-mix(in srgb,#5856d6 16%,var(--surface));color:#5856d6;border-color:transparent}.shp-chip.rep{background:color-mix(in srgb,#ff9500 20%,var(--surface));color:#b35a00;border-color:transparent}
 .shp-tseg{flex-wrap:wrap}.shp-wseg{margin:0 0 14px}
 .shp-zpt{display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border-radius:12px;padding:12px 6px;margin:0 0 6px;text-align:center}.shp-zpt span{display:block;font-size:12.5px;color:var(--muted)}.shp-zpt b{font-size:18px;font-variant-numeric:tabular-nums}
@@ -6343,12 +6391,17 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="shp-zsal") return shpZpSalModal();
   if(a==="shp-pper"){ S.shop.pper=t.dataset.v; S.shop.pnl=null; return shpRenderKeep(); }
   if(a==="shp-expadd") return shpExpAddModal();
+  if(a==="shp-gtab"){ S.shop.gtab=t.dataset.v; return shpRenderKeep(); }
+  if(a==="shp-gco"){ S.shop.gco=t.dataset.v; return shpRenderKeep(); }
+  if(a==="shp-gpay") return shpGiftPayModal();
+  if(a==="shp-gnew"){ S.shop.edit={stage:"dogovor",otype:"gift",payer:S.shop.gco||(shpGiftComps().length===1?shpGiftComps()[0]:"")}; S.shop.backTo=null; return shpGo("form"); }
+  if(a==="shp-gpdel"){ if(!t.dataset.sure){ t.dataset.sure="1"; t.textContent="Удалить?"; return; } const j=await shpPost({action:"giftPayDel",id:t.dataset.id}); if(j){ S.shop.gift=null; shpRenderKeep(); } return; }
   if(a==="shp-expm") return shpExpMModal();
   if(a==="shp-expdel"){ if(!t.dataset.sure){ t.dataset.sure="1"; t.textContent="Удалить?"; return; } const j=await shpPost({action:"expDel",id:t.dataset.id}); if(j){ S.shop.pnl=null; shpRenderKeep(); } return; }
   if(a==="shp-mper"){ S.shop.mper=t.dataset.v; return shpRenderKeep(); }
   if(a==="shp-mlost"){ S.shop.mlost=!!t.checked; return shpRenderKeep(); }
   if(a==="shp-tab"){ const v=t.dataset.v; if(t.dataset.tt) S.shop.ttab=t.dataset.tt; S.shop.chat=null;
-    if(v==="feed"){ S.shop.feed.loaded&&shpFeedLoad(true); } if(v==="help") S.shop.help=null; if(v==="staff"){ S.shop.staffLoaded=false; } if(v==="cal"&&!S.shop.cal.a) S.shop.cal.a=shpToday();
+    if(v==="feed"){ S.shop.feed.loaded&&shpFeedLoad(true); } if(v==="help") S.shop.help=null; if(v==="gifts") S.shop.gift=null; if(v==="staff"){ S.shop.staffLoaded=false; } if(v==="cal"&&!S.shop.cal.a) S.shop.cal.a=shpToday();
     if(v==="tasks"&&S.shop.v2) shpTasksLoad(true).then(()=>{ if(S.view==="shop"&&S.shop.mode==="tasks"&&!document.querySelector(".modal")) shpRenderKeep(); });
     return shpGo(v); }
   if(a==="shp-closed"){ S.shop.showClosed=!S.shop.showClosed; try{ localStorage.setItem("cehqr-shopclosed",S.shop.showClosed?"1":"0"); }catch(_){} t.setAttribute("aria-pressed",String(S.shop.showClosed)); t.textContent=(S.shop.showClosed?"Скрыть закрытые":"Показать закрытые")+" · "+S.shop.orders.filter(shpClosed).length; shpApplyFilter();
