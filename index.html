@@ -3765,6 +3765,12 @@ function supItemsRaw(oid){
 function supNeverKey(name){ return "N:"+supNorm(name).replace(/[«»"'`]/g,"").slice(0,190); }
 /* добавленная вручную позиция: по единице — листы (л., м²) к ЛДСП, метры к кромке, остальное — фурнитура/другое */
 function supAddT(u){ u=String(u||"").trim().toLowerCase(); return /^(л\.?|лист\w*|м²|м2)$/.test(u)?"L":/^(м|п\.?м\.?)$/.test(u)?"E":"A"; }
+/* подсказки названий из базы Базиса — отдельно по типу: ЛДСП/плиты, кромка, фурнитура; supNames — всё вместе (правка позиции) */
+const SUP_DL={L:/^Листов/,E:/^Кромоч/,F:/^(Фурнитур|Каталог|Расходн|Погонн)/};
+function supDatalists(){ const d=S.cat&&S.cat.data; if(!d) return `<datalist id="supNames"></datalist>`;
+  if(!S.sup.dlHtml){ const opt=L=>L.map(x=>`<option value="${esc(x.n)}">`).join(""), by=k=>d.items.filter(x=>SUP_DL[k].test(x.g));
+    S.sup.dlHtml=`<datalist id="supNamesL">${opt(by("L"))}</datalist><datalist id="supNamesE">${opt(by("E"))}</datalist><datalist id="supNamesF">${opt(by("F"))}</datalist><datalist id="supNames">${opt(d.items.filter(x=>/^(Листов|Кромоч|Фурнитур|Каталог|Расходн|Погонн)/.test(x.g)))}</datalist>`; }
+  return S.sup.dlHtml; }
 function supNeverList(){ return Object.values(S.sup.st["@NEVER"]||{}).filter(r=>r.op==="never").sort((a,b)=>String(a.name).localeCompare(String(b.name),"ru")); }
 /* итоговый список с учётом примерной спецификации сделки:
    — блок «D:<сделка>» (только спецификация): если у сделки уже есть заказ из Базиса, оставляем только заказанное/пришедшее
@@ -3817,8 +3823,18 @@ const supPKey=n=>String(n||"").toLowerCase().replace(/ё/g,"е").replace(/["'«�
 function supPricePin(){ return S.sup.pin||(typeof shpPin==="function"?shpPin():"")||""; }
 async function supPriceLoad(){ const pin=supPricePin(); if(!pin||!S.site||!S.site.stagesUrl) return;
   try{ const r=await fetch(supUrl("action=price&pin="+encodeURIComponent(pin)),{cache:"no-cache"}); const j=await r.json();
-    if(j&&j.ok){ S.sup.price={}; (j.items||[]).forEach(x=>{ S.sup.price[supPKey(x.name)]=x; }); S.sup.priceOk=true; } else S.sup.priceOk=false; }catch(_){} }
-function supPriceOf(it){ const r=(S.sup.price||{})[supPKey(it.name)]; if(r&&r.price>0) return {p:r.price,src:"прайс"}; if(it.bprice>0) return {p:it.bprice,src:"Базис"}; return null; }
+    if(j&&j.ok){ S.sup.price={}; (j.items||[]).forEach(x=>{ S.sup.price[supPKey(x.name)]=x; }); S.sup.priceOk=true; if(j.bk) await supBaseLoad(j.bk); } else S.sup.priceOk=false; }catch(_){} }
+function supBaseOf(name,unit){ const b=S.sup.base&&S.sup.base.get(supPKey(name)); if(!b) return null; let p=b[0];
+  if(b[2]&&/^л/.test(String(unit||""))) p=Math.round(p*b[2]);   // в базе цена за м², в закупке — листы
+  return p>0?p:null; }
+function supPriceOf(it){ const r=(S.sup.price||{})[supPKey(it.name)]; if(r&&r.price>0) return {p:r.price,src:"прайс"}; const bp=supBaseOf(it.name,it.unit); if(bp) return {p:bp,src:"Базис"}; if(it.bprice>0) return {p:it.bprice,src:"Базис"}; return null; }
+/* цены из базы Базиса: catalog-prices.json зашифрован, ключ выдаёт таблица по PIN снабженца/технолога/офиса */
+async function supBaseLoad(key){ if(S.sup.base||S.sup.baseBusy||!key) return; S.sup.baseBusy=true;
+  try{ const o=await (await fetch("catalog-prices.json",{cache:"no-cache"})).json(), b=x=>{ x=String(x).replace(/-/g,"+").replace(/_/g,"/"); x+="=".repeat((4-x.length%4)%4); return Uint8Array.from(atob(x),c=>c.charCodeAt(0)); };
+    const k=await crypto.subtle.importKey("raw",b(key),"AES-GCM",false,["decrypt"]); let buf=await crypto.subtle.decrypt({name:"AES-GCM",iv:b(o.iv)},k,b(o.ct));
+    if(o.z) buf=await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+    const j=JSON.parse(new TextDecoder().decode(buf)); S.sup.base=new Map(Object.keys(j.p).map(n=>[supPKey(n),j.p[n]])); S.sup.baseV=j.v; }catch(_){ S.sup.base=null; }
+  S.sup.baseBusy=false; }
 const supRub=v=>Math.round(+v||0).toLocaleString("ru-RU")+" ₽";
 async function supPriceSave(items){ const pin=supPricePin();
   try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"priceSet",pin,who:S.who||"Снабженец",items})}); const j=await r.json();
@@ -3846,7 +3862,7 @@ async function supLoad(force){
   const ids=Object.keys(S.orders);
   try{ const r=await fetch(supUrl("action=supply"),{cache:"no-cache"}); const j=await r.json();
     if(j&&j.ok) S.sup.st=supStMap(j.items); }catch(_){ toast("Нет связи с таблицей — статусы не загрузились"); }
-  await supPriceLoad();
+  await supPriceLoad(); if(typeof catLoad==="function") catLoad();
   await Promise.all(ids.map(async oid=>{ if(S.sup.needs[oid]&&!force) return;
     try{ const r=await fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"}); const txt=await siteOrderText(oid,await r.text()); const res=parseJSON(txt);
       S.sup.needs[oid]={name:res.order||(S.orders[oid]||{}).name||oid,items:supBase(oid,res)}; }catch(_){ S.sup.needs[oid]={name:(S.orders[oid]||{}).name||oid,items:[],err:true}; } }));
@@ -3994,15 +4010,14 @@ function supOrders(ids){
       if(!L.length) body+=`<p class="sup-empty">${nd.err?"Заказ не открылся.":"Позиций нет."}</p>`;
       body+=`<div class="sup-foot"><p class="sup-hint">Нажмите на статус — он сменится на следующий. Удержите или нажмите «⋯» — другие действия.</p>${supSmallLine(sm)}${dels.length?`<details class="sup-dels"><summary>Убрано из этого заказа · ${dels.length}</summary>${dels.map(i=>`<div class="sup-drow"><span>${esc(i.name)}${i.never?` <span class="sup-tag mute">не закупаем никогда</span>`:""}</span><button type="button" class="btn sm" data-act="${i.never?"sup-unnever":"sup-undel"}" data-o="${esc(oid)}" data-k="${esc(i.key)}" data-n="${esc(i.name)}">Вернуть</button></div>`).join("")}</details>`:""}</div>`
         +`${supSpecInB(oid)}
-        <form class="sup-add" data-o="${esc(oid)}"><p class="sup-addh">Докупить / добавить: доп. фурнитура, лист ЛДСП взамен испорченного, кромка</p><select name="t" aria-label="Что добавить"><option value="шт">Фурнитура</option><option value="л.">ЛДСП / плита</option><option value="м">Кромка</option><option value="компл.">Другое</option></select><input name="n" list="supNames" placeholder="Название: петля, ЛДСП 16 Белый…" required aria-label="Название новой позиции"><input name="q" inputmode="decimal" placeholder="Кол-во" style="width:80px" required aria-label="Количество">${S.sup.priceOk?`<input name="p" inputmode="decimal" placeholder="Цена ₽" style="width:96px" aria-label="Цена за единицу">`:""}
+        <form class="sup-add" data-o="${esc(oid)}"><p class="sup-addh">Докупить / добавить: доп. фурнитура, лист ЛДСП взамен испорченного, кромка</p><select name="t" aria-label="Что добавить"><option value="шт">Фурнитура</option><option value="л.">ЛДСП / плита</option><option value="м">Кромка</option><option value="компл.">Другое</option></select><input name="n" list="supNamesF" placeholder="Название фурнитуры из базы" required aria-label="Название новой позиции" autocomplete="off"><input name="q" inputmode="decimal" placeholder="Кол-во" style="width:80px" required aria-label="Количество">${S.sup.priceOk?`<input name="p" inputmode="decimal" placeholder="Цена ₽" style="width:96px" aria-label="Цена за единицу">`:""}
         <select name="u" aria-label="Единица"><option>шт</option><option>м</option><option>л.</option><option>м²</option><option>компл.</option></select><button class="btn sm primary" type="submit">Добавить</button></form>`;
     }
     return `<div class="card sup-card v-${v.lv}"><button type="button" class="sup-head2" data-act="sup-open" data-o="${esc(oid)}" aria-expanded="${open}">${v.n?supRing(v):""}
         <span class="sup-ttl"><b>${esc(nd.name)}</b>${supSent(oid)?` <span class="sup-new">новое · ${esc(supSent(oid).who||"")}</span>`:""}<small>${v.n?v.ok+" из "+v.n+" позиций есть":"нет позиций"}${nd.spec?"":" · "+esc(oid)}</small></span>
         <span class="sup-chev" aria-hidden="true">${open?"▴":"▾"}</span></button>
       ${supVerdictHtml(v)}${v.n?supBarsHtml(L.filter(i=>!i.small)):""}${supDealHtml(oid)}${body}</div>`; }).join("");
-  const names=S.cat&&S.cat.data?S.cat.data.items.filter(x=>/^(Листовой|Кромочные|Погонные|Фурнитура|Каталог|Расходные)/.test(x.g)).map(x=>x.n):[];
-  return (nv?`<p class="sup-nvl"><button type="button" class="linkbtn" data-act="sup-nevlist">Не закупаем никогда: ${nv} поз.</button></p>`:"")+h+`<datalist id="supNames">${names.slice(0,3000).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`;
+  return (nv?`<p class="sup-nvl"><button type="button" class="linkbtn" data-act="sup-nevlist">Не закупаем никогда: ${nv} поз.</button></p>`:"")+h+supDatalists();
 }
 /* заказ из Базиса + примерная спецификация сделки: заказанное заранее и сравнение */
 function supSpecInB(oid){ const d=/^D:/.test(oid)?null:supDeal(oid), rows=d&&typeof dealSpecRows==="function"?dealSpecRows(d.id):null; if(!rows||!rows.length) return "";
@@ -4165,7 +4180,7 @@ function supPrint(text,secs,vendor){
 .sup-row2.open{background:color-mix(in srgb,var(--accent,#ffc21a) 8%,transparent)}
 .sup-foot{padding:0 14px}.sup-dels summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--muted);font-size:13.5px}
 .sup-drow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:14px}.sup-drow span{min-width:0;overflow-wrap:anywhere}
-.sup-card .sup-add{padding:8px 14px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}.sup-card .sup-add input[name=n]{flex:1 1 200px;min-width:0}.sup-addh{flex-basis:100%;margin:0;font-size:13px;color:var(--muted)}
+.sup-card .sup-add{padding:8px 14px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}.sup-card .sup-add input[name=n]{flex:1 1 220px;min-width:0}.sup-card .sup-add select[name=t]{flex:0 0 150px}.sup-card .sup-add select[name=u]{flex:0 0 88px}.sup-card .sup-add input[name=q]{flex:0 0 80px}.sup-card .sup-add input[name=p]{flex:0 0 100px}.sup-addh{flex-basis:100%;margin:0;font-size:13px;color:var(--muted)}
 .sup-nvl{margin:4px 0 8px}.sup-nvl .linkbtn{min-height:44px}.sup-nvl2{max-height:60vh;overflow:auto}
 .sup-mx{margin:10px 14px 4px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
 .mx-r{display:grid;grid-template-columns:minmax(92px,1.3fr) repeat(4,minmax(0,1fr));align-items:stretch;border-top:1px solid var(--line)}.mx-top{border-top:0;background:var(--sunk,#f0efea)}
@@ -4196,6 +4211,8 @@ function supPrint(text,secs,vendor){
 .sup-qq{font-size:13px;color:var(--muted);white-space:nowrap;text-align:right}
 .sup-pr{display:block;margin:2px 0 0 auto;border:0;background:none;padding:2px 0;font:500 12px var(--f-body,system-ui);color:var(--ink);cursor:pointer;min-height:24px}.sup-pr.none{color:#0a84ff}
 @media (max-width:599px){.sup-pr{margin-left:0;display:inline-block;margin-left:8px}}
+.cat-pr{display:block;margin-top:4px;font-size:13px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}.cat-pr.none{font-weight:400;color:var(--muted)}
+.cat-add{flex:none;width:36px;height:36px;border-radius:50%;border:0;background:#0a84ff;color:#fff;font:600 22px/1 var(--f-body,system-ui);cursor:pointer;margin-right:4px;align-self:center}
 .sup-money{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:10px 14px 4px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--ink) 5%,transparent)}.sup-money span{display:block;font-size:12px;color:var(--muted)}.sup-money b{font-size:17px;font-variant-numeric:tabular-nums}.sup-money b.due{color:#ff9f0a}.sup-money p{grid-column:1/-1;margin:0;font-size:12px;color:var(--muted)}.sup-qq small{display:block;font-size:11px}
 .sup-pill{min-width:84px;min-height:36px;padding:0 10px;border:0;border-radius:8px;font:600 12.5px var(--f-body,system-ui);cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 .sup-pill.p0{background:#fde4e1;color:#b3261e}.sup-pill.p1{background:#fff0d4;color:#8a4b00}.sup-pill.p2{background:#e2f1e3;color:#2a6e2d}.sup-pill.p3{background:#dfe6f3;color:#2d4f8a}
@@ -4310,7 +4327,8 @@ document.addEventListener("pointerdown",ev=>{ const b=ev.target.closest&&ev.targ
 document.addEventListener("contextmenu",ev=>{ if(ev.target.closest&&ev.target.closest(".sup-pill")) ev.preventDefault(); });
 /* галочки «в заявку» */
 document.addEventListener("change",ev=>{ const c=ev.target; if(!c.classList) return;
-  if(c.name==="t"&&c.closest&&c.closest("form.sup-add")){ const u=c.form.u; if(u) u.value=c.value; return; }   // выбрали «ЛДСП» — единица «л.», «Кромка» — «м»
+  if(c.name==="t"&&c.closest&&c.closest("form.sup-add")){ const f=c.form, u=f.u, k=c.value==="л."?"L":c.value==="м"?"E":"F"; if(u) u.value=c.value;
+    f.n.setAttribute("list",c.value==="компл."?"supNames":"supNames"+k); f.n.placeholder=k==="L"?"Название ЛДСП / плиты из базы":k==="E"?"Название кромки из базы":c.value==="компл."?"Название из базы или своё":"Название фурнитуры из базы"; f.n.value=""; if(f.p) f.p.value=""; return; }   // выбрали «ЛДСП» — единица «л.», «Кромка» — «м»
   if(c.classList.contains("sup-cb")){ const r=supRef(c.dataset.o,c.dataset.k); c.checked?S.sup.sel.add(r):S.sup.sel.delete(r); supRenderKeep(); }
   else if(c.classList.contains("sup-cbg")){ String(c.dataset.refs||"").split("\n").filter(Boolean).forEach(r=>c.checked?S.sup.sel.add(r):S.sup.sel.delete(r)); supRenderKeep(); } });
 document.addEventListener("submit",ev=>{ const f=ev.target;
@@ -4424,6 +4442,43 @@ span.buy-pic{cursor:default}.buy-pic .cat-sw{width:56px;height:56px;border-radiu
 .buy-st .buy-chip{flex:1 1 auto}
 .sup-new{display:inline-block;background:#2e6fd0;color:#fff;border-radius:999px;padding:0 8px;font-size:12px;font-weight:700}
 `; document.head.appendChild(st); })();
+
+/* ---------- название в «Докупить / добавить» выбрано из базы — подставляем цену ---------- */
+document.addEventListener("input",ev=>{ const n=ev.target; if(!(n&&n.name==="n"&&n.closest&&n.closest("form.sup-add"))) return; const f=n.form;
+  if(!f.p||f.p.dataset.own) return; const r=(S.sup.price||{})[supPKey(n.value)], bp=r&&r.price>0?r.price:supBaseOf(n.value,f.u.value); f.p.value=bp?String(bp):""; });
+document.addEventListener("input",ev=>{ if(ev.target&&ev.target.name==="p"&&ev.target.closest&&ev.target.closest("form.sup-add")) ev.target.dataset.own=ev.target.value?"1":""; });
+
+/* ---------- «Материалы»: цена у каждой позиции и «+ В заказ» (снабженец, технолог, офис) ---------- */
+function catPriceTxt(it){ const b=S.sup.base&&S.sup.base.get(supPKey(it.n)), r=(S.sup.price||{})[supPKey(it.n)];
+  if(r&&r.price>0) return `${supRub(r.price)}${r.unit?" / "+r.unit:""} · прайс`;
+  if(!b) return ""; const u=b[1]||it.u||"шт"; return `${supRub(b[0])} / ${u}${b[2]?` · лист ${supRub(b[0]*b[2])}`:""}`; }
+const _catCard=catCard;
+catCard=function(it){ let h=_catCard(it); if(!S.sup.priceOk) return h; const t=catPriceTxt(it);
+  return h.replace(/<\/div>(\s*<button type="button" class="cat-star)/,`${t?`<span class="cat-pr">${esc(t)}</span>`:`<span class="cat-pr none">нет цены</span>`}</div><button type="button" class="cat-add" data-act="cat-addord" data-i="${it.i}" aria-label="Добавить в заказ: ${esc(it.n)}" title="Добавить в заказ">+</button>$1`); };
+const _catModal=catModal;
+catModal=function(i){ _catModal(i); const it=S.cat.data.items[i], m=document.getElementById("qrModal"); if(!it||!m||!S.sup.priceOk) return; const t=catPriceTxt(it), tb=m.querySelector(".spec-t tbody"), act=m.querySelector(".spec-act");
+  if(tb) tb.insertAdjacentHTML("afterbegin",`<tr><td>Цена</td><td><b>${esc(t||"нет цены")}</b></td></tr>`);
+  if(act) act.insertAdjacentHTML("afterbegin",`<button class="btn primary" data-act="cat-addord" data-i="${it.i}">+ В заказ</button>`); };
+function catUnitFor(it){ return /^Листов/.test(it.g)?"л.":/^Кромоч/.test(it.g)?"м":/^(кв\.?м|м2|м²)$/.test(it.u||"")?"м²":(it.u==="м"?"м":/компл/.test(it.u||"")?"компл.":"шт"); }
+function catAddModal(i){ const it=S.cat.data.items[i]; if(!it) return; document.getElementById("qrModal")?.remove();
+  const ids=Object.keys(S.orders||{}).sort((a,b)=>String((S.orders[b]||{}).createdAt||"").localeCompare(String((S.orders[a]||{}).createdAt||""))), u=catUnitFor(it), bp=supBaseOf(it.n,u), r=(S.sup.price||{})[supPKey(it.n)];
+  const m=document.createElement("div"); m.className="modal"; m.id="catAddM";
+  m.innerHTML=`<form class="modal-card" autocomplete="off"><h2 style="margin:0 0 6px">В заказ</h2><p class="note" style="margin:0 0 10px">${esc(it.n)}</p>
+    ${ids.length?`<div class="form" style="grid-template-columns:1fr;margin:0"><label>Заказ<select name="o" required>${ids.map(id=>`<option value="${esc(id)}"${id===S.catLastOrd?" selected":""}>${esc(id)} · ${esc((S.orders[id]||{}).name||"")}</option>`).join("")}</select></label>
+    <label>Количество, ${esc(u)}<input name="q" inputmode="decimal" value="1" required></label><label>Цена за ${esc(u)}, ₽<input name="p" inputmode="decimal" value="${esc(String(r&&r.price>0?r.price:bp||""))}"></label></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Добавить в закупку</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div>`
+    :`<p class="note">Заказов не видно. Откройте один раз «ссылку снабженца» от технолога — заказы появятся.</p><button class="btn" type="button" data-act="qr-close">Закрыть</button>`}</form>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m);
+  const f=m.querySelector("form"); if(!ids.length) return;
+  f.addEventListener("submit",async e=>{ e.preventDefault(); const o=f.o.value, q=parseFloat(String(f.q.value).replace(",",".")), pv=String(f.p.value).replace(/\s/g,"").replace(",",".");
+    if(!(q>0)){ toast("Впишите количество"); return; } S.catLastOrd=o;
+    if(pv!==""&&+pv>=0&&+pv!==bp) await supPriceSave([{name:it.n,unit:u,price:pv}]);   // своя цена — в прайс; цену из базы не дублируем
+    const ok=await supSave([{order:o,key:"A:"+Date.now().toString(36),name:it.n,qty:q,unit:u,status:0,op:"add"}],()=>{});
+    if(ok!==false){ m.remove(); toast("Добавлено в заказ "+o+": "+it.n); } }); }
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="cat-addord"]'); if(!t) return; ev.stopPropagation(); ev.preventDefault(); catAddModal(+t.dataset.i); },true);
+/* в «Материалах» цены грузим один раз (если есть PIN снабженца/технолога/офиса) */
+const _viewCatalog=viewCatalog;
+viewCatalog=function(){ if(!S.sup.priceTried&&supPricePin()){ S.sup.priceTried=true; supPriceLoad().then(()=>{ if(S.view==="catalog"||document.querySelector(".cat-card")) render(); }); } return _viewCatalog(); };
 
 /* ---------- «Цех»: заказы клиентов по этапам (замер → монтаж) и чат по заказу (данные — Google-таблица, листы «Цех» и «Чат») ---------- */
 const SHP_ST=[{k:"dogovor",n:"Договор и предоплата",s:"Договор"},{k:"zamer",n:"Замер",s:"Замер"},{k:"proekt",n:"Проект у технолога",s:"Проект"},{k:"proekt_ok",n:"Проект готов",s:"Готов"},{k:"zakup",n:"Материалы закуплены",s:"Закуп"},{k:"cex",n:"В производстве",s:"Произв."},{k:"montazh",n:"Монтаж",s:"Монтаж"},{k:"closed",n:"Закрыт · успешно",s:"Успешно"},{k:"lost",n:"Закрыт · не успешно",s:"Не усп."}];
