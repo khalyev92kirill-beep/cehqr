@@ -6631,6 +6631,423 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
 /* Технолог 3D: ссылка «Техподдержка» внизу главной, рядом с «Как работать» */
 if(typeof viewOrders==="function"){ const _vo=viewOrders; viewOrders=function(){ return String(_vo()).replace('data-view="help">Как работать</button>','data-view="help">Как работать</button> · <button type="button" class="linkbtn" data-act="help-open">Техподдержка</button>'); }; }
 
+/* ---------- Смета: примерный 3D-рисунок (изометрия, SVG). Стены: 1 — задняя (вдоль X), 2 — левая (вдоль Z), 3 — правая. Поворот — 4 вида ---------- */
+/* техника: тонкие «пластины» на фасаде или на столешнице */
+function sm3dTech(B,b,m,yTop){ const top=m.top!=null?m.top:(m.t==="sink"?"sink":""), ins=m.ins||"", f=b.face, W=f==="z"?b.x1-b.x0:b.z1-b.z0, D=f==="z"?b.z1-b.z0:b.x1-b.x0;
+  const onTop=(u0,u1,v0,v1,y0,y1,k)=>{ const bx=f==="z"?{x0:b.x0+u0,x1:b.x0+u1,z0:v0,z1:v1}:f==="x"?{x0:v0,x1:v1,z0:b.z0+u0,z1:b.z0+u1}:{x0:b.x1-v1,x1:b.x1-v0,z0:b.z0+u0,z1:b.z0+u1}; B.push(Object.assign(bx,{y0,y1,k,face:f})); };
+  const onFront=(u0,u1,y0,y1,k)=>{ const t=6, bx=f==="z"?{x0:b.x0+u0,x1:b.x0+u1,z0:b.z1,z1:b.z1+t}:f==="x"?{x0:b.x1,x1:b.x1+t,z0:b.z0+u0,z1:b.z0+u1}:{x0:b.x0-t,x1:b.x0,z0:b.z0+u0,z1:b.z0+u1}; B.push(Object.assign(bx,{y0,y1,k,face:f})); };
+  const cu=W/2, cv=D*0.55;
+  if(top==="hob") onTop(cu-280,cu+280,cv-250,cv+250,yTop,yTop+8,"glass");
+  if(top==="sink"){ onTop(cu-240,cu+240,cv-210,cv+210,yTop,yTop+5,"metal"); onTop(cu-15,cu+15,40,70,yTop,yTop+260,"metal"); }
+  if(ins==="oven") onFront(30,W-30,b.y1-600+20,b.y1-30,"glass");
+  if(ins==="ovenmw"){ onFront(30,W-30,b.y0+750,b.y0+1330,"glass"); onFront(30,W-30,b.y0+1380,b.y0+1760,"glass"); }
+  if(ins==="mw") onFront(30,W-30,b.y0+20,b.y0+380,"glass");
+  if(ins==="hood") onTop(20,W-20,20,D-20,b.y0-40,b.y0,"metal"); }
+function sm3dLayout(d){ const B=[], P=+d.P||100, L=720, T=+d.T||40, A=+d.A||600, H=+d.H||2700, yUp=P+L+T+A;
+  const mods=d.mods||[], wallOf=m=>Math.min(3,Math.max(1,+m.wall||1)), isLow=t=>/^(low|sink|drw|tall|cab)$/.test(t);
+  const run={1:{low:0,up:0,up2:0},2:{low:0,up:0,up2:0},3:{low:0,up:0,up2:0}};
+  /* угловые модули — в углу стен 1 и 2 (Г-образный: две «ноги») */
+  mods.filter(m=>m.t==="cornL"||m.t==="cornU").forEach(m=>{ const low=m.t==="cornL", a=+m.w||(low?900:600), b=+m.w2||a, dp=+m.d||(low?560:340), y0=low?P:yUp, h=+m.h||720;
+    B.push({x0:0,x1:a,z0:0,z1:dp,y0,y1:y0+h,k:"corn",m,face:"z"}); B.push({x0:0,x1:dp,z0:dp,z1:b,y0,y1:y0+h,k:"corn",m,face:"x"});
+    const r=low?["low"]:["up","up2"]; r.forEach(k=>{ run[1][k]=Math.max(run[1][k],a); run[2][k]=Math.max(run[2][k],b); }); });
+  const wall1Len=()=>Math.max(run[1].low,run[1].up,run[1].up2,1200);
+  [1,2,3].forEach(w=>mods.filter(m=>wallOf(m)===w&&m.t!=="cornL"&&m.t!=="cornU").forEach(m=>{ const t=m.t, ww=+m.w||600, dp=+m.d||560, h=+m.h||720;
+    for(let k=0;k<Math.max(0,+m.n||0);k++){ const row=isLow(t)?"low":t==="up2"?"up2":"up", y0=isLow(t)?P:t==="up2"?H-h:yUp, s=run[w][row]; let b;
+      if(w===1) b={x0:s,x1:s+ww,z0:0,z1:dp,face:"z"}; else if(w===2) b={x0:0,x1:dp,z0:s,z1:s+ww,face:"x"}; else { const X=wall1Len(); b={x0:X-dp,x1:X,z0:s,z1:s+ww,face:"-x"}; }
+      Object.assign(b,{y0,y1:y0+h,k:t,m}); B.push(b); sm3dTech(B,b,m,P+L+T); run[w][row]+=ww;
+      if(t==="upF") run[w].up2=Math.max(run[w].up2,run[w].up);
+      if(t==="tall"||t==="cab"){ run[w].up=Math.max(run[w].up,run[w].low); run[w].up2=Math.max(run[w].up2,run[w].low); } } }));
+  /* столешница над нижними (не над пеналами), цоколь под нижними и пеналами */
+  const extra=[]; B.forEach(b=>{ if(b.y0!==P) return; const tall=b.k==="tall"||b.k==="cab";
+    if(!tall){ const t=Object.assign({},b,{y0:P+L,y1:P+L+T,k:"top",m:null}); if(b.face==="z") t.z1=b.z1+40; else if(b.face==="x") t.x1=b.x1+40; else t.x0=b.x0-40; extra.push(t); }
+    const pl=Object.assign({},b,{y0:0,y1:P,k:"plinth",m:null}); if(b.face==="z") pl.z1=b.z1-50; else if(b.face==="x") pl.x1=b.x1-50; else pl.x0=b.x0+50; extra.push(pl); });
+  return {boxes:B.concat(extra),W:wall1Len(),Z:Math.max(run[2].low,run[2].up,run[2].up2,run[3].low,run[3].up,run[3].up2,700),H}; }
+function sm3dSvg(d,opt){ opt=opt||{}; const Lt=sm3dLayout(d), rot=+(opt.rot||0)%4, c=Math.cos(Math.PI/6), s=Math.sin(Math.PI/6);
+  const W=Lt.W, Z=Lt.Z; /* поворот вида: меняем оси местами */
+  const tr=(x,z)=>rot===0?[x,z]:rot===1?[Z-z,x]:rot===2?[W-x,Z-z]:[z,W-x];
+  const pr=(x,y,z)=>{ const [X,Zz]=tr(x,z); return [(X-Zz)*c,(X+Zz)*s-y]; };
+  const col=opt.col||{}, body=col.body||"#e9e6df", front=col.front||"#c9c2b5", top=col.top||"#7a5a3f", plin="#3a3a3c";
+  const shade=(hex,f)=>{ const n=parseInt(String(hex).replace("#",""),16); if(isNaN(n)) return hex; const r=Math.min(255,Math.round((n>>16&255)*f)),g=Math.min(255,Math.round((n>>8&255)*f)),b=Math.min(255,Math.round((n&255)*f)); return "#"+((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1); };
+  const polys=[]; let mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9;
+  const poly=(pts,fill,stroke,extra)=>{ const P=pts.map(p=>pr(p[0],p[1],p[2])); P.forEach(([x,y])=>{ mnx=Math.min(mnx,x);mxx=Math.max(mxx,x);mny=Math.min(mny,y);mxy=Math.max(mxy,y); }); return `<polygon points="${P.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ")}" fill="${fill}" stroke="${stroke||"#0006"}" stroke-width="${extra||4}" stroke-linejoin="round"/>`; };
+  const line=(a,b,st)=>{ const A=pr(...a),B2=pr(...b); return `<line x1="${A[0].toFixed(1)}" y1="${A[1].toFixed(1)}" x2="${B2[0].toFixed(1)}" y2="${B2[1].toFixed(1)}" stroke="${st||"#0008"}" stroke-width="5"/>`; };
+  /* видимые грани зависят от поворота: какие стороны смотрят на зрителя */
+  const vis=rot===0?{x:1,z:1}:rot===1?{x:-1,z:1}:rot===2?{x:-1,z:-1}:{x:1,z:-1};
+  /* стены */
+  const wallF="#ffffff10", wallS="#ffffff22", Hh=Lt.H; const walls=[];
+  if(rot===0||rot===1) walls.push(poly([[0,0,0],[W,0,0],[W,Hh,0],[0,Hh,0]],wallF,wallS,3)); else walls.push(poly([[0,0,Z],[W,0,Z],[W,Hh,Z],[0,Hh,Z]],wallF,wallS,3));
+  if(rot===0||rot===3) walls.push(poly([[0,0,0],[0,0,Z],[0,Hh,Z],[0,Hh,0]],wallF,wallS,3)); else walls.push(poly([[W,0,0],[W,0,Z],[W,Hh,Z],[W,Hh,0]],wallF,wallS,3));
+  walls.push(poly([[0,0,0],[W,0,0],[W,0,Z],[0,0,Z]],"#ffffff08",wallS,3));
+  const depth=b=>{ const [x,z]=tr((b.x0+b.x1)/2,(b.z0+b.z1)/2); return x+z+b.y0*0.001; };
+  Lt.boxes.slice().sort((a,b)=>depth(a)-depth(b)).forEach(b=>{ const {x0,x1,z0,z1,y0,y1}=b, isFrontX=b.face==="x"||b.face==="-x";
+    const fcol=b.k==="top"?top:b.k==="plinth"?plin:front, scol=b.k==="top"?top:b.k==="plinth"?plin:body;
+    const fx=vis.x>0?x1:x0, fz=vis.z>0?z1:z0;
+    /* грань по X (бок или фасад для стены 2/3) */
+    const xFace=(b.face==="x"&&vis.x>0)||(b.face==="-x"&&vis.x<0);
+    const zFace=(b.face==="z"&&vis.z>0);
+    polys.push(poly([[fx,y0,z0],[fx,y0,z1],[fx,y1,z1],[fx,y1,z0]],shade(xFace?fcol:scol,0.78)));
+    polys.push(poly([[x0,y0,fz],[x1,y0,fz],[x1,y1,fz],[x0,y1,fz]],shade(zFace?fcol:scol,0.92)));
+    polys.push(poly([[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]],shade(b.k==="top"?top:scol,1.06)));
+    /* двери / ящики на фасаде */
+    const m=b.m; if(!m||b.k==="top"||b.k==="plinth") return; const dr=+m.dr||0, dn=b.k==="corn"?1:Math.max(0,+m.doors||0);
+    if(zFace){ if(dr) for(let i=1;i<dr;i++){ const y=y0+(y1-y0)*i/dr; polys.push(line([x0,y,fz],[x1,y,fz])); } else for(let i=1;i<dn;i++){ const x=x0+(x1-x0)*i/dn; polys.push(line([x,y0,fz],[x,y1,fz])); }
+      if(b.k==="tall"||b.k==="cab"||b.k==="upF"){ const y=y0+Math.min(2100,(y1-y0))*0.5; polys.push(line([x0,y,fz],[x1,y,fz])); } }
+    if(xFace){ if(dr) for(let i=1;i<dr;i++){ const y=y0+(y1-y0)*i/dr; polys.push(line([fx,y,z0],[fx,y,z1])); } else for(let i=1;i<dn;i++){ const z=z0+(z1-z0)*i/dn; polys.push(line([fx,y0,z],[fx,y1,z])); }
+      if(b.k==="tall"||b.k==="cab"||b.k==="upF"){ const y=y0+(y1-y0)*0.5; polys.push(line([fx,y,z0],[fx,y,z1])); } } });
+  const pad=80, vb=[mnx-pad,mny-pad,mxx-mnx+2*pad,mxy-mny+2*pad].map(v=>v.toFixed(0)).join(" ");
+  return `<svg viewBox="${vb}" xmlns="http://www.w3.org/2000/svg" class="sm3d-svg" role="img" aria-label="Примерный вид кухни">${walls.join("")}${polys.join("")}</svg>`; }
+/* ---- настоящий 3D (three.js r128 с cdnjs, грузится один раз при открытии сметы); крутить — тянуть, приближать — колёсико/щипок ---- */
+let SM3D_LIB=null;
+function sm3dLib(){ if(window.THREE) return Promise.resolve(window.THREE); if(SM3D_LIB) return SM3D_LIB;
+  SM3D_LIB=new Promise((ok,no)=>{ const sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"; sc.onload=()=>ok(window.THREE); sc.onerror=()=>{ SM3D_LIB=null; no(); }; document.head.appendChild(sc); }); return SM3D_LIB; }
+function sm3dColN(name){ if(!name||!S.cat||!S.cat.data) return null; S.shop.smIdx=S.shop.smIdx||new Map(S.cat.data.items.map(it=>[supPKey(it.n),it])); const it=S.shop.smIdx.get(supPKey(name)); return it&&it.c?"#"+it.c:null; }
+function sm3dCol(slot){ const d=S.shop.sm&&S.shop.sm.data, m=d&&(d.mat||{})[slot]; if(!m||!m.n||!S.cat||!S.cat.data) return null;
+  S.shop.smIdx=S.shop.smIdx||new Map(S.cat.data.items.map(it=>[supPKey(it.n),it])); const it=S.shop.smIdx.get(supPKey(m.n)); return it&&it.c?"#"+it.c:null; }
+async function sm3dMount(){ const el=document.getElementById("sm3d"); if(!el||!S.shop.sm||!S.shop.sm.data) return; let T;
+  try{ T=await sm3dLib(); }catch(_){ el.querySelector(".sm-3dh").textContent="3D не загрузился — нет интернета?"; return; }
+  if(!document.body.contains(el)) return; el.querySelectorAll("canvas").forEach(c=>c.remove());
+  const d=S.shop.sm.data, Lt=sm3dLayout(d); if(!Lt.boxes.length){ el.querySelector(".sm-3dh").textContent="Добавьте модули — здесь появится примерный вид"; return; }
+  if(window.SM3D_R){ try{ SM3D_R.dispose(); SM3D_R.forceContextLoss(); }catch(_){} window.SM3D_R=null; }
+  let R; try{ R=window.SM3D_R=new T.WebGLRenderer({antialias:true,alpha:true}); }catch(_){ el.querySelector(".sm-3dh").textContent="Это устройство не показывает 3D"; return; }
+  R.setPixelRatio(Math.min(2,window.devicePixelRatio||1)); el.insertBefore(R.domElement,el.firstChild);
+  const sc=new T.Scene(), k=0.001, W=Lt.W*k, Z=Lt.Z*k, H=Lt.H*k;
+  sc.add(new T.AmbientLight(0xffffff,0.62)); const dl=new T.DirectionalLight(0xffffff,0.55); dl.position.set(W*1.5+2,H*2,Z*2+3); sc.add(dl); const dl2=new T.DirectionalLight(0xffffff,0.25); dl2.position.set(-2,1,1); sc.add(dl2);
+  const mat=c=>new T.MeshLambertMaterial({color:c}), cBody=sm3dCol("body")||"#ece9e2", cFront=sm3dCol("front")||"#c8c1b4", cTop=sm3dCol("top")||"#7a5a3f";
+  const cFU=sm3dCol("frontU"), MC={}, mc=c=>MC[c]||(MC[c]=mat(c)), MG=mat("#141516"), MM=mat("#aab1b8");
+  const MB=mat(cBody), MF=mat(cFront), MT=mat(cTop), MP=mat("#2b2b2e"), edgeM=new T.LineBasicMaterial({color:0x000000,transparent:true,opacity:0.35}), lineM=new T.LineBasicMaterial({color:0x222222});
+  /* стены и пол */
+  const wallM=new T.MeshLambertMaterial({color:0x8a8f96,transparent:true,opacity:0.18,side:T.DoubleSide}), floorM=new T.MeshLambertMaterial({color:0x6b6258,side:T.DoubleSide});
+  const pl=(w,h,m,pos,rot)=>{ const g=new T.Mesh(new T.PlaneGeometry(w,h),m); g.position.set(...pos); if(rot) g.rotation.set(...rot); sc.add(g); };
+  pl(W+0.3,H,wallM,[W/2,H/2,0]); pl(Z+0.3,H,wallM,[0,H/2,Z/2],[0,Math.PI/2,0]); pl(W+0.3,Z+0.6,floorM,[W/2,0,Z/2],[-Math.PI/2,0,0]);
+  if((d.mods||[]).some(m=>+m.wall===3)) pl(Z+0.3,H,wallM,[W,H/2,Z/2],[0,-Math.PI/2,0]);
+  Lt.boxes.forEach(b=>{ const w=(b.x1-b.x0)*k, h=(b.y1-b.y0)*k, dz=(b.z1-b.z0)*k; if(w<=0||h<=0||dz<=0) return; const g=new T.BoxGeometry(w,h,dz);
+    if(b.k==="glass"||b.k==="metal"){ const ms=new T.Mesh(g,b.k==="glass"?MG:MM); ms.position.set((b.x0+b.x1)/2*k,(b.y0+b.y1)/2*k,(b.z0+b.z1)/2*k); sc.add(ms); return; }
+    const isTop=b.k==="top", isPl=b.k==="plinth", base=isTop?MT:isPl?MP:MB, fi=b.face==="z"?4:b.face==="x"?0:1, mats=[base,base,base,base,base,base]; if(!isTop&&!isPl){ const mm=b.m, own=mm&&mm.fm&&mm.fm.n?sm3dColN(mm.fm.n):null, up=mm&&/^(up|up2|upF|cornU)$/.test(mm.t); mats[fi]=own?mc(own):(up&&cFU)?mc(cFU):MF; }
+    const ms=new T.Mesh(g,mats); ms.position.set((b.x0+b.x1)/2*k,(b.y0+b.y1)/2*k,(b.z0+b.z1)/2*k); sc.add(ms);
+    const e=new T.LineSegments(new T.EdgesGeometry(g),edgeM); e.position.copy(ms.position); sc.add(e);
+    const m=b.m; if(!m||isTop||isPl) return; const dr=+m.dr||0, dn=b.k==="corn"?1:Math.max(0,+m.doors||0), pts=[], off=0.002;
+    const P=(u,v)=>b.face==="z"?[b.x0*k+u*w,b.y0*k+v*h,b.z1*k+off]:b.face==="x"?[b.x1*k+off,b.y0*k+v*h,b.z0*k+u*dz]:[b.x0*k-off,b.y0*k+v*h,b.z0*k+u*dz];
+    if(dr) for(let i=1;i<dr;i++) pts.push(...P(0,i/dr),...P(1,i/dr)); else for(let i=1;i<dn;i++) pts.push(...P(i/dn,0),...P(i/dn,1));
+    if((b.k==="tall"||b.k==="cab"||b.k==="upF")&&!dr) pts.push(...P(0,0.5),...P(1,0.5));
+    /* ручки — короткая полоска у края */
+    const hp=dr?[[0.4,0.5],[0.6,0.5]]:null; if(hp) for(let i=0;i<dr;i++){ const v=(i+0.75)/dr; pts.push(...P(0.4,v),...P(0.6,v)); }
+    if(pts.length){ const lg=new T.BufferGeometry(); lg.setAttribute("position",new T.Float32BufferAttribute(pts,3)); sc.add(new T.LineSegments(lg,lineM)); } });
+  const cam=new T.PerspectiveCamera(38,1,0.05,100), tgt=new T.Vector3(W/2,H*0.42,Z/2);
+  const st=S.shop.sm3dCam||(S.shop.sm3dCam={th:0.7,ph:0.45,r:4,auto:true});
+  const fit=()=>{ if(!st.auto) return; const a=cam.aspect||1; st.r=(Math.max(W,Z)*1.15+H*0.45)/Math.min(1,a*1.05)+0.6; };
+  const place=()=>{ cam.position.set(tgt.x+st.r*Math.sin(st.th)*Math.cos(st.ph),tgt.y+st.r*Math.sin(st.ph),tgt.z+st.r*Math.cos(st.th)*Math.cos(st.ph)); cam.lookAt(tgt); };
+  const size=()=>{ const w=el.clientWidth||300, h=el.clientHeight||280; R.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix(); fit(); };
+  const draw=()=>{ place(); R.render(sc,cam); };
+  size(); draw();
+  const cv=R.domElement; let drag=null, pin=null;
+  cv.addEventListener("pointerdown",e=>{ drag={x:e.clientX,y:e.clientY}; cv.setPointerCapture(e.pointerId); cv.style.cursor="grabbing"; });
+  cv.addEventListener("pointermove",e=>{ if(!drag) return; st.th-=(e.clientX-drag.x)*0.008; st.ph=Math.max(0.05,Math.min(1.45,st.ph+(e.clientY-drag.y)*0.006)); drag={x:e.clientX,y:e.clientY}; draw(); });
+  const up=()=>{ drag=null; cv.style.cursor="grab"; }; cv.addEventListener("pointerup",up); cv.addEventListener("pointercancel",up);
+  cv.addEventListener("wheel",e=>{ e.preventDefault(); st.auto=false; st.r=Math.max(1,Math.min(20,st.r*(e.deltaY>0?1.1:0.9))); draw(); },{passive:false});
+  cv.addEventListener("touchmove",e=>{ if(e.touches.length!==2) return; const dd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY); if(pin) { st.auto=false; st.r=Math.max(1,Math.min(20,st.r*pin/dd)); draw(); } pin=dd; },{passive:true});
+  cv.addEventListener("touchend",()=>{ pin=null; });
+  const ro=()=>{ if(!document.body.contains(el)){ window.removeEventListener("resize",ro); R.dispose(); return; } size(); draw(); }; window.addEventListener("resize",ro); }
+
+/* ---------- СМЕТА по заказу (Вертакс): модули → материалы из базы Базиса → цена = расход материалов ÷ коэффициент + доставка и монтаж. Технолог и офис ---------- */
+const SM_BR=0.18, SM_KMIN=0.30, SM_KMAX=0.45, SM_WASTE=1.15, SM_SHEET=2.8*2.07, SM_T=16;
+const SM_TYPES={cornL:{n:"Угловой низ",ic:"⌟"},cornU:{n:"Угловой верх",ic:"⌝"},low:{n:"Низ",ic:"▭"},sink:{n:"Низ под мойку",ic:"◡"},drw:{n:"Низ с ящиками",ic:"☰"},up:{n:"Верх",ic:"▔"},upF:{n:"Верх до потолка",ic:"▐"},up2:{n:"Антресоль (3-й ярус)",ic:"▀"},tall:{n:"Пенал",ic:"▯"},cab:{n:"Шкаф",ic:"▥"}};
+const SM_SLOTS=[
+  {k:"body",n:"Корпус (ЛДСП)",sec:"ldsp",kind:"sheet"},{k:"front",n:"Фасады",sec:"ldsp|plit",kind:"front"},{k:"frontU",n:"Фасады верха (если другие)",sec:"ldsp|plit",kind:"front"},{k:"back",n:"Задняя стенка (ДВПО)",sec:"plit",kind:"sheet",q:"двпо"},
+  {k:"edge",n:"Кромка",sec:"edge",kind:"m"},{k:"top",n:"Столешница",sec:"top",kind:"lin",lin:"top"},{k:"apron",n:"Фартук",sec:"top|plit",kind:"lin",lin:"apron"},{k:"plinth",n:"Цоколь",sec:"prof",kind:"lin",lin:"plinth"},
+  {k:"hinge",n:"Петли",sec:"hinge",kind:"pc"},{k:"slide",n:"Направляющие (комплект)",sec:"drw",kind:"pc"},{k:"handle",n:"Ручки",sec:"furn",kind:"pc",q:"ручк"},
+  {k:"legs",n:"Опоры",sec:"furn|prof",kind:"pc",q:"опор"},{k:"hang",n:"Навесы",sec:"furn",kind:"pc",q:"навес"},
+  {k:"led",n:"Подсветка: лента",sec:"",kind:"lin",lin:"led",q:"лента"},{k:"ledp",n:"Подсветка: профиль",sec:"prof|furn",kind:"lin",lin:"led",q:"профиль"},
+  {k:"psu",n:"Подсветка: блок питания",sec:"",kind:"pc",q:"блок питания"},{k:"sw",n:"Подсветка: выключатель / датчик",sec:"",kind:"pc",q:"выключ"}];
+function smNew(o){ return {H:2700,P:100,T:40,A:600,mods:[],lin:{top:0,apron:0,plinth:0,led:0},mat:{},k:0.38,deliv:1500,mont:null,note:"",kind:(o&&o.kind)||""}; }
+function smWallH(d){ return Math.max(300,(+d.H||2700)-(+d.P||0)-720-(+d.T||0)-(+d.A||0)); }   // от фартука до потолка
+function smUpH(d){ return +d.tiers===3?Math.min(smWallH(d)-150,+d.U||720):smWallH(d); }
+function smUp2H(d){ return Math.max(150,smWallH(d)-smUpH(d)); }
+function smDef(t,d){ const tallH=Math.max(1200,(+d.H||2700)-(+d.P||0));
+  return t==="low"?{t,w:600,h:720,d:560,n:1,doors:2,sh:1,dr:0}:t==="sink"?{t,w:800,h:720,d:560,n:1,doors:2,sh:0,dr:0}:t==="drw"?{t,w:600,h:720,d:560,n:1,doors:0,sh:0,dr:3}
+    :t==="up"?{t,w:800,h:smUpH(d),d:340,n:1,doors:2,sh:2,dr:0}:t==="up2"?{t,w:800,h:smUp2H(d),d:340,n:1,doors:2,sh:0,dr:0}:t==="upF"?{t,w:800,h:smWallH(d),d:340,n:1,doors:2,sh:3,dr:0}:t==="cornL"?{t,w:900,w2:900,h:720,d:560,n:1,doors:2,sh:1,dr:0}:t==="cornU"?{t,w:600,w2:600,h:smUpH(d),d:340,n:1,doors:2,sh:2,dr:0}:t==="tall"?{t,w:600,h:tallH,d:560,n:1,doors:2,sh:4,dr:0}:{t,w:1000,h:tallH,d:600,n:1,doors:2,sh:4,dr:0}; }
+/* встроенная техника: что сверху (на столешнице) и что внутри модуля */
+const SM_TOPS={"":"Ничего",hob:"🔥 Варочная",sink:"◡ Мойка"};
+const SM_INS={low:{"":"Полки",oven:"Духовка",dw:"Посудомойка"},tall:{"":"Полки",ovenmw:"Духовка + СВЧ",fridge:"Встр. холодильник",boiler:"Бойлер / колонка"},up:{"":"Полки",hood:"Встр. вытяжка",dry:"Сушка",mw:"Ниша СВЧ"}};
+const smIsUp=t=>/^(up|up2|upF|cornU)$/.test(t), smIsLow=t=>/^(low|sink|drw|cornL)$/.test(t);
+function smInsSet(t){ return smIsLow(t)&&t!=="drw"&&t!=="cornL"?SM_INS.low:t==="tall"||t==="cab"?SM_INS.tall:smIsUp(t)&&t!=="cornU"?SM_INS.up:null; }
+function smTop(m){ return m.top!=null?m.top:(m.t==="sink"?"sink":""); }
+/* расход по модулям: площадь корпуса/фасадов (по группам)/задних стенок (м²), кромка (м), петли, направляющие, ручки, опоры, навесы */
+function smNeed(d){ const r={body:0,front:0,back:0,edge:0,hinge:0,slide:0,handle:0,legs:0,hang:0,fronts:{},fmMat:{},cut:{hob:0,sink:0},tech:{},mods:{floor:0,up:0,tall:0}}, t=SM_T, mat=d.mat||{};
+  const fkey=m=>{ if(m.fm&&(m.fm.n||m.fm.p)){ const k="fm:"+(m.fm.n||"вручную "+m.fm.p); r.fmMat[k]=m.fm; return k; } return smIsUp(m.t)&&mat.frontU&&(mat.frontU.n||mat.frontU.p)?"frontU":"front"; };
+  const addF=(m,a)=>{ const k=fkey(m); r.fronts[k]=(r.fronts[k]||0)+a; r.front+=a; };
+  (d.mods||[]).forEach(m=>{ const n=Math.max(0,+m.n||0), w=+m.w||0, h=+m.h||0, dp=+m.d||0; let doors=Math.max(0,+m.doors||0), sh=Math.max(0,+m.sh||0), dr=Math.max(0,+m.dr||0); if(!n||!w||!h||!dp) return;
+    const top=smTop(m), ins=smInsSet(m.t)?(m.ins||""):""; if(top==="hob") r.cut.hob+=n; if(top==="sink") r.cut.sink+=n; if(ins) r.tech[ins]=(r.tech[ins]||0)+n; if(top) r.tech[top]=(r.tech[top]||0)+n;
+    if(m.t==="cornL"||m.t==="cornU"){ const b=+m.w2||w, low=m.t==="cornL", pl=w*dp+Math.max(0,b-dp)*dp;   // Г-образный: две «ноги» по стенам
+      const body2=2*h*dp+pl*(sh+(low?1:2))+(low?2*(w+b)*100:0), fw=Math.max(0,w-dp)+Math.max(0,b-dp);
+      r.body+=body2*n/1e6; addF(m,fw*h*n/1e6); r.back+=(w+b)*h*n/1e6; r.edge+=(2*h+(sh+2)*(w+b)+2*(fw+2*h))*n/1000;
+      r.hinge+=2*(h<=1000?2:3)*n; r.handle+=2*n; if(low){ r.legs+=6*n; r.mods.floor+=n; } else { r.hang+=3*n; r.mods.up+=n; } return; }
+    if(ins==="dw"){ addF(m,w*h*n/1e6); r.edge+=2*(w+h)*n/1000; r.handle+=n; r.mods.floor+=n; return; }   // посудомойка: только фасад
+    let fh=h, noHinge=false;
+    if(ins==="oven"){ sh=0; doors=0; dr=0; fh=Math.max(0,h-600); }
+    if(ins==="ovenmw"){ sh=Math.max(0,sh-2); fh=Math.max(0,h-1050); }
+    if(ins==="fridge"){ sh=0; noHinge=true; }
+    if(ins==="boiler"||ins==="hood"||ins==="dry") sh=0;
+    if(ins==="mw") fh=Math.max(0,h-400);
+    let body=2*h*dp, edge=2*h; const iw=w-2*t;
+    if(smIsLow(m.t)){ body+=iw*dp+2*iw*100; edge+=3*iw; r.legs+=4*n; r.mods.floor+=n; }
+    else { body+=2*iw*dp; edge+=2*iw; if(smIsUp(m.t)){ r.hang+=2*n; r.mods.up+=n; } else { r.legs+=4*n; r.mods.tall+=n; } }
+    body+=sh*iw*(dp-20); edge+=sh*iw;
+    if(dr){ const bw=Math.max(100,w-90), bd=Math.max(250,dp-50); body+=dr*(2*bd*140+2*bw*140); edge+=dr*(2*bd+2*bw); r.slide+=dr*n; r.handle+=dr*n; }
+    addF(m,w*fh*n/1e6); r.back+=w*h*n/1e6;
+    if(doors){ const dw=w/doors; edge+=doors*2*(dw+fh); if(!noHinge) r.hinge+=doors*(fh<=1000?2:fh<=1600?3:4)*n; r.handle+=doors*n; }
+    if(ins==="oven"&&fh>0){ edge+=2*(w+fh); r.handle+=n; }
+    if(dr) edge+=dr*2*(w+h/dr);
+    r.body+=body*n/1e6; r.edge+=edge*n/1000; });
+  return r; }
+function smItem(slot,d){ const m=(d.mat||{})[slot.k]; return m&&(m.n||m.p)?m:null; }
+function smBase(name){ const b=S.sup&&S.sup.base&&S.sup.base.get(supPKey(name)); return b||null; }
+/* цена и количество по слоту: {q, u, p, sum, note} */
+function smLine(slot,d,need){ const m=slot.mm||smItem(slot,d), lin=d.lin||{}, fa=slot.kind==="front"?(need.fronts[slot.k]||0):0;
+  let q=0,u="шт",note="";
+  if(slot.kind==="sheet"||(slot.kind==="front"&&!smFrontM2(m))){ const a0=slot.kind==="front"?fa:need[slot.k], area=a0*SM_WASTE, b=m&&m.n?smBase(m.n):null, sa=b&&b[2]?b[2]:SM_SHEET; q=area>0?Math.ceil(area/sa):0; u="лист"; note=area>0?`${fmtN(a0)} м² + 15 % → ${q} ${q===1?"лист":q<5?"листа":"листов"}`:""; }
+  else if(slot.kind==="front"){ q=Math.round(fa*100)/100; u="м²"; note=q?`${fmtN(q)} м² фасадов`:""; }
+  else if(slot.kind==="m"){ q=Math.ceil(need.edge*1.1); u="м"; note=q?`${fmtN(need.edge)} м + 10 %`:""; }
+  else if(slot.kind==="lin"){ q=+lin[slot.lin]||0; u="м"; }
+  else if(slot.k==="psu"){ q=(+lin.led||0)>0?Math.ceil((+lin.led)/5):0; note=q?"1 на 5 м ленты":""; }
+  else if(slot.k==="sw"){ q=(+lin.led||0)>0?1:0; }
+  else q=need[slot.k]||0;
+  if(m&&m.q!=null&&m.q!=="") { q=+m.q; note="количество вручную"; }
+  const p=smPrice(slot,m,u); return {q,u,p,sum:Math.round(q*(p||0)),note,m}; }
+function smFrontM2(m){ if(!m||!m.n) return false; const b=smBase(m.n); if(m.u==="м²") return true; return !!(b&&!b[2]&&/кв|м2|м²/.test(String(b[1]||""))); }
+function smPrice(slot,m,u){ if(!m) return 0; if(m.p!=null&&m.p!=="") return +m.p||0; if(!m.n) return 0;
+  const r=(S.sup.price||{})[supPKey(m.n)]; if(r&&r.price>0) return r.price; const b=smBase(m.n); if(!b) return 0;
+  if(u==="лист") return b[2]?Math.round(b[0]*b[2]):b[0]; return b[0]; }
+const fmtN=v=>(Math.round((+v||0)*100)/100).toLocaleString("ru-RU");
+function smMont(d,need){ return need.mods.floor*1225+need.mods.up*1400+need.mods.tall*2100+((+d.lin.top||0)>0?1500:0)+((+d.lin.apron||0)>0?1050:0); }
+function smFmSlots(need){ return Object.keys(need.fronts).filter(k=>k.startsWith("fm:")).map(k=>({k,n:"Фасады: "+k.slice(3),sec:"ldsp|plit",kind:"front",mm:need.fmMat[k],dyn:true})); }
+function smCalc(d){ const need=smNeed(d), lines=SM_SLOTS.concat(smFmSlots(need)).map(s=>Object.assign({s},smLine(s,d,need))).filter(l=>l.q>0||l.m);
+  const mats=lines.reduce((a,l)=>a+l.sum,0), k=Math.min(SM_KMAX,Math.max(SM_KMIN,+d.k||0.38)), mont=0, deliv=+d.deliv||0;
+  const furn=Math.round(mats/k); const total=Math.round(furn+deliv); return {need,lines,mats,k,furn,mont,deliv,total,br:Math.round(total*SM_BR),noPrice:lines.filter(l=>l.q>0&&!l.p).length}; }
+
+/* ---- загрузка / сохранение ---- */
+async function smLoad(id){ S.shop.sm={id,busy:true,data:null}; const j=await shpGet("action=smeta&id="+encodeURIComponent(id),true); const o=shpById(id);
+  S.shop.sm={id,data:(j&&j.ok&&j.smeta)||smNew(o),saved:j&&j.ok&&j.smeta?{who:j.who,when:j.when,total:j.total}:null,err:!(j&&j.ok)};
+  if(!S.sup.priceOk&&typeof supPriceLoad==="function") await supPriceLoad(); if(typeof catLoad==="function") catLoad();
+  if(S.view==="shop"&&S.shop.mode==="smeta") shpRenderKeep(); }
+async function smSave(setSum){ const sm=S.shop.sm; if(!sm||!sm.data) return; const c=smCalc(sm.data);
+  const j=await shpPost({action:"smetaSave",id:sm.id,data:sm.data,total:c.total,mats:c.mats,k:c.k,br:c.br,setSum:!!setSum}); if(!j) return;
+  sm.saved={who:shpWho(),when:Date.now(),total:c.total}; sm.dirty=false;
+  if(setSum){ const o=shpById(sm.id); if(o){ o.sum=c.total; o.zpBr=c.br; } toast("Сумма заказа "+shpRub(c.total)+", бригаде "+shpRub(c.br)); } else toast("Смета сохранена"); shpRenderKeep(); }
+
+/* ---- экран (вариант А): схема модулей рядами, материалы плитками, итог с ползунком прижат снизу ---- */
+const SM_GROUPS=[{k:"body",n:"Корпус",s:["body"]},{k:"front",n:"Фасады",s:["front","frontU"],dyn:true},{k:"top",n:"Столешница",s:["top"]},{k:"apron",n:"Фартук",s:["apron"]},
+  {k:"furn",n:"Фурнитура",s:["hinge","slide","handle","legs","hang"],ic:"⚙"},{k:"led",n:"Подсветка",s:["led","ledp","psu","sw"],ic:"💡"},{k:"edge",n:"Кромка",s:["edge"]},{k:"back",n:"Задняя стенка",s:["back"]},{k:"plinth",n:"Цоколь",s:["plinth"]}];
+const SM_ROWS=[{k:"up2",n:"Антресоль (3-й ярус)",t:["up2"]},{k:"up",n:"Верх",t:["cornU","up","upF"]},{k:"low",n:"Низ и пеналы",t:["cornL","low","sink","drw","tall"]},{k:"cab",n:"Шкафы",t:["cab"]}];
+function smHtml(){ const sm=S.shop.sm, o=sm&&shpById(sm.id);
+  const back=`<button type="button" class="btn" data-act="sm-back">← К заказу</button>`;
+  if(!sm||sm.busy) return `<div class="head"><h1>Смета</h1><div class="head-actions">${back}</div></div><p class="muted">Загружаю…</p>`;
+  if(!S.shop.full) return `<div class="head"><h1>Смета</h1><div class="head-actions">${back}</div></div><p class="note">Смету видят технолог и офис.</p>`;
+  const d=sm.data, c=smCalc(d), noBase=!(S.sup&&S.sup.base), cm=!!S.shop.smClient;
+  let h=`<div class="head"><div><h1>Смета${o&&o.client?" · "+esc(o.client):""}</h1><p class="muted" style="margin:4px 0 0">${o?`№ ${esc(o.num)}${o.kind?" · "+esc(o.kind):""}`:""}${sm.saved?` · сохранена ${esc(shpTime(sm.saved.when))}`:" · новая"}${sm.dirty?" · <b class=\"sm-dirty\">не сохранена</b>":""}</p></div><div class="head-actions">${cm?"":`<button type="button" class="btn" data-act="sm-client">👁 Клиент рядом</button>`}${back}</div></div>`;
+  if(cm) h+=`<div class="sm-cm">👁 Режим «Клиент рядом»: цены и расход скрыты</div>`;
+  if(sm.err) h+=`<div class="banner warn">Не удалось загрузить сохранённую смету — обновите скрипт таблицы или проверьте связь.</div>`;
+  if(noBase&&!cm) h+=`<div class="banner warn">Цены из базы Базиса ещё не загрузились — подождите или впишите цены вручную.</div>`;
+  h+=`<button type="button" class="sm-room" data-act="sm-room"><span>Помещение</span><b>${+d.tiers===3?"3 яруса · ":""}потолок ${esc(String(d.H))} · цоколь ${esc(String(d.P))} · столешница ${esc(String(d.T))} · фартук ${esc(String(d.A))}</b><span class="sm-ed">✎</span></button>`;
+  h+=`<div class="sm-3d" id="sm3d"><div class="sm-3dh">Примерный вид · крутите пальцем или мышкой</div><div class="sm-3db"><button type="button" data-act="sm-3dr">↺ Вид</button><button type="button" data-act="sm-3df">⤢</button></div></div>`;
+  /* схема: каждый модуль — блок шириной по размеру; нажал — правишь */
+  const sc=0.075, blk=(m,i)=>{ const w=Math.max(30,Math.round(((+m.w||0)+(/^corn/.test(m.t)?(+m.w2||0)*0.5:0))*sc)), hh=m.t==="tall"||m.t==="cab"?96:m.t==="up"?52:m.t==="upF"?86:m.t==="up2"?32:58;
+    const ti={hob:"🔥",sink:"◡"}[smTop(m)]||"", ii={oven:"♨",dw:"🍽",ovenmw:"♨",fridge:"❄",boiler:"♒",hood:"💨",dry:"≋",mw:"▣"}[m.ins]||"";
+    const ic0={cornL:"⌟",cornU:"⌝",upF:"⇕",sink:"◡",drw:"☰",tall:"▯",cab:"▥"}[m.t]||"", ic=(ti||ii)?(ti+ii):ic0;
+      return Array.from({length:Math.max(0,+m.n||0)},(_,j)=>`<button type="button" class="sm-b sm-b-${m.t}${/^corn/.test(m.t)?" corn":""}${(+m.wall||1)>1?" w"+m.wall:""}" style="width:${w}px;height:${hh}px" data-act="sm-mod" data-i="${i}" title="${esc(SM_TYPES[m.t].n)} ${m.w}${/^corn/.test(m.t)?"×"+(m.w2||m.w):""}×${m.h}×${m.d}">${ic}<span>${/^corn/.test(m.t)?m.w+"/"+(m.w2||m.w):m.w}${(+m.wall||1)>1?" ·с"+m.wall:""}</span></button>`).join(""); };
+  h+=`<div class="sm-wall">${SM_ROWS.filter(r=>(r.k!=="cab"||d.mods.some(m=>m.t==="cab"))&&(r.k!=="up2"||+d.tiers===3||d.mods.some(m=>m.t==="up2"))).map(r=>{ const L=d.mods.map((m,i)=>({m,i})).filter(x=>r.t.includes(x.m.t)), n=L.reduce((a,x)=>a+(+x.m.n||0),0);
+      return `<div class="sm-wr"><p class="sm-wl">${esc(r.n)}${n?` <small>${n}</small>`:""}</p><div class="sm-wb sm-wb-${r.k}">${L.map(x=>blk(x.m,x.i)).join("")}<button type="button" class="sm-b sm-plus" data-act="sm-addm" data-r="${r.k}" aria-label="Добавить: ${esc(r.n)}">+</button></div></div>`; }).join("")}
+    ${d.mods.some(m=>m.t==="cab")?"":`<button type="button" class="linkbtn sm-addcab" data-act="sm-add" data-t="cab">+ Шкаф (прихожая, шкаф-купе)</button>`}</div>`;
+  if(!d.mods.length) h+=`<p class="note">Нажмите «+» в ряду и наберите модули, как в проекте PRO100. Нажмите на блок — поправите размеры и количество.</p>`;
+  const L0=d.lin||{}; h+=`<button type="button" class="sm-room" data-act="sm-lin"><span>Погонные</span><b>столешница ${fmtN(L0.top)} м · фартук ${fmtN(L0.apron)} м · цоколь ${fmtN(L0.plinth)} м · подсветка ${fmtN(L0.led)} м</b><span class="sm-ed">✎</span></button>`;
+  /* материалы плитками */
+  h+=`<p class="shp-zcap">Материалы</p><div class="sm-tiles">${SM_GROUPS.map(g=>{ const ls=g.s.map(k=>{ const s=SM_SLOTS.find(x=>x.k===k); return c.lines.find(x=>x.s.k===k)||Object.assign({s},smLine(s,d,c.need)); }).concat(g.dyn?c.lines.filter(x=>x.s.dyn):[]), need=ls.some(l=>l.q>0), sum=ls.reduce((a,l)=>a+l.sum,0), bad=ls.filter(l=>l.q>0&&(!l.m||!l.p)).length;
+      if(!need&&!ls.some(l=>l.m)&&!S.shop.smAll) return "";
+      const one=g.s.length===1&&!g.dyn?ls[0]:null, m=one&&one.m, fm0=g.dyn?(ls[0].m||null):null, sw=(m||fm0)&&(m||fm0).n&&S.cat&&S.cat.data?smSw((m||fm0).n):"";
+      const sub=one?(m&&m.n?esc(m.n):"не выбрано"):g.dyn?ls.filter(l=>l.q>0||l.m).map(l=>esc((l.m&&l.m.n)||"не выбрано")+" — "+fmtN(l.q)+" "+l.u).join("; "):ls.filter(l=>l.q>0).map(l=>esc(l.s.n.replace(/^Подсветка: /,"").replace(/ \(.*\)/,"").toLowerCase())+" "+fmtN(l.q)).join(", ");
+      return `<button type="button" class="sm-tile${bad&&!cm?" bad":""}" data-act="${one?"sm-pick":"sm-grp"}" data-k="${one?one.s.k:g.k}">${sw?sw.replace('class="cat-sw','class="sm-tsw'):`<span class="sm-tsw none" aria-hidden="true">${g.ic||"▦"}</span>`}<b>${esc(g.n)}</b><small>${sub||"—"}</small><small class="sm-tq">${cm?(one&&one.q?esc(fmtN(one.q)+" "+one.u):(bad?"выберите":"")):`${one&&one.q?esc(fmtN(one.q)+" "+one.u)+" · ":""}${sum?esc(shpRub(sum)):bad?"⚠ выберите / цена":"—"}`}</small></button>`; }).join("")}
+    <button type="button" class="sm-tile sm-tmore" data-act="sm-more"><span class="sm-tsw none">${S.shop.smAll?"−":"+"}</span><b>${S.shop.smAll?"Скрыть пустые":"Ещё"}</b><small>${S.shop.smAll?"":"фартук, цоколь, кромка…"}</small></button></div>`;
+  h+=`<button type="button" class="sm-room" data-act="sm-lin"><span>Доставка</span><b>${cm?"нажмите, чтобы указать":esc(shpRub(c.deliv))+" — сверху цены"}</b><span class="sm-ed">✎</span></button>
+    <label class="sm-note">Примечание для КП<textarea class="sm-in" data-f="note" rows="2" maxlength="600" placeholder="Сроки, условия оплаты, что не входит…">${esc(d.note||"")}</textarea></label>
+    <div class="shp-zpb"><button type="button" class="btn primary" data-act="sm-save">Сохранить смету</button>${cm?"":`<button type="button" class="btn" data-act="sm-sum">Сумму и ЗП — в заказ</button><button type="button" class="btn" data-act="sm-kp">📄 КП клиенту (PDF)</button>`}</div>`;
+  /* итог — прижат снизу */
+  const pct=Math.round((c.k-SM_KMIN)/(SM_KMAX-SM_KMIN)*100), kt=c.k.toFixed(2).replace(".",",");
+  if(cm){ h+=`<div class="sm-spacer" style="height:90px"></div><div class="sm-dock${VTX?" vtx":""}"><button type="button" class="sm-unlock" data-act="sm-unlock"><span class="sm-ulbar"></span>🔒 Удержите 2 секунды — показать цены</button></div>`; return h; }
+  h+=`<div class="sm-spacer"></div><div class="sm-dock${VTX?" vtx":""}"><div class="sm-dr"><span class="muted">${esc(shpRub(c.mats))} ÷ <b id="smKv">${kt}</b>${c.deliv?" + доставка":""}</span><span class="muted">бригаде <b id="smBr">${esc(shpRub(c.br))}</b></span></div>
+    <input type="range" id="smK" min="${SM_KMIN}" max="${SM_KMAX}" step="0.01" value="${c.k}" aria-label="Коэффициент: ${String(SM_KMIN).replace(".",",")} дороже, ${String(SM_KMAX).replace(".",",")} дешевле" style="--p:${pct}%">
+    <div class="sm-dr"><span>Клиенту${c.noPrice?` <small class="badc">⚠ ${c.noPrice} без цены</small>`:""}</span><b id="smTot">${esc(shpRub(c.total))}</b></div></div>`;
+  return h; }
+/* выбор типа модуля для ряда */
+function smPush(t){ const d=S.shop.sm.data, m=smDef(t,d), same=d.mods.find(x=>["t","w","h","d","doors","sh","dr"].every(k=>String(x[k])===String(m[k]))); if(same) same.n++; else d.mods.push(m); S.shop.sm.dirty=true; }
+function smAddModal(r){ const R=SM_ROWS.find(x=>x.k===r); if(!R) return; if(R.t.length===1){ smPush(R.t[0]); return shpRenderKeep(); }
+  const x=document.createElement("div"); x.className="modal"; x.id="smAddM";
+  x.innerHTML=`<div class="modal-card" style="width:min(380px,100%)"><h2 style="margin:0 0 10px">Добавить</h2><div class="sm-ch">${R.t.map(t=>`<button type="button" class="btn" data-t="${t}">${esc(SM_TYPES[t].ic)} ${esc(SM_TYPES[t].n)}</button>`).join("")}</div><button class="btn" type="button" data-act="qr-close" style="margin-top:10px">Отмена</button></div>`;
+  document.body.appendChild(x);
+  x.addEventListener("click",e=>{ const b=e.target.closest("[data-t]"); if(b){ smPush(b.dataset.t); x.remove(); return shpRenderKeep(); } if(e.target===x||e.target.closest('[data-act="qr-close"]')) x.remove(); }); }
+/* погонные метры и доставка */
+function smLinModal(){ const d=S.shop.sm.data, L=d.lin||(d.lin={}); const F=[["top","Столешница, м"],["apron","Фартук, м"],["plinth","Цоколь, м"],["led","Подсветка, м"]];
+  const x=document.createElement("div"); x.className="modal"; x.id="smLinM";
+  x.innerHTML=`<form class="modal-card" autocomplete="off" style="width:min(420px,100%)"><h2 style="margin:0 0 10px">Погонные и доставка</h2><div class="sm-grid" style="grid-template-columns:repeat(2,1fr)">${F.map(([k,n])=>`<label>${n}<input class="sm-in" name="${k}" inputmode="decimal" value="${esc(String(L[k]||""))}" placeholder="0"></label>`).join("")}<label>Доставка, ₽<input class="sm-in" name="deliv" inputmode="numeric" value="${esc(String(d.deliv))}"></label></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Готово</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  document.body.appendChild(x); x.addEventListener("click",e=>{ if(e.target===x||e.target.closest('[data-act="qr-close"]')) x.remove(); });
+  x.querySelector("form").addEventListener("submit",e=>{ e.preventDefault(); const f=e.target.elements, n=v=>Math.max(0,+String(v).replace(/\s/g,"").replace(",",".")||0); F.forEach(([k])=>{ L[k]=n(f[k].value); }); d.deliv=Math.round(n(f.deliv.value)); S.shop.sm.dirty=true; x.remove(); shpRenderKeep(); }); }
+/* группа материалов (фурнитура, подсветка): список строк — каждую выбрать */
+function smGrpModal(gk){ const g=SM_GROUPS.find(x=>x.k===gk), d=S.shop.sm.data, c=smCalc(d); if(!g) return; document.getElementById("smGrpM")?.remove();
+  const x=document.createElement("div"); x.className="modal"; x.id="smGrpM";
+  x.innerHTML=`<div class="modal-card" style="width:min(480px,100%)"><h2 style="margin:0 0 10px">${esc(g.n)}</h2><ul class="shp-zl">${g.s.map(k=>{ const s=SM_SLOTS.find(z=>z.k===k), l=c.lines.find(z=>z.s.k===k)||Object.assign({s},smLine(s,d,c.need)), m=l.m; if(k==="frontU"&&!m&&!l.q) return `<li><button type="button" class="shp-zli sm-sl" data-k="frontU"><span><b>Фасады верха другие?</b><small class="muted">нажмите и выберите — верх посчитается отдельно</small></span><b>+</b></button></li>`;
+      return `<li><button type="button" class="shp-zli sm-sl" data-k="${k}"><span><b>${esc(s.n.replace(/^Подсветка: /,""))}</b><small class="muted">${m&&m.n?esc(m.n):"<span class=\"sm-need\">не выбрано — нажмите</span>"}</small><small class="muted">${l.q?esc(fmtN(l.q)+" "+l.u)+(S.shop.smClient?"":(l.p?" × "+esc(shpRub(l.p)):" · нет цены")):"не нужно по модулям"}</small></span><b>${S.shop.smClient?"":l.sum?esc(shpRub(l.sum)):"—"}</b></button></li>`; }).join("")}${g.dyn?c.lines.filter(l=>l.s.dyn).map(l=>`<li><div class="shp-zli"><span><b>${esc(l.s.n)}</b><small class="muted">свой фасад у модуля · ${esc(fmtN(l.q)+" "+l.u)}${S.shop.smClient?"":(l.p?" × "+esc(shpRub(l.p)):" · нет цены")} · менять — в окошке модуля</small></span><b>${S.shop.smClient?"":l.sum?esc(shpRub(l.sum)):"—"}</b></div></li>`).join(""):""}</ul>
+    <button class="btn" type="button" data-act="qr-close" style="margin-top:10px">Готово</button></div>`;
+  document.body.appendChild(x);
+  x.addEventListener("click",e=>{ const b=e.target.closest("[data-k]"); if(b){ x.remove(); S.shop.smGrp=gk; return smPickModal(b.dataset.k); } if(e.target===x||e.target.closest('[data-act="qr-close"]')) x.remove(); }); }
+function smSw(name){ const d=S.cat.data; if(!d) return ""; S.shop.smIdx=S.shop.smIdx||new Map(d.items.map(it=>[supPKey(it.n),it])); const it=S.shop.smIdx.get(supPKey(name)); return it?catSw(it,"cat-sw"):""; }
+
+/* ---- окошко: размеры модуля (i) или помещения (-1) ---- */
+function smModModal(i){ const d=S.shop.sm.data, room=i<0, m=room?d:d.mods[i]; if(!m) return;
+  const F=room?[["H","Пол — потолок"],["P","Цоколь"],["T","Столешница"],["A","Фартук"],["U","Высота верха (при 3 ярусах)"]]:(/^corn/.test(m.t)?[["w","По стене 1"],["w2","По стене 2"]]:[["w","Ширина"]]).concat([["h","Высота"],["d","Глубина"],["doors","Дверей"],["sh","Полок"],["dr","Ящиков"],["n","Таких модулей"]]);
+  const x=document.createElement("div"); x.className="modal"; x.id="smModM";
+  x.innerHTML=`<form class="modal-card" autocomplete="off" style="width:min(420px,100%)"><h2 style="margin:0 0 4px">${room?"Помещение, мм":`<select name="t" class="sm-in sm-tsel" aria-label="Тип модуля">${Object.keys(SM_TYPES).map(t=>`<option value="${t}"${t===m.t?" selected":""}>${esc(SM_TYPES[t].n)}</option>`).join("")}</select>`}</h2>${room?"":`<div class="shp-seg shp-wseg" role="group" aria-label="Стена">${[1,2,3].map(w=>`<button type="button" data-wl="${w}" aria-pressed="${(+m.wall||1)===w}">Стена ${w}</button>`).join("")}</div>`}${room?`<div class="shp-seg shp-wseg" role="group" aria-label="Ярусов"><button type="button" data-tr="2" aria-pressed="${+d.tiers!==3}">2 яруса: низ + верх</button><button type="button" data-tr="3" aria-pressed="${+d.tiers===3}">3 яруса: + антресоль</button></div><p class="note sm-tnote" style="margin:0 0 8px"></p>`:""}
+    <div class="sm-grid" style="grid-template-columns:repeat(3,1fr)">${F.map(([k,n])=>`<label>${n}<input class="sm-in" name="${k}" inputmode="numeric" value="${esc(String(m[k]==null?"":m[k]))}"></label>`).join("")}</div>
+    ${room?"":smModExtra(m,i)}
+    ${room?`<label class="sm-chk"><input type="checkbox" name="upd" checked> Пересчитать высоту верхов, антресолей и пеналов</label>`:`<div class="sm-mv"><button type="button" class="btn sm" data-x="l">◀ Левее</button><button type="button" class="btn sm" data-x="r">Правее ▶</button><button type="button" class="btn sm" data-x="dup">Копия</button><button type="button" class="btn sm" data-x="del">Удалить</button></div>`}
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Готово</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  document.body.appendChild(x);
+  let tiers=+d.tiers===3?3:2; const F0=x.querySelector("form"), tn=()=>{ if(!room) return; const v=k=>+String(F0.elements[k].value).replace(",",".")||0, t={H:v("H"),P:v("P"),T:v("T"),A:v("A"),U:v("U")||720,tiers}; const wl=smWallH(t);
+    F0.elements.U.closest("label").hidden=tiers!==3; x.querySelector(".sm-tnote").textContent=tiers===3?`Верх ${smUpH(t)} мм + антресоль ${smUp2H(t)} мм — до потолка.`:`Верх ${wl} мм — до потолка.`; };
+  if(room){ if(!d.U) F0.elements.U.value="720"; tn(); F0.addEventListener("input",tn); x.querySelectorAll("[data-tr]").forEach(b=>b.addEventListener("click",()=>{ tiers=+b.dataset.tr; x.querySelectorAll("[data-tr]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); tn(); })); }
+  let topS=smTop(m), insS=m.ins||"";
+  x.querySelectorAll("[data-tp]").forEach(b=>b.addEventListener("click",()=>{ topS=b.dataset.tp; x.querySelectorAll("[data-tp]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); }));
+  x.querySelectorAll("[data-is]").forEach(b=>b.addEventListener("click",()=>{ insS=b.dataset.is; x.querySelectorAll("[data-is]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); }));
+  let wall=+m.wall||1; x.querySelectorAll("[data-wl]").forEach(b=>b.addEventListener("click",()=>{ wall=+b.dataset.wl; x.querySelectorAll("[data-wl]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); }));
+  const apply=()=>{ const f=F0.elements; F.forEach(([k])=>{ m[k]=Math.max(0,Math.round(+String(f[k].value).replace(",","."))||0); });
+    if(!room){ m.wall=wall; if(f.t&&f.t.value!==m.t){ m.t=f.t.value; if(/^corn/.test(m.t)&&!m.w2) m.w2=m.w; } m.top=smIsLow(m.t)?topS:""; m.ins=smInsSet(m.t)&&insS in smInsSet(m.t)?insS:""; if(m.ins==="oven"){ m.sh=0; m.doors=0; m.dr=0; } }
+    if(room){ d.tiers=tiers; } if(room&&f.upd.checked){ const uh=smUpH(d), u2=smUp2H(d), th=Math.max(1200,(+d.H||0)-(+d.P||0)); d.mods.forEach(z=>{ if(z.t==="up") z.h=uh; if(z.t==="up2") z.h=u2; if(z.t==="upF") z.h=smWallH(d); if(z.t==="tall"||z.t==="cab") z.h=th; }); }
+    S.shop.sm.dirty=true; };
+  x.addEventListener("click",e=>{ const xb=e.target.closest("[data-x]"); if(xb){ const a=xb.dataset.x;
+      if(a==="fm"){ apply(); x.remove(); shpRenderKeep(); return smPickModal("mod:"+i); }
+      if(a==="fm0"){ apply(); delete m.fm; x.remove(); return shpRenderKeep(); }
+      if(a==="del") d.mods.splice(i,1); else if(a==="dup") d.mods.splice(i+1,0,Object.assign({},m,{n:1})); else { const j=a==="l"?i-1:i+1; if(j<0||j>=d.mods.length) return; [d.mods[i],d.mods[j]]=[d.mods[j],d.mods[i]]; }
+      S.shop.sm.dirty=true; x.remove(); return shpRenderKeep(); }
+    if(e.target===x||e.target.closest('[data-act="qr-close"]')) x.remove(); });
+  x.querySelector("form").addEventListener("submit",e=>{ e.preventDefault(); apply(); x.remove(); shpRenderKeep(); }); }
+function smModExtra(m,i){ const ins=smInsSet(m.t), top=smTop(m), seg=(attr,obj,cur,lab)=>`<p class="sm-ml">${lab}</p><div class="shp-seg shp-wseg sm-seg2" role="group" aria-label="${lab}">${Object.keys(obj).map(k=>`<button type="button" data-${attr}="${k}" aria-pressed="${k===cur}">${esc(obj[k])}</button>`).join("")}</div>`;
+  return `<p class="sm-ml">Фасад</p><div class="sm-fm">${m.fm&&(m.fm.n||m.fm.p)?`<button type="button" class="btn sm" data-x="fm">✎ ${esc(m.fm.n||"вручную")}</button><button type="button" class="btn sm" data-x="fm0">Как у кухни</button>`:`<span class="muted">как у всей кухни</span><button type="button" class="btn sm" data-x="fm">Другой фасад…</button>`}</div>
+    ${smIsLow(m.t)?seg("tp",SM_TOPS,top,"Сверху, на столешнице"):""}${ins?seg("is",ins,m.ins||"",m.t==="tall"||m.t==="cab"?"Внутри пенала":smIsUp(m.t)?"Внутри верха":"Внутри"):""}`; }
+/* ---- выбор материала: из базы Базиса (как «Материалы») или вручную ---- */
+function smPickModal(k){ const d=S.shop.sm.data, mi=String(k).startsWith("mod:")?+String(k).slice(4):-1, s=mi>=0?{k,n:"Фасад этого модуля",sec:"ldsp|plit",kind:"front"}:SM_SLOTS.find(x=>x.k===k), cur=(mi>=0?(d.mods[mi]||{}).fm:(d.mat||{})[k])||{}; if(!s) return;
+  if(typeof catLoad==="function") catLoad();
+  const m=document.createElement("div"); m.className="modal"; m.id="smPickM";
+  m.innerHTML=`<div class="modal-card sm-pick"><h2 style="margin:0 0 8px">${esc(s.n)}</h2>
+    <input class="ca-q" type="search" placeholder="🔍 Цвет, название, артикул" value="${esc(s.q||"")}" aria-label="Поиск материала"><div class="sm-pl"></div>
+    <details class="sm-man"${cur.n&&!smBase(cur.n)?" open":""}${S.shop.smClient?" hidden":""}><summary>Вписать вручную / поправить</summary><div class="form" style="grid-template-columns:1fr;margin:8px 0 0">
+      <label>Название<input name="n" maxlength="120" value="${esc(cur.n||"")}"></label><label>Цена за ${esc(s.kind==="sheet"?"лист":s.kind==="front"?"лист или м²":s.kind==="pc"?"шт":"м")}, ₽ (пусто — из базы)<input name="p" inputmode="decimal" value="${esc(cur.p!=null?String(cur.p):"")}"></label>
+      ${s.kind==="front"?`<label>Считать<select name="u"><option value=""${cur.u!=="м²"?" selected":""}>листами (ЛДСП)</option><option value="м²"${cur.u==="м²"?" selected":""}>по м² (МДФ)</option></select></label>`:""}
+      <label>Количество (пусто — посчитать само)<input name="q" inputmode="decimal" value="${esc(cur.q!=null?String(cur.q):"")}"></label>
+      <button class="btn primary" type="button" data-sm="ok">Готово</button></div></details>
+    <div style="display:flex;gap:8px;margin-top:10px">${cur.n||cur.p?`<button class="btn" type="button" data-sm="clr">Убрать</button>`:""}<button class="btn" type="button" data-act="qr-close">Закрыть</button></div></div>`;
+  document.body.appendChild(m);
+  const list=m.querySelector(".sm-pl"), q=m.querySelector(".ca-q"), re=s.sec?new RegExp("^("+s.sec+")$"):null;
+  const draw=()=>{ const D=S.cat&&S.cat.data; if(!D){ list.innerHTML=`<p class="muted">Загружаю базу…</p>`; setTimeout(draw,600); return; }
+    const w=String(q.value||"").toLowerCase().replace(/ё/g,"е").split(/\s+/).filter(Boolean);
+    let L=D.items.filter(it=>(!re||re.test(catSecOf(it)))&&catSecOf(it)!=="hid"&&w.every(x=>it.s.includes(x)));
+    if(!w.length&&typeof catFreq==="function"){ const fr=catFreq().map(x=>x.it).filter(it=>!re||re.test(catSecOf(it))); L=fr.concat(L.filter(it=>!fr.includes(it))); }
+    list.innerHTML=L.slice(0,60).map(it=>{ const p=S.shop.smClient?"":catPriceTxt(it); return `<button type="button" class="sm-it${cur.n===it.n?" on":""}" data-n="${esc(it.n)}">${catSw(it,"cat-sw")}<span><b>${esc(it.n)}</b><small class="muted">${esc(S.shop.smClient?(it.g||"").split("/").slice(-2).join(" · "):(p||"нет цены"))}</small></span></button>`; }).join("")||`<p class="muted">Ничего не нашлось. Напишите короче или впишите вручную ниже.</p>`; };
+  draw(); q.addEventListener("input",()=>{ clearTimeout(q._t); q._t=setTimeout(draw,200); });
+  const put=v=>{ if(mi>=0){ const mm=d.mods[mi]; if(mm){ if(v) mm.fm=v; else delete mm.fm; } } else { d.mat=d.mat||{}; if(v) d.mat[k]=v; else delete d.mat[k]; } S.shop.sm.dirty=true; m.remove(); shpRenderKeep(); if(S.shop.smGrp){ const g=S.shop.smGrp; S.shop.smGrp=null; smGrpModal(g); } };
+  m.addEventListener("click",e=>{ const it=e.target.closest(".sm-it"); if(it) return put(Object.assign({},cur,{n:it.dataset.n,p:null}));
+    const b=e.target.closest("[data-sm]"); if(b&&b.dataset.sm==="clr") return put(null);
+    if(b&&b.dataset.sm==="ok"){ const f=m.querySelector(".sm-man"), g=x=>{ const el=f.querySelector(`[name=${x}]`); return el?el.value.trim():""; }, num=x=>{ const v=g(x).replace(/\s/g,"").replace(",","."); return v===""?null:+v; };
+      return put({n:g("n"),p:num("p"),q:num("q"),u:g("u")}); }
+    if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); }
+
+/* ---- КП клиенту: что входит, материалы, цена — без расхода и коэффициента ---- */
+function smKpPdf(){ const sm=S.shop.sm, d=sm.data, c=smCalc(d), o=shpById(sm.id)||{}, e=esc, r=v=>shpRub(v);
+  const mods=d.mods.filter(m=>+m.n>0).map(m=>`${SM_TYPES[m.t].n} ${m.w}×${m.h}${+m.n>1?" — "+m.n+" шт":""}`);
+  const fmN=[...new Set(d.mods.filter(m=>m.fm&&m.fm.n).map(m=>m.fm.n))], tl={hob:"варочная панель",sink:"мойка",oven:"духовой шкаф",dw:"посудомоечная машина",ovenmw:"духовка и СВЧ",fridge:"встроенный холодильник",boiler:"бойлер / колонка",hood:"встроенная вытяжка",dry:"сушка",mw:"СВЧ"}, tech=Object.keys(c.need.tech).filter(k=>tl[k]).map(k=>tl[k]+(c.need.tech[k]>1?" ×"+c.need.tech[k]:""));
+  const mat=["body","front","frontU","top","apron","handle","led"].map(k=>{ const s=SM_SLOTS.find(x=>x.k===k), m=(d.mat||{})[k]; return m&&m.n?`<tr><td>${e(s.n.replace(/ \(.*\)/,"").replace("Подсветка: лента","Подсветка"))}</td><td>${e(m.n)}</td></tr>`:""; }).join("")+(fmN.length?`<tr><td>Фасады (акцент)</td><td>${e(fmN.join(", "))}</td></tr>`:"");
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>КП ${e(o.client||"")}</title><style>body{font:13px Arial,sans-serif;color:#000;margin:28px}h1{font-size:20px;margin:0 0 2px}p{margin:2px 0 12px;color:#444}table{width:100%;border-collapse:collapse;margin-bottom:14px}td,th{padding:6px;border-bottom:1px solid #ccc;text-align:left;vertical-align:top}th{background:#eee}.n{text-align:right;white-space:nowrap}.t td{font-weight:bold;font-size:16px;border-top:2px solid #000}ul{margin:4px 0 14px 18px;padding:0}</style></head><body>
+    <h1>Коммерческое предложение</h1><p>${e(o.client||"")}${o.kind?" · "+e(o.kind):""}${o.address?" · "+e(o.address):""} · ${e(new Date().toLocaleDateString("ru-RU"))}</p>
+    ${mods.length?`<b>Состав</b><ul>${mods.map(x=>`<li>${e(x)}</li>`).join("")}${+d.lin.top?`<li>Столешница ${e(fmtN(d.lin.top))} м</li>`:""}${+d.lin.apron?`<li>Фартук ${e(fmtN(d.lin.apron))} м</li>`:""}${+d.lin.led?`<li>Подсветка ${e(fmtN(d.lin.led))} м</li>`:""}</ul>`:""}
+    ${tech.length?`<p style="color:#000"><b>Под встроенную технику:</b> ${e(tech.join(", "))}${c.need.cut.hob||c.need.cut.sink?" (вырезы в столешнице учтены)":""}. Техника не входит в стоимость.</p>`:""}
+    ${mat?`<table><tr><th colspan="2">Материалы</th></tr>${mat}</table>`:""}
+    <table><tr><th colspan="2">Стоимость</th></tr><tr><td>Изготовление и монтаж мебели</td><td class="n">${e(r(c.furn))}</td></tr>${c.deliv?`<tr><td>Доставка</td><td class="n">${e(r(c.deliv))}</td></tr>`:""}<tr class="t"><td>Итого</td><td class="n">${e(r(c.total))}</td></tr></table>
+    ${d.note?`<p style="color:#000;white-space:pre-wrap">${e(d.note)}</p>`:""}</body></html>`;
+  const f=document.createElement("iframe"); f.style.cssText="position:fixed;right:0;bottom:0;width:0;height:0;border:0"; document.body.appendChild(f);
+  f.contentDocument.open(); f.contentDocument.write(html); f.contentDocument.close(); setTimeout(()=>{ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(_){ toast("Не получилось открыть печать"); } setTimeout(()=>f.remove(),60000); },300); }
+
+/* ---- подключение к «Вертаксу» ---- */
+const _smView=viewShop;
+viewShop=function(){ if(S.shop.mode==="smeta"&&shpPin()&&S.shop.loaded){ setTimeout(sm3dMount,0); return shpNavHtml()+smHtml(); } return _smView(); };
+const _smOrder=shpOrderHtml;
+shpOrderHtml=function(){ let h=_smOrder(); if(!S.shop.full) return h; return h.replace('<button type="button" class="btn" data-act="shp-edit">Изменить</button>','<button type="button" class="btn" data-act="shp-edit">Изменить</button><button type="button" class="btn" data-act="sm-open">🧮 Смета</button>'); };
+function smSet(el){ const sm=S.shop.sm; if(!sm||!sm.data) return; const d=sm.data, v=el.value, num=+String(v).replace(/\s/g,"").replace(",",".");
+  if(el.dataset.m!=null){ const m=d.mods[+el.dataset.m]; if(m) m[el.dataset.f]=Math.max(0,Math.round(num)||0); }
+  else if(el.dataset.l) d.lin[el.dataset.l]=v===""?0:Math.max(0,num||0);
+  else if(el.dataset.f==="note") d.note=v;
+  else if(el.dataset.f==="mont") d.mont=v===""?null:Math.max(0,num||0);
+  else if(el.dataset.f) d[el.dataset.f]=Math.max(0,Math.round(num)||0);
+  sm.dirty=true; }
+document.addEventListener("change",ev=>{ const el=ev.target; if(!(el&&el.classList&&el.classList.contains("sm-in"))) return; smSet(el); if(el.dataset.f!=="note") shpRenderKeep(); });
+document.addEventListener("input",ev=>{ const el=ev.target; if(!el) return; if(el.dataset&&el.dataset.f==="note"&&el.classList.contains("sm-in")){ smSet(el); return; }
+  if(el.id!=="smK"||!S.shop.sm) return; const d=S.shop.sm.data; d.k=+el.value; S.shop.sm.dirty=true; const c=smCalc(d), t=c.k.toFixed(2).replace(".",",");
+  el.style.setProperty("--p",Math.round((c.k-SM_KMIN)/(SM_KMAX-SM_KMIN)*100)+"%");
+  document.getElementById("smKv").textContent=t; document.getElementById("smTot").textContent=shpRub(c.total); const bb=document.getElementById("smBr"); if(bb) bb.textContent=shpRub(c.br); 
+   });
+document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act^="sm-"]'); if(!t) return; const a=t.dataset.act; ev.preventDefault(); ev.stopPropagation();
+  if(a==="sm-open"){ S.shop.smAll=false; S.shop.smTab="mod"; S.shop.mode="smeta"; window.scrollTo(0,0); smLoad(S.shop.cur); return shpRenderKeep(); }
+  const sm=S.shop.sm; if(!sm||!sm.data) return;
+  if(a==="sm-back"){ if(sm.dirty&&!(await appConfirm("Смета не сохранена. Выйти без сохранения?","Выйти"))) return; S.shop.mode="order"; return shpRenderKeep(); }
+  if(a==="sm-add"){ smPush(t.dataset.t); return shpRenderKeep(); }
+  if(a==="sm-n"){ const m=sm.data.mods[+t.dataset.i]; if(!m) return; m.n+= +t.dataset.d; if(m.n<=0) sm.data.mods.splice(+t.dataset.i,1); sm.dirty=true; return shpRenderKeep(); }
+  if(a==="sm-pick") return smPickModal(t.dataset.k);
+  if(a==="sm-client"){ S.shop.smClient=true; try{ localStorage.setItem("cehqr-smcl","1"); }catch(_){} return shpRenderKeep(); }
+  if(a==="sm-unlock") return;
+  if(a==="sm-addm") return smAddModal(t.dataset.r);
+  if(a==="sm-3dr"){ S.shop.sm3dCam=null; return sm3dMount(); }
+  if(a==="sm-3df"){ const el=document.getElementById("sm3d"); if(el){ el.classList.toggle("full"); t.textContent=el.classList.contains("full")?"✕":"⤢"; window.dispatchEvent(new Event("resize")); } return; }
+  if(a==="sm-lin") return smLinModal();
+  if(a==="sm-grp") return smGrpModal(t.dataset.k);
+  if(a==="sm-mod") return smModModal(+t.dataset.i);
+  if(a==="sm-room") return smModModal(-1);
+  if(a==="sm-more"){ S.shop.smAll=!S.shop.smAll; return shpRenderKeep(); }
+  if(a==="sm-mauto"){ sm.data.mont=null; sm.dirty=true; return shpRenderKeep(); }
+  if(a==="sm-save") return smSave(false);
+  if(a==="sm-sum"){ const c=smCalc(sm.data); if(!(await appConfirm("Записать в заказ: сумма "+shpRub(c.total)+", ЗП бригаде 18 % — "+shpRub(c.br)+"?","Записать",false))) return; return smSave(true); }
+  if(a==="sm-kp") return smKpPdf(); },true);
+/* «Клиент рядом»: выключить — удержать замок 2 секунды */
+try{ S.shop.smClient=localStorage.getItem("cehqr-smcl")==="1"; }catch(_){}
+(function(){ let tm=null, el=null; const stop=()=>{ clearTimeout(tm); tm=null; if(el) el.classList.remove("hold"); el=null; };
+  document.addEventListener("pointerdown",e=>{ const b=e.target.closest&&e.target.closest('[data-act="sm-unlock"]'); if(!b) return; el=b; b.classList.add("hold");
+    tm=setTimeout(()=>{ stop(); S.shop.smClient=false; try{ localStorage.removeItem("cehqr-smcl"); }catch(_){} shpRenderKeep(); },2000); });
+  ["pointerup","pointercancel","pointerleave"].forEach(t=>document.addEventListener(t,stop,true)); })();
+(function(){ const st=document.createElement("style"); st.textContent=`
+.sm-cm{background:#0a84ff22;border:1px solid #0a84ff55;color:#cfe3ff;border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:13px}
+.sm-unlock{position:relative;overflow:hidden;width:100%;background:#2c2c2e;border:0;border-radius:12px;color:#ddd;font:inherit;font-size:14px;padding:14px;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:none}
+.sm-ulbar{position:absolute;left:0;top:0;bottom:0;width:0;background:#0a84ff55}.sm-unlock.hold .sm-ulbar{width:100%;transition:width 2s linear}
+.sm-dirty{color:#ff9f0a;font-weight:600}
+.sm-wall{background:var(--surface);border-radius:12px;padding:8px 10px 10px;margin:0 0 10px}.sm-wr+.sm-wr{margin-top:6px}.sm-wl{margin:2px 0 4px;font-size:12px;color:var(--muted)}.sm-wl small{background:var(--sunk);border-radius:8px;padding:0 6px;margin-left:4px}
+.sm-wb{display:flex;gap:3px;align-items:flex-end;overflow-x:auto;padding-bottom:2px}.sm-b{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:var(--sunk);border:1.5px solid #5a5f66;border-radius:4px;color:var(--ink);font:600 11px var(--f-body,system-ui);cursor:pointer;padding:0}
+.sm-b span{font-weight:500;font-size:10.5px;color:var(--muted)}.sm-b:hover,.sm-b:focus-visible{border-color:#0a84ff;background:#0a84ff26}.sm-plus{width:30px;height:30px;border-style:dashed;color:#0a84ff;font-size:18px;align-self:flex-end}.sm-addcab{margin-top:6px;font-size:12.5px}
+.sm-tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:0 0 10px}@media (min-width:700px){.sm-tiles{grid-template-columns:repeat(3,1fr)}}
+.sm-tile{display:flex;flex-direction:column;align-items:stretch;gap:2px;text-align:left;background:var(--surface);border:1.5px solid transparent;border-radius:12px;padding:8px;color:var(--ink);font:inherit;cursor:pointer;min-width:0}.sm-tile.bad{border-color:#ff9f0a66}.sm-tile b{font-size:14px}.sm-tile small{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.sm-tile .sm-tq{color:var(--ink);font-weight:600}.sm-tile.bad .sm-tq{color:#ff9f0a}
+.sm-tsw{display:grid;place-items:center;height:38px;border-radius:7px;margin-bottom:4px;background-size:cover;font-size:18px}.sm-tsw.none{background:var(--sunk)}.sm-tmore{border:1.5px dashed #555}
+.sm-spacer{height:150px}.sm-dock{position:fixed;left:0;right:0;bottom:0;z-index:39;background:#1c1c1e;border-top:1px solid #000;padding:8px max(16px,env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 18px #0008}.sm-dock.vtx{bottom:calc(54px + env(safe-area-inset-bottom,0px));padding-bottom:10px}
+.sm-dock>*{max-width:900px;margin-left:auto;margin-right:auto}.sm-dr span{white-space:nowrap}.sm-b.corn{border-color:#ff9f0a;background:#ff9f0a22;color:#ffd08a}.sm-b.w2{border-style:dotted}.sm-b.w3{border-style:double}.sm-ml{margin:10px 0 4px;font-size:12px;color:var(--muted)}.sm-fm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.sm-seg2 button{font-size:12.5px}.sm-mv{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.sm-tsel{font-size:18px;font-weight:700;padding:6px 8px}
+.sm-3d{position:relative;background:linear-gradient(#26282c,#141517);border-radius:12px;height:280px;margin:0 0 10px;overflow:hidden;touch-action:none}.sm-3d canvas{display:block;width:100%!important;height:100%!important;cursor:grab}.sm-3d .sm-3dh{position:absolute;left:10px;bottom:8px;font-size:11.5px;color:#aaa;pointer-events:none}.sm-3d .sm-3db{position:absolute;right:8px;top:8px;display:flex;gap:6px}.sm-3d .sm-3db button{background:#000a;color:#fff;border:0;border-radius:8px;padding:6px 9px;font:inherit;font-size:12.5px;cursor:pointer}.sm-3d.full{position:fixed;inset:0;height:auto;z-index:300;border-radius:0}.sm-grid label[hidden]{display:none}.sm-dr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12.5px}.sm-dr b#smTot{font-size:22px}.sm-dr span:first-child{color:var(--ink)}.sm-ch{display:flex;flex-direction:column;gap:8px}.sm-sum{display:flex;justify-content:space-between;gap:10px;background:var(--surface);border-radius:12px;padding:10px 14px;margin:0 0 10px;color:var(--muted);font-size:13px}.sm-sum b{color:var(--ink);font-size:16px;margin-left:4px}
+.sm-room{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--surface);border:0;border-radius:12px;padding:10px 14px;margin:0 0 10px;color:var(--ink);font:inherit;cursor:pointer}.sm-room span:first-child{color:var(--muted);font-size:12.5px}.sm-room b{flex:1;font-weight:500;font-size:13.5px}.sm-ed{color:#0a84ff}
+.sm-row{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 0}.sm-rb{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:none;border:0;color:var(--ink);font:inherit;padding:6px 12px;cursor:pointer;text-align:left}.sm-chk{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13.5px}
+.sm-grid label input{width:100%;box-sizing:border-box}.sm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 6px}.sm-grid label,.sm-mf label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+.sm-in{width:100%;box-sizing:border-box;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 9px;font:inherit;font-size:15px}
+.sm-hint{font-size:12.5px;margin:2px 2px 10px}.sm-add{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.sm-mod{padding:10px 12px}.sm-mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.sm-mf{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.sm-q{display:flex;align-items:center;gap:10px}.sm-q button{width:32px;height:32px;border-radius:8px;border:0;background:var(--sunk);color:var(--ink);font-size:18px;cursor:pointer}
+.sm-sl{text-align:left}.sm-sl>span:nth-child(2){display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}.sm-sl .cat-sw{width:38px;height:38px;border-radius:8px;flex:none;display:grid;place-items:center}
+.sm-need{color:#ff9f0a}.sm-k{background:var(--surface);border-radius:12px;padding:12px 14px;margin:0 0 8px}.sm-kh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}.sm-kh b{font-size:18px}
+#smK{width:100%;accent-color:#0a84ff;height:28px}.sm-r{width:120px;text-align:right}.sm-note{display:flex;flex-direction:column;gap:4px;margin:10px 0;font-size:12.5px;color:var(--muted)}
+.sm-pick{width:min(560px,100%);max-height:88vh;overflow:auto}.sm-pl{display:flex;flex-direction:column;gap:4px;margin:8px 0;max-height:52vh;overflow:auto}
+.sm-it{display:flex;gap:10px;align-items:center;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 8px;color:var(--ink);cursor:pointer}.sm-it.on{outline:2px solid #0a84ff}
+.sm-it .cat-sw{width:40px;height:40px;border-radius:8px;flex:none}.sm-it span{display:flex;flex-direction:column;gap:2px}.sm-man summary{cursor:pointer;color:#0a84ff;margin-top:6px}
+@media (max-width:600px){.sm-grid{grid-template-columns:repeat(2,1fr)}.sm-mf{grid-template-columns:repeat(3,1fr)}}
+`; document.head.appendChild(st); })();
+
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
   const t=ev.target.closest("[data-act],[data-view]"); if(!t) return;
