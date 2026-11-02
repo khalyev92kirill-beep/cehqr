@@ -4351,6 +4351,15 @@ function supRecs(oid,key){ const it=supItems(oid).find(x=>x.key===key); const ks
   return ks.map(k=>{ const r=(S.sup.st[oid]||{})[k]||{}; return {order:oid,key:k,name:r.name||(it&&it.name)||"",qty:r.qty!=null?r.qty:null,unit:r.unit||(it&&it.unit)||"",status:r.status!=null?+r.status:((it&&it.status)||0),op:r.op||""}; }); }
 /* уже добавленное в этот заказ то же самое (ещё «Нужно») — прибавляем количество, а не новую строку */
 function supAddSame(oid,name,unit){ const r=Object.values(S.sup.st[oid]||{}).find(x=>/^A:/.test(x.key)&&x.op!=="del"&&!(+x.status)&&supPKey(x.name)===supPKey(name)&&(x.unit||"шт")===(unit||"шт")); return r?{order:oid,key:r.key,name:r.name,qty:+r.qty||0,unit:r.unit,status:0,op:"add"}:null; }
+/* своё окно подтверждения вместо серого окна браузера «Подтвердите действие на …github.io» */
+function appConfirm(text,ok,danger){ return new Promise(res=>{ const m=document.createElement("div"); m.className="modal"; m.style.zIndex=200;
+  m.innerHTML=`<div class="modal-card" role="alertdialog" aria-modal="true" style="width:min(380px,100%)"><p style="margin:0 0 14px;font-size:16px;line-height:1.4">${esc(text)}</p><div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn" data-n>Отмена</button><button type="button" class="btn ${danger===false?"primary":"danger"}" data-y>${esc(ok||"Да")}</button></div></div>`;
+  const done=v=>{ m.remove(); document.removeEventListener("keydown",kd); res(v); }, kd=e=>{ if(e.key==="Escape") done(false); if(e.key==="Enter") done(true); };
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-n]")) done(false); else if(e.target.closest("[data-y]")) done(true); }); document.addEventListener("keydown",kd); document.body.appendChild(m); setTimeout(()=>m.querySelector("[data-y]").focus(),30); }); }
+/* убрали позицию — сразу, с кнопкой «Вернуть» внизу */
+function supUndoBar(txt,undo){ document.getElementById("caDone")?.remove(); const b=document.createElement("div"); b.id="caDone"; b.className="ca-done";
+  b.innerHTML=`<span class="ok">✓</span><span>${esc(txt)}</span><button type="button">Вернуть</button>`; document.body.appendChild(b); const t=setTimeout(()=>b.remove(),7000);
+  b.querySelector("button").addEventListener("click",()=>{ clearTimeout(t); b.remove(); undo(); }); }
 function supRec(oid,key){ const it=supItems(oid).find(x=>x.key===key)||{}; const r=(S.sup.st[oid]||{})[key]||{};
   return {order:oid,key,name:r.name||it.name||"",qty:r.qty!=null?r.qty:(it.added?it.qty:null),unit:it.unit||r.unit||"",status:it.status||0,op:r.op||""}; }
 function supPinModal(then){
@@ -4387,7 +4396,7 @@ render=function(){
 };
 document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest("[data-act^='sup-']"); if(!t) return; ev.stopPropagation(); const a=t.dataset.act, o=t.dataset.o, k=t.dataset.k;
   if(a==="sup-in") return supLoginModal();
-  if(a==="sup-out"){ if(confirm("Выйти из режима снабженца на этом устройстве?")){ delete _ks.supply; keySave(); await siteLoadIndex(); setView("orders"); } return; }
+  if(a==="sup-out"){ if(await appConfirm("Выйти из режима снабженца на этом устройстве?","Выйти")){ delete _ks.supply; keySave(); await siteLoadIndex(); setView("orders"); } return; }
   if(a==="sup-reload"){ supSpecTried=false; S.sup.dealTried=true; supLoad(true); if(supDealsOn()) shpLoad(true).then(()=>{ if(S.view==="supply") supRenderKeep(); }); return; }
   if(a==="sup-small"){ S.sup.small=!S.sup.small; try{ localStorage.setItem("cehqr-supsmall",S.sup.small?"1":"0"); }catch(_){} supRenderKeep(); return; }
   if(a==="sup-sec"){ S.sup.sec=t.dataset.t; supRenderKeep(); return; }
@@ -4418,11 +4427,11 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="sup-menu"){ const e=o+"|"+k; S.sup.menu=S.sup.menu===e?null:e; supRenderKeep(); return; }
   if(a==="sup-more"){ S.sup.more[o]=!S.sup.more[o]; supRenderKeep(); return; }
   if(a==="sup-have"){ S.sup.have[o]=!S.sup.have[o]; supRenderKeep(); return; }
-  if(a==="sup-never"){ const r=supRec(o,k); if(!confirm("«"+r.name+"» больше не будет в закупке ни одного заказа. Вернуть можно в списке «Не закупаем никогда». Убрать?")) return;
+  if(a==="sup-never"){ const r=supRec(o,k); if(!(await appConfirm("«"+r.name+"» больше не будет в закупке ни одного заказа. Вернуть можно в списке «Не закупаем никогда». Убрать?","Не закупать"))) return;
     S.sup.menu=null; supSave([{order:"@NEVER",key:supNeverKey(r.name),name:r.name,qty:null,unit:r.unit||"",status:0,op:"never"}]); return; }
   if(a==="sup-unnever"){ const n=t.dataset.n||""; supSave([{order:"@NEVER",key:supNeverKey(n),name:n,qty:null,unit:"",status:0,op:""}]); document.getElementById("supNvModal")?.remove(); return; }
   if(a==="sup-nevlist") return supNeverModal();
-  if(a==="sup-del"){ const rs=supRecs(o,k); if(!confirm("Убрать «"+rs[0].name+"» из закупки заказа?")) return; rs.forEach(r=>{ r.op="del"; }); S.sup.menu=null; supSave(rs); return; }
+  if(a==="sup-del"){ const rs=supRecs(o,k), was=rs.map(r=>Object.assign({},r)); rs.forEach(r=>{ r.op="del"; }); S.sup.menu=null; const ok=await supSave(rs); if(ok!==false) supUndoBar("Убрано: «"+rs[0].name+"»",()=>supSave(was.map(r=>Object.assign(r,{op:r.op==="del"?"":r.op})))); return; }
   if(a==="sup-undel"){ const r=supRec(o,k); r.op=""; supSave([r]); return; }
 },true);
 /* удержание статуса — меню действий */
@@ -4758,7 +4767,7 @@ function supVendForm(v){ return new Promise(res=>{ const m=document.createElemen
     <p class="note" style="margin:8px 0 0;font-size:12.5px">По этим словам позиции сами попадут к нему в заявку.</p>
     <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-c>Отмена</button>${v?`<button class="btn danger" type="button" data-d style="margin-left:auto">Удалить</button>`:""}</div></form>`;
   const done=x=>{ m.remove(); res(x); }; m.addEventListener("click",async e=>{ if(e.target===m||e.target.closest("[data-c]")) done(null);
-    if(e.target.closest("[data-d]")&&confirm("Удалить поставщика «"+v.name+"»?")){ if(await supVendPost({action:"vendDel",id:v.id})){ await supVendLoad(true); done(null); } } });
+    if(e.target.closest("[data-d]")&&await appConfirm("Удалить поставщика «"+v.name+"»?","Удалить")){ if(await supVendPost({action:"vendDel",id:v.id})){ await supVendLoad(true); done(null); } } });
   document.body.appendChild(m); setTimeout(()=>m.querySelector("input").focus(),30);
   m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target; const j=await supVendPost({action:"vendSave",vendor:{id:v?v.id:"",name:f.name.value.trim(),phone:f.phone.value.trim(),via:f.via.value,kw:f.kw.value.trim()}});
     if(j){ await supVendLoad(true); toast("Поставщик сохранён"); done(j.id); } }); }); }
@@ -6275,7 +6284,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="shp-mine"){ S.shop.mine=t.dataset.v==="1"; try{ localStorage.setItem("cehqr-shopmine",S.shop.mine?"1":"0"); }catch(_){} document.querySelectorAll('[data-act="shp-mine"]').forEach(b=>b.setAttribute("aria-pressed",String(b===t))); shpApplyFilter(); return; }
   if(a==="shp-rc-del"){ const id=t.dataset.id, oid=S.shop.cur; if(S.shop.rcDel!==id){ S.shop.rcDel=id; shpRenderKeep(); return; }
     t.disabled=true; const j=await shpPost({action:"receiptDel",order:oid,id}); S.shop.rcDel=null; if(j){ S.shop.rc[oid]=(S.shop.rc[oid]||[]).filter(r=>r.id!==id); const o=shpById(oid); if(o) o.receiptsTotal=S.shop.rc[oid].reduce((x,r)=>x+(+r.sum||0),0); toast("Чек удалён"); } shpRenderKeep(); return; }
-  if(a==="shp-out"){ if(!confirm("Выйти из «Вертакса» на этом телефоне?")) return;
+  if(a==="shp-out"){ if(!(await appConfirm("Выйти из «Вертакса» на этом телефоне?","Выйти"))) return;
     const wasT=!!S.shop.techPin, wasO=!!S.shop.officePin, wasS=!!S.shop.supPin;
     if(wasT){ S.shop.techPin=""; try{ localStorage.removeItem("cehqr-techpin"); }catch(_){} }
     if(wasO){ S.shop.officePin=""; try{ localStorage.removeItem("cehqr-officepin"); }catch(_){} }
@@ -6311,7 +6320,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="shp-tdone") return shpTaskToggle(t.dataset.id,t);
   if(a==="shp-tdue"){ const f=t.closest("form"); if(f) f.elements.due.value=t.dataset.v; return; }
   if(a==="shp-topenorder"){ document.getElementById("shpTaskModal")?.remove(); return shpGo("order",t.dataset.id); }
-  if(a==="shp-tdel"){ if(!confirm("Удалить задачу?")) return; t.disabled=true; const j=await shpPost({action:"taskDel",id:t.dataset.id}); t.disabled=false; if(!j) return;
+  if(a==="shp-tdel"){ if(!(await appConfirm("Удалить задачу?","Удалить"))) return; t.disabled=true; const j=await shpPost({action:"taskDel",id:t.dataset.id}); t.disabled=false; if(!j) return;
     S.shop.tasks=S.shop.tasks.filter(x=>x.id!==t.dataset.id); document.getElementById("shpTaskModal")?.remove(); toast("Задача удалена"); shpRenderKeep(); return; }
   if(a==="shp-mclose"){ t.closest(".modal")?.remove(); return; }
   if(a==="shp-zamerdone"||a==="shp-projready"){ const o=shpById(t.dataset.id); if(!o) return; t.disabled=true;
@@ -6339,7 +6348,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
     S.who=v; try{ localStorage.setItem("cehqr-who",v); }catch(_){} toast("Теперь вы: "+v); render(); return; }
   if(a==="shp-person"){ S.shop.curPerson=t.dataset.k; return shpGo("person"); }
   if(a==="shp-pedit") return shpPersonModal(t.dataset.k||"");
-  if(a==="shp-pdel"){ if(!confirm("Убрать «"+t.dataset.k+"» из списка сотрудников?")) return; const j=await shpPost({action:"staffDel",name:t.dataset.k}); if(!j) return;
+  if(a==="shp-pdel"){ if(!(await appConfirm("Убрать «"+t.dataset.k+"» из списка сотрудников?","Убрать"))) return; const j=await shpPost({action:"staffDel",name:t.dataset.k}); if(!j) return;
     S.shop.staff=S.shop.staff.filter(x=>shpNorm(x.name)!==shpNorm(t.dataset.k)); document.getElementById("shpPersonModal")?.remove(); toast("Убран из списка"); shpRenderKeep(); return; }
   if(a==="shp-general"){ S.shop.chat=null; return shpGo("general"); }
   if(a==="shp-new"){ S.shop.edit={stage:"dogovor"}; S.shop.backTo=null; return shpGo("form"); }
