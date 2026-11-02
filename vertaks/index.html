@@ -6825,25 +6825,35 @@ function smCalc(d){ const need=smNeed(d), lines=SM_SLOTS.concat(smFmSlots(need))
   const furn=Math.round(mats/k); const total=Math.round(furn+deliv); return {need,lines,mats,k,furn,mont,deliv,total,br:Math.round(total*SM_BR),noPrice:lines.filter(l=>l.q>0&&!l.p).length}; }
 
 /* ---- загрузка / сохранение ---- */
-async function smLoad(id){ S.shop.sm={id,busy:true,data:null}; const j=await shpGet("action=smeta&id="+encodeURIComponent(id),true); const o=shpById(id);
-  S.shop.sm={id,data:(j&&j.ok&&j.smeta)||smNew(o),saved:j&&j.ok&&j.smeta?{who:j.who,when:j.when,total:j.total}:null,err:!(j&&j.ok)};
-  if(!S.sup.priceOk&&typeof supPriceLoad==="function") await supPriceLoad(); if(typeof catLoad==="function") catLoad();
-  if(S.view==="shop"&&S.shop.mode==="smeta") shpRenderKeep(); }
-async function smSave(setSum){ const sm=S.shop.sm; if(!sm||!sm.data) return; const c=smCalc(sm.data);
-  const j=await shpPost({action:"smetaSave",id:sm.id,data:sm.data,total:c.total,mats:c.mats,k:c.k,br:c.br,setSum:!!setSum}); if(!j) return;
-  sm.saved={who:shpWho(),when:Date.now(),total:c.total}; sm.dirty=false;
-  if(setSum){ const o=shpById(sm.id); if(o){ o.sum=c.total; o.zpBr=c.br; } toast("Сумма заказа "+shpRub(c.total)+", бригаде "+shpRub(c.br)); } else toast("Смета сохранена"); shpRenderKeep(); }
+async function smLoad(id,meta){   // id — смета «S…» или сделка; без id — новая смета для нового клиента (сделки ещё нет)
+  const pre=async()=>{ if(!S.sup.priceOk&&typeof supPriceLoad==="function") await supPriceLoad(); if(typeof catLoad==="function") catLoad(); if(S.view==="shop"&&S.shop.mode==="smeta") shpRenderKeep(); };
+  if(!id){ meta=meta||{}; S.shop.sm={id:"",deal:"",client:meta.client||"",phone:meta.phone||"",kind:meta.kind||"",status:"",data:smNew({kind:meta.kind}),saved:null,dirty:true}; shpRenderKeep(); return pre(); }
+  S.shop.sm={id,busy:true,data:null}; const j=await shpGet("action=smeta&id="+encodeURIComponent(id),true), has=j&&j.ok&&j.smeta, o=shpById(has?j.deal:id)||shpById(id);
+  S.shop.sm={id:has?j.id:(o?o.id:id),deal:(has?j.deal:"")||(o?o.id:""),client:(has&&j.client)||(o&&o.client)||"",phone:(has&&j.phone)||(o&&o.phone)||"",kind:(has&&j.kind)||(o&&o.kind)||"",status:has?j.status||"":"",
+    data:has?j.smeta:smNew(o),saved:has?{who:j.who,when:j.when,total:j.total}:null,err:!(j&&j.ok)};
+  return pre(); }
+async function smSave(setSum,quiet){ const sm=S.shop.sm; if(!sm||!sm.data) return; const c=smCalc(sm.data);
+  const j=await shpPost({action:"smetaSave",id:sm.id,deal:sm.deal,client:sm.client,phone:sm.phone,kind:sm.kind,status:sm.status,data:sm.data,total:c.total,mats:c.mats,k:c.k,br:c.br,setSum:!!setSum}); if(!j) return false;
+  if(j.id) sm.id=j.id; sm.saved={who:shpWho(),when:Date.now(),total:c.total}; sm.dirty=false;
+  if(setSum){ const o=shpById(sm.deal); if(o){ o.sum=c.total; o.zpBr=c.br; } toast("Сумма заказа "+shpRub(c.total)+", бригаде "+shpRub(c.br)); } else if(!quiet) toast("Смета сохранена"); shpRenderKeep(); return true; }
+/* клиент согласен → создаём сделку (этап «Договор и предоплата») с суммой и ЗП бригаде 18 % */
+async function smToDeal(){ const sm=S.shop.sm, c=smCalc(sm.data); if(!sm.client){ toast("Впишите клиента"); return; }
+  if(!(await appConfirm("Клиент согласен? Создать сделку «"+sm.client+"» на "+shpRub(c.total)+" (бригаде 18 % — "+shpRub(c.br)+")?","Создать сделку",false))) return;
+  const o={client:sm.client,phone:sm.phone||"",kind:sm.kind||"",stage:"dogovor",owner:shpWho(),designer:S.shop.role==="office"?shpWho():"",sum:c.total,zpBr:c.br,v3:1};
+  const j=await shpPost({action:"shopSave",order:o}); if(!j) return; sm.deal=j.id; sm.status="deal"; await smSave(false,true);
+  toast("Сделка № "+j.num+" создана"); await shpLoad(true); if(!shpById(j.id)) S.shop.orders.push(Object.assign({},o,{id:j.id,num:j.num})); shpRenderKeep(); }
+async function smLost(){ const sm=S.shop.sm; if(!(await appConfirm("Клиент отказался? Смета останется в списке «Отказ».","Отказ"))) return; sm.status="lost"; await smSave(false,true); toast("Отмечено: отказ"); }
 
 /* ---- экран (вариант А): схема модулей рядами, материалы плитками, итог с ползунком прижат снизу ---- */
 const SM_GROUPS=[{k:"body",n:"Корпус",s:["body"]},{k:"front",n:"Фасады",s:["front","frontU"],dyn:true},{k:"top",n:"Столешница",s:["top"]},{k:"apron",n:"Фартук",s:["apron"]},
   {k:"furn",n:"Фурнитура",s:["hinge","slide","handle","legs","hang"],ic:"⚙"},{k:"led",n:"Подсветка",s:["led","ledp","psu","sw"],ic:"💡"},{k:"edge",n:"Кромка",s:["edge"]},{k:"back",n:"Задняя стенка",s:["back"]},{k:"plinth",n:"Цоколь",s:["plinth"]}];
 const SM_ROWS=[{k:"up2",n:"Антресоль (3-й ярус)",t:["up2"]},{k:"up",n:"Верх",t:["cornU","up","upF"]},{k:"low",n:"Низ и пеналы",t:["cornL","low","sink","drw","tall"]},{k:"cab",n:"Шкафы",t:["cab"]}];
-function smHtml(){ const sm=S.shop.sm, o=sm&&shpById(sm.id);
-  const back=`<button type="button" class="btn" data-act="sm-back">← К заказу</button>`;
+function smHtml(){ const sm=S.shop.sm, o=sm&&shpById(sm.deal);
+  const back=`<button type="button" class="btn" data-act="sm-back">← ${S.shop.smFrom==="smetas"?"Сметы":"К заказу"}</button>`;
   if(!sm||sm.busy) return `<div class="head"><h1>Смета</h1><div class="head-actions">${back}</div></div><p class="muted">Загружаю…</p>`;
   if(!S.shop.full) return `<div class="head"><h1>Смета</h1><div class="head-actions">${back}</div></div><p class="note">Смету видят технолог и офис.</p>`;
   const d=sm.data, c=smCalc(d), noBase=!(S.sup&&S.sup.base), cm=!!S.shop.smClient;
-  let h=`<div class="head"><div><h1>Смета${o&&o.client?" · "+esc(o.client):""}</h1><p class="muted" style="margin:4px 0 0">${o?`№ ${esc(o.num)}${o.kind?" · "+esc(o.kind):""}`:""}${sm.saved?` · сохранена ${esc(shpTime(sm.saved.when))}`:" · новая"}${sm.dirty?" · <b class=\"sm-dirty\">не сохранена</b>":""}</p></div><div class="head-actions">${cm?"":`<button type="button" class="btn" data-act="sm-client">👁 Клиент рядом</button>`}${back}</div></div>`;
+  let h=`<div class="head"><div><h1>Смета${sm.client?" · "+esc(sm.client):""}</h1><p class="muted" style="margin:4px 0 0">${o?`сделка № ${esc(o.num)}`:sm.status==="lost"?"отказ":"без сделки"}${sm.kind?" · "+esc(sm.kind):""}${sm.saved?` · сохранена ${esc(shpTime(sm.saved.when))}`:" · новая"}${sm.dirty?" · <b class=\"sm-dirty\">не сохранена</b>":""}</p></div><div class="head-actions">${cm?"":`<button type="button" class="btn" data-act="sm-client">👁 Клиент рядом</button>`}${back}</div></div>`;
   if(cm) h+=`<div class="sm-cm">👁 Режим «Клиент рядом»: цены и расход скрыты</div>`;
   if(sm.err) h+=`<div class="banner warn">Не удалось загрузить сохранённую смету — обновите скрипт таблицы или проверьте связь.</div>`;
   if(noBase&&!cm) h+=`<div class="banner warn">Цены из базы Базиса ещё не загрузились — подождите или впишите цены вручную.</div>`;
@@ -6868,7 +6878,7 @@ function smHtml(){ const sm=S.shop.sm, o=sm&&shpById(sm.id);
     <button type="button" class="sm-tile sm-tmore" data-act="sm-more"><span class="sm-tsw none">${S.shop.smAll?"−":"+"}</span><b>${S.shop.smAll?"Скрыть пустые":"Ещё"}</b><small>${S.shop.smAll?"":"фартук, цоколь, кромка…"}</small></button></div>`;
   h+=`<button type="button" class="sm-room" data-act="sm-lin"><span>Доставка</span><b>${cm?"нажмите, чтобы указать":esc(shpRub(c.deliv))+" — сверху цены"}</b><span class="sm-ed">✎</span></button>
     <label class="sm-note">Примечание для КП<textarea class="sm-in" data-f="note" rows="2" maxlength="600" placeholder="Сроки, условия оплаты, что не входит…">${esc(d.note||"")}</textarea></label>
-    <div class="shp-zpb"><button type="button" class="btn primary" data-act="sm-save">Сохранить смету</button>${cm?"":`<button type="button" class="btn" data-act="sm-sum">Сумму и ЗП — в заказ</button><button type="button" class="btn" data-act="sm-kp">📄 КП клиенту (PDF)</button>`}</div>`;
+    <div class="shp-zpb"><button type="button" class="btn primary" data-act="sm-save">Сохранить смету</button>${cm?"":`${sm.deal?`<button type="button" class="btn" data-act="sm-sum">Сумму и ЗП — в сделку</button>`:`<button type="button" class="btn ok-btn" data-act="sm-deal">✅ Клиент согласен → в сделку</button>`}<button type="button" class="btn" data-act="sm-kp">📄 КП клиенту (PDF)</button>${!sm.deal&&sm.status!=="lost"?`<button type="button" class="btn" data-act="sm-lost">✕ Отказ</button>`:""}`}</div>`;
   /* итог — прижат снизу */
   const pct=Math.round((c.k-SM_KMIN)/(SM_KMAX-SM_KMIN)*100), kt=c.k.toFixed(2).replace(".",",");
   if(cm){ h+=`<div class="sm-spacer" style="height:90px"></div><div class="sm-dock${VTX?" vtx":""}"><button type="button" class="sm-unlock" data-act="sm-unlock"><span class="sm-ulbar"></span>🔒 Удержите 2 секунды — показать цены</button></div>`; return h; }
@@ -6959,7 +6969,7 @@ function smPickModal(k){ const d=S.shop.sm.data, mi=String(k).startsWith("mod:")
     if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); }
 
 /* ---- КП клиенту: что входит, материалы, цена — без расхода и коэффициента ---- */
-function smKpPdf(){ const sm=S.shop.sm, d=sm.data, c=smCalc(d), o=shpById(sm.id)||{}, e=esc, r=v=>shpRub(v);
+function smKpPdf(){ const sm=S.shop.sm, d=sm.data, c=smCalc(d), o=Object.assign({},shpById(sm.deal)||{},{client:sm.client,kind:sm.kind}), e=esc, r=v=>shpRub(v);
   const mods=d.mods.filter(m=>+m.n>0).map(m=>`${SM_TYPES[m.t].n} ${m.w}×${m.h}${+m.n>1?" — "+m.n+" шт":""}`);
   const fmN=[...new Set(d.mods.filter(m=>m.fm&&m.fm.n).map(m=>m.fm.n))], tl={hob:"варочная панель",sink:"мойка",oven:"духовой шкаф",dw:"посудомоечная машина",ovenmw:"духовка и СВЧ",fridge:"встроенный холодильник",boiler:"бойлер / колонка",hood:"встроенная вытяжка",dry:"сушка",mw:"СВЧ"}, tech=Object.keys(c.need.tech).filter(k=>tl[k]).map(k=>tl[k]+(c.need.tech[k]>1?" ×"+c.need.tech[k]:""));
   const mat=["body","front","frontU","top","apron","handle","led"].map(k=>{ const s=SM_SLOTS.find(x=>x.k===k), m=(d.mat||{})[k]; return m&&m.n?`<tr><td>${e(s.n.replace(/ \(.*\)/,"").replace("Подсветка: лента","Подсветка"))}</td><td>${e(m.n)}</td></tr>`:""; }).join("")+(fmN.length?`<tr><td>Фасады (акцент)</td><td>${e(fmN.join(", "))}</td></tr>`:"");
@@ -6974,10 +6984,39 @@ function smKpPdf(){ const sm=S.shop.sm, d=sm.data, c=smCalc(d), o=shpById(sm.id)
   f.contentDocument.open(); f.contentDocument.write(html); f.contentDocument.close(); setTimeout(()=>{ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(_){ toast("Не получилось открыть печать"); } setTimeout(()=>f.remove(),60000); },300); }
 
 /* ---- подключение к «Вертаксу» ---- */
+/* вкладка «Сметы» в меню — левее «Сделок»; видят технолог и дизайнеры/офис */
+SHP_I.calc='<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M16 11h0M8 15h2M12 15h2M16 15v3"/>';
+const _smNav=shpNavHtml;
+shpNavHtml=function(){ let h=_smNav(); if(!S.shop.full) return h; const on=/^smeta/.test(S.shop.mode); if(on) h=h.replace(/ aria-current="page"/g,"");
+  return h.replace('<button type="button" data-act="shp-tab" data-v="board"',`<button type="button" data-act="shp-tab" data-v="smetas"${on?' aria-current="page"':""}>${shpIco("calc")}<span class="lb">Сметы</span></button><button type="button" data-act="shp-tab" data-v="board"`); };
+async function smListLoad(){ if(S.shop.smListBusy) return; S.shop.smListBusy=true; const j=await shpGet("action=smetaList",true); S.shop.smListBusy=false; S.shop.smList=j&&j.ok?j.items:[];
+  if(S.view==="shop"&&S.shop.mode==="smetas"&&!document.querySelector(".modal")) shpRenderKeep(); }
+function smListHtml(){ if(!S.shop.smList) smListLoad();
+  let h=`<div class="head"><div><h1>Сметы</h1><p class="muted" style="margin:4px 0 0">Считаем с клиентом до договора: модули, материалы, 3D</p></div><div class="head-actions"><button type="button" class="btn primary" data-act="sm-pickord">+ Новая смета</button></div></div>`;
+  if(!S.shop.smList) return h+`<p class="muted">Загружаю…</p>`;
+  const L=S.shop.smList.map(x=>Object.assign({},x,{o:shpById(x.deal)})).sort((a,b)=>b.when-a.when), cm=S.shop.smClient;
+  if(!L.length) return h+`<p class="note">Смет пока нет. Нажмите «+ Новая смета».</p>`;
+  const grp=[["Считаем",x=>!x.deal&&x.status!=="lost"],["Стали сделками",x=>!!x.deal],["Отказ",x=>!x.deal&&x.status==="lost"]];
+  return h+grp.map(([n,f])=>{ const G=L.filter(f); return G.length?`<p class="shp-zcap">${n} · ${G.length}</p><ul class="shp-zl">${G.map(x=>`<li><button type="button" class="shp-zli" data-act="sm-openid" data-id="${esc(x.id)}"><span>${esc(x.client||"Без имени")}${x.o?` <span class="shp-chip">№ ${esc(x.o.num)}</span>`:""}<small class="muted">${esc([x.kind,shpTime(x.when),x.who].filter(Boolean).join(" · "))}</small></span><b>${x.total&&!cm?esc(shpRub(x.total)):""}</b></button></li>`).join("")}</ul>`:""; }).join(""); }
+const _smTab=shpTab; shpTab=function(){ return /^smeta/.test(S.shop.mode)?"smetas":_smTab(); };
 const _smView=viewShop;
-viewShop=function(){ if(S.shop.mode==="smeta"&&shpPin()&&S.shop.loaded){ setTimeout(sm3dMount,0); return shpNavHtml()+smHtml(); } return _smView(); };
-const _smOrder=shpOrderHtml;
-shpOrderHtml=function(){ let h=_smOrder(); if(!S.shop.full) return h; return h.replace('<button type="button" class="btn" data-act="shp-edit">Изменить</button>','<button type="button" class="btn" data-act="shp-edit">Изменить</button><button type="button" class="btn" data-act="sm-open">🧮 Смета</button>'); };
+viewShop=function(){ if(S.shop.mode==="smetas"&&shpPin()&&S.shop.loaded) return shpNavHtml()+smListHtml(); if(S.shop.mode==="smeta"&&shpPin()&&S.shop.loaded){ setTimeout(sm3dMount,0); return shpNavHtml()+smHtml(); } return _smView(); };
+/* кнопка «Смета» на доске «Сделки» (технолог и дизайнеры/офис): выбрать сделку или начать с нового клиента */
+function smOrdModal(){ const x=document.createElement("div"); x.className="modal"; x.id="smOrdM";
+  const L=q=>{ const w=String(q||"").toLowerCase().split(/\s+/).filter(Boolean); return S.shop.orders.filter(o=>!shpClosed(o)).sort((a,b)=>(b.created||0)-(a.created||0)).filter(o=>w.every(z=>[o.num,o.client,o.kind,o.phone].join(" ").toLowerCase().includes(z))).slice(0,30); };
+  const row=o=>`<button type="button" class="sm-it" data-id="${esc(o.id)}"><span class="cat-sw none" aria-hidden="true">🧮</span><span><b>№ ${esc(o.num)} · ${esc(o.client||"")}</b><small class="muted">${esc([o.kind,shpStName(o.stage)].filter(Boolean).join(" · "))}</small></span></button>`;
+  x.innerHTML=`<div class="modal-card sm-pick"><h2 style="margin:0 0 8px">Смета</h2>
+    <form class="sm-newc" autocomplete="off"><p class="sm-ml" style="margin-top:0">Новый клиент</p><div class="sm-grid" style="grid-template-columns:1fr 1fr"><label>Клиент<input class="sm-in" name="client" list="shpClientsL2" placeholder="Фамилия Имя" required></label><label>Телефон<input class="sm-in" name="phone" inputmode="tel" placeholder="+7 914 …"></label><label style="grid-column:1/-1">Что делаем<input class="sm-in" name="kind" placeholder="Кухня, шкаф…"></label></div><p class="muted" style="font-size:12px;margin:6px 0 0">Сделка не создаётся, пока клиент не согласится.</p>
+      <datalist id="shpClientsL2">${(typeof shpClientOpts==="function"?shpClientOpts():[]).map(c=>`<option value="${esc(c.name)}">`).join("")}</datalist><button class="btn primary" type="submit" style="margin-top:8px">+ Начать смету</button></form>
+    <p class="sm-ml">Или к существующей сделке</p><input class="ca-q" type="search" placeholder="🔍 Клиент, №, телефон" aria-label="Найти сделку"><div class="sm-pl">${L("").map(row).join("")||'<p class="muted">Открытых сделок нет</p>'}</div>
+    <button class="btn" type="button" data-act="qr-close">Закрыть</button></div>`;
+  document.body.appendChild(x);
+  const q=x.querySelector(".ca-q"); q.addEventListener("input",()=>{ x.querySelector(".sm-pl").innerHTML=L(q.value).map(row).join("")||'<p class="muted">Не нашёл</p>'; });
+  const open=id=>{ x.remove(); S.shop.cur=id; S.shop.smFrom="smetas"; S.shop.smAll=false; S.shop.mode="smeta"; window.scrollTo(0,0); smLoad(id); shpRenderKeep(); };
+  x.addEventListener("click",e=>{ const b=e.target.closest("[data-id]"); if(b) return open(b.dataset.id); if(e.target===x||e.target.closest('[data-act="qr-close"]')) x.remove(); });
+  x.querySelector("form").addEventListener("submit",e=>{ e.preventDefault(); const f=e.target.elements, c=f.client.value.trim(); if(!c) return;
+    const prev=typeof shpClients==="function"?shpClients().find(z=>z.name===c):null; x.remove(); S.shop.smFrom="smetas"; S.shop.smAll=false; S.shop.mode="smeta"; window.scrollTo(0,0);
+    smLoad("",{client:c,phone:f.phone.value.trim()||(prev&&prev.phones[0])||"",kind:f.kind.value.trim()}); }); }
 function smSet(el){ const sm=S.shop.sm; if(!sm||!sm.data) return; const d=sm.data, v=el.value, num=+String(v).replace(/\s/g,"").replace(",",".");
   if(el.dataset.m!=null){ const m=d.mods[+el.dataset.m]; if(m) m[el.dataset.f]=Math.max(0,Math.round(num)||0); }
   else if(el.dataset.l) d.lin[el.dataset.l]=v===""?0:Math.max(0,num||0);
@@ -6992,9 +7031,11 @@ document.addEventListener("input",ev=>{ const el=ev.target; if(!el) return; if(e
   document.getElementById("smKv").textContent=t; document.getElementById("smTot").textContent=shpRub(c.total); const bb=document.getElementById("smBr"); if(bb) bb.textContent=shpRub(c.br); 
    });
 document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act^="sm-"]'); if(!t) return; const a=t.dataset.act; ev.preventDefault(); ev.stopPropagation();
-  if(a==="sm-open"){ S.shop.smAll=false; S.shop.smTab="mod"; S.shop.mode="smeta"; window.scrollTo(0,0); smLoad(S.shop.cur); return shpRenderKeep(); }
+  if(a==="sm-pickord") return smOrdModal();
+  if(a==="sm-openid"){ S.shop.cur=t.dataset.id; S.shop.smFrom="smetas"; S.shop.smAll=false; S.shop.mode="smeta"; window.scrollTo(0,0); smLoad(t.dataset.id); return shpRenderKeep(); }
+  if(a==="sm-open"){ S.shop.smFrom="order"; S.shop.smAll=false; S.shop.smTab="mod"; S.shop.mode="smeta"; window.scrollTo(0,0); smLoad(S.shop.cur); return shpRenderKeep(); }
   const sm=S.shop.sm; if(!sm||!sm.data) return;
-  if(a==="sm-back"){ if(sm.dirty&&!(await appConfirm("Смета не сохранена. Выйти без сохранения?","Выйти"))) return; S.shop.mode="order"; return shpRenderKeep(); }
+  if(a==="sm-back"){ if(sm.dirty&&!(await appConfirm("Смета не сохранена. Выйти без сохранения?","Выйти"))) return; S.shop.mode=S.shop.smFrom||"order"; S.shop.smList=null; return shpRenderKeep(); }
   if(a==="sm-add"){ smPush(t.dataset.t); return shpRenderKeep(); }
   if(a==="sm-n"){ const m=sm.data.mods[+t.dataset.i]; if(!m) return; m.n+= +t.dataset.d; if(m.n<=0) sm.data.mods.splice(+t.dataset.i,1); sm.dirty=true; return shpRenderKeep(); }
   if(a==="sm-pick") return smPickModal(t.dataset.k);
@@ -7010,8 +7051,11 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="sm-more"){ S.shop.smAll=!S.shop.smAll; return shpRenderKeep(); }
   if(a==="sm-mauto"){ sm.data.mont=null; sm.dirty=true; return shpRenderKeep(); }
   if(a==="sm-save") return smSave(false);
+  if(a==="sm-deal") return smToDeal();
+  if(a==="sm-lost") return smLost();
   if(a==="sm-sum"){ const c=smCalc(sm.data); if(!(await appConfirm("Записать в заказ: сумма "+shpRub(c.total)+", ЗП бригаде 18 % — "+shpRub(c.br)+"?","Записать",false))) return; return smSave(true); }
   if(a==="sm-kp") return smKpPdf(); },true);
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="shp-tab"][data-v="smetas"]'); if(t) S.shop.smList=null; },true);
 /* «Клиент рядом»: выключить — удержать замок 2 секунды */
 try{ S.shop.smClient=localStorage.getItem("cehqr-smcl")==="1"; }catch(_){}
 (function(){ let tm=null, el=null; const stop=()=>{ clearTimeout(tm); tm=null; if(el) el.classList.remove("hold"); el=null; };
@@ -7030,7 +7074,7 @@ try{ S.shop.smClient=localStorage.getItem("cehqr-smcl")==="1"; }catch(_){}
 .sm-tile{display:flex;flex-direction:column;align-items:stretch;gap:2px;text-align:left;background:var(--surface);border:1.5px solid transparent;border-radius:12px;padding:8px;color:var(--ink);font:inherit;cursor:pointer;min-width:0}.sm-tile.bad{border-color:#ff9f0a66}.sm-tile b{font-size:14px}.sm-tile small{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.sm-tile .sm-tq{color:var(--ink);font-weight:600}.sm-tile.bad .sm-tq{color:#ff9f0a}
 .sm-tsw{display:grid;place-items:center;height:38px;border-radius:7px;margin-bottom:4px;background-size:cover;font-size:18px}.sm-tsw.none{background:var(--sunk)}.sm-tmore{border:1.5px dashed #555}
 .sm-spacer{height:150px}.sm-dock{position:fixed;left:0;right:0;bottom:0;z-index:39;background:#1c1c1e;border-top:1px solid #000;padding:8px max(16px,env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 18px #0008}.sm-dock.vtx{bottom:calc(54px + env(safe-area-inset-bottom,0px));padding-bottom:10px}
-.sm-dock>*{max-width:900px;margin-left:auto;margin-right:auto}.sm-dr span{white-space:nowrap}.sm-b.corn{border-color:#ff9f0a;background:#ff9f0a22;color:#ffd08a}.sm-b.w2{border-style:dotted}.sm-b.w3{border-style:double}.sm-ml{margin:10px 0 4px;font-size:12px;color:var(--muted)}.sm-fm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.sm-seg2 button{font-size:12.5px}.sm-mv{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.sm-tsel{font-size:18px;font-weight:700;padding:6px 8px}
+.sm-dock>*{max-width:900px;margin-left:auto;margin-right:auto}.sm-dr span{white-space:nowrap}.sm-b.corn{border-color:#ff9f0a;background:#ff9f0a22;color:#ffd08a}.sm-b.w2{border-style:dotted}.sm-b.w3{border-style:double}.ok-btn{background:#30d15822!important;color:#7ee2a0!important}.sm-ml{margin:10px 0 4px;font-size:12px;color:var(--muted)}.sm-fm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.sm-seg2 button{font-size:12.5px}.sm-mv{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.sm-tsel{font-size:18px;font-weight:700;padding:6px 8px}
 .sm-3d{position:relative;background:linear-gradient(#26282c,#141517);border-radius:12px;height:280px;margin:0 0 10px;overflow:hidden;touch-action:none}.sm-3d canvas{display:block;width:100%!important;height:100%!important;cursor:grab}.sm-3d .sm-3dh{position:absolute;left:10px;bottom:8px;font-size:11.5px;color:#aaa;pointer-events:none}.sm-3d .sm-3db{position:absolute;right:8px;top:8px;display:flex;gap:6px}.sm-3d .sm-3db button{background:#000a;color:#fff;border:0;border-radius:8px;padding:6px 9px;font:inherit;font-size:12.5px;cursor:pointer}.sm-3d.full{position:fixed;inset:0;height:auto;z-index:300;border-radius:0}.sm-grid label[hidden]{display:none}.sm-dr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12.5px}.sm-dr b#smTot{font-size:22px}.sm-dr span:first-child{color:var(--ink)}.sm-ch{display:flex;flex-direction:column;gap:8px}.sm-sum{display:flex;justify-content:space-between;gap:10px;background:var(--surface);border-radius:12px;padding:10px 14px;margin:0 0 10px;color:var(--muted);font-size:13px}.sm-sum b{color:var(--ink);font-size:16px;margin-left:4px}
 .sm-room{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--surface);border:0;border-radius:12px;padding:10px 14px;margin:0 0 10px;color:var(--ink);font:inherit;cursor:pointer}.sm-room span:first-child{color:var(--muted);font-size:12.5px}.sm-room b{flex:1;font-weight:500;font-size:13.5px}.sm-ed{color:#0a84ff}
 .sm-row{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 0}.sm-rb{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:none;border:0;color:var(--ink);font:inherit;padding:6px 12px;cursor:pointer;text-align:left}.sm-chk{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13.5px}
