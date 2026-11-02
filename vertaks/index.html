@@ -3778,7 +3778,7 @@ function supDatalists(){ const d=S.cat&&S.cat.data; if(!d) return `<datalist id=
     S.sup.dlHtml=`<datalist id="supNamesL">${opt(by("L"))}</datalist><datalist id="supNamesE">${opt(by("E"))}</datalist><datalist id="supNamesF">${opt(by("F"))}</datalist><datalist id="supNames">${opt(d.items.filter(x=>/^(Листов|Кромоч|Фурнитур|Каталог|Расходн|Погонн)/.test(x.g)))}</datalist>`; }
   return S.sup.dlHtml; }
 /* служебные материалы Базиса (раздел «Материалы для построения», «Инструменты»): в закупке не нужны */
-const SUP_JUNK=/^(параллельн\S* лини|лини[яи](\s|$)|размер|выноск|осев\S* лини|контур(\s|$)|вспомогательн)|посудомо|посудомое|духов(ой|ка)|варочн|вытяжк|холодильн|стиральн|микроволн|морозильн/i;   // элементы чертежа и бытовая техника — клиент покупает сам
+const SUP_JUNK=/^(габарит|параллельн\S* лини|лини[яи](\s|$)|размер|выноск|осев\S* лини|контур(\s|$)|вспомогательн)|посудомо|посудомое|духов(ой|ка)|варочн|вытяжк|холодильн|стиральн|микроволн|морозильн/i;   // элементы чертежа и бытовая техника — клиент покупает сам
 function supIsBuild(name){ if(SUP_JUNK.test(String(name||"").trim())) return true; const c=typeof catFind==="function"?catFind(name):null; return !!(c&&/^(Материалы для построения|Инструменты|Фурнитура и крепёж\/Бытовая техника)/.test(c.g)); }
 function supNeverList(){ return Object.values(S.sup.st["@NEVER"]||{}).filter(r=>r.op==="never").sort((a,b)=>String(a.name).localeCompare(String(b.name),"ru")); }
 /* итоговый список с учётом примерной спецификации сделки:
@@ -3832,7 +3832,17 @@ const supPKey=n=>String(n||"").toLowerCase().replace(/ё/g,"е").replace(/["'«�
 function supPricePin(){ return S.sup.pin||(typeof shpPin==="function"?shpPin():"")||""; }
 async function supPriceLoad(){ const pin=supPricePin(); if(!pin||!S.site||!S.site.stagesUrl) return;
   try{ const r=await fetch(supUrl("action=price&pin="+encodeURIComponent(pin)),{cache:"no-cache"}); const j=await r.json();
-    if(j&&j.ok){ S.sup.price={}; (j.items||[]).forEach(x=>{ S.sup.price[supPKey(x.name)]=x; }); S.sup.priceOk=true; if(j.bk) await supBaseLoad(j.bk); } else S.sup.priceOk=false; }catch(_){} }
+    if(j&&j.ok){ S.sup.price={}; (j.items||[]).forEach(x=>{ S.sup.price[supPKey(x.name)]=x; }); S.sup.priceOk=true; supPhotosLoad(); if(j.bk) await supBaseLoad(j.bk); } else S.sup.priceOk=false; }catch(_){} }
+async function supPhotosLoad(){ const pin=supPricePin(); if(!pin) return; try{ const j=await (await fetch(supUrl("action=iphoto&pin="+encodeURIComponent(pin)),{cache:"no-cache"})).json(); if(j&&j.ok){ S.sup.photos=j.photos||{}; if(S.view==="supply"||S.view==="catalog"){ if(typeof supPaint==="function"&&S.view==="supply") supPaint(); else render(); } } }catch(_){} }
+/* добавить фото позиции: камера или галерея → таблица (папка «Технолог 3D — фото позиций»), дальше видно во всех заказах */
+function supPhotoPick(name){ if(!S.sup.priceOk){ toast("Фото добавляют снабженец, технолог или офис"); return; } const a=supArt(name);
+  const m=document.createElement("div"); m.className="modal"; m.innerHTML=`<div class="modal-card" style="width:min(420px,100%)"><h2 style="margin:0 0 4px">Фото позиции</h2><p class="note" style="margin:0 0 12px">${esc(name)}${a?`<br>Артикул: <b class="mono">${esc(a)}</b> — фото привяжется к артикулу`:""}</p>
+    <a class="btn" href="${esc(supArtSearch(name))}" target="_blank" rel="noopener" style="display:block;text-align:center;margin-bottom:8px">🔍 Найти в интернете ${a?"по артикулу":"по названию"}</a><p class="note" style="margin:0 0 10px;font-size:12.5px">Найдите картинку, сохраните её на телефон и выберите ниже. Или сфотографируйте деталь.</p>
+    <div style="display:flex;gap:8px"><button type="button" class="btn primary" data-p style="flex:1">📷 Выбрать фото</button><button type="button" class="btn" data-c>Отмена</button></div></div>`;
+  document.body.appendChild(m); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-c]")) m.remove(); if(e.target.closest("[data-p]")){ m.remove(); supPhotoFile(name); } }); }
+function supPhotoFile(name){ const i=document.createElement("input"); i.type="file"; i.accept="image/*";
+  i.onchange=async()=>{ const f=i.files[0]; if(!f) return; toast("Загружаю фото…"); let ph=""; try{ ph=await siteShrink(f); }catch(_){ toast("Не получилось открыть фото"); return; }
+    const key=supPhotoKey(name), j=await supVendPost({action:"iphotoSet",name:key,photo:ph}); if(j&&j.url){ (S.sup.photos=S.sup.photos||{})[supPKey(key)]=j.url; toast("Фото добавлено — видно во всех заказах"); document.getElementById("qrModal")?.remove(); render(); } }; i.click(); }
 function supBaseOf(name,unit){ const b=S.sup.base&&S.sup.base.get(supPKey(name)); if(!b) return null; let p=b[0];
   if(b[2]&&/^л/.test(String(unit||""))) p=Math.round(p*b[2]);   // в базе цена за м², в закупке — листы
   return p>0?p:null; }
@@ -3956,7 +3966,28 @@ async function supAutoStage(oid){
 function supCk(oid,it){ if(it.del||it.status>=2) return `<span class="sup-ck none" aria-hidden="true"></span>`;
   return `<label class="sup-ck" title="В заявку"><input type="checkbox" class="sup-cb" data-o="${esc(oid)}" data-k="${esc(it.key)}"${S.sup.sel.has(supRef(oid,it.key))?" checked":""} aria-label="В заявку: ${esc(it.name)}"></label>`; }
 function supChips(oid,it){ return `<div class="sup-st">${SUP_ST.map((s,i)=>`<button type="button" class="sup-chip${it.status===i?" on":""}" style="--c:${s.c}" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${i}" aria-pressed="${it.status===i}">${s.name}</button>`).join("")}</div>`; }
-function supIco(it){ const cat=typeof catFind==="function"?catFind(it.name):null; return cat?catSw(cat,"cat-sw sm"):`<span class="cat-sw sm none">${it.type==="F"||it.type==="A"?"⚙":it.type==="E"?"▬":"▦"}</span>`; }
+/* образец материала: картинка из базы Базиса; для кромки — декор того же кода (AU325, H1386…); стекло — «стекло»; фурнитура — значок по виду (петля, направляющая, бутылочница…) */
+function supCatFind(name){ if(typeof catFind!=="function") return null; let c=catFind(name); if(c) return c;
+  const n=String(name||"").replace(/\s+/g," ").trim(); c=catFind(n)||catFind(n.replace(/\s+\d+([.,]\d+)?\s*мм$/i,"")); if(c) return c; return null; }
+function supDecorOf(name){ const d=S.cat&&S.cat.data; if(!d) return null; if(!S.cat.byCode){ const m=new Map(); d.items.forEach(x=>{ if(!(x.t||x.c)||!/^Листов/.test(x.g)) return; (String(x.n).match(/\b[A-ZА-Я]{0,2}\d{3,5}(?:[A-Z]{1,2}\d{0,2})?\b/g)||[]).forEach(k=>{ if(!m.has(k)) m.set(k,x); }); }); S.cat.byCode=m; }
+  const ks=String(name||"").match(/\b[A-ZА-Я]{0,2}\d{3,5}(?:[A-Z]{1,2}\d{0,2})?\b/g)||[]; for(const k of ks){ const x=S.cat.byCode.get(k); if(x) return x; }
+  if(!S.cat.byTail){ const m=new Map(); d.items.forEach(x=>{ if(!x.t||!/^Листов/.test(x.g)) return; const t=catNorm(String(x.n).split(",").pop()); if(t.length>3&&!m.has(t)) m.set(t,x); }); S.cat.byTail=m; }
+  const tail=catNorm(String(name||"").replace(/\s+\d+([.,]\d+)?\s*мм\s*$/i,"").split(",").pop()); return tail.length>3?S.cat.byTail.get(tail)||null:null; }   // «…, Mat stone Bejge» у кромки → лист AGT Mat stone Bejge
+/* фото привязывается ровно к артикулу (если он есть в базе Базиса), иначе к названию */
+function supArt(name){ const c=supCatFind(name); return c&&c.a&&/\d{3,}/.test(c.a)?String(c.a).trim():""; }
+function supPhotoKey(name){ const a=supArt(name); return a?"арт. "+a:String(name||"").trim(); }
+function supPhotoOf(name){ const P=S.sup.photos||{}, u=P[supPKey(supPhotoKey(name))]||P[supPKey(name)]; return u&&/^https?:\/\//.test(u)?u:""; }
+function supArtSearch(name){ const a=supArt(name); return "https://yandex.ru/images/search?text="+encodeURIComponent((a?a+" ":"")+name); }
+function supIco(it){ const cat=supCatFind(it.name); const ph=!(cat&&cat.t)&&supPhotoOf(it.name);
+  if(ph) return `<span class="cat-sw sm ph" style="background-image:url('${esc(shpThumb(ph,160))}')" aria-hidden="true"></span>`;
+  if(cat&&cat.t) return catSw(cat,"cat-sw sm");
+  const n=supNorm(it.name), edge=it.type==="E"||/^кромк/.test(n);
+  if(edge||it.type==="L"){ const dc=supDecorOf(it.name); if(dc) return catSw(dc,"cat-sw sm"); }
+  if(/стекл|зеркал/.test(n)) return `<span class="cat-sw sm glass" aria-hidden="true"></span>`;
+  if(cat&&(cat.t||(cat.c&&!/^(53c879|c0c0c0)$/i.test(cat.c)))) return catSw(cat,"cat-sw sm");   // 53c879 (зелёный), c0c0c0 — цвета-заглушки Базиса
+  if(edge) return `<span class="cat-sw sm none">${buyIcoSvg("E")}</span>`; if(it.type==="L") return `<span class="cat-sw sm none">${buyIcoSvg("L")}</span>`;
+  return `<span class="cat-sw sm none">${buyIcoSvg(buyFG(it.name))}</span>`; }
+function buyIcoSvg(k){ return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${BUY_IC[k]||BUY_IC.other}</svg>`; }
 function supRow(oid,it){
   const ek=oid+"|"+it.key, ed=S.sup.edit===ek, menu=S.sup.menu===ek;
   if(ed) return `<div class="sup-row ed"><form class="sup-ed" data-o="${esc(oid)}" data-k="${esc(it.key)}"><input name="n" value="${esc(it.name)}" list="supNames" aria-label="Название"><input name="q" value="${esc(String(it.qty))}" inputmode="decimal" aria-label="Количество" style="width:80px"> <span class="muted">${esc(it.unit)}</span>
@@ -4291,7 +4322,9 @@ function supPrint(text,secs,vendor){
 .cat-add{flex:none;width:32px;height:32px;border-radius:50%;border:0;background:#0a84ff;color:#fff;font:600 22px/1 var(--f-body,system-ui);cursor:pointer;margin-right:4px;align-self:center}
 .sup-row4{display:grid;grid-template-columns:40px minmax(0,1fr) auto 32px;grid-template-areas:"ck nm qq dots" "ck st st dots";gap:4px 10px;align-items:center;padding:9px 8px 9px 2px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);position:relative}
 .sup-row4>.sup-ck{grid-area:ck}.sup-row4 .sup-nm{grid-area:nm;min-width:0;overflow-wrap:anywhere}.sup-row4 .sup-qq{grid-area:qq}.sup-row4 .sup-st4{grid-area:st}.sup-row4 .sup-dots{grid-area:dots}.sup-row4 .sup-menu{grid-column:1/-1}
-.sup-row4 .sup-nm{display:block}.sup-sw{float:left;margin:0 10px 2px 0;cursor:zoom-in}.sup-sw .cat-sw{width:40px;height:40px;border-radius:8px;display:grid;place-items:center;background-size:cover;background-position:center;font-size:18px}.sup-sw .cat-sw.none{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--muted)}
+.sup-row4 .sup-nm{display:block}.sup-sw{float:left;margin:0 10px 2px 0;cursor:zoom-in}.sup-sw .cat-sw{width:40px;height:40px;border-radius:8px;display:grid;place-items:center;background-size:cover;background-position:center;font-size:18px}.cat-sw.ph{background-size:cover;background-position:center}.sup-sw .cat-sw.none{position:relative}.sup-sw .cat-sw.none:after{content:"📷";position:absolute;right:-4px;bottom:-4px;font-size:11px;opacity:.85}
+.sup-sw .cat-sw.glass{background:linear-gradient(135deg,#9fd3e6,#d9f1f8 45%,#7fb9cf);}.sup-sw .cat-sw.none svg{width:22px;height:22px}.sup-sw.sm .cat-sw.none svg{width:16px;height:16px}
+.sup-sw .cat-sw.none{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--muted)}
 .sup-tn{display:flex;align-items:center;gap:8px}.sup-sw.sm{float:none;margin:0}.sup-sw.sm .cat-sw{width:26px;height:26px;border-radius:6px;font-size:13px}.sup-bi .sup-sw{float:none;margin:0}
 .sup-qb{border:0;background:none;padding:2px 0;color:var(--ink);font:600 14px var(--f-body,system-ui);cursor:pointer;text-decoration:underline dotted color-mix(in srgb,var(--ink) 40%,transparent);text-underline-offset:3px}.sup-qb.none{color:#0a84ff;text-decoration:none;font-weight:500}
 .sup-st4{display:flex;background:color-mix(in srgb,var(--ink) 8%,transparent);border-radius:9px;padding:2px;max-width:420px}.sup-st4 button{flex:1;border:0;background:none;border-radius:7px;padding:6px 2px;font:500 12.5px var(--f-body,system-ui);color:var(--muted);cursor:pointer;white-space:nowrap}
@@ -4362,6 +4395,8 @@ function appConfirm(text,ok,danger){ return new Promise(res=>{ const m=document.
 function supUndoBar(txt,undo){ document.getElementById("caDone")?.remove(); const b=document.createElement("div"); b.id="caDone"; b.className="ca-done";
   b.innerHTML=`<span class="ok">✓</span><span>${esc(txt)}</span><button type="button">Вернуть</button>`; document.body.appendChild(b); const t=setTimeout(()=>b.remove(),7000);
   b.querySelector("button").addEventListener("click",()=>{ clearTimeout(t); b.remove(); undo(); }); }
+function supPhotoView(name,url){ const m=document.createElement("div"); m.className="modal"; m.innerHTML=`<div class="modal-card" style="width:min(520px,100%)"><img src="${esc(shpThumb(url,900))}" alt="" style="width:100%;border-radius:12px;display:block"><h2 style="margin:10px 0">${esc(name)}</h2><div style="display:flex;gap:8px"><button type="button" class="btn" data-ch>📷 Заменить фото</button><button type="button" class="btn" data-c>Закрыть</button></div></div>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-c]")) m.remove(); if(e.target.closest("[data-ch]")){ m.remove(); supPhotoPick(name); } }); document.body.appendChild(m); }
 function supRec(oid,key){ const it=supItems(oid).find(x=>x.key===key)||{}; const r=(S.sup.st[oid]||{})[key]||{};
   return {order:oid,key,name:r.name||it.name||"",qty:r.qty!=null?r.qty:(it.added?it.qty:null),unit:it.unit||r.unit||"",status:it.status||0,op:r.op||""}; }
 function supPinModal(then){
@@ -4422,7 +4457,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
     return; }
   if(a==="sup-pin") return supPinModal();
   if(a==="sup-price"){ const it=supItems(o).find(x=>x.key===k); if(!it) return; const pr=supPriceOf(it); return supPriceModal(it.name,it.unit,pr?pr.p:""); }
-  if(a==="sup-sw"){ const c=typeof catFind==="function"?catFind(t.dataset.n):null; if(c&&typeof catModal==="function") catModal(c.i); else toast("Этого материала нет в базе Базиса"); return; }
+  if(a==="sup-sw"){ const n=t.dataset.n, c=supCatFind(n); if(c&&typeof catModal==="function") return catModal(c.i); const ph=supPhotoOf(n); if(ph) return supPhotoView(n,ph); return supPhotoPick(n); }
   if(a==="sup-cancel"){ S.sup.edit=null; supRenderKeep(); return; }
   if(a==="sup-edit"){ S.sup.edit=o+"|"+k; S.sup.menu=null; supRenderKeep(); return; }
   if(a==="sup-st"&&(t.dataset.noop||supLP.fired)){ supLP.fired=false; if(t.dataset.noop){ S.sup.menu=o+"|"+k; supRenderKeep(); } return; }
@@ -4463,7 +4498,7 @@ const _buyBlock0=buyBlock;   // исходный блок (без снабжен
 /* ---------- «Закупка по заказу» на странице заказа: карточки, статусы снабжения, «Можно запускать?», «Отправить в закупку» ---------- */
 const BUY_FG=[["hinge","Петли",/петл/],["slide","Направляющие и ящики",/направл|ящик|tandem|tandembox|movento|legrabox|metabox|quadro|nova pro|антаро|antaro|телескоп/],["handle","Ручки",/ручк|ручка|профиль-ручк|gola/],
   ["leg","Опоры и ножки",/опор|ножк|цокол/],["lift","Подъёмники",/подъ[её]мник|aventos|лифт|газлифт|амортизатор|push|пуш/],["sink","Мойки и смесители",/мойк|смесит|сифон/],["tech","Техника",/духов|варочн|вытяжк|холодил|посудомо|микроволн|плит[аы]\b/],
-  ["prof","Профили",/профил|плинтус|карниз|штанг/],["other","Прочее",/.*/]];
+  ["prof","Профили",/профил|плинтус|карниз|штанг/],["bottle","Бутылочницы и корзины",/бут[ыо]лочн|карго|корзин|сетк|выдвижн\S* корзин/],["light","Подсветка",/подсветк|светодиод|led|лента|блок питан|выключат|датчик/],["screw","Крепёж",/саморез|конфирмат|евровинт|шкант|винт|шуруп|стяжк|эксцентрик/],["other","Прочее",/.*/]];
 function buyFG(name){ const n=supNorm(name); return BUY_FG.find(g=>g[2].test(n))[0]; }
 function buyAttrs(name){ const n=supNorm(name), a=[];
   const m=/(полунакладн|вкладн|накладн)/.exec(n); if(m) a.push(m[1]==="полунакладн"?"полунакладная":m[1]==="вкладн"?"вкладная":"накладная");
@@ -4473,7 +4508,7 @@ function buyAttrs(name){ const n=supNorm(name), a=[];
   return a; }
 const BUY_IC={hinge:'<path d="M5 4v16M5 8h6a3 3 0 0 1 0 6H5"/><circle cx="16.5" cy="11" r="3.5"/>',slide:'<rect x="3" y="7" width="18" height="10" rx="1.5"/><path d="M6 12h12M15 9l3 3-3 3"/>',handle:'<path d="M4 15h16M7 15V10M17 15V10"/>',
   leg:'<path d="M5 5h14M9 5v14M15 5v14"/>',lift:'<path d="M5 20L18 6M14 6h4v4"/><circle cx="6" cy="19" r="2"/>',sink:'<path d="M3 11h18v3a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5zM12 11V5h4"/>',tech:'<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="13" r="4"/>',
-  prof:'<path d="M4 18h16M4 18V8l3-2h10l3 2v10"/>',other:'<circle cx="8" cy="8" r="3"/><path d="M14 6h6M14 10h6M5 15h14M5 19h10"/>',E:'<path d="M3 9h18v6H3z"/><path d="M3 12h18"/>',L:'<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9h16"/>'};
+  prof:'<path d="M4 18h16M4 18V8l3-2h10l3 2v10"/>',bottle:'<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M9 8v8M15 8v8M9 9.5h6"/><path d="M12 6v2"/>',light:'<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',screw:'<path d="M8 4h8l-1 3H9zM12 7v13M9 10l6 2M9 14l6 2"/>',other:'<circle cx="8" cy="8" r="3"/><path d="M14 6h6M14 10h6M5 15h14M5 19h10"/>',E:'<path d="M3 9h18v6H3z"/><path d="M3 12h18"/>',L:'<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9h16"/>'};
 function buyIco(k){ return `<span class="buy-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${BUY_IC[k]||BUY_IC.other}</svg></span>`; }
 function buyOn(){ return !!(S.site&&S.site.stagesUrl&&typeof S.sup!=="undefined"); }
 function buyOid(){ return S.current.orderId; }
@@ -4582,10 +4617,13 @@ const _catCard=catCard;
 catCard=function(it){ let h=_catCard(it); if(!S.sup.priceOk) return h; const t=catPriceTxt(it);
   const ad=((S.catAdded||{})[supPKey(it.n)]||[]), mk=ad.length?`<small class="ca-mk">✓ в заказе ${esc(catOrdTitle(ad[ad.length-1].o))} · ${esc(supNum(ad.reduce((a,x)=>a+x.q,0)))} ${esc(catUnitWord(ad[0].u,2))}</small>`:"";
   const pp=catPrice(it); return h.replace(/<\/div>(\s*<button type="button" class="cat-star)/,`${pp?`<span class="cat-pr">${esc(pp[0])}${pp[1]?`<small>${esc(pp[1])}</small>`:""}</span>`:`<span class="cat-pr none">нет цены</span>`}${mk}</div><button type="button" class="cat-add" data-act="cat-addord" data-i="${it.i}" aria-label="Добавить в заказ: ${esc(it.n)}" title="Добавить в заказ">+</button>$1`); };
+const _catSw0=catSw; catSw=function(it,cls){ if(it&&!it.t&&it.n){ const ph=supPhotoOf(it.n); if(ph) return `<span class="${cls||"cat-sw"} ph" style="background-image:url('${esc(shpThumb(ph,300))}');background-size:cover;background-position:center" aria-hidden="true"></span>`; } return _catSw0(it,cls); };
 const _catModal=catModal;
 catModal=function(i){ _catModal(i); const it=S.cat.data.items[i], m=document.getElementById("qrModal"); if(!it||!m||!S.sup.priceOk) return; const t=catPriceTxt(it), tb=m.querySelector(".spec-t tbody"), act=m.querySelector(".spec-act");
   if(tb) tb.insertAdjacentHTML("afterbegin",`<tr><td>Цена</td><td><b>${esc(t||"нет цены")}</b></td></tr>`);
-  if(act) act.insertAdjacentHTML("afterbegin",`<button class="btn primary" data-act="cat-addord" data-i="${it.i}">+ В заказ</button>`); };
+  if(act) act.insertAdjacentHTML("afterbegin",`<button class="btn primary" data-act="cat-addord" data-i="${it.i}">+ В заказ</button>`);
+  if(act&&!it.t) act.insertAdjacentHTML("beforeend",`<button class="btn" data-act="cat-photo" data-n="${esc(it.n)}">📷 ${supPhotoOf(it.n)?"Заменить фото":"Добавить фото"}</button>`); };
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="cat-photo"]'); if(!t) return; ev.stopPropagation(); supPhotoPick(t.dataset.n); },true);
 function catUnitFor(it){ return /^Листов/.test(it.g)?"л.":/^Кромоч/.test(it.g)?"м":/^(кв\.?м|м2|м²)$/.test(it.u||"")?"м²":(it.u==="м"?"м":/компл/.test(it.u||"")?"компл.":"шт"); }
 /* «+» у материала: шторка «Добавить» — в закупку заказа (с количеством, суммой и «зачем») или клиенту в подборку */
 const catUnitWord=(u,q)=>{ const n=Math.abs(q)%100, n1=n%10, f=(a,b,c)=>n>10&&n<20?c:n1===1?a:n1>=2&&n1<=4?b:c;
