@@ -5728,10 +5728,50 @@ function shpZpHtml(){
   h+=`<div class="shp-zpb"><button type="button" class="btn primary" data-act="shp-zpay">+ Выплата или аванс</button><button type="button" class="btn" data-act="shp-zpct">Проценты офиса</button><button type="button" class="btn" data-act="shp-zsal">Оклады</button></div>`;
   return h;
 }
-function shpZpPersonBody(p){ const ty={gift:"подарок",repair:"ремонт"};
-  return shpZpTop(p.accr,p.paid,p)+`<p class="shp-zcap">Начисления</p>${p.items.length?`<ul class="shp-zl">${p.items.slice().sort((a,b)=>b.when-a.when).map(i=>i.kind==="salary"?`<li><div class="shp-zli"><span>${esc(i.text)}<small class="muted">оклад</small></span><b>${esc(shpRub(i.amount))}</b></div></li>`:`<li><button type="button" class="shp-zli" data-act="shp-open" data-id="${esc(i.order)}"><span>${esc(i.text)}${i.otype?` <span class="shp-chip ${i.otype==="gift"?"gift":"rep"}">${ty[i.otype]}</span>`:""}<small class="muted">закрыт ${esc(shpTime(i.when))}</small></span><b>${esc(shpRub(i.amount))}</b></button></li>`).join("")}</ul>`:`<p class="muted">Нет за этот период.</p>`}
-    <p class="shp-zcap">Выплаты</p>${p.pays.length?`<ul class="shp-zl">${p.pays.slice().sort((a,b)=>b.when-a.when).map(i=>`<li><div class="shp-zli"><span>${esc(i.text||"выплата")}<small class="muted">${esc(shpTime(i.when))}${i.by?" · внёс "+esc(i.by):""}</small></span><b>${esc(shpRub(i.amount))}</b>${S.shop.tech?`<button type="button" class="btn sm" data-act="shp-zpdel" data-id="${esc(i.id)}" aria-label="Удалить выплату">✕</button>`:""}</div></li>`).join("")}</ul>`:`<p class="muted">Нет за этот период.</p>`}
-    ${S.shop.tech?`<div class="shp-zpb"><button type="button" class="btn primary" data-act="shp-zpay" data-n="${esc(p.name)}">+ Выплата: ${esc(p.name)}</button></div>`:""}`; }
+function shpZpSlip(p){   // расчётный листок: начислено (заказы, оклад, проценты, премии) − удержано (выплаты, авансы, штрафы) = к выплате
+  const plus=p.items.filter(i=>i.kind!=="fine").sort((a,b)=>a.when-b.when), fines=p.items.filter(i=>i.kind==="fine").sort((a,b)=>a.when-b.when), pays=p.pays.slice().sort((a,b)=>a.when-b.when);
+  const acc=Math.round(plus.reduce((a,i)=>a+i.amount,0)), ded=Math.round(pays.reduce((a,i)=>a+i.amount,0)-fines.reduce((a,i)=>a+i.amount,0)), due=acc-ded, all=Math.round(p.accrAll-p.paidAll);
+  return {plus,fines,pays,acc,ded,due,all,carry:all-due}; }
+function shpZpItemTxt(i){ return i.kind==="salary"?i.text:i.kind==="bonus"?"Премия"+(i.text?" · "+i.text:""):i.kind==="fine"?"Штраф"+(i.text?" · "+i.text:""):i.text; }
+function shpZpPersonBody(p){ const ty={gift:"подарок",repair:"ремонт"}, L=shpZpSlip(p), T=S.shop.tech;
+  const del=(act,id)=>T&&id?`<button type="button" class="btn sm" data-act="${act}" data-id="${esc(id)}" aria-label="Удалить">✕</button>`:"";
+  const acc=i=>i.kind==="brigade"||i.kind==="office"?`<li><button type="button" class="shp-zli" data-act="shp-open" data-id="${esc(i.order)}"><span>${esc(i.text)}${i.otype?` <span class="shp-chip ${i.otype==="gift"?"gift":"rep"}">${ty[i.otype]}</span>`:""}<small class="muted">${i.kind==="brigade"?"сдельно":"процент"} · закрыт ${esc(shpTime(i.when))}</small></span><b>${esc(shpRub(i.amount))}</b></button></li>`
+    :`<li><div class="shp-zli"><span>${esc(i.kind==="bonus"?"Премия":i.text)}<small class="muted">${i.kind==="bonus"?esc((i.text?i.text+" · ":"")+shpTime(i.when)+(i.by?" · внёс "+i.by:"")):"оклад"}</small></span><b class="${i.kind==="bonus"?"okc":""}">${i.kind==="bonus"?"+":""}${esc(shpRub(i.amount))}</b>${i.kind==="bonus"?del("shp-zadel",i.id):""}</div></li>`;
+  let h=`<div class="shp-zpt"><div><span>Начислено</span><b>${esc(shpRub(L.acc))}</b></div><div><span>Удержано</span><b>${esc(shpRub(L.ded))}</b></div><div><span>К выплате</span><b class="${L.due>0?"due":"ok"}">${esc(shpRub(L.due))}</b></div></div><p class="shp-zcap">Начислено</p>${L.plus.length?`<ul class="shp-zl">${L.plus.slice().reverse().map(acc).join("")}<li><div class="shp-zli tot"><span><b>Итого начислено</b></span><b>${esc(shpRub(L.acc))}</b></div></li></ul>`:`<p class="muted">Нет за этот период.</p>`}
+    <p class="shp-zcap">Удержано</p>${L.pays.length||L.fines.length?`<ul class="shp-zl">${L.pays.slice().reverse().map(i=>`<li><div class="shp-zli"><span>${esc(i.text||"Выплата")}<small class="muted">${esc(shpTime(i.when))}${i.by?" · внёс "+esc(i.by):""}</small></span><b>−${esc(shpRub(i.amount))}</b>${del("shp-zpdel",i.id)}</div></li>`).join("")}
+      ${L.fines.slice().reverse().map(i=>`<li><div class="shp-zli"><span>Штраф<small class="muted">${esc((i.text?i.text+" · ":"")+shpTime(i.when)+(i.by?" · внёс "+i.by:""))}</small></span><b class="badc">−${esc(shpRub(-i.amount))}</b>${del("shp-zadel",i.id)}</div></li>`).join("")}
+      <li><div class="shp-zli tot"><span><b>Итого удержано</b></span><b>−${esc(shpRub(L.ded))}</b></div></li></ul>`:`<p class="muted">Ничего не выдано и не удержано.</p>`}
+    <ul class="shp-zl" style="margin-top:10px"><li><div class="shp-zli tot"><span><b>К выплате</b>${L.carry?`<small class="muted">${L.carry>0?"плюс долг с прошлых месяцев":"минус переплата прошлых месяцев"} ${esc(shpRub(Math.abs(L.carry)))} · всего ${esc(shpRub(L.all))}</small>`:""}</span><b style="font-size:19px" class="${L.due<0?"badc":""}">${esc(shpRub(L.due))}</b></div></li></ul>`;
+  h+=`<div class="shp-zpb">${T?`<button type="button" class="btn primary" data-act="shp-zadj" data-n="${esc(p.name)}">+ Премия / штраф</button><button type="button" class="btn" data-act="shp-zpay" data-n="${esc(p.name)}">+ Выплата</button>`:""}
+    <button type="button" class="btn" data-act="shp-zpdf" data-n="${esc(p.name)}">📄 Листок в PDF</button>${T?`<button type="button" class="btn" data-act="shp-ztg" data-n="${esc(p.name)}">✈ В Телеграм</button>`:""}</div>`;
+  return h; }
+function shpZpSlipText(p){ const L=shpZpSlip(p), [,,lbl]=shpZpRange(), r=v=>shpRub(v), d=ms=>new Date(ms).toLocaleDateString("ru-RU");
+  return ["Расчётный листок · "+p.name,lbl,"","НАЧИСЛЕНО"].concat(L.plus.map(i=>"• "+shpZpItemTxt(i)+": "+r(i.amount)),["Итого начислено: "+r(L.acc),"","УДЕРЖАНО"],
+    L.pays.map(i=>"• "+(i.text||"Выплата")+" "+d(i.when)+": −"+r(i.amount)),L.fines.map(i=>"• "+shpZpItemTxt(i)+": −"+r(-i.amount)),["Итого удержано: −"+r(L.ded),"","К ВЫПЛАТЕ: "+r(L.due)],
+    L.carry?["(с прошлыми месяцами всего: "+r(L.all)+")"]:[]).join("\n"); }
+function shpZpPdf(p){ const L=shpZpSlip(p), [,,lbl]=shpZpRange(), r=v=>shpRub(v), d=ms=>new Date(ms).toLocaleDateString("ru-RU"), e=esc;
+  const row=(a,b,c)=>`<tr${c?` class="${c}"`:""}><td>${a}</td><td class="n">${b}</td></tr>`;
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Листок ${e(p.name)} ${e(lbl)}</title><style>body{font:13px Arial,sans-serif;color:#000;margin:24px}h1{font-size:18px;margin:0}p{margin:2px 0 14px;color:#444}table{width:100%;border-collapse:collapse;margin-bottom:12px}td{padding:5px 6px;border-bottom:1px solid #ccc}.n{text-align:right;white-space:nowrap}th{text-align:left;background:#eee;padding:6px}.t td{font-weight:bold;border-top:2px solid #000}.big td{font-size:16px;font-weight:bold;border:2px solid #000}.sg{margin-top:40px;display:flex;justify-content:space-between}</style></head><body>
+    <h1>Расчётный листок</h1><p>${e(p.name)} · ${e(lbl)} · сформирован ${e(d(Date.now()))}</p>
+    <table><tr><th colspan="2">Начислено</th></tr>${L.plus.map(i=>row(e(shpZpItemTxt(i)),e(r(i.amount)))).join("")||row("—","")}${row("Итого начислено",e(r(L.acc)),"t")}</table>
+    <table><tr><th colspan="2">Удержано</th></tr>${L.pays.map(i=>row(e((i.text||"Выплата")+" · "+d(i.when)),"−"+e(r(i.amount)))).join("")}${L.fines.map(i=>row(e(shpZpItemTxt(i)),"−"+e(r(-i.amount)))).join("")}${!L.pays.length&&!L.fines.length?row("—",""):""}${row("Итого удержано","−"+e(r(L.ded)),"t")}</table>
+    <table>${row("К выплате",e(r(L.due)),"big")}${L.carry?row("С учётом прошлых месяцев всего",e(r(L.all))):""}</table>
+    <div class="sg"><span>Выдал: ____________</span><span>Получил: ____________</span></div></body></html>`;
+  const f=document.createElement("iframe"); f.style.cssText="position:fixed;right:0;bottom:0;width:0;height:0;border:0"; document.body.appendChild(f);
+  f.contentDocument.open(); f.contentDocument.write(html); f.contentDocument.close();
+  setTimeout(()=>{ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(_){ toast("Не получилось открыть печать"); } setTimeout(()=>f.remove(),60000); },300); }
+function shpZpAdjModal(name){
+  const names=[...new Set(((S.shop.zp&&S.shop.zp.persons)||[]).map(p=>p.name).concat((S.shop.staff||[]).map(p=>p.name)))];
+  const m=document.createElement("div"); m.className="modal"; m.id="shpZaM";
+  m.innerHTML=`<form class="modal-card" autocomplete="off"><h2 style="margin:0 0 10px">Премия или штраф</h2>
+    <div class="shp-seg shp-wseg" role="group" aria-label="Что"><button type="button" data-k="bonus" aria-pressed="true">🎉 Премия</button><button type="button" data-k="fine" aria-pressed="false">⚠️ Штраф</button></div>
+    <div class="form" style="grid-template-columns:1fr;margin:0"><label>Кому<input name="to" value="${esc(name)}" list="shpZaN" required maxlength="40"></label><datalist id="shpZaN">${names.map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+    <label>Сумма, ₽<input name="sum" inputmode="decimal" required maxlength="12"></label><label>За что<input name="text" maxlength="200" placeholder="Сдал раньше срока / брак фасада…"></label><label>Дата<input name="date" type="date" value="${shpToday()}"></label></div>
+    <p class="note" style="margin:10px 0 0">Работнику придёт сообщение в Телеграм, если он подключён к боту.</p>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  let kind="bonus";
+  m.addEventListener("click",e=>{ const k=e.target.closest("[data-k]"); if(k){ kind=k.dataset.k; m.querySelectorAll("[data-k]").forEach(b=>b.setAttribute("aria-pressed",String(b===k))); return; } if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m);
+  m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target.elements; const j=await shpPost({action:"zpAdj",kind,to:f.to.value.trim(),sum:f.sum.value.replace(/\s/g,"").replace(",","."),text:f.text.value.trim(),date:f.date.value}); if(!j) return; m.remove(); toast(kind==="fine"?"Штраф записан":"Премия записана"); S.shop.zp=null; shpRenderKeep(); }); }
 function shpZpPersonHtml(){ const Z=S.shop.zp; if(!Z){ shpZpLoad(); return `<p class="muted">Считаю…</p>`; } if(Z.err){ S.shop.mode="zp"; return shpZpHtml(); } const p=(Z.persons||[]).find(x=>x.name===S.shop.zpWho);
   const [,,lbl]=shpZpRange(); return `<div class="head"><div><h1>${esc(S.shop.zpWho||"")}</h1><p class="muted" style="margin:4px 0 0">${esc(lbl)}</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="zp">← Зарплата</button></div></div>`+(p?shpZpPersonBody(p):`<p class="muted">Нет данных за этот период.</p>`); }
 function shpZpPayModal(name){
@@ -6403,6 +6443,12 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="shp-zper"){ S.shop.zper=t.dataset.v; S.shop.zp=null; return shpRenderKeep(); }
   if(a==="shp-zpp"){ S.shop.zpWho=t.dataset.n; return shpGo("zpp"); }
   if(a==="shp-zpay") return shpZpPayModal(t.dataset.n||"");
+  if(a==="shp-zadj") return shpZpAdjModal(t.dataset.n||"");
+  if(a==="shp-zadel"){ if(!t.dataset.sure){ t.dataset.sure="1"; t.textContent="Удалить?"; return; } const j=await shpPost({action:"zpAdjDel",id:t.dataset.id}); if(j){ S.shop.zp=null; shpRenderKeep(); } return; }
+  if(a==="shp-zpdf"||a==="shp-ztg"){ const p=((S.shop.zp&&S.shop.zp.persons)||[]).find(x=>x.name===t.dataset.n); if(!p) return;
+    if(a==="shp-zpdf") return shpZpPdf(p);
+    if(!(await appConfirm("Отправить расчётный листок «"+p.name+"» ему в Телеграм?","Отправить",false))) return; const j=await shpPostRaw({action:"zpSlip",to:p.name,text:shpZpSlipText(p)});
+    toast(j&&j.ok?"Листок отправлен в Телеграм":j&&j.error==="notg"?"У "+p.name+" не указан Телеграм в «Сотрудники»":j&&j.error==="notoken"?"Бот не подключён: нет TG_TOKEN в свойствах скрипта":"Не отправилось — проверьте связь"); return; }
   if(a==="shp-zpdel"){ if(!t.dataset.sure){ t.dataset.sure="1"; t.textContent="Удалить?"; return; } const j=await shpPost({action:"zpPayDel",id:t.dataset.id}); if(j){ S.shop.zp=null; shpRenderKeep(); } return; }
   if(a==="shp-zpct") return shpZpPctModal();
   if(a==="shp-zsal") return shpZpSalModal();
