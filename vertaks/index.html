@@ -3758,7 +3758,10 @@ function supItemsRaw(oid){
   base.forEach(b=>{ const r=st[b.key]; const it={...b,status:r?r.status:0,orig:b.name,origQty:b.qty};
     if(r){ if(r.op==="del") it.del=true; if(r.name&&r.name!==b.name) it.name=r.name; if(r.qty!=null&&r.qty!==b.qty) it.qty=r.qty; it.who=r.who; }
     out.push(it); });
-  Object.values(st).filter(r=>/^A:/.test(r.key)&&r.op!=="del").forEach(r=>out.push({key:r.key,type:supAddT(r.unit),name:r.name,qty:r.qty,unit:r.unit||"шт",status:r.status,added:true,who:r.who,comment:r.comment?"зачем: "+r.comment:""}));
+  const mg=new Map();   // одинаковое, добавленное несколько раз (то же название, единица и статус), — одной строкой
+  Object.values(st).filter(r=>/^A:/.test(r.key)&&r.op!=="del").forEach(r=>{ const k=supPKey(r.name)+"|"+(r.unit||"шт")+"|"+(+r.status||0), x=mg.get(k);
+    if(x){ x.qty=Math.round(((+x.qty||0)+(+r.qty||0))*100)/100; x.keys.push(r.key); x.dup=x.keys.length; if(r.comment&&!x.comment.includes(r.comment)) x.comment+=(x.comment?"; ":"зачем: ")+r.comment; return; }
+    const it={key:r.key,keys:[r.key],type:supAddT(r.unit),name:r.name,qty:r.qty,unit:r.unit||"шт",status:+r.status||0,added:true,who:r.who,comment:r.comment?"зачем: "+r.comment:""}; mg.set(k,it); out.push(it); });
   const nv=S.sup.st["@NEVER"]||{};
   out.forEach(i=>{ i.small=supIsSmall(i); const r=nv[supNeverKey(i.name)]; if(r&&r.op==="never"&&!i.added){ i.del=true; i.never=true; } });
   return out;
@@ -3851,7 +3854,7 @@ function supPriceModal(name,unit,cur){ const m=document.createElement("div"); m.
     if(await supPriceSave([{name,unit,price:v}])){ m.remove(); toast(v?"Цена сохранена":"Цена убрана"); render(); } }); }
 /* итог по заказу: по плану, уже куплено (заказано/пришло/в цеху), осталось докупить; сколько позиций без цены */
 function supMoneyHtml(L){ if(!S.sup.priceOk) return ""; let all=0,left=0,no=0; L.forEach(i=>{ const pr=supPriceOf(i); if(!pr){ no++; return; } const v=pr.p*(+i.qty||0); all+=v; if(i.status===0) left+=v; });
-  return `<div class="sup-money"><div><span>Закупка по плану</span><b>${esc(supRub(all))}</b></div><div><span>Осталось докупить</span><b class="${left>0?"due":""}">${esc(supRub(left))}</b></div>${no?`<p>Без цены: ${no} поз. — нажмите «+ цена» у позиции</p>`:""}</div>`; }
+  return `<div class="sup-money m3"><div><span>План</span><b>${esc(supRub(all))}</b></div><div><span>Заказано и есть</span><b>${esc(supRub(all-left))}</b></div><div><span>Докупить</span><b class="${left>0?"due":""}">${esc(supRub(left))}</b></div>${no?`<p>Без цены: ${no} поз. — нажмите «+ цена» у позиции</p>`:""}</div>`; }
 async function supStLoad(){ try{ const r=await fetch(supUrl("action=supply"),{cache:"no-cache"}); const j=await r.json();
   if(j&&j.ok){ S.sup.st=supStMap(j.items); S.sup.stAt=Date.now(); supPriceLoad(); return true; } }catch(_){} return false; }
 /* статусы → по заказам. Таблица раньше хранила «0002» как 2: такие строки отдаём заказу 0002 (более поздняя строка важнее) */
@@ -3939,12 +3942,12 @@ function supRow(oid,it){
   const tags=`${it.name!==it.orig&&it.orig?`<small class="muted">было: ${esc(it.orig)}</small>`:""}${it.added?`<span class="sup-tag">добавлено</span>`:""}${it.spec&&!it.added?`<span class="sup-tag spec">примерно</span>`:""}${it.cov?`<span class="sup-tag">${esc(supNum(it.cov))} уже заказано по примерной</span>`:""}${it.comment?`<small class="muted">${esc(it.comment)}</small>`:""}${it.small?`<span class="sup-tag mute">мелочь</span>`:""}${it.auto?`<span class="sup-tag">авто: петли без пружины</span>`:""}`;
   const SN=["Нужно","Заказано","Пришло","В цеху"], nx=Math.min(3,it.status+1);
   const ck=it.status===0?supCk(oid,it):`<span class="sup-ck none" aria-hidden="true"></span>`;
-  const m=menu?`<div class="sup-menu" role="menu">${SN.map((n,i)=>i===it.status?"":`<button type="button" role="menuitem" class="btn sm" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${i}">${i<it.status?"↩ ":""}${n}</button>`).join("")}
+  const m=menu?`<div class="sup-menu" role="menu">
       <button type="button" role="menuitem" class="btn sm" data-act="sup-edit" data-o="${esc(oid)}" data-k="${esc(it.key)}">✎ Изменить</button>
       <button type="button" role="menuitem" class="btn sm" data-act="sup-del" data-o="${esc(oid)}" data-k="${esc(it.key)}">Убрать из этого заказа</button>
       ${it.added?"":`<button type="button" role="menuitem" class="btn sm danger" data-act="sup-never" data-o="${esc(oid)}" data-k="${esc(it.key)}">Не закупаем никогда</button>`}</div>`:"";
-  return `<div class="sup-row3${menu?" open":""}">${ck}<span class="sup-nm">${esc(it.name)}${tags}</span><span class="sup-qq">${esc(supNum(it.qty))} ${esc(it.unit)}${it.qty!==it.origQty&&it.origQty!=null?`<small>было ${esc(supNum(it.origQty))}</small>`:""}${S.sup.priceOk?(()=>{ const pr=supPriceOf(it); return `<button type="button" class="sup-pr${pr?"":" none"}" data-act="sup-price" data-o="${esc(oid)}" data-k="${esc(it.key)}" title="${pr?"Цена из: "+pr.src+". Нажмите — изменить":"Указать цену"}">${pr?esc(supRub(pr.p))+" × "+esc(supNum(it.qty))+" = "+esc(supRub(pr.p*(+it.qty||0))):"+ цена"}</button>`; })():""}</span>
-    <button type="button" class="sup-pill p${it.status}" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${nx}"${it.status===3?' data-noop="1"':""} title="${it.status<3?"Нажмите: → "+SN[nx]:"В цеху"}" aria-label="${esc(SN[it.status])}${it.status<3?", нажмите — "+SN[nx]:""}">${SN[it.status]}</button>
+  return `<div class="sup-row4${menu?" open":""}">${ck}<span class="sup-nm">${esc(it.name)}${it.dup?`<span class="sup-tag">сложено ×${it.dup}</span>`:""}${tags}</span><span class="sup-qq"><button type="button" class="sup-qb" data-act="sup-edit" data-o="${esc(oid)}" data-k="${esc(it.key)}" title="Изменить количество">${esc(supNum(it.qty))} ${esc(it.unit)}</button>${it.qty!==it.origQty&&it.origQty!=null?`<small>было ${esc(supNum(it.origQty))}</small>`:""}${S.sup.priceOk?(()=>{ const pr=supPriceOf(it); return `<button type="button" class="sup-pr${pr?"":" none"}" data-act="sup-price" data-o="${esc(oid)}" data-k="${esc(it.key)}" title="${pr?"Цена из: "+pr.src+". Нажмите — изменить":"Указать цену"}">${pr?esc(supRub(pr.p))+" × "+esc(supNum(it.qty))+" = "+esc(supRub(pr.p*(+it.qty||0))):"+ цена"}</button>`; })():""}</span>
+    <div class="sup-st4" role="group" aria-label="Статус: ${esc(it.name)}">${SN.map((n,i)=>`<button type="button" class="s${i}${it.status===i?" on":""}" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${i}" aria-pressed="${it.status===i}">${n}</button>`).join("")}</div>
     <button type="button" class="sup-dots" data-act="sup-menu" data-o="${esc(oid)}" data-k="${esc(it.key)}" aria-expanded="${menu}" aria-label="Ещё: ${esc(it.name)}">⋯</button>${m}</div>`;
 }
 /* «Выбрать всё нужное»: refs — позиции со статусом «Нужно»; если все уже выбраны — снимаем */
@@ -3960,15 +3963,51 @@ function viewSupply(){
   const sum=S.sup.tab==="sum";
   let h=`<div class="head"><div><h1>Снабжение</h1><p class="muted" style="margin:4px 0 0">Заказов: ${ids.length} · позиций: ${tot} · ${SUP_ST.map((s,i)=>`${s.name}: ${all[i]}`).join(" · ")}</p></div>
     <button class="btn sm" data-act="sup-reload">Обновить</button></div>${tot?supBar(all,tot):""}
-    <div class="seg cat-mode sup-seg" role="group" aria-label="Вид"><button type="button" class="${!sum?"on":""}" aria-pressed="${!sum}" data-act="sup-tab" data-t="orders">По заказам</button><button type="button" class="${sum?"on":""}" aria-pressed="${sum}" data-act="sup-tab" data-t="sum">Всего купить</button></div>
+    <div class="seg cat-mode sup-seg" role="group" aria-label="Вид"><button type="button" class="${!S.sup.tab||S.sup.tab==="orders"?"on":""}" aria-pressed="${!S.sup.tab||S.sup.tab==="orders"}" data-act="sup-tab" data-t="orders">Заказы</button><button type="button" class="${S.sup.tab==="table"?"on":""}" aria-pressed="${S.sup.tab==="table"}" data-act="sup-tab" data-t="table">Таблица</button><button type="button" class="${S.sup.tab==="buy"?"on":""}" aria-pressed="${S.sup.tab==="buy"}" data-act="sup-tab" data-t="buy">Купить</button><button type="button" class="${sum?"on":""}" aria-pressed="${sum}" data-act="sup-tab" data-t="sum">Всего</button></div>
     ${supSmallLine(small)}`;
   if(!S.sup.pin) h+=`<div class="banner warn" style="margin:10px 0">Чтобы отмечать и менять позиции, нужен PIN снабженца. <button class="btn sm" data-act="sup-pin">Ввести PIN</button></div>`;
   if(S.shop&&S.shop.specOld) h+=`<p class="note">Примерные спецификации от дизайнеров появятся после обновления скрипта таблицы.</p>`;
-  h+=sum?supSum(allIds):supOrders(ids);
-  const nReq=supReqLines().reduce((a,s)=>a+s.rows.length,0);
-  if(nReq) h+=`<div class="sup-bar" role="region" aria-label="Заявка поставщику"><span>Заявка: <b>${nReq}</b> поз.</span><button type="button" class="btn sm" data-act="sup-selclr">Очистить</button><button type="button" class="btn primary" data-act="sup-req">Открыть заявку</button></div>`;
-  return `<div class="supv${nReq?" has-bar":""}">${h}</div>`;
+  h+=sum?supSum(allIds):S.sup.tab==="table"?supTable(ids):S.sup.tab==="buy"?supBuy(ids):supOrders(ids);
+  [...S.sup.sel].forEach(r=>{ const u=supUnref(r); if(!supItems(u.oid).some(x=>x.key===u.key&&!x.del)) S.sup.sel.delete(r); });
+  const nReq=S.sup.sel.size;
+  const selSum=[...S.sup.sel].reduce((a,r)=>{ const u=supUnref(r), it=supItems(u.oid).find(x=>x.key===u.key), pr=it&&supPriceOf(it); return a+(pr?pr.p*(+it.qty||0):0); },0);
+  if(nReq) h+=`<div class="sup-bar" role="region" aria-label="Выбранные позиции"><span>Выбрано: <b>${nReq}</b>${selSum?" · "+esc(supRub(selSum)):""}</span><button type="button" class="btn sm" data-act="sup-selclr">Снять</button>${S.sup.tab==="buy"?"":`<button type="button" class="btn sm" data-act="sup-bulk" data-s="1">Отметить «Заказано»</button>`}<button type="button" class="btn ${S.sup.tab==="buy"?"":"primary"}" data-act="sup-req">Заявка поставщику</button>${S.sup.tab==="buy"?`<button type="button" class="btn primary" data-act="sup-bulk" data-s="${(S.sup.btab||0)+1}">Готово → «${["Заказано","Пришло","В цеху"][S.sup.btab||0]}»</button>`:""}</div>`;
+  return `<div class="supv${nReq?" has-bar":""}${S.sup.tab==="table"?" wide":""}">${h}</div>`;
 }
+/* ---- «Таблица»: все заказы строками, как в Excel; группы Листы / Кромка / Фурнитура; галочки → массовая отметка ---- */
+function supTblRows(ids){ const out=[]; supActiveIds(ids).forEach(oid=>supVis(supItems(oid)).forEach(it=>out.push({oid,it}))); return out; }
+function supTable(ids){ const act=supActiveIds(ids), fo=S.sup.tfo||"", fs=S.sup.tfs==null?"0":S.sup.tfs, q=supNorm(S.sup.tq||"");
+  let R=supTblRows(ids); const R0=R, cnt=i=>R0.filter(x=>x.it.status===i&&(!fo||x.oid===fo)).length;
+  if(fo) R=R.filter(x=>x.oid===fo); if(fs!=="all") R=R.filter(x=>x.it.status===+fs); if(q) R=R.filter(x=>supNorm(x.it.name).includes(q));
+  const chip=(act,v,on,t)=>`<button type="button" class="sup-fc${on?" on":""}" aria-pressed="${on}" data-act="${act}" data-t="${esc(v)}">${t}</button>`;
+  let h=`<div class="sup-fil">${chip("sup-tfs","0",fs==="0","Нужно · "+cnt(0))}${chip("sup-tfs","1",fs==="1","Заказано · "+cnt(1))}${chip("sup-tfs","2",fs==="2","Пришло · "+cnt(2))}${chip("sup-tfs","3",fs==="3","В цеху · "+cnt(3))}${chip("sup-tfs","all",fs==="all","Все")}</div>
+    <div class="sup-fil">${chip("sup-tfo","",!fo,"Все заказы")}${act.map(o=>chip("sup-tfo",o,fo===o,esc(supOidLabel(o)))).join("")}<input class="sup-tq" type="search" placeholder="🔍 поиск" value="${esc(S.sup.tq||"")}" aria-label="Поиск позиции"></div>`;
+  if(!R.length) return h+`<div class="empty"><h2>Пусто</h2><p class="muted">С такими фильтрами позиций нет.</p></div>`;
+  const SN=["Нужно","Заказано","Пришло","В цеху"];
+  h+=`<div class="sup-tw"><table class="sup-tbl"><thead><tr><th></th><th>Позиция</th><th>Заказ</th><th class="n">Кол-во</th><th class="n">Цена</th><th class="n">Сумма</th><th>Статус</th></tr></thead><tbody>`;
+  [["L","Листы"],["E","Кромка"],["F","Фурнитура и прочее"]].forEach(([t,n])=>{ const G=R.filter(x=>supT(x.it)===t).sort((a,b)=>a.it.name.localeCompare(b.it.name,"ru")); if(!G.length) return;
+    const gs=G.reduce((a,x)=>{ const pr=supPriceOf(x.it); return a+(pr?pr.p*(+x.it.qty||0):0); },0), refs=G.map(x=>supRef(x.oid,x.it.key)), all=refs.every(r=>S.sup.sel.has(r));
+    h+=`<tr class="grp"><td><input type="checkbox" class="sup-cbg" data-refs="${esc(refs.join("\n"))}"${all?" checked":""} aria-label="Выбрать все: ${n}"></td><td colspan="6"><b>${n}</b> · ${G.length} поз.${gs?" · "+esc(supRub(gs)):""}</td></tr>`;
+    G.forEach(({oid,it})=>{ const pr=supPriceOf(it), r=supRef(oid,it.key);
+      h+=`<tr class="${S.sup.sel.has(r)?"sel":""}"><td><input type="checkbox" class="sup-cb" data-o="${esc(oid)}" data-k="${esc(it.key)}"${S.sup.sel.has(r)?" checked":""} aria-label="Выбрать: ${esc(it.name)}"></td>
+        <td>${esc(it.name)}${it.added?` <span class="sup-tag">добавлено</span>`:""}${it.dup?` <span class="sup-tag">×${it.dup}</span>`:""}</td><td class="muted">${esc(supOidLabel(oid))}</td>
+        <td class="n"><button type="button" class="sup-qb" data-act="sup-tedit" data-o="${esc(oid)}" data-k="${esc(it.key)}">${esc(supNum(it.qty))} ${esc(it.unit)}</button></td>
+        <td class="n">${S.sup.priceOk?`<button type="button" class="sup-qb${pr?"":" none"}" data-act="sup-price" data-o="${esc(oid)}" data-k="${esc(it.key)}">${pr?esc(Math.round(pr.p).toLocaleString("ru-RU")):"+ цена"}</button>`:""}</td><td class="n">${pr?esc(Math.round(pr.p*(+it.qty||0)).toLocaleString("ru-RU")):""}</td>
+        <td><div class="sup-st4 sm">${SN.map((n2,i)=>`<button type="button" class="s${i}${it.status===i?" on":""}" data-act="sup-st" data-o="${esc(oid)}" data-k="${esc(it.key)}" data-s="${i}" aria-pressed="${it.status===i}">${n2}</button>`).join("")}</div></td></tr>`; }); });
+  return h+`</tbody></table></div>`; }
+/* ---- «Купить»: список покупок, одинаковое из разных заказов сложено; кружок = выбрать, внизу «Готово» ставит статус всем выбранным ---- */
+function supBuy(ids){ const bt=S.sup.btab||0, act=supActiveIds(ids), m=new Map();
+  act.forEach(oid=>supVis(supItems(oid)).forEach(it=>{ if(it.status!==bt) return; const k=supT(it)+"|"+supPKey(it.name)+"|"+it.unit; const g=m.get(k)||{k,t:supT(it),name:it.name,unit:it.unit,qty:0,rows:[]}; g.qty+=+it.qty||0; g.rows.push({oid,it}); m.set(k,g); }));
+  const cnt=i=>{ let n=0; act.forEach(o=>supVis(supItems(o)).forEach(it=>{ if(it.status===i) n++; })); return n; };
+  let h=`<div class="seg cat-mode sup-bseg">${["Купить","Ждём","Пришло"].map((n,i)=>`<button type="button" class="${bt===i?"on":""}" aria-pressed="${bt===i}" data-act="sup-btab" data-t="${i}">${n} · ${cnt(i)}</button>`).join("")}</div>
+    <p class="note" style="margin:0 0 8px">${["Нажмите кружок у того, что купили или заказали, — внизу «Готово → Заказано».","Нажмите кружок у того, что пришло, — внизу «Готово → Пришло».","Нажмите кружок у того, что отдали в цех, — внизу «Готово → В цеху»."][bt]} Одинаковое из разных заказов сложено.</p>`;
+  const G=[...m.values()]; if(!G.length) return h+`<div class="empty"><h2>${["Покупать нечего","Ничего не ждём","Пусто"][bt]}</h2></div>`;
+  [["L","Листы"],["E","Кромка"],["F","Фурнитура и прочее"]].forEach(([t,n])=>{ const L=G.filter(g=>g.t===t).sort((a,b)=>a.name.localeCompare(b.name,"ru")); if(!L.length) return;
+    const sum=L.reduce((a,g)=>{ const pr=supPriceOf(g.rows[0].it); return a+(pr?pr.p*g.qty:0); },0);
+    h+=`<div class="card sup-buy"><div class="sup-bh"><b>${n}</b><span class="muted">${L.length} поз.${sum?" · "+esc(supRub(sum)):""}</span></div>${L.map(g=>{ const refs=g.rows.map(x=>supRef(x.oid,x.it.key)), on=refs.every(r=>S.sup.sel.has(r)), pr=supPriceOf(g.rows[0].it);
+      const per=g.rows.map(x=>`${supOidLabel(x.oid)}${g.rows.length>1?" ("+supNum(x.it.qty)+")":""}`).join(" + ");
+      return `<button type="button" class="sup-bi${on?" on":""}" data-act="sup-bsel" data-refs="${esc(refs.join("\n"))}" aria-pressed="${on}"><i class="sup-bc" aria-hidden="true">${on?"✓":""}</i><span class="sup-bn"><b>${esc(g.name)}</b><small>${esc(supNum(g.qty))} ${esc(g.unit)} · ${esc(per)}</small></span><span class="sup-bs">${pr?`<b>${esc(supRub(pr.p*g.qty))}</b><small>${esc(supRub(pr.p))}</small>`:""}</span></button>`; }).join("")}</div>`; });
+  return h; }
 /* ---- карточка заказа: «можно начинать?» + 4 полки ---- */
 const SUP_TN={L:"Листы",E:"Кромка",F:"Фурнитура"}, SUP_SH=["Нужно","Заказано","Пришло","В цеху"], SUP_NEXT=["Заказано","Пришло","В цех"];
 function supT(i){ return i.type==="A"?"F":i.type; }
@@ -4018,7 +4057,7 @@ function supOrders(ids){
     return `<div class="card sup-card v-${v.lv}"><button type="button" class="sup-head2" data-act="sup-open" data-o="${esc(oid)}" aria-expanded="${open}">${v.n?supRing(v):""}
         <span class="sup-ttl"><b>${esc(nd.name)}</b>${supSent(oid)?` <span class="sup-new">новое · ${esc(supSent(oid).who||"")}</span>`:""}<small>${v.n?v.ok+" из "+v.n+" позиций есть":"нет позиций"}${nd.spec?"":" · "+esc(oid)}</small></span>
         <span class="sup-chev" aria-hidden="true">${open?"▴":"▾"}</span></button>
-      ${supVerdictHtml(v)}${v.n?supBarsHtml(L.filter(i=>!i.small)):""}${supDealHtml(oid)}${body}</div>`; }).join("");
+      ${supVerdictHtml(v)}${v.n?supCatsHtml(v):""}${supDealHtml(oid)}${body}</div>`; }).join("");
   return (nv?`<p class="sup-nvl"><button type="button" class="linkbtn" data-act="sup-nevlist">Не закупаем никогда: ${nv} поз.</button></p>`:"")+h+supDatalists();
 }
 /* заказ из Базиса + примерная спецификация сделки: заказанное заранее и сравнение */
@@ -4225,6 +4264,23 @@ function supPrint(text,secs,vendor){
 .ca-done{position:fixed;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:90;max-width:520px;margin:0 auto;display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:14px;background:#2c2c2e;color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.4)}.ca-done .ok{color:#30d158;font-size:20px}.ca-done span:nth-child(2){flex:1}.ca-done small{display:block;color:#8e8e93;font-size:12px}.ca-done button{border:0;background:none;color:#0a84ff;font:600 15px var(--f-body,system-ui);cursor:pointer}
 .ca-cart{position:sticky;bottom:12px;display:block;width:100%;text-align:left;margin-top:14px;padding:12px 14px;border-radius:14px;border:1px solid #0a84ff;background:color-mix(in srgb,#0a84ff 14%,var(--surface));color:var(--ink);cursor:pointer;font:15px var(--f-body,system-ui)}.ca-cart span{display:block;color:var(--muted);font-size:13px}
 .cat-add{flex:none;width:32px;height:32px;border-radius:50%;border:0;background:#0a84ff;color:#fff;font:600 22px/1 var(--f-body,system-ui);cursor:pointer;margin-right:4px;align-self:center}
+.sup-row4{display:grid;grid-template-columns:40px minmax(0,1fr) auto 32px;grid-template-areas:"ck nm qq dots" "ck st st dots";gap:4px 10px;align-items:center;padding:9px 8px 9px 2px;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);position:relative}
+.sup-row4>.sup-ck{grid-area:ck}.sup-row4 .sup-nm{grid-area:nm;min-width:0;overflow-wrap:anywhere}.sup-row4 .sup-qq{grid-area:qq}.sup-row4 .sup-st4{grid-area:st}.sup-row4 .sup-dots{grid-area:dots}.sup-row4 .sup-menu{grid-column:1/-1}
+.sup-qb{border:0;background:none;padding:2px 0;color:var(--ink);font:600 14px var(--f-body,system-ui);cursor:pointer;text-decoration:underline dotted color-mix(in srgb,var(--ink) 40%,transparent);text-underline-offset:3px}.sup-qb.none{color:#0a84ff;text-decoration:none;font-weight:500}
+.sup-st4{display:flex;background:color-mix(in srgb,var(--ink) 8%,transparent);border-radius:9px;padding:2px;max-width:420px}.sup-st4 button{flex:1;border:0;background:none;border-radius:7px;padding:6px 2px;font:500 12.5px var(--f-body,system-ui);color:var(--muted);cursor:pointer;white-space:nowrap}
+.sup-st4 button.on.s0{background:rgba(255,69,58,.22);color:#ff453a;font-weight:600}.sup-st4 button.on.s1{background:rgba(255,159,10,.22);color:#ff9f0a;font-weight:600}.sup-st4 button.on.s2,.sup-st4 button.on.s3{background:rgba(48,209,88,.2);color:#30d158;font-weight:600}
+.sup-st4.sm button{font-size:11.5px;padding:4px 6px}
+.sup-money.m3{grid-template-columns:repeat(3,1fr)}
+@media (min-width:1000px){.supv.wide{width:min(1400px,calc(100vw - 48px));margin-left:calc(50% - min(700px,50vw - 24px))}}
+.sup-tq{min-height:34px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font:13px var(--f-body,system-ui);min-width:120px}
+.sup-tw{overflow-x:auto;background:var(--surface);border-radius:12px}.sup-tbl{width:100%;border-collapse:collapse;font-size:13.5px}.sup-tbl th{text-align:left;color:var(--muted);font-weight:500;font-size:12px;padding:8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
+.sup-tbl td{padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--line) 50%,transparent);vertical-align:middle}.sup-tbl .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.sup-tbl tr.grp td{background:color-mix(in srgb,var(--ink) 6%,transparent)}.sup-tbl tr.sel td{background:color-mix(in srgb,#0a84ff 12%,transparent)}.sup-tbl input{width:18px;height:18px;accent-color:#0a84ff}
+.sup-bseg{margin:4px 0 8px}.sup-buy{padding:4px 0;margin-bottom:10px}.sup-bh{display:flex;gap:8px;align-items:baseline;padding:10px 14px 6px}
+.sup-bi{display:flex;gap:12px;align-items:center;width:100%;padding:10px 14px;border:0;border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent);background:none;color:var(--ink);text-align:left;cursor:pointer;font:15px var(--f-body,system-ui)}
+.sup-bc{width:26px;height:26px;border-radius:50%;border:2px solid color-mix(in srgb,var(--ink) 35%,transparent);flex:none;display:grid;place-items:center;font-style:normal;font-weight:700;color:#fff}.sup-bi.on .sup-bc{background:#30d158;border-color:#30d158}
+.sup-bi.on .sup-bn b{text-decoration:line-through;color:var(--muted)}.sup-bn{flex:1;min-width:0}.sup-bn b{display:block;font-weight:500}.sup-bn small,.sup-bs small{display:block;color:var(--muted);font-size:12.5px}.sup-bs{text-align:right;white-space:nowrap}
+@media (max-width:599px){.sup-bar{flex-wrap:wrap;gap:6px}.sup-bar>span{flex-basis:100%}.sup-bar .btn{flex:1 1 auto;min-height:40px;padding-left:8px;padding-right:8px}}
+@media (max-width:599px){.sup-row4{grid-template-columns:36px minmax(0,1fr) 30px;grid-template-areas:"ck nm dots" "ck qq dots" "ck st st"}.sup-row4 .sup-qq{text-align:left}.sup-money.m3 b{font-size:15px}}
 .sup-money{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:10px 14px 4px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--ink) 5%,transparent)}.sup-money span{display:block;font-size:12px;color:var(--muted)}.sup-money b{font-size:17px;font-variant-numeric:tabular-nums}.sup-money b.due{color:#ff9f0a}.sup-money p{grid-column:1/-1;margin:0;font-size:12px;color:var(--muted)}.sup-qq small{display:block;font-size:11px}
 .sup-pill{min-width:84px;min-height:36px;padding:0 10px;border:0;border-radius:8px;font:600 12.5px var(--f-body,system-ui);cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 .sup-pill.p0{background:#fde4e1;color:#b3261e}.sup-pill.p1{background:#fff0d4;color:#8a4b00}.sup-pill.p2{background:#e2f1e3;color:#2a6e2d}.sup-pill.p3{background:#dfe6f3;color:#2d4f8a}
@@ -4265,6 +4321,11 @@ async function supSave(items,quiet){   // quiet — своя перерисов�
     if(quiet) quiet(); else supRenderKeep(); [...new Set(items.filter(it=>+it.status>=2).map(it=>it.order))].forEach(o=>supAutoStage(o));
     const aff=[...new Set(items.map(it=>it.order))]; supSumSync(aff.includes("@NEVER")?Object.keys(S.sup.needs):aff.filter(o=>o!=="@SUM")); return true; }catch(_){ toast("Нет связи с таблицей. Не сохранилось."); return false; }
 }
+/* записи для действия над строкой: у сложенной строки — все её ключи */
+function supRecs(oid,key){ const it=supItems(oid).find(x=>x.key===key); const ks=it&&it.keys&&it.keys.length>1?it.keys:[key];
+  return ks.map(k=>{ const r=(S.sup.st[oid]||{})[k]||{}; return {order:oid,key:k,name:r.name||(it&&it.name)||"",qty:r.qty!=null?r.qty:null,unit:r.unit||(it&&it.unit)||"",status:r.status!=null?+r.status:((it&&it.status)||0),op:r.op||""}; }); }
+/* уже добавленное в этот заказ то же самое (ещё «Нужно») — прибавляем количество, а не новую строку */
+function supAddSame(oid,name,unit){ const r=Object.values(S.sup.st[oid]||{}).find(x=>/^A:/.test(x.key)&&x.op!=="del"&&!(+x.status)&&supPKey(x.name)===supPKey(name)&&(x.unit||"шт")===(unit||"шт")); return r?{order:oid,key:r.key,name:r.name,qty:+r.qty||0,unit:r.unit,status:0,op:"add"}:null; }
 function supRec(oid,key){ const it=supItems(oid).find(x=>x.key===key)||{}; const r=(S.sup.st[oid]||{})[key]||{};
   return {order:oid,key,name:r.name||it.name||"",qty:r.qty!=null?r.qty:(it.added?it.qty:null),unit:it.unit||r.unit||"",status:it.status||0,op:r.op||""}; }
 function supPinModal(then){
@@ -4308,6 +4369,14 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="sup-sopen"){ const g=t.dataset.g; S.sup.sopen[g]=!S.sup.sopen[g]; supRenderKeep(); return; }
   if(a==="sup-selall"){ const R=String(t.dataset.refs||"").split("\n").filter(Boolean); R.forEach(r=>t.dataset.on==="1"?S.sup.sel.add(r):S.sup.sel.delete(r)); supRenderKeep(); return; }
   if(a==="sup-selclr"){ S.sup.sel.clear(); supRenderKeep(); return; }
+  if(a==="sup-tfs"){ S.sup.tfs=t.dataset.t; supRenderKeep(); return; }
+  if(a==="sup-tfo"){ S.sup.tfo=t.dataset.t; supRenderKeep(); return; }
+  if(a==="sup-btab"){ S.sup.btab=+t.dataset.t; S.sup.sel.clear(); supRenderKeep(); return; }
+  if(a==="sup-bsel"){ const rs=String(t.dataset.refs||"").split("\n").filter(Boolean), on=rs.every(r=>S.sup.sel.has(r)); rs.forEach(r=>on?S.sup.sel.delete(r):S.sup.sel.add(r)); supRenderKeep(); return; }
+  if(a==="sup-tedit"){ const it=supItems(o).find(x=>x.key===k); if(!it) return; const v=prompt("Количество, "+it.unit+":",supNum(it.qty)); if(v==null) return; const q=parseFloat(String(v).replace(",",".")); if(!(q>=0)){ toast("Впишите число"); return; }
+    const rs=supRecs(o,k), base=((S.sup.needs[o]||{}).items||[]).find(x=>x.key===k); rs[0].qty=base&&q===base.qty?null:q; if(base) rs[0].op=rs[0].qty!=null?"qty":""; supSave([rs[0]].concat(rs.slice(1).map(x=>Object.assign(x,{op:"del"})))); return; }
+  if(a==="sup-bulk"){ const st=+t.dataset.s, by=new Map(); [...S.sup.sel].forEach(r=>{ const u=supUnref(r); supRecs(u.oid,u.key).forEach(x=>by.set(x.order+"|"+x.key,Object.assign(x,{status:st}))); });
+    if(!by.size) return; supSave([...by.values()]).then(ok=>{ if(ok!==false){ S.sup.sel.clear(); toast("Отмечено: "+by.size+" → «"+["Нужно","Заказано","Пришло","В цеху"][st]+"»"); supRenderKeep(); } }); return; }
   if(a==="sup-req") return supReqModal();
   if(a==="sup-deal"){ const id=t.dataset.id; if(!shpById(id)){ toast("Сделка не нашлась. Обновите."); return; } S.shop.back="board"; shpGo("order",id); return; }
   if(a==="sup-rc"){ const id=t.dataset.id; S.sup.rcOpen[id]=!S.sup.rcOpen[id]; if(S.sup.rcOpen[id]&&!Array.isArray(S.shop.rc[id])) supRcLoad(id); supRenderKeep(); return; }
@@ -4320,7 +4389,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="sup-cancel"){ S.sup.edit=null; supRenderKeep(); return; }
   if(a==="sup-edit"){ S.sup.edit=o+"|"+k; S.sup.menu=null; supRenderKeep(); return; }
   if(a==="sup-st"&&(t.dataset.noop||supLP.fired)){ supLP.fired=false; if(t.dataset.noop){ S.sup.menu=o+"|"+k; supRenderKeep(); } return; }
-  if(a==="sup-st"){ const r=supRec(o,k); r.status=+t.dataset.s; S.sup.menu=null; supSave([r]); return; }
+  if(a==="sup-st"){ const rs=supRecs(o,k); rs.forEach(r=>{ r.status=+t.dataset.s; }); S.sup.menu=null; supSave(rs); return; }
   if(a==="sup-menu"){ const e=o+"|"+k; S.sup.menu=S.sup.menu===e?null:e; supRenderKeep(); return; }
   if(a==="sup-more"){ S.sup.more[o]=!S.sup.more[o]; supRenderKeep(); return; }
   if(a==="sup-have"){ S.sup.have[o]=!S.sup.have[o]; supRenderKeep(); return; }
@@ -4328,7 +4397,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
     S.sup.menu=null; supSave([{order:"@NEVER",key:supNeverKey(r.name),name:r.name,qty:null,unit:r.unit||"",status:0,op:"never"}]); return; }
   if(a==="sup-unnever"){ const n=t.dataset.n||""; supSave([{order:"@NEVER",key:supNeverKey(n),name:n,qty:null,unit:"",status:0,op:""}]); document.getElementById("supNvModal")?.remove(); return; }
   if(a==="sup-nevlist") return supNeverModal();
-  if(a==="sup-del"){ const r=supRec(o,k); if(!confirm("Убрать «"+r.name+"» из закупки заказа?")) return; r.op="del"; S.sup.menu=null; supSave([r]); return; }
+  if(a==="sup-del"){ const rs=supRecs(o,k); if(!confirm("Убрать «"+rs[0].name+"» из закупки заказа?")) return; rs.forEach(r=>{ r.op="del"; }); S.sup.menu=null; supSave(rs); return; }
   if(a==="sup-undel"){ const r=supRec(o,k); r.op=""; supSave([r]); return; }
 },true);
 /* удержание статуса — меню действий */
@@ -4346,10 +4415,11 @@ document.addEventListener("change",ev=>{ const c=ev.target; if(!c.classList) ret
 document.addEventListener("submit",ev=>{ const f=ev.target;
   if(f.classList&&f.classList.contains("sup-ed")){ ev.preventDefault(); const o=f.dataset.o, k=f.dataset.k, r=supRec(o,k), base=((S.sup.needs[o]||{}).items||[]).find(x=>x.key===k);
     r.name=f.n.value.trim()||r.name; const q=parseFloat(String(f.q.value).replace(",",".")); r.qty=isNaN(q)?r.qty:q; if(base&&r.qty===base.qty) r.qty=null; if(base&&r.name===base.name&&r.op!=="del") r.op=r.qty!=null?"qty":"";
-    else if(base) r.op="rep"; S.sup.edit=null; supSave([r]); }
+    else if(base) r.op="rep"; S.sup.edit=null; const rest=supRecs(o,k).slice(1).map(x=>Object.assign(x,{op:"del"})); supSave([r].concat(rest)); }
   if(f.classList&&f.classList.contains("sup-add")){ ev.preventDefault(); const o=f.dataset.o, q=parseFloat(String(f.q.value).replace(",","."));
     const pv=f.p?String(f.p.value).replace(/\s/g,"").replace(",","."):""; if(pv!==""&&+pv>=0) supPriceSave([{name:f.n.value.trim(),unit:f.u.value,price:pv}]);
-    supSave([{order:o,key:"A:"+Date.now().toString(36),name:f.n.value.trim(),qty:isNaN(q)?1:q,unit:f.u.value,status:0,op:"add"}]); }
+    const nm=f.n.value.trim(), qq=isNaN(q)?1:q, ex=supAddSame(o,nm,f.u.value);
+    supSave([ex?Object.assign(ex,{qty:Math.round(((+ex.qty||0)+qq)*100)/100}):{order:o,key:"A:"+Date.now().toString(36),name:nm,qty:qq,unit:f.u.value,status:0,op:"add"}]); }
 },true);
 
 const _buyBlock0=buyBlock;   // исходный блок (без снабжения)
@@ -4456,6 +4526,8 @@ span.buy-pic{cursor:default}.buy-pic .cat-sw{width:56px;height:56px;border-radiu
 `; document.head.appendChild(st); })();
 
 /* ---------- название в «Докупить / добавить» выбрано из базы — подставляем цену ---------- */
+document.addEventListener("input",ev=>{ const q=ev.target; if(!(q&&q.classList&&q.classList.contains("sup-tq"))) return; S.sup.tq=q.value; clearTimeout(S.sup.tqT);
+  S.sup.tqT=setTimeout(()=>{ const pos=q.selectionStart; supRenderKeep(); const nq=document.querySelector(".sup-tq"); if(nq){ nq.focus(); try{ nq.setSelectionRange(pos,pos); }catch(_){} } },250); });
 document.addEventListener("input",ev=>{ const n=ev.target; if(!(n&&n.name==="n"&&n.closest&&n.closest("form.sup-add"))) return; const f=n.form;
   if(!f.p||f.p.dataset.own) return; const r=(S.sup.price||{})[supPKey(n.value)], bp=r&&r.price>0?r.price:supBaseOf(n.value,f.u.value); f.p.value=bp?String(bp):""; });
 document.addEventListener("input",ev=>{ if(ev.target&&ev.target.name==="p"&&ev.target.closest&&ev.target.closest("form.sup-add")) ev.target.dataset.own=ev.target.value?"1":""; });
@@ -4515,8 +4587,8 @@ function catAddModal(i){ const it=S.cat.data.items[i]; if(!it) return; document.
   const go=async more=>{ const ob=f.querySelector("input[name=o]:checked"); if(!ob){ toast("Выберите заказ"); return; } const o=ob.value, q=parseFloat(String(f.q.value).replace(",",".")), pv=String(f.p.value).replace(/\s/g,"").replace(",","."), c=f.c.value.trim();
     if(!(q>0)){ toast("Впишите количество"); return; } S.catLastOrd=o; try{ localStorage.setItem("cehqr-catord",o); }catch(_){}
     if(pv!==""&&+pv>=0&&+pv!==bp) await supPriceSave([{name:it.n,unit:u,price:pv}]);
-    const key="A:"+Date.now().toString(36), rec={order:o,key,name:it.n,qty:q,unit:u,status:0,op:"add"}; if(c) rec.comment=c;
-    const ok=await supSave([rec],()=>{}); if(ok===false) return;
+    const ex=supAddSame(o,it.n,u), prevQ=ex?ex.qty:0, key=ex?ex.key:"A:"+Date.now().toString(36), rec={order:o,key,name:it.n,qty:Math.round((prevQ+q)*100)/100,unit:u,status:0,op:"add"}; if(c) rec.comment=c; rec.prevQ=prevQ;
+    const ok=await supSave([Object.assign({},rec,{prevQ:undefined})],()=>{}); if(ok===false) return;
     const pr=+pv||0; S.catAdded=S.catAdded||{}; (S.catAdded[supPKey(it.n)]=S.catAdded[supPKey(it.n)]||[]).push({o,q,u,key});
     (S.catCart=S.catCart&&S.catCart.o===o?S.catCart:{o,n:0,sum:0}); S.catCart.n++; S.catCart.sum+=pr*q;
     m.remove(); render(); catUndoBar(o,rec,`Добавлено в ${catOrdTitle(o)}: ${supNum(q)} ${catUnitWord(u,q)}${pr?" · "+supRub(pr*q):""}`,pr*q); };
@@ -4525,7 +4597,7 @@ function catOrdTitle(o){ const d=typeof vtxLinked==="function"&&S.shop&&S.shop.l
 function catUndoBar(o,rec,txt,sum){ document.getElementById("caDone")?.remove(); const b=document.createElement("div"); b.id="caDone"; b.className="ca-done";
   b.innerHTML=`<span class="ok">✓</span><span>${esc(txt)}<small>Снабженец увидит в «Нужно купить»</small></span><button type="button">Отменить</button>`; document.body.appendChild(b);
   const t=setTimeout(()=>b.remove(),7000);
-  b.querySelector("button").addEventListener("click",async()=>{ clearTimeout(t); b.remove(); const ok=await supSave([Object.assign({},rec,{op:"del"})],()=>{}); if(ok===false) return;
+  b.querySelector("button").addEventListener("click",async()=>{ clearTimeout(t); b.remove(); const ok=await supSave([rec.prevQ?Object.assign({},rec,{qty:rec.prevQ,prevQ:undefined}):Object.assign({},rec,{op:"del",prevQ:undefined})],()=>{}); if(ok===false) return;
     const L=(S.catAdded||{})[supPKey(rec.name)]||[]; const k=L.findIndex(x=>x.key===rec.key); if(k>=0) L.splice(k,1); if(S.catCart&&S.catCart.o===o){ S.catCart.n--; S.catCart.sum-=sum; if(S.catCart.n<=0) S.catCart=null; } toast("Отменено"); render(); }); }
 try{ S.catLastOrd=localStorage.getItem("cehqr-catord")||""; }catch(_){}
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="cat-addord"]'); if(!t) return; ev.stopPropagation(); ev.preventDefault(); catAddModal(+t.dataset.i); },true);
