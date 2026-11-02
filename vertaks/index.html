@@ -4807,6 +4807,7 @@ function viewShop(){
   if(m==="money") return nav+shpMoneyHtml();
   if(m==="zp") return nav+shpZpHtml();
   if(m==="pnl") return nav+shpPnlHtml();
+  if(m==="help") return nav+helpListHtml();
   if(m==="zpp") return nav+shpZpPersonHtml();
   return nav+shpBoardHtml();
 }
@@ -4906,7 +4907,7 @@ async function shpTasksLoad(quiet){ const j=await shpGet("action=tasks",quiet); 
 function shpOldScript(){ return S.shop.v2?"":`<div class="banner warn">Задачи, лента и сотрудники заработают после обновления скрипта Google-таблицы (вставить новый код → «Управление развёртываниями» → «Новая версия»).</div>`; }
 
 /* нижние вкладки (Вертакс) / меню сверху (сайт) */
-function shpTab(){ const m=S.shop.mode; return m==="tasks"?"tasks":m==="chats"||m==="general"?"chats":m==="cal"?"cal":/^(more|feed|clients|client|staff|person|money|zp|zpp|pnl)$/.test(m)?"more":"board"; }
+function shpTab(){ const m=S.shop.mode; return m==="tasks"?"tasks":m==="chats"||m==="general"?"chats":m==="cal"?"cal":/^(more|feed|clients|client|staff|person|money|zp|zpp|pnl|help)$/.test(m)?"more":"board"; }
 function shpChatUnread(){ const seen=shpSeen(); return S.shop.orders.filter(o=>shpUnread(o,seen)).length+(shpGenUnread(seen)?1:0); }
 function shpNavHtml(){
   const cur=shpTab(), my=shpMyOpen(), un=shpChatUnread();
@@ -5451,6 +5452,7 @@ function shpMoreHtml(){
   const it=(act,v,ic,t,sub)=>`<li><button type="button" class="shp-row" data-act="${act}" data-v="${v}"><span class="shp-av" aria-hidden="true">${shpIco(ic,20)}</span><span class="shp-rb"><b>${t}</b><span class="muted">${sub}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
   return `<div class="head"><div><h1>Ещё</h1><p class="muted" style="margin:4px 0 0">${esc(shpRoleLine())}</p></div></div>
     <ul class="shp-list">${it("shp-tab","feed","feed","Лента","Кто что сделал по заказам")}${it("shp-tab","clients","clients","Клиенты","Все клиенты и их заказы")}${it("shp-tab","staff","staff","Сотрудники","Задачи, заказы и телефоны")}${S.shop.full?it("shp-tab","money","money","Деньги по заказам","Сумма, закупка по чекам и что остаётся"):""}${S.shop.tech?it("shp-tab","pnl","money","Итог месяца","Выручка, закупка, зарплата, аренда — прибыль"):""}${it("shp-tab","zp","money",S.shop.tech?"Зарплата":"Моя зарплата",S.shop.tech?"Бригады, офис, авансы и выплаты":"Начислено, выплачено и сколько осталось")}
+    ${it("help-open","","chat","Техподдержка","Что-то не работает — напишите, исправим")}${S.shop.tech?it("shp-tab","help","task","Обращения"+(S.shop.help&&S.shop.help.filter?" · новых "+S.shop.help.filter(x=>x.status!=="исправлено").length:""),"Что пишут работники в техподдержку"):""}
     ${it("shp-myname","","staff","Моё имя: "+esc(shpWho()),"Так вас видят в задачах и чатах — нажмите, чтобы изменить")}${it("shp-reload","","reload","Обновить данные","Заказы и задачи из таблицы")}${it("shp-out","","out","Выйти из «Вертакса»","На этом телефоне")}</ul>`;
 }
 
@@ -6000,7 +6002,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="shp-mper"){ S.shop.mper=t.dataset.v; return shpRenderKeep(); }
   if(a==="shp-mlost"){ S.shop.mlost=!!t.checked; return shpRenderKeep(); }
   if(a==="shp-tab"){ const v=t.dataset.v; if(t.dataset.tt) S.shop.ttab=t.dataset.tt; S.shop.chat=null;
-    if(v==="feed"){ S.shop.feed.loaded&&shpFeedLoad(true); } if(v==="staff"){ S.shop.staffLoaded=false; } if(v==="cal"&&!S.shop.cal.a) S.shop.cal.a=shpToday();
+    if(v==="feed"){ S.shop.feed.loaded&&shpFeedLoad(true); } if(v==="help") S.shop.help=null; if(v==="staff"){ S.shop.staffLoaded=false; } if(v==="cal"&&!S.shop.cal.a) S.shop.cal.a=shpToday();
     if(v==="tasks"&&S.shop.v2) shpTasksLoad(true).then(()=>{ if(S.view==="shop"&&S.shop.mode==="tasks"&&!document.querySelector(".modal")) shpRenderKeep(); });
     return shpGo(v); }
   if(a==="shp-closed"){ S.shop.showClosed=!S.shop.showClosed; try{ localStorage.setItem("cehqr-shopclosed",S.shop.showClosed?"1":"0"); }catch(_){} t.setAttribute("aria-pressed",String(S.shop.showClosed)); t.textContent=(S.shop.showClosed?"Скрыть закрытые":"Показать закрытые")+" · "+S.shop.orders.filter(shpClosed).length; shpApplyFilter();
@@ -6115,6 +6117,57 @@ if(VTX){
   document.addEventListener("click",ev=>{ const b=ev.target.closest&&ev.target.closest('[data-act="order"]'); if(!b) return;
     ev.stopImmediatePropagation(); ev.preventDefault(); location.href=(window.SITE_ROOT||"../")+"#"+encodeURIComponent(b.dataset.id||""); },true);
 }
+
+/* ---------- Техподдержка во всех приложениях: «что не так» + фото → лист «Поддержка» (и Telegram технологу). Список обращений — у технолога в Вертаксе ---------- */
+const HELP_ERR=[];
+const hEsc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+window.addEventListener("error",e=>{ HELP_ERR.push(new Date().toTimeString().slice(0,8)+" "+String(e.message||"").slice(0,200)+(e.filename?" @"+String(e.filename).split("/").pop()+":"+e.lineno:"")); if(HELP_ERR.length>10) HELP_ERR.shift(); });
+window.addEventListener("unhandledrejection",e=>{ HELP_ERR.push(new Date().toTimeString().slice(0,8)+" promise: "+String((e.reason&&e.reason.message)||e.reason||"").slice(0,200)); if(HELP_ERR.length>10) HELP_ERR.shift(); });
+function helpApp(){ return window.APP_MODE==="vertaks"?"Вертакс":"Технолог 3D"; }
+function helpRole(){ try{ if(S.shop&&S.shop.role) return S.shop.tech?"технолог":({office:"офис",supply:"снабженец",master:"мастер"}[S.shop.role]||S.shop.role); }catch(_){}
+  try{ if(typeof siteIsAdmin==="function"&&siteIsAdmin()) return "технолог"; if(typeof siteIsSupply==="function"&&siteIsSupply()) return "снабженец"; if(typeof siteIsDesigners==="function"&&siteIsDesigners()) return "дизайнер"; if(typeof siteIsMasters==="function"&&siteIsMasters()) return "мастер"; }catch(_){} return ""; }
+function helpWhere(){ const v=S.view||"", m=S.shop&&S.shop.mode, o=S.current&&S.current.orderId; return [v,v==="shop"&&m?m:"",o?"заказ "+o:""].filter(Boolean).join(" · "); }
+function helpUrl(){ return (S.site&&S.site.stagesUrl)||""; }
+function helpOpen(){ document.getElementById("helpM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="helpM";
+  m.innerHTML=`<form class="modal-card" autocomplete="off"><h2 style="margin:0 0 6px">Техподдержка</h2><p class="note" style="margin:0 0 10px">Напишите, что не работает или что неудобно. Можно приложить фото экрана. Технолог увидит сообщение и исправит.</p>
+    <div class="form" style="grid-template-columns:1fr;margin:0"><label>Ваше имя<input name="who" maxlength="40" value="${hEsc(S.who||"")}" placeholder="Имя"></label>
+    <label>Что не так?<textarea name="text" rows="5" maxlength="2000" required placeholder="Например: в снабжении не сохраняется отметка «Пришло» у петель"></textarea></label>
+    <label class="btn" style="justify-self:start"><span>📷 Фото экрана</span><input type="file" name="f" accept="image/*" hidden></label></div>
+    <p class="note" style="margin:8px 0 0;font-size:12px">Вместе с сообщением уйдут: приложение (${hEsc(helpApp())}), экран, роль и тип телефона — чтобы быстрее найти ошибку.</p>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Отправить</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); document.body.appendChild(m);
+  const f=m.querySelector("form"); f.f.addEventListener("change",()=>{ const sp=f.f.closest("label").querySelector("span"); sp.textContent=f.f.files[0]?"📷 Фото выбрано ✓":"📷 Фото экрана"; });
+  setTimeout(()=>f.text.focus(),50);
+  f.addEventListener("submit",async e=>{ e.preventDefault(); const b=f.querySelector("[type=submit]"); if(!helpUrl()){ toast("Нет связи с таблицей — сообщение не отправить"); return; }
+    b.disabled=true; b.textContent="Отправляю…"; let photo="";
+    if(f.f.files[0]){ try{ photo=typeof siteShrink==="function"?await siteShrink(f.f.files[0]):""; }catch(_){ photo=""; } }
+    const body={action:"helpAdd",text:f.text.value.trim(),who:f.who.value.trim()||S.who||"",role:helpRole(),app:helpApp(),view:helpWhere(),ua:navigator.userAgent.slice(0,200),errs:HELP_ERR.join("\n")};
+    if(photo) body.photo=photo;
+    try{ const j=await (await fetch(helpUrl(),{method:"POST",body:JSON.stringify(body)})).json();
+      if(j&&j.ok){ m.remove(); toast("Отправлено. Спасибо — посмотрим и исправим"); return; }
+      toast(j&&j.error==="often"?"Слишком много сообщений — попробуйте через 10 минут":"Не отправилось. Попробуйте ещё раз"); }catch(_){ toast("Нет связи — не отправилось"); }
+    b.disabled=false; b.textContent="Отправить"; }); }
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="help-open"]'); if(!t) return; ev.preventDefault(); ev.stopPropagation(); helpOpen(); },true);
+/* Технолог 3D: карточка вверху «Как работать» */
+if(typeof viewHelp==="function"){ const _vh=viewHelp; viewHelp=function(){ return `<div class="card help-sup"><b>Что-то не работает?</b><span class="muted">Напишите в техподдержку — технолог исправит.</span><button type="button" class="btn primary" data-act="help-open">Написать</button></div>`+_vh(); }; }
+/* Вертакс: список обращений у технолога */
+function helpListHtml(){ const back=`<button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button>`;
+  let h=`<div class="head"><div><h1>Обращения</h1><p class="muted" style="margin:4px 0 0">Что пишут работники в техподдержку</p></div><div class="head-actions">${back}</div></div>`;
+  if(!S.shop.tech) return h+`<p class="note">Список видит только технолог.</p>`;
+  const L=S.shop.help; if(!L){ helpLoad(); return h+`<p class="muted">Загружаю…</p>`; } if(L.err) return h+`<p class="note">Не загрузилось. Проверьте связь.</p>`;
+  if(!L.length) return h+`<p class="muted">Обращений пока нет.</p>`;
+  const st=L.slice().sort((a,b)=>(a.status==="исправлено")-(b.status==="исправлено")||b.when-a.when);
+  return h+`<ul class="help-l">${st.map(x=>`<li class="card${x.status==="исправлено"?" done":""}"><div class="help-h"><b>${hEsc(x.who||"Без имени")}</b><span class="muted">${hEsc([x.role,x.app,shpTime(x.when)].filter(Boolean).join(" · "))}</span></div>
+    <p>${hEsc(x.text).replace(/\n/g,"<br>")}</p>${x.photo&&shpSafeLink(x.photo)?`<a href="${hEsc(x.photo)}" target="_blank" rel="noopener"><img class="help-ph" src="${hEsc(shpThumb(x.photo,360))}" alt="Фото к обращению" loading="lazy"></a>`:""}
+    ${x.view?`<p class="muted" style="font-size:12px">Экран: ${hEsc(x.view)}</p>`:""}${x.errs?`<details><summary class="muted" style="font-size:12px">Ошибки в приложении</summary><pre class="help-e">${hEsc(x.errs)}</pre></details>`:""}
+    <button type="button" class="btn sm${x.status==="исправлено"?"":" primary"}" data-act="help-st" data-id="${hEsc(x.id)}" data-s="${x.status==="исправлено"?"новое":"исправлено"}">${x.status==="исправлено"?"✓ Исправлено — вернуть":"Отметить «исправлено»"}</button></li>`).join("")}</ul>`; }
+async function helpLoad(){ if(S.shop.helpBusy) return; S.shop.helpBusy=true; const j=await shpGet("action=help",true); S.shop.helpBusy=false; S.shop.help=j&&j.ok?j.items||[]:{err:1}; if(S.view==="shop"&&(S.shop.mode==="help"||S.shop.mode==="more")) shpRenderKeep(); }
+document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="help-st"]'); if(!t) return; ev.stopPropagation(); t.disabled=true;
+  const j=await shpPost({action:"helpSet",id:t.dataset.id,status:t.dataset.s}); if(j){ const x=(S.shop.help||[]).find(r=>r.id===t.dataset.id); if(x) x.status=t.dataset.s; shpRenderKeep(); } else t.disabled=false; },true);
+(function(){ const st=document.createElement("style"); st.textContent=`#helpM textarea{width:100%;box-sizing:border-box;font:15px/1.4 var(--f-body,system-ui);padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);resize:vertical}.help-sup{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:0 0 14px}.help-sup b{flex-basis:100%}.help-sup .muted{flex:1 1 200px}
+.help-l{list-style:none;margin:0;padding:0;display:grid;gap:10px}.help-l li{padding:12px 14px}.help-l li.done{opacity:.6}.help-h{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}.help-l p{margin:6px 0}.help-ph{max-width:220px;border-radius:10px;display:block;margin:6px 0}.help-e{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto}`; document.head.appendChild(st); })();
+/* Технолог 3D: ссылка «Техподдержка» внизу главной, рядом с «Как работать» */
+if(typeof viewOrders==="function"){ const _vo=viewOrders; viewOrders=function(){ return String(_vo()).replace('data-view="help">Как работать</button>','data-view="help">Как работать</button> · <button type="button" class="linkbtn" data-act="help-open">Техподдержка</button>'); }; }
 
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
