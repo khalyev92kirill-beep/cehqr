@@ -7108,6 +7108,210 @@ try{ S.shop.smClient=localStorage.getItem("cehqr-smcl")==="1"; }catch(_){}
 @media (max-width:600px){.sm-grid{grid-template-columns:repeat(2,1fr)}.sm-mf{grid-template-columns:repeat(3,1fr)}}
 `; document.head.appendChild(st); })();
 
+/* ---------- СКЛАД (Вертакс): целые листы, остатки ЛДСП с размерами, кромка, фурнитура.
+   Приход — из базы Базиса (как в «Материалах»), «Взял на заказ» — списание; от куска можно вернуть, что не пошло.
+   Мелочь не пишем: остаток — длинная сторона от 600 и короткая от 300 (длинные полосы от 2000 — короткая от 100).
+   В «Снабжении» видно, что уже есть на складе, и кнопка «Взять со склада». ---------- */
+const ST_GR=[["all","Всё"],["sheet","Листы"],["cut","Остатки"],["edge","Кромка"],["furn","Фурнитура"]];
+const ST_QUICK=[["2800",""],["2070",""],["1400","2070"],["2800","300"]];
+function stCutOk(l,w){ const a=Math.max(l,w), b=Math.min(l,w); return a>=600&&(b>=300||(a>=2000&&b>=100)); }
+function stSecGr(sec){ return /^(ldsp|plit)$/.test(sec)?"sheet":sec==="edge"?"edge":"furn"; }
+function stSecOfName(n){ const c=typeof catFind==="function"?catFind(n):null; return c&&typeof catSecOf==="function"?catSecOf(c):""; }
+function stUnitOf(sec){ return stSecGr(sec)==="sheet"?"л.":sec==="edge"||sec==="prof"||sec==="top"?"м":"шт"; }
+function stNum(q){ return String(Math.round((+q||0)*100)/100).replace(".",","); }
+function stSee(){ return !!(S.shop&&S.shop.loaded&&(S.shop.tech||S.shop.role!=="office")); }   // склад: технолог, снабженец, мастера
+function stBoss(){ return !!(S.shop&&S.shop.loaded&&(S.shop.tech||S.shop.role==="supply"))||(typeof siteIsSupply==="function"&&siteIsSupply())||(typeof siteIsAdmin==="function"&&siteIsAdmin()); }
+function stPin(){ return (typeof shpPin==="function"&&shpPin())||(typeof supPricePin==="function"&&supPricePin())||""; }
+function stWho(){ return typeof shpWho==="function"&&S.shop&&S.shop.loaded?shpWho():(S.who||"Снабженец"); }
+async function stLoad(force){ if(!S.site||!S.site.stagesUrl||!stPin()) return; S.stock=S.stock||{}; if(S.stock.busy||(S.stock.items&&!force)) return; S.stock.busy=true;
+  try{ const r=await fetch(S.site.stagesUrl+(S.site.stagesUrl.includes("?")?"&":"?")+"action=stock&pin="+encodeURIComponent(stPin()),{cache:"no-cache"}); const j=await r.json();
+    if(j&&j.ok){ S.stock.items=j.items||[]; S.stock.log=j.log||[]; S.stock.err=false; } else S.stock.err=true; }catch(_){ S.stock.err=true; }
+  S.stock.busy=false; stRepaint(); }
+function stRepaint(){ if(document.querySelector(".modal")) return; if(S.view==="shop"&&/^stock/.test(S.shop.mode)) shpRenderKeep(); else if(S.view==="supply"&&typeof supPaint==="function") supPaint(); else if(S.view==="order"&&typeof buyRefresh==="function") buyRefresh(); }
+async function stPost(body){ try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify(Object.assign({pin:stPin(),who:stWho()},body))}); const j=await r.json();
+    if(j&&j.ok) return j; toast(j&&j.error==="small"?"Это мелочь — такой остаток не записываем (длинная сторона от 600 мм, короткая от 300)":j&&j.error==="role"?"Это могут технолог и снабженец":j&&j.error==="pin"?"PIN не подошёл":j&&j.error==="notfound"?"Уже взяли — обновите склад":"Склад не сохранил. Обновите скрипт таблицы."); return null; }catch(_){ toast("Нет связи с таблицей. Не сохранилось."); return null; } }
+function stSize(x){ return x.l&&x.w?x.l+" × "+x.w:""; }
+function stSw(n){ const c=typeof catFind==="function"?catFind(n):null; return c&&typeof catSw==="function"?catSw(c,"cat-sw"):`<span class="cat-sw none" aria-hidden="true">📦</span>`; }
+/* по материалу: целые листы / штуки и остатки */
+function stByName(){ const m=new Map(); (S.stock.items||[]).forEach(x=>{ let g=m.get(x.name); if(!g){ g={name:x.name,sec:x.sec,gr:stSecGr(x.sec),whole:0,unit:x.unit,cuts:[],rows:[],places:new Set(),min:0,area:0}; m.set(x.name,g); }
+  g.rows.push(x); if(x.place) g.places.add(x.place); if(x.kind==="cut"){ g.cuts.push(x); g.area+=x.l*x.w*x.qty/1e6; } else { g.whole+=x.qty; g.unit=x.unit; g.min=Math.max(g.min,x.min||0); } }); return [...m.values()]; }
+function stLow(g){ return g.min>0&&g.whole<g.min; }
+/* для «Снабжения»: сколько целых листов / штук этого материала есть */
+function stockHave(name,unit){ if(!S.stock||!S.stock.items) return null; const k=supPKey(name), u=String(unit||"").replace(/\.$/,""); const L=S.stock.items.filter(x=>x.kind!=="cut"&&x.qty>0&&supPKey(x.name)===k);
+  const cuts=S.stock.items.filter(x=>x.kind==="cut"&&x.qty>0&&supPKey(x.name)===k).reduce((a,x)=>a+x.qty,0);
+  return L.length||cuts?{qty:L.reduce((a,x)=>a+x.qty,0),rows:L,unit:(L[0]||{}).unit||unit,cuts}:null; }
+
+function viewStock(){ S.stock=S.stock||{}; if(!S.stock.items&&!S.stock.busy) stLoad();
+  const gr=S.stock.gr||"all", q=String(S.stock.q||"").toLowerCase().replace(/ё/g,"е").split(/\s+/).filter(Boolean);
+  let h=`<div class="head"><div><h1>Склад</h1><p class="muted" style="margin:4px 0 0">${S.stock.items?`${stByName().length} ${typeof shpPl==="function"?shpPl(stByName().length,"позиция","позиции","позиций"):"поз."}`:"Загружаю…"}</p></div><div class="head-actions"><button type="button" class="btn primary" data-act="st-in">+ Приход</button><button type="button" class="btn" data-act="st-log">Журнал</button><button type="button" class="btn" data-act="st-re">Обновить</button></div></div>`;
+  if(S.stock.err) return h+`<p class="note">Склад не загрузился — обновите скрипт таблицы (Базис → Скрипты → Технолог 3D) или проверьте связь.</p>`;
+  if(!S.stock.items) return h;
+  const G=stByName();
+  h+=`<input class="ca-q st-q" type="search" placeholder="🔍 Цвет, название, артикул" aria-label="Поиск по складу" value="${esc(S.stock.q||"")}">
+    <div class="cat-chips st-gr">${ST_GR.map(([k,n])=>{ const c=k==="all"?G.length:k==="cut"?G.filter(g=>g.cuts.length).length:G.filter(g=>g.gr===k).length; return `<button type="button" class="chip${gr===k?" on":""}" data-act="st-gr" data-v="${k}">${n} <small>${c}</small></button>`; }).join("")}</div>`;
+  let L=G.filter(g=>(gr==="all"||(gr==="cut"?g.cuts.length:g.gr===gr))&&q.every(w=>g.name.toLowerCase().replace(/ё/g,"е").includes(w)||[...g.places].join(" ").toLowerCase().includes(w)));
+  L.sort((a,b)=>(stLow(b)-stLow(a))||a.name.localeCompare(b.name,"ru"));
+  const low=G.filter(stLow);
+  if(low.length&&gr==="all"&&!q.length) h+=`<p class="st-warn">⚠️ Мало на складе: ${low.map(g=>`${esc(g.name)} — ${stNum(g.whole)} ${esc(g.unit)} (мин. ${stNum(g.min)})`).join("; ")}</p>`;
+  if(!G.length) return h+`<p class="note">На складе пока пусто. Нажмите «+ Приход» — выберите материал из базы и напишите, сколько и где лежит. Остатки ЛДСП — тоже через «+ Приход» → «Остаток», с размером.</p>`;
+  if(!L.length) return h+`<p class="muted">Ничего не нашлось.</p>`;
+  return h+`<ul class="shp-zl st-list">${L.map(g=>{ const sub=[[...g.places].join(", "),g.cuts.length?`остатки: ${g.cuts.slice(0,3).map(x=>stSize(x)+(x.qty>1?" ×"+x.qty:"")).join(", ")}${g.cuts.length>3?" …":""}`:""].filter(Boolean).join(" · ");
+    const right=g.gr==="sheet"?`${g.whole?stNum(g.whole)+" л.":""}${g.whole&&g.cuts.length?" + ":""}${g.cuts.length?g.cuts.reduce((a,x)=>a+x.qty,0)+" ост.":""}`:`${stNum(g.whole)} ${esc(g.unit)}`;
+    return `<li><button type="button" class="shp-zli st-li" data-act="st-open" data-n="${esc(g.name)}">${stSw(g.name)}<span>${esc(g.name)}<small class="muted">${esc(sub||"—")}</small></span><b class="${stLow(g)?"st-low":""}">${right}</b></button></li>`; }).join("")}</ul>`; }
+
+function viewStockItem(){ const n=S.stock.cur, g=stByName().find(x=>x.name===n);
+  let h=`<div class="head"><div><h1 style="font-size:20px">${esc(n||"")}</h1><p class="muted" style="margin:4px 0 0">${g?esc([...g.places].join(", ")||"место не указано"):""}</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="stock">← Склад</button></div></div>`;
+  if(!g) return h+`<p class="note">Этого материала на складе больше нет.</p>`;
+  const W=g.rows.filter(x=>x.kind!=="cut"), C=g.cuts.slice().sort((a,b)=>b.l*b.w-a.l*a.w), boss=stBoss();
+  const row=x=>`<li class="st-row"><span class="st-shape" style="${x.kind==="cut"?`--a:${Math.max(.18,Math.min(1,x.w/x.l))}`:"--a:.74"}" aria-hidden="true"></span><span><b>${x.kind==="cut"?esc(stSize(x)):x.kind==="sheet"?"Целые листы":esc(g.unit==="м"?"Метры":"Штуки")}</b><small class="muted">${esc([x.place,x.order?"из заказа "+x.order:"",shpTime(x.when),x.who].filter(Boolean).join(" · "))}${x.min?` · минимум ${stNum(x.min)}`:""}</small></span><b class="${x.min&&x.qty<x.min?"st-low":""}">${stNum(x.qty)} ${esc(x.kind==="cut"?"шт":x.unit)}</b>
+    <span class="st-acts"><button type="button" class="btn sm primary" data-act="st-out" data-id="${esc(x.id)}">Взял</button>${boss?`<button type="button" class="btn sm" data-act="st-edit" data-id="${esc(x.id)}" aria-label="Изменить">✎</button>`:""}</span></li>`;
+  if(W.length) h+=`<ul class="st-rows">${W.map(row).join("")}</ul>`;
+  if(g.gr==="sheet") h+=`<p class="shp-zcap">Остатки · ${C.reduce((a,x)=>a+x.qty,0)} шт · ≈ ${stNum(Math.round(g.area*10)/10)} м²</p>`+(C.length?`<ul class="st-rows">${C.map(row).join("")}</ul>`:`<p class="muted">Остатков нет.</p>`);
+  h+=`<div class="st-bot">${g.gr==="sheet"?`<button type="button" class="btn primary" data-act="st-in" data-n="${esc(n)}" data-k="cut">+ Остаток</button><button type="button" class="btn" data-act="st-in" data-n="${esc(n)}" data-k="sheet">+ Листы</button>`:`<button type="button" class="btn primary" data-act="st-in" data-n="${esc(n)}" data-k="item">+ Приход</button>`}</div>`;
+  const lg=(S.stock.log||[]).filter(x=>x.name===n).slice(0,15);
+  if(lg.length) h+=`<p class="shp-zcap">Движение</p><ul class="st-log">${lg.map(stLogLi).join("")}</ul>`;
+  return h; }
+function stLogLi(x){ const plus=/Приход|Остаток/.test(x.act), minus=/Взял|Списал/.test(x.act); return `<li><span><b>${esc(x.act)}</b> · ${esc(x.name)}${x.size?" · "+esc(x.size):""}<small class="muted">${esc([shpTime(x.when),x.who,x.order?"заказ "+x.order:"",x.text].filter(Boolean).join(" · "))}</small></span><b class="${plus?"okc":minus?"":""}">${plus?"+":minus?"−":""}${stNum(Math.abs(x.qty))} ${esc(x.unit)}</b></li>`; }
+function viewStockLog(){ const L=(S.stock&&S.stock.log)||[];
+  return `<div class="head"><div><h1>Журнал склада</h1><p class="muted" style="margin:4px 0 0">Кто что положил и взял — последние ${L.length}</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="stock">← Склад</button></div></div>`+(L.length?`<ul class="st-log">${L.map(stLogLi).join("")}</ul>`:`<p class="muted">Пока пусто.</p>`); }
+
+/* выбор материала из базы Базиса: разделы, поиск; уже лежащие на складе — сверху */
+function stPickModal(then){ if(typeof catLoad==="function") catLoad();
+  const m=document.createElement("div"); m.className="modal"; m.id="stPickM"; const st={sec:"ldsp"};
+  m.innerHTML=`<div class="modal-card sm-pick"><h2 style="margin:0 0 8px">Что пришло на склад</h2><input class="ca-q" type="search" placeholder="🔍 Цвет, название, артикул" aria-label="Поиск материала"><div class="cat-chips st-secs"></div><div class="sm-pl"></div>
+    <details class="sm-man"><summary>Нет в базе — вписать вручную</summary><div class="form" style="grid-template-columns:1fr;margin:8px 0 0"><label>Название<input name="n" maxlength="150"></label><label>Раздел<select name="s"><option value="ldsp">ЛДСП и листы</option><option value="edge">Кромка</option><option value="furn">Фурнитура и прочее</option></select></label><button class="btn primary" type="button" data-st="man">Дальше</button></div></details>
+    <button class="btn" type="button" data-act="qr-close" style="margin-top:10px">Закрыть</button></div>`;
+  document.body.appendChild(m); const list=m.querySelector(".sm-pl"), q=m.querySelector(".ca-q"), cs=m.querySelector(".st-secs");
+  const SECS=[["ldsp","ЛДСП"],["plit","МДФ, ДВПО"],["edge","Кромка"],["drw","Направляющие"],["hinge","Петли"],["lift","Подъёмники"],["furn","Ручки, крепёж"],["prof","Профили, цоколь"],["top","Столешницы"],["cons","Расходники"]];
+  const draw=()=>{ const D=S.cat&&S.cat.data; if(!D){ list.innerHTML=`<p class="muted">Загружаю базу…</p>`; setTimeout(draw,600); return; }
+    const w=String(q.value||"").toLowerCase().replace(/ё/g,"е").split(/\s+/).filter(Boolean);
+    cs.innerHTML=SECS.map(([k,n])=>`<button type="button" class="chip${st.sec===k&&!w.length?" on":""}" data-sec="${k}">${n}</button>`).join("");
+    let L=D.items.filter(it=>{ const c=catSecOf(it); return c!=="hid"&&(w.length?true:c===st.sec)&&w.every(x=>it.s.includes(x)); });
+    const have=new Set((S.stock.items||[]).map(x=>supPKey(x.name))); L=L.filter(it=>have.has(supPKey(it.n))).concat(L.filter(it=>!have.has(supPKey(it.n))));
+    if(!w.length&&typeof catFreq==="function"){ const fr=catFreq().map(x=>x.it).filter(it=>catSecOf(it)===st.sec&&!have.has(supPKey(it.n))); const hv=L.filter(it=>have.has(supPKey(it.n))); L=hv.concat(fr,L.filter(it=>!hv.includes(it)&&!fr.includes(it))); }
+    list.innerHTML=L.slice(0,80).map(it=>`<button type="button" class="sm-it" data-n="${esc(it.n)}">${catSw(it,"cat-sw")}<span><b>${esc(it.n)}</b><small class="muted">${have.has(supPKey(it.n))?"уже на складе · ":""}${esc((it.g||"").split("/").slice(-2).join(" · "))}</small></span></button>`).join("")||`<p class="muted">Ничего не нашлось. Напишите короче или впишите вручную ниже.</p>`; };
+  draw(); q.addEventListener("input",()=>{ clearTimeout(q._t); q._t=setTimeout(draw,200); });
+  m.addEventListener("click",e=>{ const c=e.target.closest("[data-sec]"); if(c){ st.sec=c.dataset.sec; q.value=""; return draw(); }
+    const it=e.target.closest(".sm-it"); if(it){ m.remove(); return then(it.dataset.n,stSecOfName(it.dataset.n)||st.sec); }
+    if(e.target.closest('[data-st="man"]')){ const n=m.querySelector('[name="n"]').value.trim(); if(!n) return toast("Впишите название"); m.remove(); return then(n,m.querySelector('[name="s"]').value); }
+    if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); }
+
+function stOrdOpts(){ const L=(S.shop&&S.shop.orders||[]).filter(o=>!(typeof shpClosed==="function"&&shpClosed(o))).sort((a,b)=>(b.created||0)-(a.created||0)).slice(0,60);
+  return `<datalist id="stOrdL">${L.map(o=>`<option value="${esc(o.num)}">${esc([o.client,o.kind].filter(Boolean).join(" — "))}</option>`).join("")}</datalist>`; }
+function stPlaceOpts(){ const s=new Set((S.stock.items||[]).map(x=>x.place).filter(Boolean)); return `<datalist id="stPlL">${[...s].map(p=>`<option value="${esc(p)}">`).join("")}</datalist>`; }
+
+/* приход: целые листы / остаток с размером / штуки, метры */
+function stInModal(name,sec,kind){ if(!name) return stPickModal((n,s)=>stInModal(n,s,""));
+  const gr=stSecGr(sec), g=stByName().find(x=>x.name===name), unit0=(g&&g.unit&&gr!=="sheet")?g.unit:stUnitOf(sec);
+  let k=kind||(gr==="sheet"?"sheet":"item"); const m=document.createElement("div"); m.className="modal"; m.id="stInM";
+  const draw=()=>{ m.innerHTML=`<div class="modal-card st-form"><h2 style="margin:0 0 2px">${k==="cut"?"+ Остаток":"+ Приход"}</h2><p class="st-mat">${stSw(name)}<span>${esc(name)}</span></p>
+    ${gr==="sheet"?`<div class="shp-seg st-kind" role="group" aria-label="Что кладём"><button type="button" data-k="sheet" aria-pressed="${k==="sheet"}">Целые листы</button><button type="button" data-k="cut" aria-pressed="${k==="cut"}">Остаток с размером</button></div>`:""}
+    <form class="form st-f" autocomplete="off" style="grid-template-columns:1fr 1fr">
+    ${k==="cut"?`<div style="grid-column:1/-1"><span class="st-lb">Длина × ширина, мм</span><div class="st-lw"><input name="l" inputmode="numeric" placeholder="1200" aria-label="Длина, мм" required><span>×</span><input name="w" inputmode="numeric" placeholder="600" aria-label="Ширина, мм" required></div>
+      <div class="cat-chips st-qk">${ST_QUICK.map(([a,b])=>`<button type="button" class="chip" data-l="${a}" data-w="${b}">${a==="1400"?"½ листа":a+" × "+(b||"…")}</button>`).join("")}</div><p class="st-hint muted">Мельче 600 × 300 не записываем — это в мусор. Полосы от 2000 мм — от 100 мм.</p></div>`:""}
+    <label>Сколько${k==="cut"?", шт":""}<input name="q" inputmode="decimal" value="1" required></label>
+    ${k==="cut"?`<input type="hidden" name="u" value="шт">`:`<label>Ед.<select name="u">${["л.","шт","м","компл.","уп."].map(u=>`<option${(k==="sheet"?"л.":unit0)===u?" selected":""}>${u}</option>`).join("")}</select></label>`}
+    <label style="${k==="cut"?"":"grid-column:1/-1"}">Где лежит<input name="p" list="stPlL" placeholder="стеллаж 2" value="${esc(g?[...g.places][0]||"":"")}"></label>
+    ${k==="cut"?`<label>Из заказа (необяз.)<input name="o" list="stOrdL" placeholder="№"></label>`:""}
+    ${k!=="cut"&&stBoss()?`<label style="grid-column:1/-1">Минимум — напомнить снабженцу, когда меньше<input name="mn" inputmode="decimal" placeholder="не следить" value="${g&&g.min?esc(String(g.min)):""}"></label>`:""}
+    <div style="grid-column:1/-1;display:flex;gap:8px;margin-top:4px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>${stOrdOpts()}${stPlaceOpts()}</div>`; };
+  draw(); document.body.appendChild(m);
+  m.addEventListener("click",e=>{ const b=e.target.closest("[data-k]"); if(b){ k=b.dataset.k; draw(); return; }
+    const c=e.target.closest("[data-l]"); if(c){ const f=m.querySelector("form").elements; f.l.value=c.dataset.l; f.w.value=c.dataset.w; (c.dataset.w?f.q:f.w).focus(); return; }
+    if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); });
+  m.addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target.elements, num=v=>+String(v||"").replace(/\s/g,"").replace(",",".")||0;
+    const body={action:"stockIn",name,sec:sec||"",kind:k,qty:num(f.q.value),unit:f.u.value,place:f.p.value.trim()};
+    if(k==="cut"){ body.l=Math.round(num(f.l.value)); body.w=Math.round(num(f.w.value)); if(!stCutOk(body.l,body.w)) return toast("Это мелочь — не записываем. Остаток: длинная сторона от 600 мм, короткая от 300."); body.order=f.o.value.trim(); }
+    if(f.mn) body.min=num(f.mn.value);
+    if(!(body.qty>0)) return toast("Сколько штук?");
+    const bt=e.target.querySelector('[type="submit"]'); bt.disabled=true; const j=await stPost(body); bt.disabled=false; if(!j) return;
+    m.remove(); toast(k==="cut"?"Остаток записан":"Положили на склад"); stLoad(true); }); }
+
+/* взял на заказ; от листа или остатка — что осталось, встанет на склад новым остатком */
+function stOutModal(id){ const x=(S.stock.items||[]).find(z=>z.id===id); if(!x) return toast("Уже взяли — обновите склад");
+  const sheet=stSecGr(x.sec)==="sheet"&&x.kind!=="item", m=document.createElement("div"); m.className="modal"; m.id="stOutM";
+  m.innerHTML=`<div class="modal-card st-form"><h2 style="margin:0 0 2px">Взял ${x.kind==="cut"?"остаток "+esc(stSize(x)):x.kind==="sheet"?"лист":""}</h2><p class="st-mat">${stSw(x.name)}<span>${esc(x.name)}<small class="muted">${esc(x.place||"")} · на складе ${stNum(x.qty)} ${esc(x.kind==="cut"?"шт":x.unit)}</small></span></p>
+    <form class="form" autocomplete="off" style="grid-template-columns:1fr 1fr"><label>На какой заказ<input name="o" list="stOrdL" placeholder="№ или пусто"></label><label>Сколько взял<input name="q" inputmode="decimal" value="1"></label>
+    ${sheet?`<div style="grid-column:1/-1"><span class="st-lb">Что осталось от куска (если взял 1)</span><div class="st-lw"><input name="rl" inputmode="numeric" placeholder="длина" aria-label="Осталось: длина"><span>×</span><input name="rw" inputmode="numeric" placeholder="ширина" aria-label="Осталось: ширина"></div><p class="st-hint muted">Пусто — ничего не осталось или мелочь в мусор.</p></div>`:""}
+    <p class="st-res note" style="grid-column:1/-1;margin:0" hidden></p>
+    <div style="grid-column:1/-1;display:flex;gap:8px"><button class="btn primary" type="submit">Взял</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>${stOrdOpts()}</div>`;
+  document.body.appendChild(m); const f=m.querySelector("form").elements, res=m.querySelector(".st-res"), num=v=>+String(v||"").replace(/\s/g,"").replace(",",".")||0;
+  const upd=()=>{ if(!sheet) return; const l=Math.round(num(f.rl.value)), w=Math.round(num(f.rw.value)), q=num(f.q.value); if(!(l&&w)){ res.hidden=true; return; } res.hidden=false;
+    res.textContent=stCutOk(l,w)?`Будет: ${x.kind==="cut"?stSize(x):"листов"} — ${stNum(x.qty-q)} шт, новый остаток ${l} × ${w} — 1 шт${x.place?" ("+x.place+")":""}`:`${l} × ${w} — мелочь, на склад не встанет`; };
+  m.addEventListener("input",upd);
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); });
+  m.addEventListener("submit",async e=>{ e.preventDefault(); const q=num(f.q.value); if(!(q>0)) return toast("Сколько взял?"); if(q>x.qty) return toast("На складе только "+stNum(x.qty));
+    const body={action:"stockOut",id,qty:q,order:f.o.value.trim()}; if(sheet&&q===1){ body.rl=Math.round(num(f.rl.value)); body.rw=Math.round(num(f.rw.value)); }
+    const bt=e.target.querySelector('[type="submit"]'); bt.disabled=true; const j=await stPost(body); bt.disabled=false; if(!j) return;
+    m.remove(); toast(j.rest?"Взял. Остаток записан на склад":"Списано со склада"); stLoad(true); }); }
+
+/* пересчёт (технолог, офис, снабженец): количество, место, минимум, списать */
+function stEditModal(id){ const x=(S.stock.items||[]).find(z=>z.id===id); if(!x) return; const m=document.createElement("div"); m.className="modal"; m.id="stEdM";
+  m.innerHTML=`<div class="modal-card st-form"><h2 style="margin:0 0 2px">Изменить</h2><p class="st-mat">${stSw(x.name)}<span>${esc(x.name)}${x.kind==="cut"?`<small class="muted">остаток ${esc(stSize(x))}</small>`:""}</span></p>
+    <form class="form" autocomplete="off" style="grid-template-columns:1fr 1fr"><label>Сколько на самом деле<input name="q" inputmode="decimal" value="${esc(String(x.qty))}"></label><label>Где лежит<input name="p" list="stPlL" value="${esc(x.place)}"></label>
+    ${x.kind!=="cut"?`<label style="grid-column:1/-1">Минимум<input name="mn" inputmode="decimal" placeholder="не следить" value="${x.min?esc(String(x.min)):""}"></label>`:""}
+    <div style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" type="submit">Сохранить</button><button class="btn danger" type="button" data-st="del">Списать всё (брак, мусор)</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>${stPlaceOpts()}</div>`;
+  document.body.appendChild(m); const num=v=>String(v||"").replace(/\s/g,"").replace(",",".");
+  m.addEventListener("click",async e=>{ if(e.target.closest('[data-st="del"]')){ if(!(await appConfirm("Списать «"+x.name+"»"+(x.kind==="cut"?" "+stSize(x):"")+" со склада совсем?","Списать",true))) return; const j=await stPost({action:"stockDel",id}); if(j){ m.remove(); stLoad(true); } return; }
+    if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); });
+  m.addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target.elements, b={action:"stockEdit",id,qty:num(f.q.value),place:f.p.value.trim()}; if(f.mn) b.min=num(f.mn.value)||0;
+    const j=await stPost(b); if(j){ m.remove(); toast("Сохранено"); stLoad(true); } }); }
+
+/* «Снабжение»: взять со склада вместо покупки — списываем со склада, позиция «Пришло» (со склада) */
+async function stSupTake(oid,key){ const it=supItems(oid).find(x=>x.key===key); if(!it) return; const hv=stockHave(it.name,it.unit); if(!hv||!(hv.qty>0)) return toast("На складе нет целых — посмотрите остатки во вкладке «Склад»");
+  const need=+it.qty||0, take=Math.min(need,hv.qty), d=typeof supDeal==="function"?supDeal(oid):null, ord=d?String(d.num):oid;
+  if(!(await appConfirm(`Взять со склада «${it.name}»: ${stNum(take)} ${it.unit}${take<need?` (нужно ${stNum(need)}, остальное докупить)`:""}?`,"Взять"))) return;
+  let left=take; for(const r of hv.rows){ if(left<=0) break; const q=Math.min(left,r.qty); const j=await stPost({action:"stockOut",id:r.id,qty:q,order:ord,text:"для снабжения"}); if(!j) return; left-=q; }
+  const rs=supRecs(oid,key); if(take>=need){ rs.forEach(r=>{ r.status=2; r.op=r.op||"склад"; }); await supSave(rs); } else toast("Взято "+stNum(take)+" — остальное "+stNum(need-take)+" докупить");
+  stLoad(true); }
+
+/* «Снабжение»: на складе есть — пометка и кнопка «Взять со склада» */
+if(typeof supRow==="function"){ const _stRow=supRow; supRow=function(oid,it){ const h=_stRow(oid,it), hv=stockHave(it.name,it.unit); if(!hv||it.del) return h;
+  const tag=`<span class="sup-tag st">на складе ${hv.qty?stNum(hv.qty)+" "+esc(hv.unit||""):""}${hv.qty&&hv.cuts?" + ":""}${hv.cuts?hv.cuts+" ост.":""}</span>${it.status===0&&hv.qty>0?`<button type="button" class="btn sm sup-stk" data-act="st-sup" data-o="${esc(oid)}" data-k="${esc(it.key)}">Взять со склада</button>`:""}`;
+  return h.replace('<span class="sup-qq">',tag+'<span class="sup-qq">'); }; }
+function stTry(){ S.stock=S.stock||{}; if(!S.stock.items&&!S.stock.busy&&!S.stock.tried){ S.stock.tried=true; stLoad(); } }
+if(typeof buyCard==="function"){ const _stBC=buyCard; buyCard=function(oid,it,ro){ stTry(); const h=_stBC(oid,it,ro), hv=!it.del&&stockHave(it.name,it.unit); if(!hv) return h;
+  const line=`<div class="buy-stk">🗄 на складе ${hv.qty?stNum(hv.qty)+" "+esc(hv.unit||""):""}${hv.qty&&hv.cuts?" + ":""}${hv.cuts?hv.cuts+" ост.":""}${it.status===0&&hv.qty>0&&!ro?` <button type="button" class="btn sm" data-act="st-sup" data-o="${esc(oid)}" data-k="${esc(it.key)}">Взять со склада</button>`:""}</div>`;
+  return h.includes('<div class="buy-st"')?h.replace('<div class="buy-st"',line+'<div class="buy-st"'):h; }; }
+if(typeof supSRow==="function"){ const _stSR=supSRow; supSRow=function(g){ stTry(); const h=_stSR(g), hv=stockHave(g.name,g.unit); if(!hv) return h;
+  return h.replace('<span class="sup-ords muted">',`<span class="sup-tag st">на складе ${hv.qty?stNum(hv.qty)+" "+esc(hv.unit||""):""}${hv.qty&&hv.cuts?" + ":""}${hv.cuts?hv.cuts+" ост.":""}${hv.qty>=g.need&&g.need>0?" — не покупать":""}</span> <span class="sup-ords muted">`); }; }
+if(typeof supBuy==="function"){ const _stSB=supBuy; supBuy=function(ids){ stTry(); const h=_stSB(ids); if((S.sup.btab||0)!==0||!S.stock||!S.stock.items) return h; const un=t=>String(t).replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&amp;/g,"&");
+  return h.replace(/<span class="sup-bn"><b>([^<]*)<\/b><small>([^<]*)<\/small>/g,(all,n)=>{ const hv=stockHave(un(n)); return hv?all+`<small class="st-bt">🗄 на складе ${hv.qty?stNum(hv.qty)+" "+esc(hv.unit||""):""}${hv.qty&&hv.cuts?" + ":""}${hv.cuts?hv.cuts+" ост.":""} — возьмите со склада</small>`:all; }); }; }
+if(typeof viewSupply==="function"){ const _stVS=viewSupply; viewSupply=function(){ if(!S.stock||(!S.stock.items&&!S.stock.busy&&!S.stock.tried)){ S.stock=S.stock||{}; S.stock.tried=true; stLoad(); } return _stVS(); }; }
+/* ---- подключение: вкладка «Склад» в нижнем меню Вертакса ---- */
+SHP_I.box='<path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>';
+const _stNav=shpNavHtml;
+shpNavHtml=function(){ let h=_stNav(); if(!stSee()) return h; const on=/^stock/.test(S.shop.mode); if(on) h=h.replace(/ aria-current="page"/g,"");
+  return h.replace('<button type="button" data-act="shp-tab" data-v="more"',`<button type="button" data-act="shp-tab" data-v="stock"${on?' aria-current="page"':""}>${shpIco("box")}<span class="lb">Склад</span></button><button type="button" data-act="shp-tab" data-v="more"`); };
+const _stTab=shpTab; shpTab=function(){ return /^stock/.test(S.shop.mode)?"stock":_stTab(); };
+const _stView=viewShop;
+viewShop=function(){ if(/^stock/.test(S.shop.mode)&&shpPin()&&S.shop.loaded&&stSee()){ S.stock=S.stock||{}; return shpNavHtml()+(S.shop.mode==="stockItem"?viewStockItem():S.shop.mode==="stockLog"?viewStockLog():viewStock()); } return _stView(); };
+document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act^="st-"]'); if(!t) return; const a=t.dataset.act; ev.preventDefault(); ev.stopPropagation(); S.stock=S.stock||{};
+  if(a==="st-gr"){ S.stock.gr=t.dataset.v; return shpRenderKeep(); }
+  if(a==="st-re") return stLoad(true);
+  if(a==="st-log"){ S.shop.mode="stockLog"; window.scrollTo(0,0); return shpRenderKeep(); }
+  if(a==="st-open"){ S.stock.cur=t.dataset.n; S.shop.mode="stockItem"; window.scrollTo(0,0); return shpRenderKeep(); }
+  if(a==="st-in"){ const n=t.dataset.n; if(!n) return stInModal(); const g=stByName().find(x=>x.name===n); return stInModal(n,g?g.sec:stSecOfName(n),t.dataset.k||""); }
+  if(a==="st-out") return stOutModal(t.dataset.id);
+  if(a==="st-edit") return stEditModal(t.dataset.id);
+  if(a==="st-sup") return stSupTake(t.dataset.o,t.dataset.k); },true);
+document.addEventListener("input",ev=>{ const el=ev.target; if(!(el&&el.classList&&el.classList.contains("st-q"))) return; S.stock.q=el.value; clearTimeout(el._t); el._t=setTimeout(()=>{ const pos=el.selectionStart; shpRenderKeep(); const n=document.querySelector(".st-q"); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(_){} } },250); });
+(function(){ const st=document.createElement("style"); st.textContent=`
+.st-li .cat-sw{flex:none}.st-li>span{flex:1;min-width:0}.st-low{color:var(--warn,#ff9f0a)}
+.st-warn{background:rgba(255,159,10,.12);border:1px solid rgba(255,159,10,.4);border-radius:12px;padding:10px 12px;font-size:13px;margin:0 0 10px}
+.st-rows,.st-log{list-style:none;margin:0 0 12px;padding:0;border-radius:14px;overflow:hidden;background:var(--card,#1c1c1e)}
+.st-row{display:grid;grid-template-columns:40px 1fr auto;gap:4px 10px;align-items:center;padding:10px 12px;border-top:1px solid var(--line,#38383a)}.st-row:first-child,.st-log li:first-child{border-top:0}
+.st-row>span small,.st-log small{display:block;font-size:11.5px}.st-acts{grid-column:2/-1;display:flex;gap:6px;justify-content:flex-end}
+.st-shape{width:36px;height:calc(36px * var(--a));background:#e9e5dc;border-radius:3px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+.st-log li{display:flex;justify-content:space-between;gap:10px;padding:9px 12px;border-top:1px solid var(--line,#38383a);font-size:13px}
+.st-bot{display:flex;gap:8px;margin:4px 0 16px}.st-bot .btn{flex:1}
+.st-mat{display:flex;gap:10px;align-items:center;margin:4px 0 10px}.st-mat small{display:block}
+.st-lb{display:block;font-size:12.5px;color:var(--muted,#8e8e93);margin-bottom:4px}.st-lw{display:flex;gap:8px;align-items:center}.st-lw input{flex:1;min-width:0;font-size:20px;font-weight:600}
+.st-qk{margin:8px 0 2px}.st-hint{font-size:11.5px;margin:4px 0 0}.st-kind{margin:0 0 10px}
+.st-form .form>*{min-width:0}.st-form .form input,.st-form .form select{width:100%;box-sizing:border-box;min-width:0}.st-form{overflow-x:hidden}
+.st-gr,.st-qk,.st-secs{display:flex;flex-wrap:wrap;gap:6px}.st-gr .chip,.st-qk .chip,.st-secs .chip{font:500 13px/1.2 inherit;font-family:inherit;padding:7px 12px;border-radius:16px;letter-spacing:0;text-transform:none}
+.st-gr{margin:8px 0 10px}.buy-stk{font-size:13px;color:#30d158;margin:4px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.st-bt{display:block;color:#30d158;font-weight:600}.sup-tag.st{background:rgba(48,209,88,.15);color:#30d158}.sup-stk{margin-left:6px}`; document.head.appendChild(st); })();
+
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
   const t=ev.target.closest("[data-act],[data-view]"); if(!t) return;
