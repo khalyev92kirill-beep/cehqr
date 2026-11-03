@@ -326,6 +326,12 @@ svg.i{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-widt
   .mbody{overflow:visible}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:480px){#stOpenFile span{display:none}.st-head #stBack{padding-left:6px;padding-right:8px}}
+/* быстродействие на телефоне: без задержки двойного касания, нажатие видно сразу */
+/* :where — нулевая важность: свои touch-action:none (перетаскивание) не перебиваем */
+:where(button,a[href],label,summary,select,[role=button],.b,.pc,.chip,.tab){touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+:is(.b,.pc,.menu button,.tab,.chip):active:not(:disabled){filter:brightness(.92);transition:none}
+.b:active:not(:disabled){transform:scale(.96)}
 </style>
 </head>
 <body>
@@ -1912,7 +1918,7 @@ DZ.redo = () => { if (!DZ.hist.r.length) return false; DZ.hist.u.push(DZ.snapsho
 /* ---------- настройки ---------- */
 DZ.settings = Object.assign({ theme: '', quality: '', dims: false, layout: '' }, LS.get('dz-settings', {}) || {});
 DZ.saveSettings = () => LS.set('dz-settings', DZ.settings);
-DZ.weak = (() => { const m = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && innerWidth < 900); return m || (navigator.hardwareConcurrency || 8) <= 4; })();
+DZ.weak = (() => { const ua = navigator.userAgent, ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); if (ios) return false; const mob = /Android|Mobile/i.test(ua) || (navigator.maxTouchPoints > 1 && innerWidth < 900), c = navigator.hardwareConcurrency || 8, m = navigator.deviceMemory || 8; return (mob && (c <= 6 || m <= 4)) || c <= 4; })();   // айфоны — полное качество; облегчаем только слабые Андроиды
 DZ.quality = () => DZ.settings.quality || ((DZ.weak || DZ.autoFast) ? 'fast' : 'photo');
 
 </script>
@@ -2092,11 +2098,20 @@ window.dzPrice = function (it) { try { return DZ.price.item(it).total; } catch (
     bindControls(R.domElement);
     new ResizeObserver(() => V.resize()).observe(container);
     V.resize(); V.ok = true;
-    const loop = () => { requestAnimationFrame(loop); if (needs && el.offsetParent !== null) { needs = false; frame(); } };
+    // кадр — только когда что-то изменилось; в покое (2 с без изменений) цикл засыпает и проверяет флаг 4 раза в секунду,
+    // касание/колесо/клавиша будят его сразу — телефон не греется и батарея не садится, пока 3D просто открыто
+    let idleT = 0, last = performance.now(), sleeping = 0;
+    const loop = () => {
+      sleeping = 0; if (needs && el.offsetParent !== null) { needs = false; last = performance.now(); frame(); }
+      if (needs || performance.now() - last < 2000) requestAnimationFrame(loop); else sleeping = setTimeout(loop, document.hidden ? 1000 : 250);
+    };
+    const wake = () => { last = performance.now(); if (sleeping) { clearTimeout(sleeping); sleeping = 0; requestAnimationFrame(loop); } };
+    ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'].forEach(t => document.addEventListener(t, wake, { capture: true, passive: true }));
+    V.wake = wake;
     loop();
     return true;
   };
-  V.dirty = () => { needs = true; };
+  V.dirty = () => { needs = true; V.wake && V.wake(); };
   V.resize = () => {
     if (!R) return; const w = el.clientWidth || 1, h = el.clientHeight || 1;
     R.setSize(w, h, false); R.domElement.style.width = w + 'px'; R.domElement.style.height = h + 'px';
@@ -2106,7 +2121,8 @@ window.dzPrice = function (it) { try { return DZ.price.item(it).total; } catch (
   V.setTheme = setTheme;
   function applyQuality() {
     const q = DZ.quality(), dpr = window.devicePixelRatio || 1;
-    R.setPixelRatio(q === 'fast' ? Math.min(dpr, 1.25) : Math.min(dpr, 2));
+    const vw = !/iPhone|iPad|iPod/.test(navigator.userAgent) && ((navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 3);   // айфоны не считаем слабыми   // совсем слабый телефон — чёткость 1
+    R.setPixelRatio(q === 'fast' ? Math.min(dpr, DZ.weak && vw ? 1 : 1.25) : Math.min(dpr, 2));
     const s = q === 'fast' ? 1024 : 2048;
     if (lights.sun.shadow.mapSize.x !== s) { lights.sun.shadow.mapSize.set(s, s); if (lights.sun.shadow.map) { lights.sun.shadow.map.dispose(); lights.sun.shadow.map = null; } }
     V.resize();
@@ -2973,7 +2989,7 @@ window.dzPrice = function (it) { try { return DZ.price.item(it).total; } catch (
     const ix = DZ.store.index();
     const tp = DZ.TEMPLATES.find(t => t.id === tplSel) || DZ.TEMPLATES[0];
     $('#start').innerHTML = `<div class="st-wrap">
-      <div class="st-head"><div class="brand"><span class="mark"><svg viewBox="0 0 24 24"><path d="M4 18V6h7v5h9v7z"/><path d="M4 21h16" stroke-dasharray="2 2"/></svg></span>Эскиз</div>
+      <div class="st-head"><button class="b ghost" id="stBack" aria-label="Выйти из Эскиза" style="margin-right:4px">${ic('back')}<span>Выйти</span></button><div class="brand"><span class="mark"><svg viewBox="0 0 24 24"><path d="M4 18V6h7v5h9v7z"/><path d="M4 21h16" stroke-dasharray="2 2"/></svg></span>Эскиз</div>
         <div class="row"><button class="b ghost" id="stOpenFile">${ic('open')}<span>Открыть файл</span></button><button class="b ghost ico" id="stTheme" aria-label="Сменить тему">${ic('moon')}</button></div></div>
       <div class="st-hero">
         <div>
@@ -3005,6 +3021,11 @@ window.dzPrice = function (it) { try { return DZ.price.item(it).total; } catch (
       </div></div>`;
     const S = $('#start');
     S.onclick = e => {
+      if (e.target.closest('#stBack')) { // «Выйти»: назад в приложение цеха, откуда пришли
+        let ref = ''; try { ref = document.referrer || ''; } catch (_) {}
+        const same = ref && new URL(ref).origin === location.origin;
+        if (same && history.length > 1) { history.back(); return; }
+        location.href = /\/cehqr\/?(#|$)/.test(ref) ? '../' : '../vertaks/'; return; }
       const t = e.target.closest('[data-tpl],[data-open],[data-del],#nGo,#stTheme,#stOpenFile,#nZamer'); if (!t) return;
       if (t.id === 'nZamer') { zamerModal(); return; }
       if (t.dataset.tpl) { tplSel = t.dataset.tpl; const tp = DZ.TEMPLATES.find(x => x.id === tplSel); $$('.tpl', S).forEach(b => b.classList.toggle('on', b === t)); $('#nW').value = tp.W; $('#nD').value = tp.D; }
@@ -3675,19 +3696,19 @@ window.dzPrice = function (it) { try { return DZ.price.item(it).total; } catch (
 
 </script>
 <script>/* prod.js */
-/* prod.js — в работе */
+/* prod.js — пока пусто */
 
 </script>
 <script>/* texlib.js */
-/* texlib.js — в работе */
+/* texlib.js — пока пусто */
 
 </script>
 <script>/* render.js */
-/* render.js — в работе */
+/* render.js — пока пусто */
 
 </script>
 <script>/* desktop.js */
-/* desktop.js — в работе */
+/* desktop.js — пока пусто */
 
 </script>
 <script>/* client.js */

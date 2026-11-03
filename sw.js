@@ -1,5 +1,5 @@
-// Технолог 3D — работа как приложение и без интернета (для уже открытых заказов). Сборка: b529554dfc
-const BUILD="b529554dfc", SHELL_C="cehqr-shell", DATA="cehqr-data", LIBC="cehqr-libs";   // имена постоянные: при обновлении сайта сохранённое не стирается
+// Технолог 3D — работа как приложение и без интернета (для уже открытых заказов). Сборка: 280e606f44
+const BUILD="280e606f44", SHELL_C="cehqr-shell", DATA="cehqr-data", LIBC="cehqr-libs";   // имена постоянные: при обновлении сайта сохранённое не стирается
 const SHELL=["./","index.html","manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"];
 const LIBS=/cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com/;
 // установка: страницы берём прямо с сервера (cache:"reload"), а не из кэша браузера — иначе можно сохранить старую
@@ -34,7 +34,12 @@ self.addEventListener("fetch",e=>{
         /\/vertaks\//.test(u.pathname)?caches.match("vertaks/").then(v=>v||caches.match("index.html")):caches.match("./").then(v=>v||caches.match("index.html"))))));
     return;
   }
-  // заказы, значки и остальное — сначала свежие из интернета, без интернета — последние сохранённые
+  // картинки (значки, заставки, образцы декоров и текстур) — сразу из сохранённых, свежие докачиваем в фоне (повторное открытие без ожидания сети)
+  if(/\.(png|jpe?g|webp|gif|svg|ico)$/i.test(u.pathname)){ const st=/\/(orders|textures)\//.test(u.pathname)?DATA:SHELL_C, key=r.url.split("#")[0];
+    e.respondWith(caches.open(st).then(c=>c.match(key).then(m=>{ const net=fetch(r).then(res=>{ if(res.ok) c.put(key,res.clone()).catch(()=>{}); return res; });
+      if(m){ e.waitUntil(net.catch(()=>{})); return m; } return net.catch(()=>caches.match(key,{ignoreSearch:true}).then(x=>x||Response.error())); })));
+    return; }
+  // заказы, данные и остальное — сначала свежие из интернета, без интернета — последние сохранённые
   const store=/\/(orders|textures)\//.test(u.pathname)?DATA:SHELL_C;
   e.respondWith(fetch(r).then(res=>{ if(res.ok){ const cp=res.clone(); caches.open(store).then(c=>c.put(r.url.split("#")[0],cp)); } return res; })
     .catch(()=>caches.match(r.url.split("#")[0],{ignoreSearch:true}).then(m=>m||Response.error())));

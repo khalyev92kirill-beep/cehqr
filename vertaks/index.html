@@ -1170,13 +1170,40 @@ function partSheet(code){
   document.body.appendChild(d); requestAnimationFrame(()=>{ d.classList.add("on"); mount3D(p,23); });
 }
 function closePartSheet(){ const d=$("#partSheet"); if(d){ disposeThree(); d.remove(); } }
-function disposeThree(){ if(three){ cancelAnimationFrame(three.raf); three.ro&&three.ro.disconnect(); three.renderer.dispose(); three=null; } }
+function disposeThree(){ if(three){ cancelAnimationFrame(three.raf); three.loop&&three.loop.stop(); three.ro&&three.ro.disconnect(); three.renderer.dispose(); three=null; } }
+/* быстродействие 3D на слабых телефонах: чёткость не выше 1,5 (слабый телефон — 1), кадр рисуем только когда что-то изменилось */
+function perfIOS(){ try{ return /iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1); }catch(_){ return false; } }
+// слабый — только старый Андроид (мало ядер/памяти) или «экономия трафика»; айфоны всегда в полном качестве
+function perfWeak(){ try{ const c=navigator.connection; if(c&&c.saveData) return true; if(perfIOS()) return false; return (navigator.hardwareConcurrency||8)<=4||(navigator.deviceMemory||8)<=3; }catch(_){ return false; } }
+function perfPR(){ const d=window.devicePixelRatio||1; let coarse=false; try{ coarse=matchMedia("(pointer:coarse)").matches; }catch(_){} return Math.min(d, perfWeak()?1:(coarse&&!perfIOS())?1.5:2); }
+const PERF_LOOPS=new Set();
+function perfPokeAll(ms){ PERF_LOOPS.forEach(l=>l.poke(ms)); }
+// o.draw() — нарисовать кадр; o.sig() — «отпечаток» сцены (камера, видимость, положение); o.dirty() — флаг «надо перерисовать»
+// пока есть касания/анимация — рисуем каждый кадр; в покое — раз в 250 мс сверяем отпечаток и не грузим процессор и видеокарту
+function perfLoop(o){
+  let raf=0, tm=0, last=null, hot=performance.now()+2500, dead=false;
+  const L={ poke(ms){ if(dead) return; hot=Math.max(hot,performance.now()+(ms||700)); if(!raf){ clearTimeout(tm); tm=0; raf=requestAnimationFrame(frame); } },
+    stop(){ dead=true; cancelAnimationFrame(raf); clearTimeout(tm); raf=tm=0; PERF_LOOPS.delete(L); } };
+  function frame(){ raf=0; if(dead) return; const now=performance.now(), d=o.dirty&&o.dirty(); o.draw(); if(d) hot=Math.max(hot,now+400);
+    if(now<hot) raf=requestAnimationFrame(frame); else { try{ last=o.sig(); }catch(_){ last=null; } tm=setTimeout(idle,250); } }
+  function idle(){ tm=0; if(dead) return; let s=null; try{ s=o.sig(); }catch(_){} if(s!==last||(o.dirty&&o.dirty())||s===null) L.poke(500); else tm=setTimeout(idle,document.hidden?1000:250); }
+  PERF_LOOPS.add(L); perfHook(); raf=requestAnimationFrame(frame); return L;
+}
+function perfSig(cam,root){ const p=cam.position, q=cam.quaternion, m=cam.projectionMatrix.elements; let s=p.x*7+p.y*13+p.z*17+q.x*19+q.y*23+q.z*29+q.w*31+m[0]+m[5]*3+m[10]*5+m[14]*7+(cam.zoom||1), i=0;
+  if(root) root.traverse(x=>{ i++; s+=(x.visible?1:-1)*i*0.37+(x.position.x*3+x.position.y*5+x.position.z*7)*(i%13+1)+x.scale.x+x.rotation.x+x.rotation.y*2+x.rotation.z*3+x.renderOrder;
+    const ms=x.material; if(ms) (Array.isArray(ms)?ms:[ms]).forEach(mt=>{ s+=mt.id*0.011+(mt.opacity||0)*i+(mt.visible?1:0)+(mt.map?mt.map.version*0.3:0)+(mt.color?mt.color.r+mt.color.g*2+mt.color.b*3:0); }); });
+  return s+"|"+i; }
+let perfHooked=false;
+function perfHook(){ if(perfHooked) return; perfHooked=true; const P=e=>perfPokeAll(e&&e.type==="pointermove"?400:900);
+  ["pointerdown","pointermove","pointerup","wheel","keydown","click","input","change","touchstart","touchmove"].forEach(t=>document.addEventListener(t,P,{capture:true,passive:true}));
+  window.addEventListener("resize",P,{passive:true}); document.addEventListener("visibilitychange",()=>{ if(!document.hidden) perfPokeAll(600); });
+  try{ const M=THREE.DefaultLoadingManager, a=M.onProgress, b=M.onLoad; M.onProgress=function(){ perfPokeAll(800); return a&&a.apply(this,arguments); }; M.onLoad=function(){ perfPokeAll(800); return b&&b.apply(this,arguments); }; }catch(_){} }
 function mount3D(p, z0){
   disposeThree();
   const canvas=$("#three"); if(!canvas||typeof THREE==="undefined") return;
   const L=p.L||1, W=p.W||1, T=Math.max(p.T||16,1), k=10/Math.max(L,W);
-  const renderer=new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
-  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  const renderer=new THREE.WebGLRenderer({canvas, antialias:!perfWeak(), alpha:true});
+  renderer.setPixelRatio(perfPR());
   const scene=new THREE.Scene();
   const cam=new THREE.PerspectiveCamera(35,4/3,0.1,100); cam.position.set(0,0,z0||16);
   scene.add(new THREE.AmbientLight(0xffffff,0.62));
@@ -1215,7 +1242,8 @@ function mount3D(p, z0){
   function size(){ const w=canvas.clientWidth, h=canvas.clientHeight; if(!w||!h) return; renderer.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix(); }
   const ro=new ResizeObserver(size); ro.observe(canvas); size();
   three={renderer,ro,raf:0};
-  (function loop(){ renderer.render(scene,cam); three.raf=requestAnimationFrame(loop); })();
+  const me=three; three.loop=perfLoop({draw:()=>renderer.render(scene,cam), sig:()=>perfSig(cam,grp)+"|"+canvas.width+"x"+canvas.height});
+  ro.disconnect(); const ro2=new ResizeObserver(()=>{ size(); me.loop&&me.loop.poke(300); }); ro2.observe(canvas); three.ro=ro2;
 }
 
 /* ---------- 3D всего изделия ---------- */
@@ -1248,7 +1276,7 @@ function texUV(geo, dims, g){
     for(let k=0;k<4;k++){ const i=f*4+k, u=uv.getX(i), v=uv.getY(i); if(rot) uv.setXY(i,v*lv,u*lu); else uv.setXY(i,u*lu,v*lv); } }
   uv.needsUpdate=true;
 }
-function disposeAsm(){ if(asm){ cancelAnimationFrame(asm.raf); asm.ro&&asm.ro.disconnect(); asm.renderer.dispose(); asm=null; } }
+function disposeAsm(){ if(asm){ cancelAnimationFrame(asm.raf); asm.loop&&asm.loop.stop(); asm.ro&&asm.ro.disconnect(); asm.renderer.dispose(); asm=null; } }
 // похожая фурнитура (когда нет точной модели из Базиса): форма по названию внутри габарита b (мм), центр в 0
 const FURN_MAT={};
 function furnMatOf(k){ if(FURN_MAT[k]) return FURN_MAT[k];
@@ -1288,8 +1316,8 @@ function mountAssembly(canvas, parts, opt){
   if(!canvas||typeof THREE==="undefined") return;
   const withBox=parts.filter(p=>p.box);
   if(!withBox.length) return;
-  const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
-  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:!perfWeak(),alpha:true});
+  renderer.setPixelRatio(perfPR());
   const scene=new THREE.Scene(), K=0.001;
   scene.add(new THREE.HemisphereLight(0xffffff,0xb3ab9c,0.78));
   const sun=new THREE.DirectionalLight(0xffffff,0.5);
@@ -1812,7 +1840,7 @@ function mountAssembly(canvas, parts, opt){
     hoverPt=sp?sp.p:null; canvas.classList.toggle("hovering",!!sp);
     const np=st.mA&&sp?{a:st.mA,b:toMM(sp.p)}:null; if(np||preview){ preview=np; rebuildMeas(); } else dirty=true; }); }
   rebuildMeas();
-  function size_(){ const w=canvas.clientWidth, h=canvas.clientHeight; if(!w||!h) return; renderer.setSize(w,h,false); camP.aspect=w/h; camP.updateProjectionMatrix(); place2(); }
+  function size_(){ const w=canvas.clientWidth, h=canvas.clientHeight; if(!w||!h) return; renderer.setSize(w,h,false); camP.aspect=w/h; camP.updateProjectionMatrix(); place2(); if(asm&&asm.loop) asm.loop.poke(300); }
   const ro=new ResizeObserver(size_); ro.observe(canvas); size_();
   const VIEWS={front:[0,0],left:[-Math.PI/2,0],top:[0,Math.PI/2-0.0001],"3d":[-0.55,0.28]};
   // кубик видов: поворачивается вместе с моделью
@@ -1822,16 +1850,17 @@ function mountAssembly(canvas, parts, opt){
   function orient(yaw,pitch){ cancelAnimationFrame(orf); st.ortho=false; st.view="3d"; syncViewBtns();
     let dy=yaw-st.yaw; dy=Math.atan2(Math.sin(dy),Math.cos(dy)); const y0=st.yaw, p0=st.pitch, t0=st.target.clone(), d0=st.dist, d1=fitD(), s0=performance.now();
     const step=()=>{ const k=Math.min(1,(performance.now()-s0)/350), e=1-Math.pow(1-k,3); st.yaw=y0+dy*e; st.pitch=p0+(pitch-p0)*e; st.target.copy(t0).multiplyScalar(1-e); st.dist=d0+(d1-d0)*e; place2(); if(k<1) orf=requestAnimationFrame(step); }; orf=requestAnimationFrame(step); }
-  asm={renderer,ro,raf:0,st, measPanel, rebuildMeas, placeTag, orient,
+  asm={renderer,ro,raf:0,st, measPanel, rebuildMeas, placeTag, orient, parts, fst:S.current&&S.current.fasteners, fm:opt.furnMesh,
     snap(){ renderer.render(scene,cam); return renderer.domElement.toDataURL("image/png"); },
     center(){ st.yaw=-0.55; st.pitch=0.28; st.dist=fitD(); st.target.set(0,0,0); st.ortho=false; st.view="3d"; syncViewBtns(); place2(); },
     view(v){ const a=VIEWS[v]||VIEWS["3d"]; st.view=v; st.yaw=a[0]; st.pitch=a[1]; st.ortho=v!=="3d"; st.target.set(0,0,0); st.dist=size*(v==="3d"?1.75:1.25); syncViewBtns(); place2(); }};
   syncViewBtns();
-  asm.relabel=()=>{ dirty=true; };
+  asm.relabel=()=>{ dirty=true; if(asm&&asm.loop) asm.loop.poke(300); };
   // навести камеру на коробку (мм): для сборки по шагам — модуль крупно по центру
   asm.focusBox=(lo,hi)=>{ st.target.set(((lo[0]+hi[0])/2-C[0])*K,((lo[1]+hi[1])/2-C[1])*K,((lo[2]+hi[2])/2-C[2])*K);
     const ext=Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2])*K; st.dist=Math.max(size*0.15,ext*2.3); place2(); };
-  (function loop(){ renderer.render(scene,cam); if(dirty){ updCube(); updateLabels(); } asm.raf=requestAnimationFrame(loop); })();
+  { const ap=st.apply; st.apply=function(){ const r=ap.apply(this,arguments); if(asm&&asm.st===st&&asm.loop) asm.loop.poke(300); return r; }; }   // смена вида из кода — кадр сразу
+  asm.loop=perfLoop({dirty:()=>dirty, draw:()=>{ renderer.render(scene,cam); if(dirty){ updCube(); updateLabels(); } }, sig:()=>perfSig(cam,scene)+"|"+canvas.width+"x"+canvas.height});
 }
 // масштаб и сдвиг чертежа: колесо мыши к курсору, перетаскивание, щипок двумя пальцами, кнопки
 function svgZoom(box){
@@ -3270,6 +3299,14 @@ function stageBar(oid, count){
   const bar=cnt.map((n,i)=> n? `<span style="width:${n/count*100}%;background:${STAGES[i].color}" title="${STAGES[i].name}: ${n}"></span>`:"").join("");
   return {bar:`<div class="bar" role="img" aria-label="Готовность по этапам">${bar}</div>`, cnt, done:cnt[STAGES.length-1]};
 }
+/* перерисовка страницы того же заказа (этапы, замечания, каталог, обновление раз в 30 с) не пересобирает 3D заново: старое окно 3D переносим в новую страницу */
+function asmKey(){ const o=S.current||{}; return [o.orderId,clientMode(),S.view,Object.keys(S.textures||{}).length,Object.keys(S.matColors||{}).length].join("|"); }
+function asmKeepable(){ try{ if(!asm||S.view!=="order"||!asm.key||asm.key!==asmKey()||asm.parts!==S.current.parts||asm.fst!==S.current.fasteners||asm.fm!==S.current.furnMesh||!S.asmOrder||asm.st!==S.asmOrder) return null;
+  const c=document.getElementById("asm"); if(!c||!c.isConnected||!c.parentElement) return null; const box=c.parentElement; return {canvas:c,labels:box.querySelector(".asm-labels"),cube:box.querySelector(".dq-cube")}; }catch(_){ return null; } }
+function asmReuse(k){ const nc=document.getElementById("asm"); if(!nc||!asm||nc===k.canvas){ disposeAsm(); return false; } const box=nc.parentElement, nl=box.querySelector(".asm-labels"), nb=box.querySelector(".dq-cube");
+  if(!!nl!==!!k.labels||!!nb!==!!k.cube){ disposeAsm(); return false; }
+  nc.replaceWith(k.canvas); if(nl) nl.replaceWith(k.labels); if(nb) nb.replaceWith(k.cube);
+  try{ asm.st.apply&&asm.st.apply(); if(asm.st.measure&&asm.measPanel) asm.measPanel(); }catch(_){} asm.loop&&asm.loop.poke(600); return true; }
 function render(){
   // главный экран без лишнего: поиск по позиции — только в заказе и детали; вкладки — только сотрудникам
   document.body.dataset.page=S.view; document.body.classList.toggle("client",S.view==="order"&&clientMode()); document.body.classList.toggle("anon",!!(S.site&&!S.canEdit&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())&&!(typeof siteIsSupply==="function"&&siteIsSupply())&&!(typeof siteIsDesigners==="function"&&siteIsDesigners())));
@@ -3279,7 +3316,7 @@ function render(){
   $("#navImport").hidden=true;
   $("#role").textContent = siteRoleText();
   const v=$("#view");
-  disposeAsm();
+  const keep=asmKeepable(); if(!keep) disposeAsm();
   if(S.view==="orders"){ v.innerHTML=viewOrders(); setTimeout(thumbPump,50); }
   else if(S.view==="order"){
     if(S.dqOid!==S.current.orderId&&!S.current.loading&&S.current.parts.some(p=>p.box)){ S.dqOid=S.current.orderId; S.dqFull=true; if(!S.asmOrder||S.asmOrder.oid!==S.current.orderId){ S.asmOrder={oid:S.current.orderId}; } if(S.asmOrder.pos===undefined) S.asmOrder.pos=false; }
@@ -3289,7 +3326,7 @@ function render(){
     S.asmOrder=S.asmOrder&&S.asmOrder.oid===S.current.orderId?S.asmOrder:{oid:S.current.orderId};
     if(S.dqFull&&S.introOid!==S.current.orderId){ S.introOid=S.current.orderId; S.introT0=-1; } // сбрасывается при выходе к списку — при каждом новом открытии заказа сборка снова
     const intro=!(S.dqFull&&S.introOid===S.current.orderId&&S.introT0)?0:S.introT0===-1?true:performance.now()-S.introT0<4700?S.introT0:0; // страница может перерисоваться во время сборки — продолжаем с того же места
-    mountAssembly($("#asm"), S.current.parts, {state:S.asmOrder, intro, onPick:showPick, fasteners:curFasteners(), furnMesh:S.current.furnMesh}); showPick(S.asmOrder.selected); syncShowAll();
+    if(!(keep&&asmReuse(keep))){ mountAssembly($("#asm"), S.current.parts, {state:S.asmOrder, intro, onPick:showPick, fasteners:curFasteners(), furnMesh:S.current.furnMesh}); if(asm) asm.key=asmKey(); } showPick(S.asmOrder.selected); syncShowAll();
     document.querySelectorAll(".fv-box").forEach(svgZoom); }
   else if(S.view==="part"){ v.innerHTML=viewPart(); const p=withRules(partByCode(S.partCode)); if(p) mount3D(p);
     S.asmPart=S.asmPart&&S.asmPart.oid===S.current.orderId?S.asmPart:{oid:S.current.orderId};
@@ -3335,8 +3372,8 @@ async function thumbParts(id){
 }
 function thumbRender(parts,tex){
   if(typeof THREE==="undefined") return Promise.resolve("");
-  const W=640, H=400, ps=parts.filter(p=>p.box); if(!ps.length) return Promise.resolve("");
-  const R=TH.r||(TH.r=new THREE.WebGLRenderer({antialias:true,alpha:true,preserveDrawingBuffer:true})); R.setPixelRatio(1); R.setSize(W,H,false);
+  const wk=perfWeak(), W=wk?360:480, H=wk?225:300, ps=parts.filter(p=>p.box); if(!ps.length) return Promise.resolve("");   // сразу размер карточки — без лишнего пережатия
+  const R=TH.r||(TH.r=new THREE.WebGLRenderer({antialias:!wk,alpha:false,preserveDrawingBuffer:true})); R.setPixelRatio(1); R.setSize(W,H,false);
   const sc=new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff,0xb3ab9c,0.8)); const sun=new THREE.DirectionalLight(0xffffff,0.55); sc.add(sun);
   const lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9]; ps.forEach(p=>{ for(let i=0;i<3;i++){ lo[i]=Math.min(lo[i],p.box[i]); hi[i]=Math.max(hi[i],p.box[i+3]); } });
   const K=0.001, C=[0,1,2].map(i=>(lo[i]+hi[i])/2), size=Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2])*K;
@@ -3353,19 +3390,20 @@ function thumbRender(parts,tex){
     const m=new THREE.Mesh(geo,mt); m.position.set(((b[0]+b[3])/2-C[0])*K,((b[1]+b[4])/2-C[1])*K,((b[2]+b[5])/2-C[2])*K); m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo,20),line)); sc.add(m); });
   const cam=new THREE.PerspectiveCamera(30,W/H,0.01,100), yaw=-0.55, pitch=0.3, rad=Math.hypot(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2])*K/2, d=rad/Math.sin(15*Math.PI/180)*0.88;   // изделие целиком в кадре
   cam.position.set(d*Math.cos(pitch)*Math.sin(yaw),d*Math.sin(pitch),d*Math.cos(pitch)*Math.cos(yaw)); cam.lookAt(0,0,0); sun.position.set(size,size*1.6,size*1.2);
-  return Promise.all(waits).then(()=>{ R.setClearColor(0x000000,0); R.render(sc,cam); const url=R.domElement.toDataURL("image/png");
+  return Promise.all(waits).then(()=>{ R.setClearColor(0xeef0ee,1); R.render(sc,cam); const url=R.domElement.toDataURL("image/jpeg",0.82);   // jpeg сразу на светлом фоне карточки
     sc.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); return url; });
 }
+// по одной картинке в свободное время: только пока открыт список заказов и человек не листает/не нажимает (на слабом телефоне не мешает касаниям)
+const thumbIdle=()=>new Promise(r=>{ const go=()=>{ if(Date.now()-(TH.touch||0)<900) return setTimeout(go,400); if(window.requestIdleCallback) requestIdleCallback(()=>r(),{timeout:1500}); else setTimeout(r,120); }; setTimeout(go,TH.first?60:300); });
+["pointerdown","touchstart","wheel","keydown","scroll"].forEach(t=>addEventListener(t,()=>{ TH.touch=Date.now(); },{capture:true,passive:true}));
 async function thumbPump(){
-  if(TH.busy) return; TH.busy=true;
-  while(TH.q.length){ const id=TH.q.shift(); if(!S.orders[id]) continue;
-    try{ const d=await thumbParts(id); if(!d) continue; const url=await thumbRender(d.parts,d.tex); if(!url) continue;
-      // сжимаем в jpeg на светлом фоне карточки, чтобы влезло в память телефона
-      const jpg=await new Promise(res=>{ const img=new Image(); img.onload=()=>{ const c=document.createElement("canvas"); c.width=480; c.height=300; const x=c.getContext("2d"); x.fillStyle="#eef0ee"; x.fillRect(0,0,480,300); x.drawImage(img,0,0,480,300); res(c.toDataURL("image/jpeg",0.82)); }; img.onerror=()=>res(url); img.src=url; });
+  try{ if(navigator.connection&&navigator.connection.saveData) return; }catch(_){}   // «экономия трафика» — картинки не качаем и не рисуем
+  if(TH.busy) return; TH.busy=true; TH.first=true;
+  while(TH.q.length&&S.view==="orders"){ await thumbIdle(); TH.first=false; if(S.view!=="orders") break; const id=TH.q.shift(); if(!S.orders[id]) continue;
+    try{ const d=await thumbParts(id); if(!d||S.view!=="orders") continue; const jpg=await thumbRender(d.parts,d.tex); if(!jpg) continue;
       const k=thumbKey(id); TH.mem[k]=jpg; try{ localStorage.setItem(k,jpg); }catch(_){}
       const el=document.querySelector(`.oc-pic[data-th="${CSS.escape(id)}"]`); if(el){ const w=el.querySelector(".oc-wait"); if(w) w.outerHTML=`<img src="${jpg}" alt="">`; }
-    }catch(_){}
-    await new Promise(r=>setTimeout(r,60)); }
+    }catch(_){} }
   TH.busy=false;
 }
 /* ---------- вид для клиента ---------- */
@@ -6547,7 +6585,7 @@ render=function(){
   const want=S.shop.mode==="order"?(S.shop.otab==="client"?"K:"+S.shop.cur:S.shop.cur):S.shop.mode==="general"?"general":null;
   if(want&&shpPin()&&(!S.shop.chat||S.shop.chat.id!==want||!shpTimer)) shpChatStart(want);
   const ae=document.activeElement, keepTa=ae&&ae.closest&&ae.closest(".shp-send")?ae.selectionStart:null;
-  $("#view").innerHTML=viewShop();
+  { const vw=$("#view"), vh=viewShop(); if(!(typeof perfSameOk==="function"&&perfSameOk(vw,vh))){ vw.innerHTML=vh; if(typeof perfMark==="function") perfMark(vw,vh); } }   // фоновое обновление без изменений — экран не трогаем (site_perf.js)
   const nav=!!document.querySelector("#view .shp-tabs"), md=S.shop.mode;
   document.body.dataset.shp=shpPin()?md:"login";
   document.body.classList.toggle("shp-hasnav",nav); document.body.classList.toggle("shp-wide",nav&&(md==="board"||md==="cal"));
@@ -6738,6 +6776,141 @@ if(VTX){
     ev.stopImmediatePropagation(); ev.preventDefault(); location.href=(window.SITE_ROOT||"../")+"#"+encodeURIComponent(b.dataset.id||""); },true);
 }
 
+/* ---------- быстрый показ: «показываем сразу, обновляем тихо» ----------
+   Каждый ответ таблицы (чтение) и файл заказа запоминаем. При следующем открытии экрана показываем
+   запомненное сразу, а свежее спрашиваем в фоне; пришло другое — тихо перерисовываем (если человек
+   не печатает и не открыт диалог — иначе ждём). Ключ — отпечаток PIN (сам PIN не храним) + запрос без PIN.
+   Ответы с ошибкой не запоминаем. После записи (POST) несколько секунд читаем только свежее.
+   В памяти телефона (localStorage) — до ~3 МБ, старые вытесняются. Заказы — только в памяти страницы
+   и в хранилище файлов сайта (Cache Storage, там они зашифрованы, как на сервере). */
+const CCH=(function(){
+  const LSP="cehqr-c:", IDX="cehqr-c-idx", LIM=3e6, ONE=1e6, FRESH=700, AFTERPOST=8000, OLIM=6e7;
+  const PK=/^cehqr-(techpin|officepin|suppin|pin)$/;
+  // что можно запоминать: только чтение для работников (с PIN); «client», «check», «ping», «invPeek», «helpMine» — никогда
+  const ACT=/^(shop|tasks|staff|help|feed|chat|receipts|stock|supply|zamerList|specGet|hand|zp|zpStmts|pnl|gift|contr|smeta|smetaList|lib|cfg|morning|iphoto|vend|price|invList)$/;
+  const mem=new Map(), omem=new Map(), infl={}, once={}, R={}, queue=new Map();
+  let idx={}, postAt=0, posts=0, busyN=0, dot=null, dotT=0, saveT=0, oSize=0;
+  const LS=(()=>{ try{ return window.localStorage; }catch(_){ return null; } })();
+  try{ idx=JSON.parse(LS.getItem(IDX)||"{}")||{}; if(typeof idx!=="object") idx={}; }catch(_){ idx={}; }
+  // отпечаток строки (cyrb53) — по нему ключи, PIN в ключах не виден
+  function hs(str){ let h1=0xdeadbeef^7, h2=0x41c6ce57^7; for(let i=0,ch;i<str.length;i++){ ch=str.charCodeAt(i); h1=Math.imul(h1^ch,2654435761); h2=Math.imul(h2^ch,1597334677); }
+    h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909); h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+    return (4294967296*(2097151&h2)+(h1>>>0)).toString(36); }
+  const ph=pin=>hs("cehqr|"+String(pin));
+  function api(){ return S&&S.site&&S.site.stagesUrl||""; }
+  function isApi(u){ const a=api(); return !!a&&typeof u==="string"&&u.indexOf(a)===0; }
+  function appPin(){ try{ return typeof shpPin==="function"?shpPin():""; }catch(_){ return ""; } }
+  // ключ запроса или null (не запоминаем)
+  function keyOf(u){
+    if(typeof u!=="string") return null;
+    if(isApi(u)){ let p; try{ p=new URL(u).searchParams; }catch(_){ return null; }
+      const act=p.get("action")||""; if(!ACT.test(act)) return null;
+      if((act==="chat"||act==="feed")&&+(p.get("since")||0)>0) return null;   // догрузка новых сообщений — всегда с сервера
+      const pin=p.get("pin")||(act==="supply"?appPin():""); if(!pin) return null;   // без PIN (страница клиента и т. п.) — не запоминаем
+      const q=[...p.entries()].filter(e=>e[0]!=="pin").sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:a[1]<b[1]?-1:1).map(e=>e[0]+"="+e[1]).join("&");
+      return {k:"a|"+ph(pin)+"|"+hs(api())+"|"+q, act, p:Object.fromEntries(p.entries()), api:true}; }
+    if(/^(\.\.\/)?orders\/[^?#\/]+\.json$/.test(u)){ let abs; try{ abs=new URL((window.SITE_ROOT&&!/^\.\.\//.test(u)?window.SITE_ROOT:"")+u,location.href).href; }catch(_){ return null; }
+      const f=u.replace(/^(\.\.\/)?orders\//,"").replace(/\.json$/,""); return {k:"o|"+abs, act:"order", p:{file:decodeURIComponent(f)}, abs}; }
+    return null; }
+  /* ---- хранилище ---- */
+  function idxSave(){ clearTimeout(saveT); saveT=setTimeout(()=>{ try{ LS.setItem(IDX,JSON.stringify(idx)); }catch(_){} },300); }
+  function lsDel(k){ delete idx[k]; try{ _rm.call(LS,LSP+k); }catch(_){} }
+  function total(){ let n=0; for(const k in idx) n+=idx[k][1]||0; return n; }
+  function evict(need){ const ks=Object.keys(idx).sort((a,b)=>idx[a][0]-idx[b][0]); let t=total(); while(ks.length&&t+need>LIM){ const k=ks.shift(); t-=idx[k][1]||0; lsDel(k); } }
+  function put(m,v){ const now=Date.now();
+    if(m.abs){ const o=omem.get(m.k); if(o) oSize-=o.v.length; omem.delete(m.k); omem.set(m.k,{v,at:now}); oSize+=v.length;
+      while(oSize>OLIM&&omem.size>1){ const f=omem.keys().next().value; oSize-=omem.get(f).v.length; omem.delete(f); }
+      try{ if(window.caches) caches.open("cehqr-data").then(c=>c.put(m.abs,new Response(v,{headers:{"content-type":"application/json"}}))).catch(()=>{}); }catch(_){}
+      return; }
+    mem.set(m.k,{v,at:now}); if(!LS) return;
+    if(v.length>ONE){ lsDel(m.k); idxSave(); return; }   // слишком большой — только в памяти страницы
+    evict(v.length); idx[m.k]=[now,v.length,now];
+    try{ _set.call(LS,LSP+m.k,JSON.stringify({at:now,v})); }catch(_){ evict(LIM); idx[m.k]=[now,v.length,now]; try{ _set.call(LS,LSP+m.k,JSON.stringify({at:now,v})); }catch(__){ delete idx[m.k]; } }
+    idxSave(); }
+  function get(m){
+    if(m.abs){ const o=omem.get(m.k); if(o){ omem.delete(m.k); omem.set(m.k,o); } return o||null; }
+    let e=mem.get(m.k);
+    if(!e&&LS&&idx[m.k]){ try{ const x=JSON.parse(LS.getItem(LSP+m.k)||"null"); if(x&&typeof x.v==="string"){ e={v:x.v,at:x.at||0}; mem.set(m.k,e); } else lsDel(m.k); }catch(_){ lsDel(m.k); } }
+    if(e&&idx[m.k]){ idx[m.k][0]=Date.now(); idxSave(); }
+    return e||null; }
+  function drop(m){ mem.delete(m.k); if(m.abs){ const o=omem.get(m.k); if(o){ oSize-=o.v.length; omem.delete(m.k); } try{ if(window.caches) caches.open("cehqr-data").then(c=>c.delete(m.abs)).catch(()=>{}); }catch(_){} } else lsDel(m.k); idxSave(); }
+  // забыть всё, что запомнили под этим PIN (выход, смена PIN, «PIN не подошёл»)
+  function purgePin(pin){ const pre="a|"+ph(pin)+"|"; [...mem.keys()].forEach(k=>{ if(k.indexOf(pre)===0) mem.delete(k); }); Object.keys(idx).forEach(k=>{ if(k.indexOf(pre)===0) lsDel(k); });
+    try{ for(let i=LS.length-1;i>=0;i--){ const k=LS.key(i); if(k&&k.indexOf(LSP+pre)===0) _rm.call(LS,k); } }catch(_){} idxSave(); }
+  function purgeAll(){ mem.clear(); Object.keys(idx).forEach(lsDel); try{ for(let i=LS.length-1;i>=0;i--){ const k=LS.key(i); if(k&&k.indexOf(LSP)===0) _rm.call(LS,k); } _rm.call(LS,IDX); }catch(_){} idx={}; }
+  /* выход и смена PIN: старый PIN убирают из памяти телефона — вместе с ним забываем его данные.
+     Если памяти не хватило под чужие данные (замеры, черновики) — сначала освобождаем место от запомненного здесь. */
+  const SP=window.Storage&&Storage.prototype, _rm=SP?SP.removeItem:function(){}, _set=SP?SP.setItem:function(){};
+  if(SP){
+    SP.removeItem=function(k){ try{ if(this===LS&&PK.test(k)){ const o=this.getItem(k); if(o) purgePin(o); } }catch(_){} return _rm.apply(this,arguments); };
+    SP.setItem=function(k,v){ try{ if(this===LS&&PK.test(k)){ const o=this.getItem(k); if(o&&o!==String(v)) purgePin(o); } }catch(_){}
+      try{ return _set.apply(this,arguments); }catch(e){ if(this===LS&&String(k).indexOf(LSP)!==0&&k!==IDX&&Object.keys(idx).length){ purgeAll(); return _set.apply(this,arguments); } throw e; } };
+  }
+  /* ---- значок «обновляю…» (точка в правом верхнем углу) ---- */
+  function busy(d){ busyN=Math.max(0,busyN+d); clearTimeout(dotT);
+    if(busyN>0) dotT=setTimeout(()=>{ if(!dot){ dot=document.createElement("div"); dot.id="cchDot"; dot.setAttribute("role","status"); dot.title="обновляю…"; dot.innerHTML='<i aria-hidden="true"></i><span>обновляю…</span>'; document.body.appendChild(dot); } dot.classList.add("on"); },250);
+    else if(dot) dot.classList.remove("on"); }
+  /* ---- тихая перерисовка: не мешаем, пока человек печатает, тащит карточку или открыт диалог ---- */
+  function userBusy(){ const a=document.activeElement;
+    if(a&&a!==document.body&&(/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)||a.isContentEditable)) return true;
+    if(document.querySelector(".modal,.dragging,.shp-dragging")) return true;
+    if(S.view==="shop"&&S.shop&&S.shop.mode==="form") return true;
+    return false; }
+  let qT=0;
+  function flush(){ clearTimeout(qT); qT=0; if(!queue.size) return; if(userBusy()){ qT=setTimeout(flush,800); return; }
+    const L=[...queue.values()]; queue.clear();
+    L.forEach(m=>{ const f=R[m.act]; if(!f) return; once[m.k]=Date.now(); try{ const r=f(m.p,m); if(r&&r.catch) r.catch(e=>console.warn("cache refresh",m.act,e)); }catch(e){ console.warn("cache refresh",m.act,e); } }); }
+  function refresh(m){ if(!R[m.act]) return; queue.set(m.k,m); if(!qT) qT=setTimeout(flush,0); }
+  document.addEventListener("focusout",()=>{ if(queue.size){ clearTimeout(qT); qT=setTimeout(flush,350); } },true);
+  /* ---- сеть ---- */
+  const okJson=t=>{ try{ return JSON.parse(t); }catch(_){ return null; } };
+  const resp=(t,st)=>new Response(t,{status:st||200,headers:{"content-type":"application/json; charset=utf-8"}});
+  // запрос к серверу; хорошее — запоминаем. Возвращает {res, t, ok}
+  function net(m,u,o,self){ return _f.call(self||window,u,o).then(r=>{
+      if(!r.ok){ if(r.status===404&&m.abs) drop(m); return {res:r}; }
+      return r.text().then(t=>{ let good=true;
+        if(m.api){ const j=okJson(t); good=!!(j&&j.ok===true); if(!good&&j&&j.error==="pin"){ const pin=new URL(u).searchParams.get("pin")||appPin(); if(pin) purgePin(pin); } }
+        if(good) put(m,t); return {res:resp(t,r.status),t,good}; }); }); }
+  function reval(m,u,o,old){ if(infl[m.k]) return; infl[m.k]=1; busy(1);
+    net(m,u,o).then(x=>{ if(x.t==null){ if(m.abs&&x.res.status===404) refresh(m); return; }
+      if(!x.good){ if(m.api){ drop(m); refresh(m); } return; }
+      if(x.t!==old) refresh(m); })
+    .catch(()=>{}).then(()=>{ delete infl[m.k]; busy(-1); }); }
+  function fromStore(m){ const e=get(m); if(e||!m.abs||!window.caches) return Promise.resolve(e);
+    return caches.open("cehqr-data").then(c=>c.match(m.abs)).then(r=>r&&r.ok?r.text().then(v=>{ const x={v,at:0}; omem.set(m.k,x); oSize+=v.length; return x; }):null).catch(()=>null); }
+  const _f=window.fetch;
+  window.fetch=function(u,o){
+    let m=null;
+    try{ const meth=String(o&&o.method||"GET").toUpperCase();
+      if(meth!=="GET"){ if(isApi(u)){ posts++; postAt=Date.now(); const p=_f.apply(this,arguments); const done=()=>{ posts--; postAt=Date.now(); }; p.then(done,done); return p; } return _f.apply(this,arguments); }
+      m=keyOf(u); }catch(_){ m=null; }
+    if(!m) return _f.apply(this,arguments);
+    const self=this, fresh=posts>0||Date.now()-postAt<AFTERPOST||Date.now()-forceAt<3000;
+    return fromStore(m).then(e=>{
+      if(!e||(fresh&&m.api)){   // нет запомненного или только что записали — ждём сервер (без связи — отдаём запомненное)
+        return net(m,u,o,self).then(x=>x.res,err=>{ if(e) return resp(e.v); throw err; }); }
+      const one=once[m.k]&&Date.now()-once[m.k]<3000; delete once[m.k];
+      if(!one&&Date.now()-e.at>FRESH) reval(m,u,o,e.v);
+      return resp(e.v); });
+  };
+  /* кнопки «Обновить» — человек просит свежее: пару секунд читаем только с сервера */
+  let forceAt=0;
+  document.addEventListener("click",ev=>{ const t=ev.target&&ev.target.closest&&ev.target.closest("[data-act]"); if(t&&/(reload|refresh|-re|feedre)$/.test(t.dataset.act||"")) forceAt=Date.now(); },true);
+  /* прогрев: заранее спросить и запомнить (без перерисовки) */
+  function warm(u,maxAge){ const m=keyOf(u); if(!m||infl[m.k]) return; const e=get(m); if(e&&Date.now()-e.at<(maxAge||6e4)) return;
+    infl[m.k]=1; net(m,u,{cache:"no-cache"}).catch(()=>{}).then(()=>{ delete infl[m.k]; }); }
+  /* «Загружаю…» / «Считаю…» показываем только если ждать дольше полсекунды — из памяти данные приходят раньше */
+  try{ const st=document.createElement("style"); st.textContent=`.cch-wait{animation:cchIn .2s ease .45s both}@keyframes cchIn{from{opacity:0}to{opacity:1}}
+#cchDot{position:fixed;top:calc(env(safe-area-inset-top,0px) + 5px);right:5px;z-index:9999;pointer-events:none;opacity:0;transition:opacity .25s}#cchDot.on{opacity:1}
+#cchDot i{display:block;width:8px;height:8px;border-radius:50%;background:var(--accent,#2f7d5b);box-shadow:0 0 0 2px var(--surface,#fff);animation:cchP .9s ease-in-out infinite alternate}
+#cchDot span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}@keyframes cchP{from{opacity:.35}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){#cchDot i{animation:none}.cch-wait{animation-duration:.01s}}`; document.head.appendChild(st); }catch(_){}
+  const WAIT=/^\s*(Загружаю|Считаю)/;
+  function mark(n){ if(n.nodeType!==1) return; const L=n.matches&&n.matches(".muted")?[n]:[]; if(n.querySelectorAll) L.push(...n.querySelectorAll(".muted")); L.forEach(x=>{ if(WAIT.test(x.textContent||"")) x.classList.add("cch-wait"); }); }
+  try{ new MutationObserver(ms=>ms.forEach(r=>r.addedNodes.forEach(mark))).observe(document.documentElement,{childList:true,subtree:true}); }catch(_){}
+  return {R,warm,purgePin,purgeAll,keyOf,userBusy,stats:()=>({mem:mem.size,ls:Object.keys(idx).length,lsSize:total(),orders:omem.size,ordersSize:oSize,inflight:Object.keys(infl).length})};
+})();
+
 /* ---------- Техподдержка во всех приложениях: «что не так» + фото → лист «Поддержка» (и Telegram технологу). Список обращений — у технолога в Вертаксе ---------- */
 const HELP_ERR=[];
 const hEsc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -6783,7 +6956,7 @@ function helpListHtml(){ const back=`<button type="button" class="btn" data-act=
     ${x.answer?`<p class="help-ans"><b>Ответ:</b> ${hEsc(x.answer).replace(/\n/g,"<br>")}</p>`:""}
     <div class="help-rep"><textarea rows="2" maxlength="1000" placeholder="${x.answer?"Ответить ещё":"Ответить работнику"}" aria-label="Ответ работнику" data-ans="${hEsc(x.id)}"></textarea><button type="button" class="btn sm" data-act="help-ans" data-id="${hEsc(x.id)}">Отправить</button></div>
     <button type="button" class="btn sm${x.status==="исправлено"?"":" primary"}" data-act="help-st" data-id="${hEsc(x.id)}" data-s="${x.status==="исправлено"?"новое":"исправлено"}">${x.status==="исправлено"?"✓ Исправлено — вернуть":"Отметить «исправлено»"}</button></li>`).join("")}</ul>`; }
-async function helpLoad(){ if(S.shop.helpBusy) return; S.shop.helpBusy=true; const j=await shpGet("action=help",true); S.shop.helpBusy=false; S.shop.help=j&&j.ok?j.items||[]:{err:1}; if(S.view==="shop"&&(S.shop.mode==="help"||S.shop.mode==="more")) shpRenderKeep(); }
+async function helpLoad(){ if(S.shop.helpBusy) return; S.shop.helpBusy=true; const j=await shpGet("action=help",true); S.shop.helpBusy=false; S.shop.help=j&&j.ok?j.items||[]:{err:1}; if(S.view==="shop"&&!document.querySelector(".modal")) shpRenderKeep(); }
 document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="help-st"]'); if(!t) return; ev.stopPropagation(); t.disabled=true;
   const j=await shpPost({action:"helpSet",id:t.dataset.id,status:t.dataset.s}); if(j){ const x=(S.shop.help||[]).find(r=>r.id===t.dataset.id); if(x) x.status=t.dataset.s; shpRenderKeep(); } else t.disabled=false; },true);
 (function(){ const st=document.createElement("style"); st.textContent=`#helpM textarea{width:100%;box-sizing:border-box;font:15px/1.4 var(--f-body,system-ui);padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);resize:vertical}.help-sup{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:0 0 14px}.help-sup b{flex-basis:100%}.help-sup .muted{flex:1 1 200px}
@@ -6814,6 +6987,19 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   const j=await shpPost({action:"helpSet",id:t.dataset.id,status:x&&x.status==="исправлено"?"исправлено":"отвечено",answer:v});
   if(j){ if(x){ x.answer=v; if(x.status!=="исправлено") x.status="отвечено"; } toast(j.tg?"Ответ ушёл — в приложение и в Телеграм":"Ответ записан — увидит в приложении"); shpRenderKeep(); } else t.disabled=false; },true);
 (function(){ const st=document.createElement("style"); st.textContent=`.help-mine{background:var(--surface);border-radius:10px;padding:10px 12px;margin:0 0 12px;display:grid;gap:8px;font-size:13.5px}.help-mi{display:grid;gap:3px}.help-mi+.help-mi{border-top:1px solid var(--line);padding-top:8px}#helpA .help-mi{font-size:15px}.help-ans{background:var(--surface-2,var(--surface));border-left:3px solid var(--accent,#3b82f6);padding:6px 10px;border-radius:6px}.help-rep{display:flex;gap:8px;align-items:flex-end;margin:6px 0 8px}.help-rep textarea{flex:1;min-width:0;box-sizing:border-box;font:14px/1.35 var(--f-body,system-ui);padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);resize:vertical}`; document.head.appendChild(st); })();
+/* Технологу на видном месте: красный кружок на «Ещё», строка «Обращения» первой, плашка над сделками */
+function helpNewList(){ const L=S.shop&&S.shop.help; return Array.isArray(L)?L.filter(x=>!x.status||x.status==="новое"):[]; }
+if(typeof shpLoad==="function"){ const _hl=shpLoad; shpLoad=async function(q){ const r=await _hl(q); try{ if(S.shop.loaded&&S.shop.tech&&!S.shop.helpAuto){ S.shop.helpAuto=1; helpLoad(); setInterval(()=>{ if(!document.hidden&&S.shop.tech) helpLoad(); },5*60*1000); } }catch(_){} return r; }; }
+if(typeof shpNavHtml==="function"){ const _hn=shpNavHtml; shpNavHtml=function(){ let h=_hn(); const n=S.shop.tech?helpNewList().length:0;
+  if(n) h=h.replace(/(<button[^>]*data-v="more"[^>]*>[\s\S]*?<span class="lb">[^<]*<\/span>)/,`$1<span class="bdg bad" aria-label="новых обращений ${n}">${n}</span>`); return h; }; }
+if(typeof shpTaskStrip==="function"){ const _hs=shpTaskStrip; shpTaskStrip=function(){ const L=S.shop.tech?helpNewList():[]; if(!L.length) return _hs();
+  const x=L.slice().sort((a,b)=>b.when-a.when)[0];
+  return `<button type="button" class="shp-strip help-strip" data-act="shp-tab" data-v="help">${shpIco("chat",20)}<span>🛠 ${L.length>1?`Новых обращений: <b>${L.length}</b> · `:"Новое обращение: "}<b>${hEsc(x.who||"Без имени")}</b> — «${hEsc(String(x.text||"").slice(0,60))}${String(x.text||"").length>60?"…":""}»</span><span class="shp-strip-go" aria-hidden="true">Открыть ›</span></button>`+_hs(); }; }
+setTimeout(()=>{ if(typeof shpMoreHtml==="function"){ const _hm=shpMoreHtml; shpMoreHtml=function(){ let h=_hm(); if(!S.shop.tech) return h;
+  const m=h.match(/<li>(?:(?!<li>)[\s\S])*?data-v="help"[\s\S]*?<\/li>/); if(!m) return h; const n=helpNewList().length;
+  let li=m[0].replace(/Обращения( · новых \d+)?/,"Обращения"+(n?` — <b class="help-new">${n} ${n===1?"новое":"новых"}</b>`:""));
+  h=h.replace(m[0],""); return h.replace('<ul class="shp-list">','<ul class="shp-list">'+li.replace("<li>",'<li class="help-first">')); }; } },0);
+(function(){ const st=document.createElement("style"); st.textContent=`.help-strip{border-color:var(--warn,#7A4700)!important;background:var(--warn-bg,rgba(255,194,26,.16))!important}.help-strip b{font-weight:700}.help-new{color:var(--bad,#C7361F)}.help-first .shp-row{box-shadow:inset 3px 0 0 var(--bad,#C7361F)}`; document.head.appendChild(st); })();
 
 /* ---------- Смета: примерный 3D-рисунок (изометрия, SVG). Стены: 1 — задняя (вдоль X), 2 — левая (вдоль Z), 3 — правая. Поворот — 4 вида ---------- */
 /* техника: тонкие «пластины» на фасаде или на столешнице */
@@ -6893,7 +7079,7 @@ async function sm3dMount(){ const el=document.getElementById("sm3d"); if(!el||!S
   const d=S.shop.sm.data, Lt=sm3dLayout(d); if(!Lt.boxes.length){ el.querySelector(".sm-3dh").textContent="Добавьте модули — здесь появится примерный вид"; return; }
   if(window.SM3D_R){ try{ SM3D_R.dispose(); SM3D_R.forceContextLoss(); }catch(_){} window.SM3D_R=null; }
   let R; try{ R=window.SM3D_R=new T.WebGLRenderer({antialias:true,alpha:true}); }catch(_){ el.querySelector(".sm-3dh").textContent="Это устройство не показывает 3D"; return; }
-  R.setPixelRatio(Math.min(2,window.devicePixelRatio||1)); el.insertBefore(R.domElement,el.firstChild);
+  R.setPixelRatio(typeof perfPR==="function"?perfPR():Math.min(2,window.devicePixelRatio||1)); el.insertBefore(R.domElement,el.firstChild);
   const sc=new T.Scene(), k=0.001, W=Lt.W*k, Z=Lt.Z*k, H=Lt.H*k;
   sc.add(new T.AmbientLight(0xffffff,0.62)); const dl=new T.DirectionalLight(0xffffff,0.55); dl.position.set(W*1.5+2,H*2,Z*2+3); sc.add(dl); const dl2=new T.DirectionalLight(0xffffff,0.25); dl2.position.set(-2,1,1); sc.add(dl2);
   const mat=c=>new T.MeshLambertMaterial({color:c}), cBody=sm3dCol("body")||"#ece9e2", cFront=sm3dCol("front")||"#c8c1b4", cTop=sm3dCol("top")||"#7a5a3f";
@@ -9511,9 +9697,9 @@ function zmPrN(s){ const n=parseFloat(String(s==null?"":s).replace(/\s/g,"").rep
 /* ---- все замеры (Ещё → Замеры) ---- */
 function zmListHtml(){ if(S.zm.list===null&&!S.zm.listTried){ S.zm.listTried=true; zmLoadList(); }
   const L=zmAllSums(), q=String(S.zm.q||"").toLowerCase();
-  let h=`<div class="head"><div><h1>Замеры</h1><p class="muted" style="margin:4px 0 0">Фото с размерами и эскизы по всем сделкам</p></div><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button></div></div>`;
+  let h=`<div class="head"><div><h1>Замеры</h1><p class="muted" style="margin:4px 0 0">Фото с размерами и эскизы по всем сделкам</p></div><div class="head-actions"><button type="button" class="btn primary" data-zm="new-any">+ Новый замер</button><button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button></div></div>`;
   if(S.zm.listOld) h+=`<div class="banner warn">Скрипт таблицы ещё не знает про замеры — обновите его. Пока видны только замеры с этого телефона.</div>`;
-  if(!L.length) return h+`<div class="empty"><p class="muted">Замеров пока нет. Откройте сделку и нажмите «📐 Замер».</p></div>`;
+  if(!L.length) return h+`<div class="empty"><p class="muted">Замеров пока нет.</p><button type="button" class="btn primary" data-zm="new-any">+ Новый замер</button></div>`;
   h+=`<ul class="shp-list zm-list">${L.map(s=>{ const o=shpById(s.deal)||{}; return `<li><button type="button" class="shp-row" data-zm="open-z" data-id="${esc(s.id)}" data-deal="${esc(s.deal)}"><span class="shp-av zm-av" aria-hidden="true">📐</span><span class="shp-rb"><b>${esc((o.num?"№ "+o.num+" · ":"")+(o.client||"Сделка"))}${s.title?" — "+esc(s.title):""}</b><span class="muted">${s.n} фото${s.rooms?" · комнат "+s.rooms:""} · ${esc(s.who||"—")} · ${esc(zmDate(s.when))}${s.dirty||s.local?' · <b class="zm-warn">не отправлено</b>':""}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`; }).join("")}</ul>`;
   return h; }
 
@@ -9861,7 +10047,7 @@ async function zm3dOpen(rec,rm){ const M=zmRoomModel(rm,rec.data.photos);
     <div class="zm3-st"><canvas id="zm3c" aria-label="Комната в 3D: крутите пальцем, двумя — ближе"></canvas>${closed?"":`<p class="zm3-warn">Стены не сходятся на ${gap.toLocaleString("ru-RU")} мм — проверьте длины и углы. Пол замкнут условно.</p>`}</div>
     <div class="zm3-info" id="zm3i">Нажмите на стену — покажу её размеры и фото. Крутите пальцем, двумя пальцами — ближе.</div>`;
   document.body.appendChild(m); document.documentElement.classList.add("zm-lock");
-  const cv=document.getElementById("zm3c"), st=cv.parentNode, ren=new TH.WebGLRenderer({canvas:cv,antialias:true}); ren.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  const cv=document.getElementById("zm3c"), st=cv.parentNode, ren=new TH.WebGLRenderer({canvas:cv,antialias:!(typeof perfWeak==="function"&&perfWeak())}); ren.setPixelRatio(typeof perfPR==="function"?perfPR():Math.min(2,window.devicePixelRatio||1));
   const sc=new TH.Scene(); sc.background=new TH.Color(0x15181b); const cam=new TH.PerspectiveCamera(50,1,.05,200);
   sc.add(new TH.AmbientLight(0xffffff,.72)); const dl=new TH.DirectionalLight(0xffffff,.55); dl.position.set(3,8,5); sc.add(dl);
   const k=.001, Hm=M.height*k, cx=P.slice(0,-1).reduce((a,p)=>a+p[0],0)/(P.length-1), cy=P.slice(0,-1).reduce((a,p)=>a+p[1],0)/(P.length-1);
@@ -9911,6 +10097,9 @@ function zm3dTap(e,cam,TH){ if(!ZM3) return; const cv=document.getElementById("z
 document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest("[data-zm]"); if(!t) return; ev.preventDefault(); ev.stopPropagation(); const a=t.dataset.zm, ed=S.zm.ed;
   const shf=t.closest("#zmSheet"); if(shf&&shf._t&&Date.now()-shf._t<350) return;
   if(a==="open") return zmOpenDeal(t.dataset.deal);
+  if(a==="new-any") return zmNewAny();
+  if(a==="na-deal"){ document.getElementById("zmNA")?.remove(); return zmOpenDeal(t.dataset.deal); }
+  if(a==="na-x"){ document.getElementById("zmNA")?.remove(); return; }
   if(a==="ble") return zmBleConnect();
   if(a==="z3-x"){ zm3dClose(); return; }
   if(a==="z3-dz"){ if(ZM3&&typeof dzOpenRoom==="function") dzOpenRoom(ZM3.rec,ZM3.rm); return; }
@@ -10048,6 +10237,35 @@ html.zm-lock,html.zm-lock body{overflow:hidden!important;overscroll-behavior:non
 @media (max-width:420px){.zm-f2{grid-template-columns:1fr}.zm-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.zm-add.big{grid-template-columns:repeat(2,minmax(0,1fr))}.zm-addb{min-height:120px}.zm-bar-r .btn{flex:1 1 auto}}
 @media (min-width:900px){.zm-ed .zm-tools{justify-content:center}.zm-tools button{flex:0 0 76px}.zm-sty{justify-content:center}}`; document.head.appendChild(st); })();
 
+/* ---- «+ Новый замер» из списка замеров: выбрать сделку или сразу новый клиент (создаётся сделка на этапе «Замер») ---- */
+function zmNADeals(q){ q=String(q||"").toLowerCase().trim();
+  const L=(S.shop.orders||[]).filter(o=>o.stage!=="closed"&&o.stage!=="lost"&&!/^closed/.test(String(o.stage||"")))
+    .filter(o=>!q||[o.num,o.client,o.phone,o.address].join(" ").toLowerCase().includes(q))
+    .sort((a,b)=>(a.stage==="zamer"?0:1)-(b.stage==="zamer"?0:1)||String(b.num).localeCompare(String(a.num),"ru",{numeric:true})).slice(0,30);
+  if(!L.length) return `<p class="muted">Сделок не найдено.</p>`;
+  return `<ul class="shp-list zm-na-list">${L.map(o=>`<li><button type="button" class="shp-row" data-zm="na-deal" data-deal="${esc(o.id)}"><span class="shp-rb"><b>№ ${esc(o.num)} · ${esc(o.client||"Без имени")}</b><span class="muted">${esc([o.address,(SHP_ST.find(x=>x.k===o.stage)||{}).s].filter(Boolean).join(" · "))}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`).join("")}</ul>`; }
+function zmNewAny(){ document.getElementById("zmNA")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="zmNA";
+  m.innerHTML=`<div class="modal-card zm-na"><h2 style="margin:0 0 4px">Новый замер</h2><p class="muted" style="margin:0 0 12px">Замер хранится в приложении и привязан к сделке.</p>
+    <form id="zmNAForm" class="form" style="grid-template-columns:1fr;margin:0 0 14px" autocomplete="off"><b>Новый клиент</b>
+      <label>Клиент<input name="client" maxlength="80" required placeholder="Имя или фамилия"></label>
+      <label>Телефон<input name="phone" type="tel" maxlength="30" placeholder="+7 …"></label>
+      <label>Адрес<input name="address" maxlength="120" placeholder="Улица, дом, квартира"></label>
+      <button type="submit" class="btn primary">Создать и начать замер</button></form>
+    <b>Или к существующей сделке</b><input id="zmNAQ" class="zm-na-q" type="search" placeholder="Поиск: клиент, №, адрес" aria-label="Поиск сделки"><div id="zmNAL">${zmNADeals("")}</div>
+    <div style="margin-top:12px"><button type="button" class="btn" data-zm="na-x">Отмена</button></div></div>`;
+  m.addEventListener("click",e=>{ if(e.target===m) m.remove(); }); document.body.appendChild(m);
+  m.querySelector("#zmNAQ").addEventListener("input",e=>{ m.querySelector("#zmNAL").innerHTML=zmNADeals(e.target.value); });
+  m.querySelector("#zmNAForm").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target, b=f.querySelector("[type=submit]");
+    const o={client:f.client.value.trim(),phone:f.phone.value.trim(),address:f.address.value.trim(),stage:"zamer",zamerDate:new Date(Date.now()+9*3600e3).toISOString().slice(0,10)};
+    if(!o.client){ toast("Впишите клиента"); return; } b.disabled=true; b.textContent="Создаю…";
+    let j=await shpPostRaw({action:"shopSave",order:o});   // этап «Замер» ставят снабженец/технолог; остальным — сделка на «Договор», замер всё равно делается
+    if(j&&!j.ok&&j.error==="stage_role"){ const o2=Object.assign({},o); delete o2.stage; j=await shpPostRaw({action:"shopSave",order:o2}); }
+    if(!j||!j.ok){ toast(j&&j.error==="pin"?"Войдите в Вертакс заново":"Не получилось создать сделку — проверьте связь"); b.disabled=false; b.textContent="Создать и начать замер"; return; }
+    await shpLoad(true); if(!shpById(j.id)) S.shop.orders.push(Object.assign({},o,{id:j.id,num:j.num}));
+    m.remove(); toast("Сделка № "+j.num+" создана — делайте замер"); zmOpenDeal(j.id); });
+  setTimeout(()=>m.querySelector("[name=client]").focus(),50); }
+(function(){ const st=document.createElement("style"); st.textContent=`.zm-na{max-height:90vh;overflow:auto}.zm-na-q{width:100%;box-sizing:border-box;margin:8px 0;font:inherit;padding:10px 12px;border:1px solid var(--field,var(--line));border-radius:10px;background:var(--surface);color:var(--ink)}.zm-na-list{max-height:40vh;overflow:auto}`; document.head.appendChild(st); })();
+
 /* ---------- «Эскиз» (программа дизайна, /dizain/): кнопки в Вертаксе, в замере и в заказе Технолог 3D ----------
    комната из замера → dizain/#zamer=<base64url JSON>, модули заказа → dizain/#order=<номер> (ключ заказа программа берёт
    из ключей этого телефона — тот же сайт, в ссылку ключ не кладём). Только сотрудникам, у клиента кнопок нет. */
@@ -10098,6 +10316,595 @@ document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.clo
 (function(){ const st=document.createElement("style"); st.textContent=`.dz-card h2{margin:0 0 4px;font-size:16px}.dz-card p{margin:0 0 10px}.dz-btns{display:flex;flex-wrap:wrap;gap:8px}.dz-btns .btn{min-height:44px}
 .zm-dzb{margin-top:8px;width:100%;min-height:48px}.zm3 .zm-dz{font-size:14px;white-space:nowrap}`; document.head.appendChild(st); })();
 try{ window.vtxDz={zamerUrl:dzZamerUrl,card:dzCard,rooms:dzDealRooms,b64:dzB64}; }catch(_){}   // для проверок
+
+/* ---------- «Кто в сети»: кто сейчас открыл «Вертакс» и когда заходили остальные ----------
+   Сервер: ?action=ping&pin=…&who=… (раз в минуту, пока страница на экране) — отмечает «я в сети» и отдаёт {имя: мс}.
+   Показываем: строку «Сейчас в сети» над сделками, точку и «в сети / 5 мин назад / вчера в 18:40» в «Сотрудниках»,
+   точку у имён в чатах и у ответственного в заказе. Всё — обёртками; site_shop.js не правим. Время — по часам телефона. */
+S.onl={seen:{},skew:0,at:0,busy:false,ok:false};
+const ONL_ON=2*60e3, ONL_GEN=["технолог","офис","снабженец","мастер"];
+const ONL_MON=["янв.","февр.","марта","апр.","мая","июня","июля","авг.","сент.","окт.","нояб.","дек."];
+function onlMe(n){ return !!S.who&&shpNorm(n)===shpNorm(S.who); }
+function onlNow(){ return Date.now()+(S.onl.skew||0); }
+function onlLast(n){ if(onlMe(n)) return onlNow(); const k=shpNorm(n); let v=0;
+  Object.keys(S.onl.seen).forEach(x=>{ if(shpNorm(x)===k) v=Math.max(v,S.onl.seen[x]); });
+  Object.keys(S.shop.staffLast||{}).forEach(x=>{ if(shpNorm(x)===k) v=Math.max(v,+S.shop.staffLast[x]||0); });
+  return Math.min(v,onlNow()); }
+function onlIsOn(n){ const v=onlLast(n); return !!v&&onlNow()-v<ONL_ON; }
+function onlDay(ms){ const d=new Date(ms); d.setHours(0,0,0,0); return d.getTime(); }
+function onlHM(d){ return d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}); }
+/* коротко — для кружков: «5 мин», «2 ч», «вчера», «3 нояб.»; подробно — «5 мин назад», «сегодня в 10:15», «вчера в 18:40» */
+function onlAgo(ms,long){
+  if(!ms) return long?"давно не заходил":"";
+  const now=onlNow(), a=now-ms, d=new Date(ms), t0=onlDay(now), m=Math.max(1,Math.round(a/6e4));
+  if(a<ONL_ON) return "в сети";
+  if(m<60) return long?m+" мин назад":m+" мин";
+  if(ms>=t0) return long?"сегодня в "+onlHM(d):Math.round(a/36e5)+" ч";
+  if(ms>=t0-864e5) return long?"вчера в "+onlHM(d):"вчера";
+  const ds=d.getDate()+" "+ONL_MON[d.getMonth()]+(new Date(now).getFullYear()!==d.getFullYear()?" "+d.getFullYear():"");
+  return long?ds+" в "+onlHM(d):ds; }
+function onlIni(n){ const w=String(n||"").trim().split(/\s+/).filter(Boolean); return ((w[0]||"?").charAt(0)+(w[1]?w[1].charAt(0):"")).toUpperCase(); }
+function onlHue(n){ let h=0; const s=shpNorm(n); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return Math.round((h%97)*137.508)%360; }
+function onlAv(n,on,sz){ return `<span class="onl-av${on?" on":""}" style="--h:${onlHue(n)}${sz?";--s:"+sz+"px":""}" aria-hidden="true">${esc(onlIni(n))}${on?`<i class="onl-dot"></i>`:""}</span>`; }
+/* кого показывать: «Сотрудники» + все, кого видел сервер; «Вы» — первым, потом в сети, потом по свежести */
+function onlPeople(){
+  const m=new Map(), add=(n,role)=>{ n=String(n||"").trim(); if(!n||n.length>40) return; const k=shpNorm(n); if(!m.has(k)) m.set(k,{name:n,role:role||""}); else if(role&&!m.get(k).role) m.get(k).role=role; };
+  (S.shop.staff||[]).forEach(p=>add(p.name,p.role)); const hasStaff=m.size;
+  Object.keys(S.onl.seen).forEach(n=>{ if(!ONL_GEN.includes(shpNorm(n))||m.has(shpNorm(n))) add(n); });
+  if(S.who) add(S.who);
+  if(!hasStaff) return [];
+  return [...m.values()].map(p=>Object.assign(p,{me:onlMe(p.name),last:onlLast(p.name)})).map(p=>Object.assign(p,{on:p.me||(!!p.last&&onlNow()-p.last<ONL_ON)}))
+    .sort((a,b)=>(b.me-a.me)||(b.on-a.on)||(b.last-a.last)||a.name.localeCompare(b.name,"ru")); }
+function onlRowHtml(){
+  if(!S.shop.loaded) return "";
+  const L=onlPeople(); if(!L.length) return `<div id="onlRow" hidden></div>`;
+  const n=L.filter(p=>p.on).length;
+  return `<div id="onlRow" class="onl-row" role="button" tabindex="0" data-onl="open" aria-label="Сейчас в сети: ${n}. Открыть список сотрудников">
+    <span class="onl-h"><b>Сейчас в сети</b><span class="onl-n">${n}</span></span>
+    <span class="onl-l">${L.map(p=>`<span class="onl-c${p.on?" on":""}" title="${esc(p.name+(p.me?" (вы)":"")+" — "+(p.on?"в сети":onlAgo(p.last,true)))}">${onlAv(p.name,p.on)}<span class="onl-t"><b>${esc(p.me?"Вы":p.name.split(/\s+/)[0])}</b>${p.on?"":`<span>${esc(onlAgo(p.last)||"—")}</span>`}</span></span>`).join("")}</span>
+    <span class="onl-go" aria-hidden="true">›</span></div>`; }
+function onlSheetBody(L){ L=L||onlPeople(); const n=L.filter(p=>p.on).length;
+  return `<p class="muted onl-sub">Сейчас: ${n} из ${L.length} · обновляется раз в минуту</p>
+    <ul class="onl-ul">${L.map(p=>`<li>${onlAv(p.name,p.on,40)}<span class="onl-rb"><b>${esc(p.me?p.name+" (вы)":p.name)}</b>${p.role?`<span class="muted">${esc(p.role)}</span>`:""}</span><span class="onl-st${p.on?" on":""}">${esc(p.on?"в сети":onlAgo(p.last,true))}</span></li>`).join("")}</ul>`; }
+function onlSheet(){
+  const L=onlPeople(), old=document.getElementById("onlModal"); if(old) old.remove();
+  const m=document.createElement("div"); m.className="modal"; m.id="onlModal";
+  m.innerHTML=`<div class="modal-card onl-sheet" role="dialog" aria-modal="true" aria-labelledby="onlTtl"><div class="onl-sh"><h2 id="onlTtl">Кто в сети</h2><button type="button" class="btn sm" data-onl="close">Закрыть</button></div>${onlSheetBody(L)}</div>`;
+  m.addEventListener("click",ev=>{ if(ev.target===m||ev.target.closest('[data-onl="close"]')) m.remove(); });
+  m.addEventListener("keydown",ev=>{ if(ev.key==="Escape") m.remove(); });
+  document.body.appendChild(m); setTimeout(()=>{ const b=m.querySelector('[data-onl="close"]'); b&&b.focus(); },50); }
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-onl="open"]'); if(t){ ev.preventDefault(); onlSheet(); } });
+document.addEventListener("keydown",ev=>{ if((ev.key==="Enter"||ev.key===" ")&&ev.target&&ev.target.getAttribute&&ev.target.getAttribute("data-onl")==="open"){ ev.preventDefault(); onlSheet(); } });
+
+/* опрос сервера: раз в минуту, пока страница на экране, и сразу при возвращении в приложение */
+async function onlPing(){
+  if(S.onl.busy||!shpOn()||!shpPin()||document.visibilityState==="hidden") return; S.onl.busy=true;
+  try{ const r=await fetch(shpUrl("action=ping&pin="+encodeURIComponent(shpPin())),{cache:"no-cache"}); const j=await r.json();
+    if(j&&j.ok&&j.seen){ S.onl.seen=j.seen; if(+j.now) S.onl.skew=+j.now-Date.now(); S.onl.at=Date.now(); S.onl.ok=true; onlPaint(); } }catch(_){ }
+  S.onl.busy=false; }
+function onlPaint(){
+  if(S.view!=="shop") return;
+  const r=document.getElementById("onlRow"); if(r){ const box=r.querySelector(".onl-l"), x=box?box.scrollLeft:0, w=document.createElement("div"); w.innerHTML=onlRowHtml(); const nr=w.firstElementChild; if(nr){ r.replaceWith(nr); const nb=nr.querySelector(".onl-l"); if(nb) nb.scrollLeft=x; } }
+  if(/^(staff|person)$/.test(S.shop.mode)&&!document.querySelector(".modal")){ const a=document.activeElement; if(!a||!/INPUT|TEXTAREA|SELECT/.test(a.tagName)) shpRenderKeep(); }
+  const om=document.getElementById("onlModal"); if(om){ const u=om.querySelector(".onl-ul"), y=u?u.scrollTop:0, w=document.createElement("div"); w.innerHTML=onlSheetBody(); om.querySelector(".onl-sub").replaceWith(w.children[0]); if(u){ u.replaceWith(w.children[0]); om.querySelector(".onl-ul").scrollTop=y; } } }
+setInterval(onlPing,60e3); setTimeout(onlPing,1200);
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") onlPing(); });
+
+/* имя работника — в каждом GET раздела (сервер тоже отмечает «в сети»); если уже есть — не дублируем */
+if(typeof shpUrl==="function"){ const _onlUrl=shpUrl; shpUrl=function(q){ q=String(q||""); return _onlUrl.call(this,S.who&&!/(^|&)who=/.test(q)?q+"&who="+encodeURIComponent(S.who):q); }; }
+/* строка «Сейчас в сети» — первой над сделками (обёртка сохраняет плашку обращений и «Мои задачи») */
+if(typeof shpTaskStrip==="function"){ const _onlTS=shpTaskStrip; shpTaskStrip=function(){ return onlRowHtml()+_onlTS.apply(this,arguments); }; }
+/* «Сотрудники» и карточка человека: «в сети» с зелёной точкой или «5 мин назад / сегодня в 10:15 / вчера в 18:40 / 3 нояб. в 09:00» */
+if(typeof shpPersonInfo==="function"){ const _onlPI=shpPersonInfo; shpPersonInfo=function(p){ const r=_onlPI.apply(this,arguments); r.last=Math.max(r.last||0,onlLast(p.name)); return r; }; }
+function onlWithAgo(fn){ return function(){ const keep=shpAgo; shpAgo=ms=>{ const s=onlAgo(ms,true); return s==="в сети"?"⁣в сети":s; };
+  let h; try{ h=fn.apply(this,arguments); } finally{ shpAgo=keep; }
+  h=h.replace(/⁣в сети/g,'<span class="onl-on">в сети</span>');
+  return h.replace(/data-k="([^"]*)"><span class="shp-av" aria-hidden="true">([^<]*)<\/span>/g,(all,k,ini)=>{ const n=k.replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");
+    return onlIsOn(n)?`data-k="${k}"><span class="shp-av onl-has" aria-hidden="true">${ini}<i class="onl-dot"></i></span>`:all; }); }; }
+if(typeof shpStaffHtml==="function") shpStaffHtml=onlWithAgo(shpStaffHtml);
+if(typeof shpPersonHtml==="function") shpPersonHtml=onlWithAgo(shpPersonHtml);
+/* чаты: маленькая зелёная точка у имени того, кто сейчас в сети (себя не отмечаем) */
+function onlDec(s){ return String(s).replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&"); }
+function onlNameDot(n){ return !onlMe(n)&&onlIsOn(n)?`<i class="onl-cd" title="в сети" aria-label="в сети"></i>`:""; }
+if(typeof shpMsgsHtml==="function"){ const _onlMH=shpMsgsHtml; shpMsgsHtml=function(){ return _onlMH.apply(this,arguments).replace(/<div class="shp-mh"><b>([^<]*)<\/b>/g,(all,n)=>{ const d=onlNameDot(onlDec(n)); return d?`<div class="shp-mh"><b>${n}${d}</b>`:all; }); }; }
+if(typeof shpOrderHtml==="function"){ const _onlOH=shpOrderHtml; shpOrderHtml=function(){ return _onlOH.apply(this,arguments).replace(/(<span class="tb-l">Ответственный<\/span><b>)([^<]*)<\/b>/,(all,a,n)=>{ const d=onlNameDot(onlDec(n)); return d?a+n+d+"</b>":all; }); }; }
+
+(function(){ const st=document.createElement("style"); st.id="onlCss"; st.textContent=`
+.onl-row{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;min-height:52px;margin:0 0 10px;padding:6px 8px 6px 12px;border:1px solid var(--line);border-radius:var(--r,10px);background:var(--surface);color:var(--ink);cursor:pointer;overflow:hidden}
+.onl-row:focus-visible{outline:2px solid var(--accent,#3b82f6);outline-offset:2px}
+.onl-h{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:2px;font:600 12.5px/1.15 var(--f-body,system-ui)}
+.onl-h b{font-weight:600;color:var(--muted)}.onl-n{font:700 17px/1 var(--f-num,var(--f-body,system-ui));color:var(--ok,#17643E)}
+.onl-l{flex:1;min-width:0;display:flex;gap:12px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;padding:2px 0;-webkit-overflow-scrolling:touch}
+.onl-l::-webkit-scrollbar{display:none}
+.onl-c{flex:none;display:flex;align-items:center;gap:6px;max-width:132px}
+.onl-c:not(.on) .onl-av{opacity:.5;filter:grayscale(.6)}
+.onl-t{display:flex;flex-direction:column;min-width:0;font:500 12.5px/1.2 var(--f-body,system-ui)}
+.onl-t b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:84px}
+.onl-c:not(.on) .onl-t b{color:var(--muted);font-weight:500}.onl-t span{color:var(--muted);font-size:11.5px;white-space:nowrap}
+.onl-go{flex:none;color:var(--muted);font-size:20px;line-height:1;padding:0 2px}
+.onl-av{--s:32px;position:relative;flex:none;width:var(--s);height:var(--s);border-radius:50%;display:grid;place-items:center;background:hsl(var(--h) 42% 40%);color:#fff;font:700 calc(var(--s)*.38)/1 var(--f-body,system-ui);letter-spacing:.02em}
+.onl-dot{position:absolute;right:-1px;bottom:-1px;width:30%;height:30%;min-width:9px;min-height:9px;border-radius:50%;background:#2DBE60;box-shadow:0 0 0 2px var(--surface,#fff)}
+.shp-av.onl-has{position:relative;overflow:visible}.shp-av.onl-has .onl-dot{width:12px;height:12px}
+.onl-on{color:var(--ok,#17643E);font-weight:600}
+.onl-cd{display:inline-block;width:7px;height:7px;margin-left:5px;border-radius:50%;background:#2DBE60;vertical-align:middle;position:relative;top:-1px}
+.onl-sheet{max-width:440px;width:100%;box-sizing:border-box}
+.onl-sh{display:flex;align-items:center;justify-content:space-between;gap:10px}.onl-sh h2{margin:0}
+.onl-sub{margin:4px 0 10px;font-size:13px}
+.onl-ul{list-style:none;margin:0;padding:0;max-height:min(62vh,520px);overflow-y:auto}
+.onl-ul li{display:flex;align-items:center;gap:12px;padding:9px 2px;border-top:1px solid var(--line)}
+.onl-ul li:first-child{border-top:0}
+.onl-ul li .onl-av:not(.on){opacity:.55;filter:grayscale(.6)}
+.onl-rb{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.onl-rb b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.onl-rb .muted{font-size:12.5px}
+.onl-st{flex:none;font-size:13px;color:var(--muted);text-align:right}.onl-st.on{color:var(--ok,#17643E);font-weight:600}
+`; document.head.appendChild(st); })();
+
+/* ---------- «📋 Спецификация от дизайнера» в заказе Технолог 3D ----------
+   Сделка «Вертакса», у которой поле t3d = номер этого заказа → её примерная спецификация закупки (action=specGet&deal=…),
+   статусы позиций — из снабжения (action=supply). Только просмотр. Только сотрудникам с PIN на этом устройстве; клиенту — ничего.
+   Нет привязанной сделки, нет PIN, сервер не дал (роль) или спецификация пустая — карточки нет.
+   «✓ Проверить комплект» (мастер отмечает Есть / Не хватает / Брак) — site_kompl.js: сводка и кнопка под списком, метки «от мастера».
+   Места: карточка под «Вид спереди с размерами» и плитка «📋 Спецификация» в меню «⋮» у 3D (открывает то же окном). */
+S.sp3=S.sp3||{};   // номер заказа → {st:"load"|"none"|"ok"|"err", deal, rows, at}
+const SP3_TTL=120000;
+function sp3Staff(){ return !(typeof clientMode==="function"&&clientMode())&&(typeof siteIsStaff!=="function"||siteIsStaff())
+  &&typeof shpOn==="function"&&shpOn()&&typeof shpPin==="function"&&!!shpPin(); }
+function sp3Oid(){ return S.current&&S.current.orderId?String(S.current.orderId).toUpperCase():""; }
+async function sp3Get(q){   // тихий GET: без подсказок и без сброса PIN (это делает сам «Вертакс»)
+  try{ const r=await fetch(shpUrl(q+"&pin="+encodeURIComponent(shpPin())),{cache:"no-cache"}); return await r.json(); }catch(_){ return null; } }
+async function sp3Deals(){ if(S.shop&&S.shop.loaded&&Array.isArray(S.shop.orders)) return S.shop.orders;
+  const j=await sp3Get("action=shop"); return j&&j.ok&&Array.isArray(j.orders)?j.orders:null; }
+async function sp3Load(oid){ const was=S.sp3[oid]; S.sp3[oid]=Object.assign({},was||{},{st:was&&was.st==="ok"?"ok":"load",busy:true});
+  let R={st:"none",at:Date.now()};
+  try{ const L=await sp3Deals();
+    if(!L) R.st=was&&was.st==="ok"?"ok":"err";
+    else { const d=L.filter(o=>String(o.t3d||"").toUpperCase()===oid).sort((a,b)=>(b.created||0)-(a.created||0))[0];
+      if(d){ const j=await sp3Get("action=specGet&deal="+encodeURIComponent(d.id));
+        if(j&&j.ok&&Array.isArray(j.rows)){ const rows=j.rows.filter(r=>String(r.deal)===String(d.id)&&r.name); R=rows.length?{st:"ok",deal:d,rows,at:Date.now()}:R; }
+        else if(!j) R.st=was&&was.st==="ok"?"ok":"err";   // нет связи — показываем прошлое, если было
+        // j.error (роль/PIN) — карточки нет
+        if(R.st==="ok"&&typeof supStLoad==="function"&&S.sup&&!(S.sup.stAt>Date.now()-60000)) await supStLoad(); } } }
+  catch(e){ console.warn("spec3d",e); R.st="err"; }
+  if(R.st==="ok"&&!R.rows&&was){ R=Object.assign({},was,{at:Date.now()}); }
+  R.busy=false; S.sp3[oid]=R; sp3Sync(oid); return R; }
+function sp3Need(oid){ const c=S.sp3[oid]; if(c&&(c.busy||Date.now()-(c.at||0)<SP3_TTL)) return c; setTimeout(()=>sp3Load(oid),0); return c||{st:"load"}; }
+function sp3St(deal,key){ const r=((S.sup&&S.sup.st||{})["D:"+deal]||{})["S:"+key]; const n=r?(+r.status||0):0; return n>=0&&n<=3?n:0; }
+const SP3_SN=["Нужно","Заказано","Пришло","Выдано"], SP3_TN={L:"Листы",E:"Кромка",F:"Фурнитура",O:"Другое"};
+function sp3Num(q){ return typeof supNum==="function"?supNum(q):String(Math.round((Number(q)||0)*100)/100).replace(".",","); }
+function sp3When(ms){ if(!ms) return ""; try{ return typeof shpTime==="function"?shpTime(ms):new Date(ms).toLocaleString("ru-RU"); }catch(_){ return ""; } }
+function sp3Body(c,opt){ opt=opt||{}; const d=c.deal, R=c.rows, cnt=[0,0,0,0], tot={};
+  R.forEach(r=>{ cnt[sp3St(d.id,r.key)]++; if(typeof komIsReq==="function"&&komIsReq(r)) return; const k=(SP3_TN[r.type]?r.type:"O")+"|"+r.unit; if(r.qty!==""&&!isNaN(+r.qty)) tot[k]=(tot[k]||0)+(+r.qty); });
+  let w=null; R.forEach(r=>{ if(!w||(r.when||0)>(w.when||0)) w=r; });
+  const ttl=typeof shpTitle==="function"?shpTitle(d):[d.client,d.kind].filter(Boolean).join(" · ");
+  const sum=["L","E","F","O"].map(t=>{ const u=Object.keys(tot).filter(k=>k.split("|")[0]===t).map(k=>esc(sp3Num(tot[k]))+" "+esc(k.split("|")[1])); return u.length?`${SP3_TN[t]} <b class="mono">${u.join(" + ")}</b>`:""; }).filter(Boolean).join(" · ");
+  return `<p class="sp3-meta"><span class="sp3-tag">Примерная — от дизайнера</span> <span class="muted">Сделка: ${esc(ttl||"—")}</span></p>
+    <ul class="sp3-list">${R.map(r=>{ const s=sp3St(d.id,r.key); return `<li><span class="sp3-n"><b>${esc(r.name)}</b>${r.comment?`<small>${esc(r.comment)}</small>`:""}${typeof komTag==="function"?komTag(d.id,r):""}</span><span class="sp3-q mono">${esc(r.qty===""?"—":sp3Num(r.qty))} ${esc(r.unit||"")}</span><span class="sp3-chip c${s}">${SP3_SN[s]}</span></li>`; }).join("")}</ul>
+    <div class="sp3-tot"><p><b>Всего ${R.length} поз.</b>${cnt.map((n,i)=>n?` <span class="sp3-chip c${i}">${SP3_SN[i]} ${n}</span>`:"").join("")}</p>${sum?`<p class="muted">${sum}</p>`:""}</div>${typeof komSumHtml==="function"?komSumHtml(d.id,R):""}
+    <p class="sp3-foot"><span class="muted">${w?`Изменил(а) ${esc(w.who||"—")}${w.when?" · "+esc(sp3When(w.when)):""}`:""}</span>${opt.noDeal?"":`<button type="button" class="btn sm" data-sp3="deal" data-id="${esc(d.id)}">Открыть сделку в Вертаксе</button>`}</p>`; }
+function sp3Card(oid){ if(!oid||!sp3Staff()) return ""; const c=sp3Need(oid);
+  if(!c||c.st!=="ok") return `<div class="sp3-slot" data-oid="${esc(oid)}" hidden></div>`;
+  return `<div class="sp3-slot" data-oid="${esc(oid)}"><details class="card sp3-card" open><summary><h2>📋 Спецификация от дизайнера</h2><span class="sp3-cnt muted">${c.rows.length} поз.</span></summary>${sp3Body(c)}</details></div>`; }
+// после загрузки: обновить карточку на странице и открытое окно, без перерисовки 3D
+function sp3Sync(oid){ if(sp3Oid()!==oid) return;
+  document.querySelectorAll(`.sp3-slot[data-oid="${CSS.escape(oid)}"]`).forEach(el=>{ const open=!el.querySelector("details")||el.querySelector("details").open;
+    const t=document.createElement("div"); t.innerHTML=sp3Card(oid); const n=t.firstElementChild; if(!n) return; const dt=n.querySelector("details"); if(dt&&!open) dt.open=false; el.replaceWith(n); });
+  const m=document.getElementById("sp3Modal"); if(m){ const c=S.sp3[oid], b=m.querySelector(".sp3-mb"); if(b) b.innerHTML=c&&c.st==="ok"?sp3Body(c):c&&c.st==="load"?`<p class="muted">Загружаю…</p>`:`<p class="muted">${c&&c.st==="err"?"Нет связи с таблицей — не загрузилась.":"У заказа нет спецификации от дизайнера."}</p>`; } }
+function sp3Open(oid){ const c=S.sp3[oid]; document.getElementById("sp3Modal")&&document.getElementById("sp3Modal").remove();
+  const m=document.createElement("div"); m.className="modal sp3-modal"; m.id="sp3Modal";
+  m.innerHTML=`<div class="modal-card" role="dialog" aria-label="Спецификация от дизайнера"><div class="sp3-mh"><h2>📋 Спецификация от дизайнера</h2><button type="button" class="sp3-x" data-sp3="close" aria-label="Закрыть">✕</button></div>
+    <p class="note" style="margin:0 0 6px">Заказ <b class="mono">${esc(oid)}</b> · только просмотр</p><div class="sp3-mb">${c&&c.st==="ok"?sp3Body(c):`<p class="muted">Загружаю…</p>`}</div></div>`;
+  m.addEventListener("click",e=>{ if(e.target===m) m.remove(); }); document.body.appendChild(m);
+  if(!c||c.st!=="ok") sp3Load(oid); }
+
+/* подключение: страница заказа (под «Вид спереди с размерами») и меню «⋮» у 3D */
+if(typeof viewOrder==="function"){ const _sp3VO=viewOrder; viewOrder=function(){ const h=_sp3VO.apply(this,arguments), oid=sp3Oid(); if(!oid||!sp3Staff()) return h;
+  const card=sp3Card(oid); if(!card) return h; let at=-1, m;
+  // кнопка «Вид спереди с размерами» (или открытое окно чертежа); в панели 3D есть свои кнопки — их не трогаем (там класс dq-b)
+  if((m=/<button[^>]*class="btn fv-btn"[^>]*data-act="fv-open"[^>]*>[\s\S]*?<\/button>/.exec(h))) at=m.index+m[0].length;
+  else { const i=h.indexOf('<div class="fv-win"'), k=i>=0?h.indexOf('<div class="fv-tip">',i):-1; if(k>=0){ const j=h.indexOf("</div></div></div>",k); if(j>=0) at=j+18; } }
+  if(at<0&&(m=/<button[^>]*class="btn fv-btn"[^>]*data-act="scan-open"/.exec(h))) at=m.index;
+  if(at<0){ const i=h.indexOf('<details class="plist"'); at=i>=0?i:-1; }
+  return at>=0?h.slice(0,at)+card+h.slice(at):h; }; }
+if(typeof dqMenu==="function"){ const _sp3DM=dqMenu; dqMenu=function(){ const h=_sp3DM.apply(this,arguments), oid=sp3Oid(); if(!oid||!sp3Staff()) return h;
+  const c=sp3Need(oid); if(!c||c.st!=="ok") return h;
+  const tile=`<button type="button" class="dq-mi dq-tl" data-sp3="open" data-id="${esc(oid)}"><b aria-hidden="true">📋</b><span>Спецификация</span></button>`;
+  const i=h.indexOf('<div class="dq-tiles">'); if(i>=0){ const j=h.indexOf("</div>",i); return h.slice(0,j)+tile+h.slice(j); }
+  const k=h.indexOf("<hr>"); const sec=`<p class="dq-h">Открыть</p><div class="dq-tiles">${tile}</div>`; return k>=0?h.slice(0,k)+sec+h.slice(k):h+sec; }; }
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest("[data-sp3]"); if(!t) return; ev.preventDefault(); ev.stopPropagation();
+  const mn=t.closest(".dq-menu"); if(mn) mn.hidden=true; const a=t.dataset.sp3, md=document.getElementById("sp3Modal");
+  if(a==="close"){ if(md) md.remove(); return; }
+  if(a==="open") return sp3Open(String(t.dataset.id||sp3Oid()));
+  if(a==="deal"){ if(md) md.remove(); if(typeof shpGo!=="function"){ toast("«Вертакс» недоступен"); return; }
+    const go=()=>shpGo("order",t.dataset.id);
+    if(S.shop&&!S.shop.loaded&&typeof shpLoad==="function") shpLoad(true).then(()=>{ if(S.shop.loaded) go(); else toast("Нет связи с таблицей. Проверьте интернет."); }); else go(); } },true);
+(function(){ const st=document.createElement("style"); st.textContent=`
+.sp3-card{margin:0 0 12px}.sp3-card>summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;min-height:44px}.sp3-card>summary::-webkit-details-marker{display:none}
+.sp3-card>summary h2{margin:0;font-size:16px;flex:1;min-width:0}.sp3-card>summary::after{content:"▾";color:var(--muted);transition:transform .15s}.sp3-card:not([open])>summary::after{transform:rotate(-90deg)}
+.sp3-meta{margin:4px 0 8px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:13px}
+.sp3-tag{background:#fff1c2;color:#6b4e00;border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px}
+.sp3-list{list-style:none;margin:0;padding:0}
+.sp3-list li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;align-items:center;padding:8px 2px;border-bottom:1px solid var(--line,#e3e3e3);font-size:14px}
+.sp3-n{min-width:0;overflow-wrap:anywhere}.sp3-n small{display:block;color:var(--muted);font-size:12px}.sp3-q{white-space:nowrap;text-align:right}
+.sp3-chip{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700;white-space:nowrap;line-height:1.5}
+.sp3-chip.c0{background:#eceef0;color:#4a5058}.sp3-chip.c1{background:#fdecd2;color:#8a4b00}.sp3-chip.c2{background:#dceafa;color:#1d5a99}.sp3-chip.c3{background:#d9f0e1;color:#1f6b3f}
+.sp3-tot{margin:8px 0 0;font-size:13px}.sp3-tot p{margin:0 0 4px;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
+.sp3-foot{margin:8px 0 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;font-size:13px}.sp3-foot .btn{min-height:44px}
+.sp3-modal .modal-card{max-width:560px;width:calc(100% - 24px);max-height:86vh;overflow:auto;box-sizing:border-box}
+.sp3-mh{display:flex;align-items:center;gap:8px}.sp3-mh h2{margin:0;flex:1;font-size:17px}
+.sp3-x{min-width:44px;min-height:44px;border:0;background:transparent;font-size:18px;cursor:pointer;color:inherit}
+@media (max-width:420px){.sp3-list li{grid-template-columns:minmax(0,1fr) auto}.sp3-list .sp3-chip{grid-column:2;justify-self:end}.sp3-q{grid-row:1;grid-column:2}}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sp3-chip.c0{background:#3a3f45;color:#d6d9dd}:root:not([data-theme="light"]) .sp3-chip.c1{background:#5a3a10;color:#ffd9a3}:root:not([data-theme="light"]) .sp3-chip.c2{background:#173a5e;color:#bcdcff}:root:not([data-theme="light"]) .sp3-chip.c3{background:#1b4a2e;color:#b8ecc9}:root:not([data-theme="light"]) .sp3-tag{background:#5a4a12;color:#ffe9a8}}
+:root[data-theme="dark"] .sp3-chip.c0{background:#3a3f45;color:#d6d9dd}:root[data-theme="dark"] .sp3-chip.c1{background:#5a3a10;color:#ffd9a3}:root[data-theme="dark"] .sp3-chip.c2{background:#173a5e;color:#bcdcff}:root[data-theme="dark"] .sp3-chip.c3{background:#1b4a2e;color:#b8ecc9}:root[data-theme="dark"] .sp3-tag{background:#5a4a12;color:#ffe9a8}`;
+  document.head.appendChild(st); })();
+try{ window.vtxSp3={card:sp3Card,load:sp3Load,open:sp3Open,state:S.sp3}; }catch(_){}   // для проверок
+
+/* ---------- Профиль и выход в Технолог 3D: плашка роли вверху — это кнопка «Мастер: Василий ▾», внутри всё про вход и выход ---------- */
+function accRoles(){ const R=[]; try{ if(siteIsAdmin()) R.push(["adm-out","Технолог"]); if(siteIsSupply()) R.push(["sup-out","Снабженец"]); if(siteIsDesigners()) R.push(["dsg-out","Дизайнер"]); if(siteIsMasters()) R.push(["mst-out","Мастер"]); }catch(_){} return R; }
+function accLabel(){ const R=accRoles(); if(!R.length&&!S.pin) return ""; const who=S.who||""; return (R.length?R[0][1]:"Мастер")+(who?": "+who:""); }
+function accPaint(){ const el=document.getElementById("role"); if(!el||document.body.classList.contains("vtx")) return; const t=accLabel(); if(!t) { el.classList.remove("acc-btn"); return; }
+  if(el.dataset.acc===t&&el.classList.contains("acc-btn")&&el.textContent===t+" ▾") return; el.dataset.acc=t; el.textContent=t+" ▾"; el.classList.add("acc-btn"); el.setAttribute("role","button"); el.setAttribute("tabindex","0"); el.setAttribute("aria-label","Профиль и выход"); }
+function accOpen(){ document.getElementById("accM")?.remove(); const R=accRoles(), m=document.createElement("div"); m.className="modal"; m.id="accM";
+  const rows=R.map(([a,n])=>`<button type="button" class="btn acc-out" data-acc-out="${a}">Выйти: ${n.toLowerCase()}</button>`).join("");
+  m.innerHTML=`<div class="modal-card"><h2 style="margin:0 0 4px">${esc(S.who||"Без имени")}</h2><p class="muted" style="margin:0 0 14px">${esc(R.map(x=>x[1]).join(", ")||"Мастер")} · на этом телефоне</p>
+    <div style="display:grid;gap:8px">
+      ${S.site&&S.site.stagesUrl?`<button type="button" class="btn" data-acc="name">✏️ Сменить имя</button>`:""}
+      <button type="button" class="btn" data-acc="help">🛠 Написать в техподдержку</button>
+      ${rows}
+      ${S.pin?`<button type="button" class="btn" data-acc="pin">Выйти из отметки этапов</button>`:""}
+      ${R.length+(S.pin?1:0)>1?`<button type="button" class="btn danger" data-acc="all">Выйти полностью</button>`:""}
+      <button type="button" class="btn sm" data-acc="x">Закрыть</button></div>
+    <p class="muted" style="margin:12px 0 0;font-size:12.5px">После выхода войти снова можно по ссылке от технолога.</p></div>`;
+  m.addEventListener("click",async e=>{ if(e.target===m){ m.remove(); return; } const b=e.target.closest("[data-acc],[data-acc-out]"); if(!b) return;
+    const a=b.dataset.acc, o=b.dataset.accOut;
+    if(a==="x"){ m.remove(); return; }
+    if(a==="help"){ m.remove(); if(typeof helpOpen==="function") helpOpen(); return; }
+    if(a==="name"){ m.remove(); const n=await (typeof appPrompt==="function"?appPrompt("Ваше имя — так вас видят в отметках и задачах",S.who||""):Promise.resolve(prompt("Ваше имя",S.who||""))); if(n&&n.trim()){ S.who=n.trim().slice(0,40); try{ localStorage.setItem("cehqr-who",S.who); }catch(_){} accPaint(); toast("Имя сохранено"); } return; }
+    if(o){ m.remove(); const x=document.createElement("button"); x.dataset.act=o; x.hidden=true; document.body.appendChild(x); x.click(); x.remove(); return; }
+    if(a==="pin"){ m.remove(); S.pin=""; try{ localStorage.removeItem("cehqr-pin"); }catch(_){} toast("Вы вышли из отметки этапов"); render(); return; }
+    if(a==="all"){ if(typeof appConfirm==="function"&&!(await appConfirm("Выйти из всех режимов на этом телефоне?","Выйти"))) return; m.remove();
+      try{ ["cehqr-pin","cehqr-techpin","cehqr-officepin","cehqr-suppin"].forEach(k=>localStorage.removeItem(k)); }catch(_){} S.pin="";
+      try{ delete _ks.master; delete _ks.masters; delete _ks.designers; delete _ks.supply; keySave(); }catch(_){}
+      toast("Вы вышли"); if(typeof siteLoadIndex==="function") siteLoadIndex().then(()=>setView("orders")); else location.reload(); } });
+  document.body.appendChild(m); }
+document.addEventListener("click",ev=>{ const r=ev.target.closest&&ev.target.closest("#role.acc-btn"); if(!r) return; ev.stopPropagation(); ev.preventDefault(); accOpen(); },true);
+document.addEventListener("keydown",ev=>{ if((ev.key==="Enter"||ev.key===" ")&&document.activeElement&&document.activeElement.matches&&document.activeElement.matches("#role.acc-btn")){ ev.preventDefault(); accOpen(); } });
+if(typeof render==="function"){ const _accR=render; render=function(){ const r=_accR.apply(this,arguments); try{ accPaint(); }catch(_){} return r; }; }
+setInterval(()=>{ try{ accPaint(); }catch(_){} },1500);
+(function(){ const st=document.createElement("style"); st.textContent=`#role.acc-btn{cursor:pointer;border:1px solid var(--field,var(--line));border-radius:999px;padding:6px 12px;min-height:32px;display:inline-flex;align-items:center;white-space:nowrap;max-width:46vw;overflow:hidden;text-overflow:ellipsis}#role.acc-btn:focus-visible{outline:2px solid var(--accent)}#accM .btn{min-height:46px;justify-content:center}#accM .danger{color:var(--bad,#C7361F)}`; document.head.appendChild(st); })();
+
+/* ---------- «✓ Проверить комплект»: мастер по спецификации сделки отмечает «Есть» / «Не хватает» / «Брак» ----------
+   Чего не хватает (и брак, и новые позиции «нет в списке») → строки в спецификации сделки «мастер Имя · причина», статус снабжения «Нужно»,
+   одно сообщение снабженцу в Телеграм (копия технологу). Сервер: action=komplGet / komplSave (лист «Комплектация»).
+   Где: карточка «📋 Спецификация от дизайнера» в Технолог 3D (и окно из «⋮»), блок «Спецификация закупки» на странице сделки в Вертаксе
+   (мастерам — только просмотр и проверка), подсветка «от мастера» в «Снабжении». Все роли с PIN; клиенту — ничего. */
+S.kom=S.kom||{d:{},all:null,allAt:0,allBusy:false,draft:{},ck:null};
+const KOM_WHY=[["short","не хватило"],["brak","брак"],["extra","доп. деталь"],["lost","потерялось"],["other","другое"]], KOM_U=["шт","компл.","м","л.","м²"];
+function komPin(){ return typeof shpPin==="function"?shpPin():""; }
+function komOn(){ return !(typeof clientMode==="function"&&clientMode())&&typeof shpOn==="function"&&shpOn()&&!!komPin(); }
+function komNum(q){ return typeof supNum==="function"?supNum(q):String(Math.round((Number(q)||0)*100)/100).replace(".",","); }
+function komWhen(ms){ if(!ms) return ""; try{ return typeof shpTime==="function"?shpTime(ms):new Date(ms).toLocaleString("ru-RU"); }catch(_){ return ""; } }
+function komIsReq(r){ return /^M[0-9A-Z]+$/.test(String(r&&r.key||"")); }   // строка, которую дописал мастер (ключ заявки начинается с M)
+async function komGet(q){ try{ const r=await fetch(shpUrl(q+"&pin="+encodeURIComponent(komPin())),{cache:"no-cache"}); return await r.json(); }catch(_){ return null; } }
+async function komLoad(deal){ const j=await komGet("action=komplGet&deal="+encodeURIComponent(deal)), was=S.kom.d[deal];
+  S.kom.d[deal]=j&&j.ok?{rows:j.rows||[],brak:j.brak,at:Date.now()}:{rows:was&&was.rows||[],brak:was&&was.brak,at:Date.now(),err:true};
+  komSync(deal); return S.kom.d[deal]; }
+function komNeed(deal){ const c=S.kom.d[deal]; if(c&&(c.busy||Date.now()-(c.at||0)<60000)) return c;
+  S.kom.d[deal]=Object.assign({rows:[]},c||{},{busy:true,at:c&&c.at||0}); setTimeout(()=>komLoad(deal),0); return S.kom.d[deal]; }
+function komChecks(deal){ const m={}; ((S.kom.d[deal]||{}).rows||[]).forEach(r=>{ if(r.status!=="заявка") m[r.key]=r; }); return m; }
+function komReqs(deal){ const m={}; ((S.kom.d[deal]||{}).rows||[]).forEach(r=>{ if(r.status==="заявка") m[r.key]=r; }); return m; }
+function komSt(deal,key){ return typeof sp3St==="function"?sp3St(deal,key):typeof specSt==="function"?specSt(deal,key):0; }
+const KOM_SN=["Нужно","Заказано","Пришло","Выдано"];
+// после загрузки — обновить то, что на экране (карточка Технолог 3D, страница сделки, открытый чек-лист)
+function komSync(deal){
+  if(typeof sp3Sync==="function"&&typeof sp3Oid==="function"&&sp3Oid()){ const c=S.sp3&&S.sp3[sp3Oid()]; if(c&&c.deal&&String(c.deal.id)===String(deal)) sp3Sync(sp3Oid()); }
+  if(S.view==="shop"&&S.shop&&S.shop.mode==="order"&&S.shop.cur===deal&&!document.querySelector(".modal")&&typeof shpRenderKeep==="function") shpRenderKeep();
+  if(S.kom.ck&&S.kom.ck.deal===deal) komPaint(); }
+/* сводка под списком: «Проверено 12 из 18 · не хватает 3» + кнопка */
+function komCount(deal,rows,marks){ const C=komChecks(deal), base=rows.filter(r=>!komIsReq(r)); let done=0, bad=0;
+  base.forEach(r=>{ const m=marks&&marks[r.key], st=m?m.st:C[r.key]?{"есть":"ok","нет":"miss","брак":"brak"}[C[r.key].status]:""; if(st) done++; if(st==="miss"||st==="brak") bad++; });
+  return {n:base.length,done,bad}; }
+function komBar(c,extra){ const bad=c.bad+(extra||0), pc=c.n?Math.round(c.done/c.n*100):0;
+  return `<p class="kom-pr"><span>Проверено <b>${c.done}</b> из <b>${c.n}</b>${bad?` · <span class="kom-badn">не хватает ${bad}</span>`:c.n&&c.done===c.n?` · <span class="kom-okn">всё есть</span>`:""}</span></p>
+    <div class="kom-bar" role="progressbar" aria-label="Проверено позиций" aria-valuemin="0" aria-valuemax="${c.n}" aria-valuenow="${c.done}"><i style="width:${pc}%"></i></div>`; }
+function komSumHtml(deal,rows){ if(!komOn()||!rows||!rows.length) return ""; const k=komNeed(deal)||{}, c=komCount(deal,rows), R=komReqs(deal), nr=Object.keys(R).length, dr=S.kom.draft[deal];
+  const dn=dr?Object.keys(dr.marks).length+dr.extra.length:0;
+  return `<div class="kom-sum" data-deal="${esc(deal)}">${c.done||nr?komBar(c):`<p class="kom-pr muted">Комплект ещё не проверяли.</p>`}
+    ${nr?`<p class="kom-line muted">Заявок от мастеров: ${nr}</p>`:""}${typeof k.brak==="number"&&k.brak>0?`<p class="kom-line kom-brak">Брак по заказу: <b>${k.brak}</b> ${k.brak===1?"позиция":k.brak<5?"позиции":"позиций"}</p>`:""}
+    <button type="button" class="btn primary kom-go" data-kom="open" data-deal="${esc(deal)}">✓ Проверить комплект${dn?` <small>(черновик: ${dn})</small>`:""}</button></div>`; }
+/* метка у строки спецификации: заявка мастера (причина, фото) или последняя проверка */
+function komTag(deal,r){ if(!komOn()) return ""; const q=komReqs(deal)[r.key];
+  if(komIsReq(r)) return `<span class="kom-tag">🔩 от мастера</span>${q&&q.photo?` <a class="kom-pl" href="${esc(q.photo)}" target="_blank" rel="noopener">📷 фото</a>`:""}`;
+  const c=komChecks(deal)[r.key]; if(!c) return "";
+  return `<small class="kom-was s-${c.status==="есть"?"ok":c.status==="брак"?"brak":"miss"}">${c.status==="есть"?"✓ есть":c.status==="брак"?"брак "+esc(komNum(c.miss)):"не хватало "+esc(komNum(c.miss))} · ${esc(c.who||"—")}${c.when?" · "+esc(komWhen(c.when)):""}</small>`; }
+
+/* ---------- чек-лист ---------- */
+function komDeal(deal){ const sh=S.shop&&Array.isArray(S.shop.orders)?S.shop.orders.find(o=>String(o.id)===String(deal)):null; if(sh) return sh;
+  const c=Object.values(S.sp3||{}).find(x=>x&&x.deal&&String(x.deal.id)===String(deal)); return c?c.deal:{id:deal,num:"",client:""}; }
+function komRows(deal){ const a=S.shop&&S.shop.spec&&Array.isArray(S.shop.spec[deal])?S.shop.spec[deal]:null; if(a&&a.length) return a;
+  const c=Object.values(S.sp3||{}).find(x=>x&&x.deal&&String(x.deal.id)===String(deal)&&Array.isArray(x.rows)); return c?c.rows:[]; }
+function komNames(deal){ const n=new Map(), d=komDeal(deal), t=String(d&&d.t3d||"").toUpperCase(), add=(x,tp)=>{ x=String(x||"").trim(); if(x&&!n.has(x.toLowerCase())) n.set(x.toLowerCase(),{n:x,t:tp}); };
+  try{ if(t&&S.current&&String(S.current.orderId||"").toUpperCase()===t&&typeof curFasteners==="function") curFasteners().forEach(f=>add(f.n,"F")); }catch(_){}
+  const b=t&&S.sup&&S.sup.needs&&S.sup.needs[t]; if(b&&b.items) b.items.filter(i=>i.type==="F"||i.type==="A").forEach(i=>add(i.name,"F"));
+  komRows(deal).forEach(r=>add(r.name,r.type)); return [...n.values()].slice(0,600); }
+function komOpen(deal){ if(!komOn()){ toast("Проверку делают сотрудники цеха с PIN"); return; } const rows=komRows(deal); if(!rows.length){ toast("Спецификация ещё не загрузилась"); return; }
+  document.getElementById("sp3Modal")&&document.getElementById("sp3Modal").remove(); document.getElementById("komModal")&&document.getElementById("komModal").remove();
+  S.kom.ck=S.kom.draft[deal]=S.kom.draft[deal]||{deal,marks:{},extra:[],add:null}; S.kom.ck.add=null;
+  const m=document.createElement("div"); m.className="modal kom-modal"; m.id="komModal";
+  m.innerHTML=`<div class="modal-card kom-card" role="dialog" aria-modal="true" aria-label="Проверка комплекта"></div>`;
+  m.addEventListener("click",e=>{ if(e.target===m) komClose(); }); document.body.appendChild(m); komPaint(); komNeed(deal); }
+function komClose(){ const m=document.getElementById("komModal"); if(m) m.remove(); const ck=S.kom.ck; S.kom.ck=null;
+  if(ck&&!Object.keys(ck.marks).length&&!ck.extra.length) delete S.kom.draft[ck.deal]; if(ck) komSync(ck.deal); }
+function komStep(f,v,lab){ return `<span class="kom-step" role="group" aria-label="${esc(lab)}"><button type="button" data-kom="dec" data-f="${f}" aria-label="Меньше">−</button><input data-kom-in="${f}" value="${esc(komNum(v))}" inputmode="decimal" aria-label="${esc(lab)}"><button type="button" data-kom="inc" data-f="${f}" aria-label="Больше">+</button></span>`; }
+function komMissText(r,m){ const q=Number(r.qty)||0; if(!q) return ""; const mi=Math.max(0,Math.round((q-(Number(m.have)||0))*100)/100); return `из ${esc(komNum(q))} ${esc(r.unit||"")} → не хватает <b>${esc(komNum(mi))}</b>`; }
+function komRowHtml(deal,r,C,ck){ const m=ck.marks[r.key], st=m?m.st:"", c=C[r.key], q=komReqs(deal)[c&&c.req];
+  const was=c?`<small class="kom-was s-${c.status==="есть"?"ok":c.status==="брак"?"brak":"miss"}">Было: ${c.status==="есть"?"✓ есть":c.status==="брак"?"брак "+esc(komNum(c.miss)):"не хватало "+esc(komNum(c.miss))} · ${esc(c.who||"—")}${c.when?" · "+esc(komWhen(c.when)):""}${q||c.req?" · заявка: "+KOM_SN[komSt(deal,c.req)]:""}</small>`:"";
+  let x="";
+  if(st==="miss") x=Number(r.qty)?`<div class="kom-x"><span class="kom-xl">Сколько есть?</span>${komStep("have",m.have,"Сколько есть")}<span class="kom-xt" data-kom-t>${komMissText(r,m)}</span></div>`
+    :`<div class="kom-x"><span class="kom-xl">Сколько не хватает?</span>${komStep("miss",m.miss,"Сколько не хватает")}<span class="kom-xt">${esc(r.unit||"")}</span></div>`;
+  if(st==="brak") x=`<div class="kom-x"><span class="kom-xl">Сколько в браке?</span>${komStep("miss",m.miss,"Сколько в браке")}<span class="kom-xt">${esc(r.unit||"")}</span>
+    <label class="btn kom-phb">📷 ${m.photo?"Другое фото":"Фото брака"}<input type="file" accept="image/*" capture="environment" data-kom-ph="${esc(r.key)}" hidden></label>${m.photo?`<img class="kom-th" src="data:image/jpeg;base64,${m.photo}" alt="Фото брака">`:""}</div>`;
+  return `<li class="kom-r${st?" on-"+st:""}" data-k="${esc(r.key)}"><div class="kom-h"><span class="kom-n"><b>${esc(r.name)}</b>${r.comment?`<small>${esc(r.comment)}</small>`:""}${was}</span><span class="kom-q mono">${esc(r.qty===""?"—":komNum(r.qty))} ${esc(r.unit||"")}</span></div>
+    <div class="kom-b3" role="group" aria-label="${esc(r.name)}"><button type="button" class="k-ok${st==="ok"?" on":""}" data-kom="ok" aria-pressed="${st==="ok"}">✓ Есть</button><button type="button" class="k-miss${st==="miss"?" on":""}" data-kom="miss" aria-pressed="${st==="miss"}">Не хватает</button><button type="button" class="k-brak${st==="brak"?" on":""}" data-kom="brak" aria-pressed="${st==="brak"}">Брак</button></div>${x}</li>`; }
+function komAddHtml(deal,a){ const L=komNames(deal);
+  return `<div class="kom-add" id="komAdd"><p class="kom-ah">Чего нет в списке</p>
+    <input class="kom-in" id="komAn" list="komNames" value="${esc(a.name||"")}" placeholder="Что не хватает: петля, ручка, полка…" aria-label="Название" autocomplete="off">
+    <datalist id="komNames">${L.map(x=>`<option value="${esc(x.n)}">`).join("")}</datalist>
+    <div class="kom-a2"><span class="kom-xl">Сколько</span>${komStep("aq",a.qty,"Сколько")}<select id="komAu" class="kom-in" aria-label="Единица">${KOM_U.map(u=>`<option${u===a.unit?" selected":""}>${u}</option>`).join("")}</select></div>
+    <p class="kom-xl" style="margin:8px 0 4px">Почему</p><div class="kom-why" role="group" aria-label="Почему">${KOM_WHY.map(w=>`<button type="button" data-kom="why" data-v="${w[0]}" class="${a.why===w[0]?"on":""}" aria-pressed="${a.why===w[0]}">${w[1]}</button>`).join("")}</div>
+    <div class="kom-a3"><label class="btn kom-phb">📷 ${a.photo?"Другое фото":"Фото"}<input type="file" accept="image/*" capture="environment" data-kom-ph="@add" hidden></label>${a.photo?`<img class="kom-th" src="data:image/jpeg;base64,${a.photo}" alt="Фото">`:""}</div>
+    <div class="kom-a4"><button type="button" class="btn primary" data-kom="addok">Добавить</button><button type="button" class="btn" data-kom="addno">Отмена</button></div></div>`; }
+function komPaint(){ const ck=S.kom.ck, card=document.querySelector("#komModal .kom-card"); if(!ck||!card) return;
+  const deal=ck.deal, d=komDeal(deal), rows=komRows(deal), base=rows.filter(r=>!komIsReq(r)), reqs=rows.filter(komIsReq), C=komChecks(deal), cnt=komCount(deal,rows,ck.marks);
+  const bd=card.querySelector(".kom-bd"), y=bd?bd.scrollTop:0, nm=Object.keys(ck.marks).length, nb=Object.values(ck.marks).filter(m=>m.st!=="ok").length;
+  const ttl=["№ "+(d.num||"—"),d.client,d.kind].filter(Boolean).join(" · ");
+  card.innerHTML=`<div class="kom-hd"><div class="kom-t"><h2>✓ Проверка комплекта</h2><button type="button" class="kom-xb" data-kom="close" aria-label="Закрыть">✕</button></div>
+      <p class="kom-sub muted">${esc(ttl)}</p>${komBar(cnt,ck.extra.length)}</div>
+    <div class="kom-bd"><ul class="kom-list">${base.map(r=>komRowHtml(deal,r,C,ck)).join("")}</ul>
+      ${reqs.length?`<p class="kom-ah">Уже заказано по заявкам</p><ul class="kom-reqs">${reqs.map(r=>{ const q=komReqs(deal)[r.key], s=komSt(deal,r.key); return `<li><span class="kom-n"><b>${esc(r.name)}</b><small>${esc(r.comment||"")}</small></span><span class="kom-q mono">${esc(komNum(r.qty))} ${esc(r.unit||"")}</span><span class="sp3-chip c${s}">${KOM_SN[s]}</span>${q&&q.photo?`<a class="kom-pl" href="${esc(q.photo)}" target="_blank" rel="noopener">📷</a>`:""}</li>`; }).join("")}</ul>`:""}
+      ${ck.extra.length?`<p class="kom-ah">Дописали</p><ul class="kom-reqs">${ck.extra.map((x,i)=>`<li><span class="kom-n"><b>${esc(x.name)}</b><small>${esc((KOM_WHY.find(w=>w[0]===x.why)||KOM_WHY[4])[1])}${x.photo?" · 📷 фото":""}</small></span><span class="kom-q mono">${esc(komNum(x.qty))} ${esc(x.unit)}</span><button type="button" class="kom-del" data-kom="xdel" data-i="${i}" aria-label="Убрать ${esc(x.name)}">✕</button></li>`).join("")}</ul>`:""}
+      ${ck.add?komAddHtml(deal,ck.add):`<button type="button" class="btn kom-more" data-kom="add">+ Не хватает того, чего нет в списке</button>`}</div>
+    <div class="kom-ft"><p class="muted">${nm||ck.extra.length?`Отметок: ${nm}${nb?` · не хватает/брак ${nb}`:""}${ck.extra.length?` · дописано ${ck.extra.length}`:""}`:"Отметьте позиции и нажмите «Отправить»"}</p>
+      <button type="button" class="btn primary kom-send" data-kom="send"${nm||ck.extra.length?"":" disabled"}>Отправить</button></div>`;
+  const b2=card.querySelector(".kom-bd"); if(b2) b2.scrollTop=y; }
+function komAddRead(){ const a=S.kom.ck&&S.kom.ck.add; if(!a) return; const n=document.getElementById("komAn"), u=document.getElementById("komAu"); if(n) a.name=n.value; if(u) a.unit=u.value; }
+function komParse(v){ const n=Number(String(v).replace(/\s/g,"").replace(",",".")); return isNaN(n)?0:Math.max(0,n); }
+async function komSend(){ const ck=S.kom.ck; if(!ck||ck.busy) return; komAddRead();
+  if(ck.add&&String(ck.add.name||"").trim()){ toast("Сначала нажмите «Добавить» или «Отмена» у новой позиции"); return; }
+  const rows=komRows(ck.deal), byK={}; rows.forEach(r=>byK[r.key]=r);
+  const items=Object.keys(ck.marks).filter(k=>byK[k]).map(k=>{ const m=ck.marks[k], r=byK[k], q=Number(r.qty)||0, o={key:k,st:m.st};
+    if(m.st==="miss"){ if(q){ o.have=m.have; o.miss=Math.max(0,Math.round((q-m.have)*100)/100); } else o.miss=m.miss; }
+    if(m.st==="brak"){ o.miss=m.miss; if(m.photo) o.photo=m.photo; } return o; });
+  const zero=items.find(o=>o.st!=="ok"&&!(o.miss>0)); if(zero){ toast("«"+byK[zero.key].name+"»: если всё есть — нажмите «✓ Есть»"); return; }
+  const extra=ck.extra.map(x=>({name:x.name,qty:x.qty,unit:x.unit,type:x.type||"O",why:x.why,photo:x.photo||undefined}));
+  const btn=document.querySelector("#komModal .kom-send"); ck.busy=true; if(btn){ btn.disabled=true; btn.textContent="Отправляю…"; }
+  const j=typeof shpPost==="function"?await shpPost({action:"komplSave",deal:ck.deal,items,extra}):null; ck.busy=false;
+  if(!j){ if(btn){ btn.disabled=false; btn.textContent="Отправить"; } return; }
+  S.kom.d[ck.deal]={rows:j.rows||[],brak:j.brak,at:Date.now()};
+  if(Array.isArray(j.spec)){ if(S.shop&&S.shop.spec&&S.shop.spec[ck.deal]!==undefined) S.shop.spec[ck.deal]=j.spec; Object.values(S.sp3||{}).forEach(c=>{ if(c&&c.deal&&String(c.deal.id)===String(ck.deal)&&c.rows) c.rows=j.spec; }); }
+  if(S.sup) S.sup.stAt=0; if(S.shop) S.shop.hist&&(S.shop.hist[ck.deal]=null); S.kom.allAt=0;
+  delete S.kom.draft[ck.deal]; const deal=ck.deal; S.kom.ck=null; document.getElementById("komModal")&&document.getElementById("komModal").remove();
+  toast(j.sent?`Заявка ушла снабженцу: ${j.sent} поз.`:j.allOk?"Всё есть — технолог получил отметку":"Отметки сохранены");
+  if(typeof supStLoad==="function") supStLoad().then(()=>komSync(deal)); else komSync(deal); }
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest("[data-kom]"); if(!t) return; const a=t.dataset.kom;
+  if(a==="open"){ ev.preventDefault(); ev.stopPropagation(); const mn=t.closest(".dq-menu"); if(mn) mn.hidden=true; komOpen(String(t.dataset.deal)); return; }
+  const ck=S.kom.ck; if(!ck||!t.closest("#komModal")) return; ev.preventDefault(); ev.stopPropagation();
+  const li=t.closest(".kom-r"), k=li&&li.dataset.k, r=k&&komRows(ck.deal).find(x=>x.key===k);
+  if(a==="close") return komClose();
+  if((a==="ok"||a==="miss"||a==="brak")&&r){ const m=ck.marks[k];
+    if(m&&m.st===a) delete ck.marks[k];   // второе нажатие — снять отметку
+    else ck.marks[k]=a==="ok"?{st:"ok"}:a==="miss"?{st:"miss",have:0,miss:Number(r.qty)?Number(r.qty):1}:{st:"brak",miss:1,photo:m&&m.photo||""};
+    if(navigator.vibrate) try{ navigator.vibrate(10); }catch(_){} return komPaint(); }
+  if(a==="dec"||a==="inc"){ const f=t.dataset.f, d=a==="inc"?1:-1;
+    if(f==="aq"){ komAddRead(); ck.add.qty=Math.max(1,(Number(ck.add.qty)||0)+d); return komPaint(); }
+    const m=ck.marks[k]; if(!m) return; const q=Number(r.qty)||0;
+    if(f==="have") m.have=Math.max(0,Math.min(q?q-1:1e6,(Number(m.have)||0)+d)); else m.miss=Math.max(1,Math.min(m.st==="brak"&&q?q:1e6,(Number(m.miss)||0)+d)); return komPaint(); }
+  if(a==="add"){ ck.add={name:"",qty:1,unit:"шт",why:"short",photo:""}; komPaint(); setTimeout(()=>{ const n=document.getElementById("komAn"); if(n){ n.focus(); n.scrollIntoView({block:"center"}); } },30); return; }
+  if(a==="why"){ komAddRead(); ck.add.why=t.dataset.v; return komPaint(); }
+  if(a==="addno"){ ck.add=null; return komPaint(); }
+  if(a==="addok"){ komAddRead(); const x=ck.add, nm=String(x.name||"").trim(); if(!nm){ toast("Напишите, чего не хватает"); document.getElementById("komAn")&&document.getElementById("komAn").focus(); return; }
+    const f=komNames(ck.deal).find(y=>y.n.toLowerCase()===nm.toLowerCase()); x.name=nm; x.qty=Number(x.qty)>0?Number(x.qty):1;
+    x.type=f&&f.t?f.t:(typeof specGuess==="function"&&specGuess(nm))||"O"; ck.extra.push(x); ck.add=null; return komPaint(); }
+  if(a==="xdel"){ ck.extra.splice(+t.dataset.i,1); return komPaint(); }
+  if(a==="send") return komSend(); },true);
+document.addEventListener("input",ev=>{ const el=ev.target; if(!el||!el.dataset||!el.dataset.komIn||!S.kom.ck) return; const ck=S.kom.ck, f=el.dataset.komIn, v=komParse(el.value);
+  if(f==="aq"){ if(ck.add) ck.add.qty=v; return; }
+  const li=el.closest(".kom-r"), k=li&&li.dataset.k, m=k&&ck.marks[k], r=k&&komRows(ck.deal).find(x=>x.key===k); if(!m||!r) return;
+  if(f==="have"){ const q=Number(r.qty)||0; m.have=q?Math.min(v,q):v; const tx=li.querySelector("[data-kom-t]"); if(tx) tx.innerHTML=komMissText(r,m); } else m.miss=v; });
+document.addEventListener("change",async ev=>{ const el=ev.target; if(!el||!el.dataset||!el.dataset.komPh||!S.kom.ck) return; const f=el.files&&el.files[0]; if(!f) return; const ck=S.kom.ck, k=el.dataset.komPh;
+  let ph=""; try{ ph=await siteShrink(f); }catch(_){ toast("Не получилось открыть фото"); return; }
+  if(k==="@add"){ komAddRead(); if(ck.add) ck.add.photo=ph; } else if(ck.marks[k]) ck.marks[k].photo=ph; komPaint(); });
+document.addEventListener("keydown",ev=>{ if(ev.key==="Escape"&&S.kom.ck) komClose(); });
+
+/* ---------- Вертакс: страница сделки ---------- */
+if(typeof specBlockHtml==="function"){ const _komSB=specBlockHtml; specBlockHtml=function(o){ const h=_komSB.apply(this,arguments); if(!o||!komOn()) return h;
+  const R=S.shop.spec[o.id];
+  if(!h){ if(S.shop.role!=="master") return h;   // мастер: спецификация только для просмотра + проверка
+    if(R===undefined){ S.shop.spec[o.id]=null; if(typeof specLoad==="function") setTimeout(()=>specLoad(o.id),0); return ""; }
+    if(!Array.isArray(R)||!R.length||typeof sp3Body!=="function") return "";
+    return `<div class="card shp-spec kom-mspec"><h2>Спецификация закупки</h2>${sp3Body({deal:o,rows:R},{noDeal:true})}</div>`; }
+  if(!Array.isArray(R)||!R.length||(S.shop.specEdit&&S.shop.specEdit.deal===o.id)) return h;
+  let i=0, x=h.replace(/<li><span class="spec-vn"><b>[\s\S]*?<\/b>/g,m=>{ const r=R[i++]; return r?m+komTag(o.id,r):m; });
+  const u=x.indexOf('class="spec-view"'), e=u>=0?x.indexOf("</ul>",u):-1;
+  return e>=0?x.slice(0,e+5)+komSumHtml(o.id,R)+x.slice(e+5):x; }; }
+
+/* ---------- Снабжение: заявки мастеров подсвечены, причина и фото ---------- */
+function komAllNeed(){ if(!komOn()||S.kom.allBusy||Date.now()-S.kom.allAt<60000) return; S.kom.allBusy=true;
+  komGet("action=komplGet").then(j=>{ S.kom.allBusy=false; S.kom.allAt=Date.now(); if(!j||!j.ok) return; const m={}; (j.rows||[]).forEach(r=>{ m[String(r.deal).toUpperCase()+"|"+r.key]=r; }); S.kom.all=m;
+    if(S.view==="supply"&&!document.querySelector(".modal")){ if(typeof supPaint==="function") supPaint(); else if(typeof render==="function") render(); } }); }
+if(typeof supRow==="function"){ const _komSR=supRow; supRow=function(oid,it){ let h=_komSR.apply(this,arguments);
+  if(!/^D:/.test(String(oid))||!/^S:M[0-9A-Z]+$/.test(String(it&&it.key||""))) return h; komAllNeed();
+  const q=S.kom.all&&S.kom.all[String(oid).slice(2).toUpperCase()+"|"+it.key.slice(2)];
+  const tag=`<span class="sup-tag kom">🔩 от мастера</span>${q&&q.photo?`<a class="kom-pl" href="${esc(q.photo)}" target="_blank" rel="noopener">📷 фото</a>`:""}`;
+  const at=h.indexOf('</span><span class="sup-qq">'); if(at>=0) h=h.slice(0,at)+tag+h.slice(at);
+  return h.replace('<div class="sup-row4','<div class="sup-row4 kom-hl'); }; }
+
+// заявки мастеров — отдельная докупка: не «покрывают» точную спецификацию Базиса и не идут в сравнение «примерная ↔ точная»
+if(typeof specCovered==="function"){ const _komSC=specCovered; specCovered=function(d,rows){ return _komSC.call(this,d,(rows||[]).filter(r=>!komIsReq(r))); }; }
+if(typeof specCompare==="function"){ const _komCmp=specCompare; specCompare=function(dealId){ const R=S.shop&&S.shop.spec&&S.shop.spec[dealId]; if(!Array.isArray(R)||!R.some(komIsReq)) return _komCmp.apply(this,arguments);
+  S.shop.spec[dealId]=R.filter(r=>!komIsReq(r)); try{ return _komCmp.apply(this,arguments); } finally{ S.shop.spec[dealId]=R; } }; }
+// у сделки есть заказ из Базиса: в блоке примерной остаются только заказанные позиции — заявки мастеров «Нужно» показываем всегда
+if(typeof supItems==="function"&&typeof supItemsRaw==="function"){ const _komSI=supItems; supItems=function(oid){ const L=_komSI.apply(this,arguments), nd=S.sup.needs[oid]; if(!nd||!nd.spec||!nd.inB) return L;
+  const have=new Set(L.map(i=>i.key)); supItemsRaw(oid).forEach(i=>{ if(/^S:M[0-9A-Z]+$/.test(i.key)&&!have.has(i.key)&&!i.del){ i.spec=true; L.push(i); } }); return L; }; }
+
+(function(){ const st=document.createElement("style"); st.textContent=`
+.kom-sum{margin:10px 0 0;padding:10px;border-radius:12px;background:var(--sunk,#f3f4f5);display:grid;gap:6px}
+.kom-pr{margin:0;font-size:14px}.kom-line{margin:0;font-size:13px}.kom-brak{color:var(--bad,#b3261e);font-weight:600}
+.kom-badn{color:var(--bad,#b3261e);font-weight:700}.kom-okn{color:var(--ok,#2f7d32);font-weight:700}
+.kom-bar{height:8px;border-radius:99px;background:var(--line,#e3e3e3);overflow:hidden}.kom-bar i{display:block;height:100%;background:var(--ok,#2f7d32);border-radius:99px;transition:width .2s}
+.kom-go{min-height:48px;width:100%;font-size:16px;font-weight:700}.kom-go small{font-weight:500;opacity:.85}
+.kom-tag,.sup-tag.kom{display:inline-block;margin:2px 4px 0 0;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700;background:#ffe2cc;color:#7a3400;white-space:normal}
+.kom-pl{display:inline-flex;align-items:center;min-height:32px;font-size:13px;font-weight:600;margin-left:2px}
+.kom-was{display:block;font-size:12px;margin-top:2px;color:var(--muted)}.kom-was.s-ok{color:var(--ok,#2f7d32)}.kom-was.s-miss,.kom-was.s-brak{color:var(--bad,#b3261e)}
+.sup-row4.kom-hl{box-shadow:inset 4px 0 0 #e8711c;background:rgba(232,113,28,.07)}
+.kom-modal{padding:8px;align-items:end}
+.kom-card.modal-card{width:min(600px,100%);max-height:calc(100dvh - 16px);max-height:calc(100vh - 16px);padding:0;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box}
+.kom-hd{padding:12px 14px 10px;border-bottom:1px solid var(--line);display:grid;gap:6px}.kom-t{display:flex;align-items:center;gap:8px}.kom-t h2{margin:0;flex:1;font-size:18px}
+.kom-sub{margin:0;font-size:13px;overflow-wrap:anywhere}.kom-xb{min-width:48px;min-height:48px;border:0;background:transparent;font-size:20px;cursor:pointer;color:inherit;margin:-8px -8px -8px 0}
+.kom-bd{flex:1;overflow:auto;padding:4px 12px 12px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.kom-list,.kom-reqs{list-style:none;margin:0;padding:0}
+.kom-r{padding:10px 0;border-bottom:1px solid var(--line)}.kom-r.on-ok{background:linear-gradient(90deg,rgba(47,125,50,.10),transparent 70%)}.kom-r.on-miss,.kom-r.on-brak{background:linear-gradient(90deg,rgba(179,38,30,.09),transparent 70%)}
+.kom-h{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start;padding:0 2px}
+.kom-n{min-width:0;overflow-wrap:anywhere;font-size:15px}.kom-n small{display:block;color:var(--muted);font-size:12px}.kom-q{white-space:nowrap;font-size:15px;font-weight:600}
+.kom-b3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px}
+.kom-b3 button{min-height:48px;border-radius:10px;border:2px solid var(--line);background:var(--surface);color:var(--ink);font:600 15px var(--f-body,system-ui);cursor:pointer;padding:4px;touch-action:manipulation}
+.kom-b3 .k-ok.on{background:#2f7d32;border-color:#2f7d32;color:#fff}.kom-b3 .k-miss.on{background:#c25a00;border-color:#c25a00;color:#fff}.kom-b3 .k-brak.on{background:#b3261e;border-color:#b3261e;color:#fff}
+.kom-x,.kom-a2,.kom-a3{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}.kom-xl{font-size:14px;font-weight:600}.kom-xt{font-size:14px}
+.kom-step{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.kom-step button{min-width:48px;min-height:48px;border:0;background:var(--sunk,#f1f1f1);color:var(--ink);font-size:22px;font-weight:700;cursor:pointer;touch-action:manipulation}
+.kom-step input{width:64px;min-height:48px;border:0;text-align:center;font:700 18px var(--f-mono,monospace);background:var(--surface);color:var(--ink);padding:0}
+.kom-phb{min-height:48px;display:inline-flex;align-items:center;gap:4px}.kom-th{width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.kom-ah{margin:14px 0 4px;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.kom-reqs li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 8px;align-items:center;padding:8px 2px;border-bottom:1px solid var(--line)}
+.kom-del{min-width:48px;min-height:48px;border:0;background:transparent;color:var(--bad,#b3261e);font-size:18px;cursor:pointer}
+.kom-more{width:100%;min-height:52px;margin-top:12px;border-style:dashed;font-weight:600;white-space:normal}
+.kom-add{margin-top:12px;padding:10px;border:2px solid var(--accent);border-radius:12px;background:var(--surface)}.kom-add .kom-ah{margin-top:0}
+.kom-in{width:100%;box-sizing:border-box;min-height:48px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:16px var(--f-body,system-ui)}
+.kom-a2 select.kom-in{width:auto;flex:1;min-width:90px}
+.kom-why{display:flex;flex-wrap:wrap;gap:6px}.kom-why button{min-height:44px;padding:6px 12px;border-radius:999px;border:2px solid var(--line);background:var(--surface);color:var(--ink);font:600 14px var(--f-body,system-ui);cursor:pointer}
+.kom-why button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.kom-a4{display:flex;gap:8px;margin-top:12px}.kom-a4 .btn{min-height:48px;flex:1}
+.kom-ft{padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;background:var(--surface)}
+.kom-ft p{margin:0;flex:1;font-size:13px;min-width:0}.kom-send{min-height:52px;min-width:140px;font-size:17px;font-weight:700}.kom-send:disabled{opacity:.5}
+.kom-mspec h2{margin:0 0 4px;font-size:16px}
+@media (max-width:360px){.kom-b3 button{font-size:14px}.kom-send{min-width:110px}}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .kom-tag,:root:not([data-theme="light"]) .sup-tag.kom{background:#5a2e0c;color:#ffd2ad}:root:not([data-theme="light"]) .kom-sum{background:rgba(255,255,255,.05)}}
+:root[data-theme="dark"] .kom-tag,:root[data-theme="dark"] .sup-tag.kom{background:#5a2e0c;color:#ffd2ad}:root[data-theme="dark"] .kom-sum{background:rgba(255,255,255,.05)}`;
+  document.head.appendChild(st); })();
+try{ window.vtxKom={open:komOpen,state:S.kom,load:komLoad}; }catch(_){}   // для проверок
+
+/* ---------- быстрый показ (2): что перечитать, когда пришло свежее, прогрев после входа, расшифрованные заказы в памяти ----------
+   Подключается последним: здесь видны все загрузчики разделов. Сам запоминатель — site_cache.js. */
+(function(){
+  if(typeof CCH!=="object") return;
+  const F=f=>typeof f==="function";
+  // перерисовать открытый экран, если загрузчик сам этого не делает
+  function paint(){ if(CCH.userBusy()) return; if(S.view==="shop"&&S.shop&&S.shop.mode!=="form") shpRenderKeep(); else if(S.view==="supply"&&typeof supRenderKeep==="function") supRenderKeep(); }
+  const then=(p,f)=>Promise.resolve(p).then(f);
+  Object.assign(CCH.R,{
+    shop:()=>shpLoad(true),
+    tasks:()=>then(shpTasksLoad(true),()=>{ if(S.view==="shop"&&/^(tasks|board|order|person|staff)$/.test(S.shop.mode)) paint(); }),
+    staff:()=>shpStaffLoad(true),
+    help:()=>{ if(typeof helpLoad!=="function") return; S.shop.helpBusy=false; return helpLoad(); },
+    feed:p=>p.order?shpHistLoad(p.order):(S.shop.feed&&S.shop.feed.loaded?shpFeedLoad(true):undefined),
+    chat:p=>{ const c=S.shop.chat; if(c&&c.id===p.chat&&c.loaded&&!c.busy) return shpChatPoll(); },
+    receipts:p=>{ if(S.view==="supply"&&typeof supRcLoad==="function") return supRcLoad(p.order); if(S.view==="shop"&&S.shop.cur===p.order){ S.shop.rcBusy=true; return shpRcLoad(p.order); } },
+    stock:()=>{ if(typeof stLoad==="function"&&S.stock&&!S.stock.busy) return stLoad(true); },
+    supply:()=>{ if(typeof supStLoad==="function") return then(supStLoad(),ok=>{ if(ok) paint(); }); },
+    zamerList:p=>{ if(typeof zmLoadList!=="function"||(S.zm&&S.zm.ed)) return; return p.deal?then(zmLoadDeal(p.deal),()=>{ if(S.view==="shop"&&S.shop.cur===p.deal) paint(); }):zmLoadList(); },
+    specGet:p=>{ if(typeof specLoad!=="function") return; return p.deal?(S.shop.spec&&S.shop.spec[p.deal]!==undefined?specLoad(p.deal):undefined):then(specLoadAll(),paint); },
+    hand:p=>{ if(S.shop.hd&&S.shop.hd[p.order]!==undefined) return shpHandLoad(p.order); },
+    zp:p=>{ if(typeof shpZpSel==="function"&&p.month===shpZpSel()&&S.shop.zp){ S.shop.zpBusy=false; return shpZpLoad(); } },
+    pnl:()=>{ if(S.shop.pnl){ S.shop.pnlBusy=false; return shpPnlLoad(); } },
+    gift:()=>{ if(S.shop.gift){ S.shop.giftBusy=false; return shpGiftLoad(); } },
+    contr:()=>{ if(typeof ctLoad==="function"&&S.shop.ct){ S.shop.ctBusy=false; return ctLoad(); } },
+    cfg:()=>{ if(typeof cfgLoad==="function"&&!S.shop.cfgD) return cfgLoad(true); },   // настройки правят — не трогаем
+    morning:()=>{ const M=S.shop.mor; if(typeof morLoad==="function"&&M&&!M.draft){ M.busy=false; return morLoad(); } },
+    smetaList:()=>{ if(typeof smListLoad==="function"&&S.shop.smList){ S.shop.smListBusy=false; return smListLoad(); } },
+    smeta:p=>{ const sm=S.shop.sm; if(typeof smLoad==="function"&&S.view==="shop"&&S.shop.mode==="smeta"&&sm&&!sm.dirty&&!sm.busy&&(sm.id===p.id||sm.deal===p.id)) return smLoad(p.id); },
+    invList:()=>{ if(typeof invLoad==="function"&&S.inv){ S.inv.busy=false; return invLoad(); } },
+    price:()=>{ if(typeof supPriceLoad==="function") return then(supPriceLoad(),()=>{ if(S.view==="supply") paint(); else if(S.view==="catalog"&&!CCH.userBusy()) render(); }); },
+    iphoto:()=>{ if(typeof supPhotosLoad==="function") return supPhotosLoad(); },
+    vend:()=>{ if(typeof supVendLoad==="function"&&S.sup&&S.sup.vend) return supVendLoad(true); },
+    // файлы заказов (Технолог 3D): список заказов и открытый заказ
+    order:p=>{ const f=p.file;
+      if(/^(index|supply|designers|masters)$/.test(f)) return then(siteLoadIndex(),()=>{ if(S.view==="orders"&&!CCH.userBusy()) render(); });
+      if(S.view==="order"&&S.current&&S.current.orderId===f&&!S.current.loading){ S.current.orderId=null; return openOrder(f); } }
+  });
+  /* расшифрованный заказ — только в памяти этой страницы и только пока ключ тот же (вышли — ключа нет — расшифровки нет) */
+  if(F(siteOrderText)){ const _sot=siteOrderText, memo=new Map();
+    siteOrderText=async function(oid,txt){ const k=typeof keyFor==="function"?keyFor(oid):"", m=memo.get(oid);
+      if(k&&m&&m.src===txt&&m.k===k) return m.out;
+      const out=await _sot(oid,txt); if(k&&out!==txt){ memo.delete(oid); memo.set(oid,{src:txt,k,out}); if(memo.size>12) memo.delete(memo.keys().next().value); } return out; }; }
+  /* прогрев после входа: задачи, сотрудники, обращения и приглашения (технолог), склад — по очереди, не мешая показу */
+  let warmed="";
+  function warmAll(){ if(!S.shop||!S.shop.loaded||!shpOn()) return; const pin=shpPin(); if(!pin||warmed===pin) return; warmed=pin;
+    if(document.visibilityState==="hidden"||(navigator.connection&&navigator.connection.saveData)) return;
+    const u=q=>shpUrl(q+"&pin="+encodeURIComponent(pin)), st=typeof stPin==="function"?stPin():pin, base=S.site.stagesUrl+(S.site.stagesUrl.includes("?")?"&":"?");
+    const L=[S.shop.v2&&u("action=tasks"), u("action=staff"), S.shop.tech&&u("action=help"), S.shop.tech&&S.shop.v2&&u("action=invList"), typeof stSee==="function"&&stSee()&&st&&base+"action=stock&pin="+encodeURIComponent(st)].filter(Boolean);
+    L.forEach((x,i)=>setTimeout(()=>{ if(shpPin()===pin) CCH.warm(x); },1200+i*900)); }
+  if(F(shpLoad)){ const _l=shpLoad; shpLoad=async function(q){ const r=await _l.apply(this,arguments); try{ warmAll(); }catch(_){} return r; }; }
+})();
+
+/* ---------- быстродействие на слабых телефонах (Технолог 3D и Вертакс) ----------
+   1) нажатие видно сразу: кнопка «проседает» в момент касания, ещё до того, как страница перерисуется;
+   2) нет задержки двойного касания (touch-action: manipulation) и «залипшей» подсветки :hover после касания;
+   3) длинные списки (карточки заказов, сделки в колонках, каталог) не рисуются, пока они за краем экрана;
+   4) обновление раз в минуту не перерисовывает экран Вертакса, если ничего не изменилось (perfSameOk — см. site_shop.js).
+   3D: perfPR/perfLoop/perfWeak — в cehqr.html (чёткость и кадры только при изменениях). */
+(function(){
+  const st=document.createElement("style"); st.id="perfCss";
+  st.textContent=`:where(button,a[href],summary,label,select,[role=button],[data-act],[data-v],.btn,.chip,.shp-card,.shp-row,.ocard){touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+:is(.btn,.chip,.dq-b,.dq-mi,.dq-ch,.zm-tb,.linkbtn,.shp-tabs button,.fv-btn,.dq-tl,.sm-b,.st-b,.oc-qr):is(:active,.perf-press):not(:disabled){transform:scale(.96);opacity:.82;transition:none!important}
+:is(.shp-card,.ocard,.shp-row,.shp-task,.shp-ci,.shp-ev,.shp-strip,.cat-card,.order,.dq-tl):is(:active,.perf-press){transform:scale(.985);filter:brightness(.94);transition:none!important}
+tbody tr[data-act]:is(:active,.perf-press){filter:brightness(.92)}
+.shp-tabs button:is(:active,.perf-press){transform:none;opacity:1;background:rgba(255,255,255,.08)}
+.dq-cube .f:is(:active,.perf-press){transform:none}
+.ocards>.ocard{content-visibility:auto;contain-intrinsic-size:auto 300px}
+.shp-kb .shp-col>.shp-card{content-visibility:auto;contain-intrinsic-size:auto 96px}
+.cat-grid>.cat-card{content-visibility:auto;contain-intrinsic-size:auto 220px}
+@media (prefers-reduced-motion:reduce){:is(.btn,.chip,.shp-card,.ocard,.shp-row):is(:active,.perf-press){transform:none}}`;
+  (document.head||document.documentElement).appendChild(st);
+})();
+/* метка «нажато» в момент касания (на Android :active появляется с задержкой или не появляется вовсе) */
+const PERF={inAt:0,pressEl:null,pressT:0,x:0,y:0};
+const PERF_PRESS=".btn,.chip,.dq-b,.dq-mi,.dq-ch,.dq-tl,.zm-tb,.linkbtn,.fv-btn,.sm-b,.st-b,.oc-qr,.shp-tabs button,.shp-card,.ocard,.shp-row,.shp-task,.shp-ci,.shp-ev,.shp-strip,.cat-card,.order,tbody tr[data-act]";
+function perfUnpress(now){ const el=PERF.pressEl; if(!el) return; PERF.pressEl=null;
+  const left=now?0:Math.max(0,90-(performance.now()-PERF.pressT));   // короткое касание всё равно видно ~1 кадр-два
+  if(left) setTimeout(()=>el.classList.remove("perf-press"),left); else el.classList.remove("perf-press"); }
+document.addEventListener("pointerdown",ev=>{ PERF.inAt=performance.now(); if(ev.button>0) return; perfUnpress(true);
+  const t=ev.target&&ev.target.closest&&ev.target.closest(PERF_PRESS); if(!t||t.disabled||t.closest("canvas")) return;
+  PERF.pressEl=t; PERF.pressT=performance.now(); PERF.x=ev.clientX; PERF.y=ev.clientY; t.classList.add("perf-press"); },{capture:true,passive:true});
+document.addEventListener("pointermove",ev=>{ if(PERF.pressEl&&Math.hypot(ev.clientX-PERF.x,ev.clientY-PERF.y)>12) perfUnpress(true); },{capture:true,passive:true});
+["pointerup","click"].forEach(t=>document.addEventListener(t,()=>perfUnpress(false),{capture:true,passive:true}));
+["pointercancel","dragstart"].forEach(t=>document.addEventListener(t,()=>perfUnpress(true),{capture:true,passive:true}));
+addEventListener("scroll",()=>perfUnpress(true),{capture:true,passive:true});
+["keydown","input","wheel"].forEach(t=>document.addEventListener(t,()=>{ PERF.inAt=performance.now(); },{capture:true,passive:true}));
+/* на телефоне (нет мыши) правила :hover переносим под @media (hover:hover): после касания кнопка не остаётся «подсвеченной» */
+// список селекторов по запятым верхнего уровня; null — если :hover стоит внутри скобок (:is(a:hover,b)) — такое правило не трогаем
+function perfSplitSel(t){ const out=[]; let d=0, cur="";
+  for(const ch of t){ if(ch==="("||ch==="[") d++; else if(ch===")"||ch==="]") d--; if(ch===","&&!d){ out.push(cur); cur=""; } else cur+=ch; }
+  out.push(cur); return out.some(x=>/\([^)]*:hover/.test(x))?null:out; }
+function perfHoverFix(){ let mm=false; try{ mm=matchMedia("(hover:none)").matches; }catch(_){} if(!mm) return;
+  [...document.styleSheets].forEach(sh=>{ if(sh.__perfHv) return; let R; try{ R=sh.cssRules; }catch(_){ return; } sh.__perfHv=1; if(!R) return;
+    const walk=(list,owner)=>{ for(let i=list.length-1;i>=0;i--){ const r=list[i];
+      if(r.type===1&&r.selectorText&&r.selectorText.indexOf(":hover")>=0){ const parts=perfSplitSel(r.selectorText); if(!parts) continue; const keep=parts.filter(x=>x.indexOf(":hover")<0);
+        try{ const css=r.style.cssText; owner.deleteRule(i); if(keep.length) owner.insertRule(keep.join(",")+"{"+css+"}",i); }catch(_){} }
+      else if(r.cssRules&&(r.type===4||r.type===12)) walk(r.cssRules,r); } };
+    walk(R,sh); }); }
+(window.requestIdleCallback||(f=>setTimeout(f,300)))(()=>{ try{ perfHoverFix(); }catch(_){} },{timeout:3000});
+setTimeout(()=>{ try{ perfHoverFix(); }catch(_){} },6000);   // стили, которые модули добавили позже
+/* перерисовка Вертакса «в фоне» (раз в минуту, после ответа таблицы): если HTML экрана тот же и после прошлой отрисовки
+   человек ничего не нажимал — DOM не трогаем (не сбиваем прокрутку, открытые блоки и не тормозим касания) */
+function perfSameOk(el,html){ if(!el||el.__perfHtml!==html||el.__perfFirst!==el.firstElementChild||!el.__perfAt) return false;
+  return PERF.inAt<el.__perfAt; }
+function perfMark(el,html){ if(!el) return; el.__perfHtml=html; el.__perfFirst=el.firstElementChild; el.__perfAt=performance.now(); }
+/* поиск по длинным спискам (детали заказа, сделки, договоры): если фильтр на этом телефоне тяжёлый (>12 мс),
+   при быстром наборе фильтруем один раз через 160 мс после последней буквы, а не на каждую букву */
+const PERF_DEB={plQ:1,shpQ:1,ctQ:1};
+addEventListener("input",ev=>{ const el=ev.target; if(!el||!PERF_DEB[el.id]) return; if(el.__perfPass){ el.__perfT0=performance.now(); return; }
+  if((el.__perfCost||0)<12){ el.__perfT0=performance.now(); return; }
+  ev.stopImmediatePropagation(); clearTimeout(el.__perfT);
+  el.__perfT=setTimeout(()=>{ if(!el.isConnected) return; el.__perfPass=true; try{ el.dispatchEvent(new Event("input",{bubbles:true})); }finally{ el.__perfPass=false; } },160); },true);
+addEventListener("input",ev=>{ const el=ev.target; if(el&&PERF_DEB[el.id]&&el.__perfT0) el.__perfCost=performance.now()-el.__perfT0; });
 
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
@@ -10468,7 +11275,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="b529554dfc";/*cehqr-build*/
+  const BUILD="280e606f44";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
