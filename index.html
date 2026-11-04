@@ -10488,7 +10488,13 @@ setInterval(onlPing,60e3); setTimeout(onlPing,1200);
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") onlPing(); });
 
 /* имя работника — в каждом GET раздела (сервер тоже отмечает «в сети»); если уже есть — не дублируем */
-if(typeof shpUrl==="function"){ const _onlUrl=shpUrl; shpUrl=function(q){ q=String(q||""); return _onlUrl.call(this,S.who&&!/(^|&)who=/.test(q)?q+"&who="+encodeURIComponent(S.who):q); }; }
+/* «в сети» — только если человек что-то делал последние 3 минуты (нажатие, прокрутка, ввод). Приложение просто открыто
+   на экране компьютера или телефона без дела — имя не отправляем, через 2 минуты он «был N мин назад». */
+const ONL_IDLE=3*60e3; S.onl.act=Date.now();
+["pointerdown","keydown","wheel","touchstart","scroll"].forEach(ev=>document.addEventListener(ev,()=>{ S.onl.act=Date.now(); },{passive:true,capture:true}));
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") S.onl.act=Date.now(); });
+function onlIdle(){ return Date.now()-(S.onl.act||0)>ONL_IDLE; }
+if(typeof shpUrl==="function"){ const _onlUrl=shpUrl; shpUrl=function(q){ q=String(q||""); return _onlUrl.call(this,S.who&&!onlIdle()&&!/(^|&)who=/.test(q)?q+"&who="+encodeURIComponent(S.who):q); }; }
 /* строка «Сейчас в сети» — первой над сделками (обёртка сохраняет плашку обращений и «Мои задачи») */
 if(typeof shpTaskStrip==="function"){ const _onlTS=shpTaskStrip; shpTaskStrip=function(){ return onlRowHtml()+_onlTS.apply(this,arguments); }; }
 /* «Сотрудники» и карточка человека: «в сети» с зелёной точкой или «5 мин назад / сегодня в 10:15 / вчера в 18:40 / 3 нояб. в 09:00» */
@@ -14171,7 +14177,7 @@ function smnOptPrice(o){ const q=+o.q||1, mk=smCfg().mk, d=S.shop.sm&&S.shop.sm.
   if(o.src==="work"){ const w=smCfg().wr.find(x=>x[0]===o.k); return w?Math.round(q*(+w[4]||0)/smOffK()):0; }
   const p=o.p!=null&&o.p!==""?+o.p:smPrice({kind:"pc"},{n:o.k},"шт"); return Math.round(q*(p||0)*(1+(+mm.furn||0)/100)/smOffK()); }
 function smnVarHtml(){ const sm=S.shop.sm, d=sm.data, ks=smnVarKeys(d), ag=sm.offer&&sm.offer.agreed;
-  let h=`<div class="head sm-head"><div><button type="button" class="linkbtn smn-crumb" data-act="sm-xvarx">‹ К смете</button><h1>3 варианта одной сметой</h1><p class="muted" style="margin:4px 0 0">Модули те же — меняются корпус, фасады и фурнитура. Нажмите строку в колонке — выберите материал из базы.</p></div></div>`;
+  let h=`<div class="head sm-head"><div><button type="button" class="btn sm smn-crumb" data-act="sm-xvarx">‹ К смете</button><h1>3 варианта одной сметой</h1><p class="muted" style="margin:4px 0 0">Модули те же — меняются корпус, фасады и фурнитура. Нажмите строку в колонке — выберите материал из базы.</p></div></div>`;
   if(ag) h+=smnAgreedHtml(ag);
   h+=`<div class="smn-vars">${ks.map(k=>{ const dd=smnVarData(d,k), c=smCalc(dd), mm=dd.mat||{};
     return `<div class="smn-var${ag&&ag.v===k?" on":""}"><p class="smn-vh"><b>${SMN_VN[k]}</b>${ag&&ag.v===k?' <em class="smn-tag">выбрал клиент</em>':""}</p><b class="smn-vt" data-k="${k}">${esc(smnRub(c.total))}</b>${mgSee()&&c.furnD>0?`<small class="smn-pill ${smnLow(c)?"bad":"ok"}">прибыль ${esc(mgPct(c.mgP))}</small>`:""}
@@ -14182,7 +14188,7 @@ function smnVarHtml(){ const sm=S.shop.sm, d=sm.data, ks=smnVarKeys(d), ag=sm.of
   h+=`<p class="smn-cap">Клиент может добавить галочкой</p><ul class="smn-opts">${O.map(o=>`<li><label class="smn-chk"><input type="checkbox" data-act="sm-xopton" data-id="${esc(o.id)}"${o.on!==false?" checked":""} aria-label="Отмечено у клиента сразу"><span><b>${esc(o.n)}</b><small>${esc(o.note||"")}${o.src==="work"?" · работа":" · из базы"} · ${esc(smnQ(o.q||1))} ${esc(o.u||"шт")}</small></span></label><b>+ ${esc(smnRub(smnOptPrice(o)))}</b><button type="button" class="smn-x" data-act="sm-xoptdel" data-id="${esc(o.id)}" aria-label="Убрать позицию">✕</button></li>`).join("")}</ul>
     <button type="button" class="btn" data-act="sm-xoptadd">+ Позиция по желанию</button>
     <label class="sm-room"><span>Предоплата</span><input class="sm-in sm-r" data-xf="prepay" inputmode="numeric" maxlength="3" value="${d.prepay!=null?d.prepay:50}" aria-label="Предоплата, %"><span class="muted">%</span></label>
-    <div class="shp-zpb smn-acts"><button type="button" class="btn primary" data-act="sm-xsend">Отправить клиенту ссылку</button>${sm.dirty?`<button type="button" class="btn" data-act="sm-save">Сохранить</button>`:""}</div>
+    <div class="shp-zpb smn-acts"><button type="button" class="btn primary" data-act="sm-xsend">Отправить клиенту ссылку</button>${sm.dirty?`<button type="button" class="btn" data-act="sm-save">Сохранить</button>`:""}<button type="button" class="btn" data-act="sm-xvarx">‹ К смете</button></div>
     ${sm.deal?"":`<p class="muted smn-hint">Ссылка клиенту работает через сделку: сначала «Клиент согласен → в сделку» или откройте смету из сделки.</p>`}`;
   return h; }
 function smnAgreedHtml(a){ return `<div class="smn-agreed" role="status"><b>✓ Клиент согласовал ${esc(new Date(a.when).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}))}</b><span>${esc(a.vn||SMN_VN[a.v]||"")}${(a.optN||[]).length?" + "+esc(a.optN.join(", ")):""} — ${esc(smnRub(a.total))} · предоплата ${esc(String(a.pre))} % (${esc(smnRub(a.preSum))})</span></div>`; }
@@ -14325,11 +14331,23 @@ function smnVarPick(vk,sk){ const d=S.shop.sm.data, s=SM_SLOTS.find(z=>z.k===sk)
     if(it){ V.mat[sk]={n:it.dataset.n,p:null}; S.shop.sm.dirty=true; x.remove(); return shpRenderKeep(); }
     if(e.target.closest('[data-x="std"]')){ delete V.mat[sk]; S.shop.sm.dirty=true; x.remove(); return shpRenderKeep(); }
     if(e.target===x||e.target.closest('[data-x="close"]')) x.remove(); }); }
-/* ---- позиция по желанию: материал из базы или работа из ставок ---- */
-function smnOptModal(){ const d=S.shop.sm.data; if(typeof catLoad==="function") catLoad(); document.getElementById("smOptM")?.remove(); const x=document.createElement("div"); x.className="modal"; x.id="smOptM"; let tab="mat", q="", pick=null;
+/* ---- позиция по желанию: материал из базы или работа из ставок ----
+   Материалы — сначала плитки разделов (петли, направляющие, ручки…), внутри — фирмы; поиск сверху ищет по всей базе */
+const SMN_OPT_SEC=["hinge","drw","lift","furn","ldsp","plit","edge","top","prof","cons"];
+function smnOptMat(D,w,sec,br,pick){ const ok=it=>catSecOf(it)!=="hid";
+  const row=it=>`<button type="button" class="sm-it${pick&&pick.k===it.n?" on":""}" data-k="${esc(it.n)}" data-nm="${esc(it.n)}" data-u="шт">${catSw(it,"cat-sw")}<span><b>${esc(it.n)}</b><small class="muted">${esc(catPriceTxt(it)||"нет цены")}</small></span></button>`;
+  const more=(n,L)=>n>L.length?`<p class="muted smn-more">Показано ${L.length} из ${n} — уточните поиском или фирмой</p>`:"";
+  if(!sec&&w.length){ const L=D.items.filter(it=>ok(it)&&w.every(t=>it.s.includes(t))); const V=L.slice(0,60); return V.map(row).join("")+more(L.length,V); }
+  if(!sec){ const cnt={}; D.items.forEach(it=>{ const k=catSecOf(it); cnt[k]=(cnt[k]||0)+1; });
+    return `<div class="smn-secs">${SMN_OPT_SEC.filter(k=>cnt[k]).map(k=>{ const c=CAT_SEC.find(x=>x.k===k)||{n:k,ic:"•"}; return `<button type="button" class="smn-sec" data-sec="${k}"><span class="smn-sic" aria-hidden="true">${esc(c.ic)}</span><b>${esc(c.n)}</b><small class="muted">${cnt[k]}</small></button>`; }).join("")}</div>`; }
+  const inS=D.items.filter(it=>catSecOf(it)===sec), B=[...new Set(inS.map(catBrand))].sort((a,b)=>a.localeCompare(b,"ru"));
+  const L=inS.filter(it=>(!br||catBrand(it)===br)&&w.every(t=>it.s.includes(t))), V=L.slice(0,60), c=CAT_SEC.find(x=>x.k===sec)||{n:sec};
+  return `<div class="smn-sh"><button type="button" class="btn sm" data-sec="">← Разделы</button><b>${esc(c.n)}</b></div>${B.length>1?`<div class="cat-chips smn-brs"><button type="button" class="chip${!br?" on":""}" data-br="">Все <small>${inS.length}</small></button>${B.map(b=>`<button type="button" class="chip${br===b?" on":""}" data-br="${esc(b)}">${esc(b)}</button>`).join("")}</div>`:""}`+(V.map(row).join("")||'<p class="muted">Ничего не нашлось</p>')+more(L.length,V); }
+(function(){ const st=document.createElement("style"); st.textContent=`.smn-secs{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.smn-sec{display:grid;grid-template-columns:36px 1fr;grid-template-rows:auto auto;column-gap:10px;align-items:center;text-align:left;min-height:60px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:inherit;font:inherit;cursor:pointer}.smn-sec .smn-sic{grid-row:1/3;width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--bg,#0001);font-size:18px}.smn-sec b{font-size:14px;line-height:1.2}.smn-sec small{font-size:12px}.smn-sh{display:flex;align-items:center;gap:10px;margin:0 0 8px}.smn-sh b{font-size:15px}.smn-brs{display:flex;flex:none;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:6px;min-height:46px}.smn-sh,.smn-secs{flex:none}.smn-brs .chip{flex:none;font:600 13px/1.2 inherit;font-family:inherit;padding:8px 12px;border-radius:16px}.smn-more{font-size:12.5px;margin:6px 2px}`; document.head.appendChild(st); })();
+function smnOptModal(){ const d=S.shop.sm.data; if(typeof catLoad==="function") catLoad(); document.getElementById("smOptM")?.remove(); const x=document.createElement("div"); x.className="modal"; x.id="smOptM"; let tab="mat", q="", pick=null, sec="", br="";
   const draw=()=>{ const wr=smCfg().wr, D=S.cat&&S.cat.data, w=q.split(/\s+/).filter(Boolean);
     const list=tab==="work"?wr.filter(z=>!q||z[1].toLowerCase().includes(q)).slice(0,60).map(z=>`<button type="button" class="sm-it${pick&&pick.k===z[0]?" on":""}" data-k="${esc(z[0])}" data-nm="${esc(z[1])}" data-u="${esc(z[2])}"><span class="cat-sw none" aria-hidden="true">✚</span><span><b>${esc(z[1])}</b><small class="muted">${esc(fmtN(z[4]))} ₽ / ${esc(z[2])}</small></span></button>`).join("")
-      :(D?D.items.filter(it=>catSecOf(it)!=="hid"&&w.every(t=>it.s.includes(t))).slice(0,60).map(it=>`<button type="button" class="sm-it${pick&&pick.k===it.n?" on":""}" data-k="${esc(it.n)}" data-nm="${esc(it.n)}" data-u="шт">${catSw(it,"cat-sw")}<span><b>${esc(it.n)}</b><small class="muted">${esc(catPriceTxt(it)||"нет цены")}</small></span></button>`).join(""):'<p class="muted">Загружаю базу…</p>');
+      :(D?smnOptMat(D,w,sec,br,pick):'<p class="muted">Загружаю базу…</p>');
     x.querySelector(".modal-card").innerHTML=`<h2 style="margin:0 0 8px">Позиция по желанию</h2><div class="smn-seg" role="group" aria-label="Откуда">${[["mat","Из материалов"],["work","Из работ"]].map(([k,n])=>`<button type="button" data-t="${k}" aria-pressed="${tab===k}">${n}</button>`).join("")}</div>
       <input class="ca-q" type="search" placeholder="${tab==="work"?"Монтаж, вырез…":"Подсветка, доводчик, сушка…"}" aria-label="Поиск" value="${esc(q)}"><div class="sm-pl">${list||'<p class="muted">Ничего не нашлось</p>'}</div>
       ${pick?`<div class="sm-grid" style="grid-template-columns:2fr 1fr"><label>Название для клиента<input class="sm-in" name="n" maxlength="80" value="${esc(pick.nm)}"></label><label>Сколько, ${esc(pick.u)}<input class="sm-in" name="q" inputmode="decimal" value="${esc(String(pick.q||1))}"></label><label style="grid-column:1/-1">Пояснение<input class="sm-in" name="note" maxlength="120" placeholder="например: лента 3 м, блок питания"></label></div>`:""}
@@ -14338,6 +14356,8 @@ function smnOptModal(){ const d=S.shop.sm.data; if(typeof catLoad==="function") 
   x.innerHTML=`<div class="modal-card sm-pick"></div>`; document.body.appendChild(x); draw();
   x.addEventListener("input",e=>{ if(e.target.classList.contains("ca-q")){ q=e.target.value.toLowerCase().replace(/ё/g,"е"); const p=e.target.selectionStart; clearTimeout(x._t); x._t=setTimeout(()=>{ draw(); const i=x.querySelector(".ca-q"); i.focus(); i.setSelectionRange(p,p); },200); } });
   x.addEventListener("click",e=>{ const t=e.target.closest("[data-t]"); if(t){ tab=t.dataset.t; pick=null; q=""; return draw(); }
+    const sc=e.target.closest("[data-sec]"); if(sc){ sec=sc.dataset.sec; br=""; pick=null; draw(); x.querySelector(".sm-pl").scrollTop=0; return; }
+    const bb=e.target.closest("[data-br]"); if(bb){ br=bb.dataset.br; pick=null; return draw(); }
     const it=e.target.closest(".sm-it"); if(it){ pick={k:it.dataset.k,nm:it.dataset.nm,u:it.dataset.u,q:1}; return draw(); }
     if(e.target.closest('[data-x="add"]')&&pick){ const f=n=>x.querySelector(`[name=${n}]`); const qq=Math.max(0.01,+String(f("q").value).replace(",",".")||1);
       (d.opt=d.opt||[]).push({id:"o"+Date.now().toString(36),src:tab==="work"?"work":"mat",k:pick.k,n:f("n").value.trim()||pick.nm,note:f("note").value.trim(),q:qq,u:pick.u,on:true}); S.shop.sm.dirty=true; x.remove(); return shpRenderKeep(); }
@@ -14377,8 +14397,8 @@ window.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target
   if(a==="sm-xtc"){ S.shop.smTc=t.dataset.v; return shpRenderKeep(); }
   if(a==="sm-xver") return smnVerModal();
   if(a==="sm-xprev") return smnPrevModal();
-  if(a==="sm-xvar"){ S.shop.smPane="var"; window.scrollTo(0,0); return shpRenderKeep(); }
-  if(a==="sm-xvarx"){ S.shop.smPane=""; window.scrollTo(0,0); return shpRenderKeep(); }
+  if(a==="sm-xvar"){ S.shop.smPane="var"; shpRenderKeep(); requestAnimationFrame(()=>window.scrollTo(0,0)); return; }
+  if(a==="sm-xvarx"){ S.shop.smPane=""; shpRenderKeep(); requestAnimationFrame(()=>window.scrollTo(0,0)); return; }
   if(a==="sm-xvmk"){ d.var={econ:{mat:{}},prem:{mat:{}}}; if(d.prepay==null) d.prepay=50; sm.dirty=true; toast("Варианты созданы — замените в них корпус, фасады или фурнитуру"); return shpRenderKeep(); }
   if(a==="sm-xvdel"){ if(!(await appConfirm("Убрать «Эконом» и «Премиум»? Останется одна смета.","Убрать"))) return; delete d.var; sm.dirty=true; return shpRenderKeep(); }
   if(a==="sm-xvp") return smnVarPick(t.dataset.v,t.dataset.s);
@@ -14441,7 +14461,7 @@ main.wrap:has(.smn){max-width:1280px}@media (min-width:1280px){.smn:not(.tv):not
 .smn-vr{display:block;width:100%;min-height:44px;text-align:left;background:var(--sunk);border:0;border-radius:8px;padding:5px 7px;margin-top:5px;color:var(--ink);font:inherit;font-size:12.5px;cursor:pointer;overflow:hidden}.smn-vr small{display:block;color:var(--muted);font-size:11px}.smn-vr span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .smn-opts{list-style:none;margin:0 0 8px;padding:0}.smn-opts li{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:12px;padding:6px 8px;margin-bottom:6px}.smn-chk{flex:1;display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer}.smn-chk input{width:22px;height:22px;accent-color:var(--smn-acc)}.smn-chk small{display:block;color:var(--muted);font-size:12px}.smn-x{width:44px;height:44px;border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer}
 .smn-agreed{display:flex;flex-direction:column;gap:2px;border:1.5px solid var(--ok,#1D6B39);background:var(--ok-soft,#E3F1E6);color:var(--ok,#1D6B39);border-radius:12px;padding:10px 12px;margin:0 0 10px;font-size:14px}.smn-agreed span{color:var(--ink)}
-.smn-crumb{min-height:44px;padding:0;color:var(--muted)}
+.smn-crumb{min-height:40px;margin:0 0 8px;scroll-margin-top:80px}
 `; document.head.appendChild(st); })();
 
 /* ---------- ДОГОВОР → ПЕЧАТЬ / PDF и МОНТАЖ БЕЗ КЛИЕНТА ----------
@@ -15502,7 +15522,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="7ea0f1a24b";/*cehqr-build*/
+  const BUILD="2ec788d41d";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
