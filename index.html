@@ -2194,11 +2194,11 @@ function sheetOf(mat){   // размер листа по материалу; nul
 const CUT_DEF={tl:15,tt:15,tr:15,tb:15,k:4,first:"both",plate:"auto",kits:1,pl:{ldsp:[2750,1830],egger:[2800,2070],mdf:[2800,1220],dvp:[2745,1700]}};
 const CUT_PL=[["ldsp","ЛДСП обычная"],["egger","ЛДСП Egger, Экстраверт"],["mdf","МДФ, AGT, Kastamonu"],["dvp","ДВП, ХДФ"]];
 function cutPl(k){ const c=cutSet(), v=(c.pl&&c.pl[k])||CUT_DEF.pl[k]; return {w:+v[0]||CUT_DEF.pl[k][0],h:+v[1]||CUT_DEF.pl[k][1]}; }
-function cutSet(){ let o={}; try{ o=JSON.parse(localStorage.getItem("cehqr-cutset")||"{}")||{}; }catch(_){} const r=Object.assign({},CUT_DEF,o); r.pl=Object.assign({},CUT_DEF.pl,o.pl||{});
+function cutSet(){ let o={}; try{ o=JSON.parse(localStorage.getItem("cehqr-cutset")||"{}")||{}; }catch(_){} const r=Object.assign({},CUT_DEF,o); r.pl=Object.assign({},CUT_DEF.pl,o.pl||{}); r.rot=Object.assign({},o.rot||{}); r.fm=Object.assign({},o.fm||{});
   ["tl","tt","tr","tb","k","kits"].forEach(k=>{ r[k]=Math.max(k==="kits"?1:0,+r[k]||0); if(k!=="kits"&&!(r[k]>=0)) r[k]=CUT_DEF[k]; }); if(!r.kits) r.kits=1; return r; }
 function cutSetSave(o){ try{ localStorage.setItem("cehqr-cutset",JSON.stringify(o)); }catch(_){} }
 function nest(parts, sh){
-  const cs=cutSet(), K=cs.k, TL=cs.tl, TT=cs.tt, TR=cs.tr, TB=cs.tb, T=TL, W=sh.w-TL-TR, H=sh.h-TT-TB, sheets=[];
+  const cs=cutSet(), FR=sh.first||cs.first, K=cs.k, TL=cs.tl, TT=cs.tt, TR=cs.tr, TB=cs.tb, T=TL, W=sh.w-TL-TR, H=sh.h-TT-TB, sheets=[];
   const items=parts.map(p=>({p,l:p.L,w:p.W})).sort((a,b)=>b.l*b.w-a.l*a.w);
   const tooBig=[];
   items.forEach(it=>{
@@ -2210,7 +2210,7 @@ function nest(parts, sh){
     const s=sheets[best.si], f=s.free.splice(best.fi,1)[0];
     s.placed.push({p:it.p,x:f.x,y:f.y,w:best.a,h:best.b,r:best.r});
     const rw=f.w-best.a-K, rh=f.h-best.b-K;   // делим остаток по короткой стороне
-    if(cs.first==="cross"||(cs.first!=="along"&&rw*f.h>f.w*rh)){ if(rw>0){ s.free.push({x:f.x+best.a+K,y:f.y,w:rw,h:f.h}); s.cuts++; s.cutLen+=f.h; } if(rh>0){ s.free.push({x:f.x,y:f.y+best.b+K,w:best.a,h:rh}); s.cuts++; s.cutLen+=best.a; } }
+    if(FR==="cross"||(FR!=="along"&&rw*f.h>f.w*rh)){ if(rw>0){ s.free.push({x:f.x+best.a+K,y:f.y,w:rw,h:f.h}); s.cuts++; s.cutLen+=f.h; } if(rh>0){ s.free.push({x:f.x,y:f.y+best.b+K,w:best.a,h:rh}); s.cuts++; s.cutLen+=best.a; } }
     else { if(rh>0){ s.free.push({x:f.x,y:f.y+best.b+K,w:f.w,h:rh}); s.cuts++; s.cutLen+=f.w; } if(rw>0){ s.free.push({x:f.x+best.a+K,y:f.y,w:rw,h:best.b}); s.cuts++; s.cutLen+=best.b; } }
   });
   sheets.forEach(s=>{ s.used=s.placed.reduce((a,q)=>a+q.w*q.h,0)/(W*H); });
@@ -2218,7 +2218,7 @@ function nest(parts, sh){
 }
 function cutMaps(parts){
   const cs=cutSet(), pl=/^(\d+)x(\d+)$/.exec(cs.plate||""); if(cs.kits>1){ const P0=parts; parts=[]; for(let i=0;i<cs.kits;i++) parts.push(...P0); }
-  const by=new Map(); parts.forEach(p=>{ if(!p.L||!p.W) return; let sh=sheetOf(p.material); if(sh&&pl) sh=Object.assign({},sh,{w:+pl[1],h:+pl[2]}); if(!sh) return; const k=String(p.material).split(/[\r\n]/)[0]; if(!by.has(k)) by.set(k,{sh,ps:[]}); by.get(k).ps.push(p); });
+  const by=new Map(); parts.forEach(p=>{ if(!p.L||!p.W) return; let sh=sheetOf(p.material); if(sh&&pl) sh=Object.assign({},sh,{w:+pl[1],h:+pl[2]}); { const mk=String(p.material).split(/[\r\n]/)[0]; if(sh&&cs.rot[mk]!=null) sh=Object.assign({},sh,{rot:!!cs.rot[mk]}); if(sh&&cs.fm[mk]) sh=Object.assign({},sh,{first:cs.fm[mk]}); } if(!sh) return; const k=String(p.material).split(/[\r\n]/)[0]; if(!by.has(k)) by.set(k,{sh,ps:[]}); by.get(k).ps.push(p); });
   return [...by.entries()].map(([mat,{sh,ps}])=>({mat,sh,...nest(ps,sh),area:ps.reduce((a,p)=>a+p.L*p.W,0)/1e6}));
 }
 function cutSvg(m, s){
@@ -2255,18 +2255,22 @@ function cutSetHtml(){ const c=cutSet(), n=(k,l)=>`<label class="cs-n"><span>${l
   return `<details class="cs-set"${S.csOpen?" open":""}><summary>⚙ Настройки раскроя <span class="muted">· отступ ${same?c.tl:`${c.tt}/${c.tr}/${c.tb}/${c.tl}`} · пропил ${c.k} · ${c.first==="both"?"резы поперёк и вдоль":c.first==="cross"?"сначала поперёк":"сначала вдоль"}${c.kits>1?" · комплектов "+c.kits:""}</span></summary>
     <div class="cs-box"><div class="cs-h">Отступ от края плиты, мм</div><div class="cs-g">${n("tt","сверху")}${n("tb","снизу")}${n("tl","слева")}${n("tr","справа")}</div>
     <div class="cs-g">${n("k","Пропил, мм")}${n("kits","Комплектов")}</div>
-    <div class="cs-h">Первые резы</div><div class="seg cs-seg" role="group" aria-label="Первые резы">${[["both","Поперёк и вдоль"],["cross","Поперёк плиты"],["along","Вдоль плиты"]].map(([v,t])=>`<button type="button" data-cs-first="${v}" aria-pressed="${c.first===v}">${t}</button>`).join("")}</div>
+    <div class="cs-h">Первые резы (для всех, если у материала не выбрано своё)</div><div class="seg cs-seg" role="group" aria-label="Первые резы">${[["both","Поперёк и вдоль"],["cross","Поперёк плиты"],["along","Вдоль плиты"]].map(([v,t])=>`<button type="button" data-cs-first="${v}" aria-pressed="${c.first===v}">${t}</button>`).join("")}</div>
+    <div class="cs-h">По материалам: поворот деталей и первые резы</div><div class="cs-rl">${(()=>{ const M=new Map(); ((S.current&&S.current.parts)||[]).forEach(p=>{ const sh=sheetOf(p.material); if(!sh) return; const k=String(p.material).split(/[\r\n]/)[0]; if(!M.has(k)) M.set(k,sh.rot); });
+      return [...M.entries()].map(([k,def])=>{ const on=c.rot[k]!=null?!!c.rot[k]:def; return `<div class="cs-rr"><span>${esc(k)}</span><div class="seg cs-seg2" role="group" aria-label="Поворот: ${esc(k)}"><button type="button" data-cs-rot="${esc(k)}" data-v="0" aria-pressed="${!on}">Текстура — не поворачивать</button><button type="button" data-cs-rot="${esc(k)}" data-v="1" aria-pressed="${on}">Однотон — можно</button></div><div class="seg cs-seg2" role="group" aria-label="Первые резы: ${esc(k)}">${(()=>{ const fv=c.fm[k]||c.first; return [["both","Поперёк и вдоль"],["cross","Поперёк"],["along","Вдоль"]].map(([v,t])=>`<button type="button" data-cs-fm="${esc(k)}" data-v="${v}" aria-pressed="${fv===v}">${t}</button>`).join(""); })()}</div></div>`; }).join("")||'<p class="muted">Нет листовых материалов</p>'; })()}</div>
     <div class="cs-h">Размер плит, мм (длина × ширина)</div><div class="cs-pl">${CUT_PL.map(([k,t])=>`<div class="cs-pr"><span>${t}</span><input type="number" inputmode="numeric" min="300" data-cs-pl="${k}" data-i="0" value="${c.pl[k][0]}" aria-label="${t}: длина"><b>×</b><input type="number" inputmode="numeric" min="300" data-cs-pl="${k}" data-i="1" value="${c.pl[k][1]}" aria-label="${t}: ширина"></div>`).join("")}</div>
     <p class="cs-f"><button type="button" class="btn sm" data-cs-reset>Сбросить как в Базисе</button></p></div></details>`; }
 document.addEventListener("toggle",e=>{ if(e.target.classList&&e.target.classList.contains("cs-set")) S.csOpen=e.target.open; },true);
 document.addEventListener("change",e=>{ const t=e.target.closest&&e.target.closest("[data-cs-pl]"); if(!t) return; const c=cutSet(), v=Math.round(+t.value||0); if(v<300){ toast("Размер плиты — не меньше 300 мм"); render(); return; } c.pl[t.dataset.csPl]=c.pl[t.dataset.csPl].slice(); c.pl[t.dataset.csPl][+t.dataset.i]=v; cutSetSave(c); S.csOpen=true; render(); });
 document.addEventListener("change",e=>{ const t=e.target.closest&&e.target.closest("[data-cs]"); if(!t) return; const c=cutSet(); c[t.dataset.cs]=t.dataset.cs==="plate"?t.value:+String(t.value).replace(",",".")||0; cutSetSave(c); S.csOpen=true; render(); });
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest("[data-cs-fm]"); if(!t) return; e.preventDefault(); const c=cutSet(); c.fm[t.dataset.csFm]=t.dataset.v; cutSetSave(c); S.csOpen=true; render(); });
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest("[data-cs-rot]"); if(!t) return; e.preventDefault(); const c=cutSet(); c.rot[t.dataset.csRot]=t.dataset.v==="1"; cutSetSave(c); S.csOpen=true; render(); });
 document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest("[data-cs-first],[data-cs-reset]"); if(!t) return; e.preventDefault();
   const c=t.hasAttribute("data-cs-reset")?Object.assign({},CUT_DEF):cutSet(); if(!t.hasAttribute("data-cs-reset")) c.first=t.dataset.csFirst; cutSetSave(c); S.csOpen=true; render(); });
 (function(){ const st=document.createElement("style"); st.textContent=`.cs-set{margin:4px 0 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.cs-set>summary{padding:10px 12px;cursor:pointer;font-weight:600}.cs-set>summary .muted{font-weight:400;font-size:13px}
 .cs-box{padding:0 12px 12px}.cs-h{font-size:13px;color:var(--muted);margin:10px 0 6px}.cs-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
 .cs-n{display:flex;flex-direction:column;gap:3px;font-size:13px}.cs-n input{min-height:42px;font-size:16px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:inherit;width:100%;box-sizing:border-box}
-.cs-seg{width:100%;flex-wrap:wrap}.cs-seg button{flex:1 1 auto;min-height:42px}.cs-sel{width:100%;min-height:44px;font-size:15px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--bg);color:inherit}.cs-f{margin:12px 0 0}.cs-pl{display:grid;gap:8px}.cs-pr{display:grid;grid-template-columns:1fr 84px 14px 84px;align-items:center;gap:6px;font-size:14px}.cs-pr b{text-align:center;font-weight:400;color:var(--muted)}.cs-pr input{min-height:42px;font-size:16px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:inherit;width:100%;box-sizing:border-box}`; document.head.appendChild(st); })();
+.cs-seg{width:100%;flex-wrap:wrap}.cs-seg button{flex:1 1 auto;min-height:42px}.cs-sel{width:100%;min-height:44px;font-size:15px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--bg);color:inherit}.cs-f{margin:12px 0 0}.cs-pl{display:grid;gap:8px}.cs-rl{display:grid;gap:10px}.cs-rr{display:grid;gap:5px;font-size:14px;padding-bottom:8px;border-bottom:1px dashed var(--line)}.cs-seg2{width:100%}.cs-seg2 button{flex:1 1 50%;min-height:42px;font-size:13px}.cs-pr{display:grid;grid-template-columns:1fr 84px 14px 84px;align-items:center;gap:6px;font-size:14px}.cs-pr b{text-align:center;font-weight:400;color:var(--muted)}.cs-pr input{min-height:42px;font-size:16px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:inherit;width:100%;box-sizing:border-box}`; document.head.appendChild(st); })();
 function specBlock(){
   const parts=S.current.parts; if(!parts.length) return "";
   const maps=cutMaps(parts), issues=orderIssues(parts), nSheets=maps.reduce((a,m)=>a+m.sheets.length,0);
@@ -16890,7 +16894,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="a8fad9798a";/*cehqr-build*/
+  const BUILD="0d1ce8b58b";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
