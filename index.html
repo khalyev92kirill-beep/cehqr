@@ -7006,14 +7006,16 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(j){ if(x){ x.answer=v; if(x.status!=="исправлено") x.status="отвечено"; } toast(j.tg?"Ответ ушёл — в приложение и в Телеграм":"Ответ записан — увидит в приложении"); shpRenderKeep(); } else t.disabled=false; },true);
 (function(){ const st=document.createElement("style"); st.textContent=`.help-mine{background:var(--surface);border-radius:10px;padding:10px 12px;margin:0 0 12px;display:grid;gap:8px;font-size:13.5px}.help-mi{display:grid;gap:3px}.help-mi+.help-mi{border-top:1px solid var(--line);padding-top:8px}#helpA .help-mi{font-size:15px}.help-ans{background:var(--surface-2,var(--surface));border-left:3px solid var(--accent,#3b82f6);padding:6px 10px;border-radius:6px}.help-rep{display:flex;gap:8px;align-items:flex-end;margin:6px 0 8px}.help-rep textarea{flex:1;min-width:0;box-sizing:border-box;font:14px/1.35 var(--f-body,system-ui);padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);resize:vertical}`; document.head.appendChild(st); })();
 /* Технологу на видном месте: красный кружок на «Ещё», строка «Обращения» первой, плашка над сделками */
+/* обращения работников видит только разработчик (Кирилл — со «ссылкой технолога» на телефоне), директору с PIN технолога не показываем */
+function helpDev(){ return !!(S.shop&&S.shop.tech)&&typeof siteIsAdmin==="function"&&siteIsAdmin(); }
 function helpNewList(){ const L=S.shop&&S.shop.help; return Array.isArray(L)?L.filter(x=>!x.status||x.status==="новое"):[]; }
 if(typeof shpLoad==="function"){ const _hl=shpLoad; shpLoad=async function(q){ const r=await _hl(q); try{ if(S.shop.loaded&&S.shop.tech&&!S.shop.helpAuto){ S.shop.helpAuto=1; helpLoad(); setInterval(()=>{ if(!document.hidden&&S.shop.tech) helpLoad(); },5*60*1000); } }catch(_){} return r; }; }
-if(typeof shpNavHtml==="function"){ const _hn=shpNavHtml; shpNavHtml=function(){ let h=_hn(); const n=S.shop.tech?helpNewList().length:0;
+if(typeof shpNavHtml==="function"){ const _hn=shpNavHtml; shpNavHtml=function(){ let h=_hn(); const n=helpDev()?helpNewList().length:0;
   if(n) h=h.replace(/(<button[^>]*data-v="more"[^>]*>[\s\S]*?<span class="lb">[^<]*<\/span>)/,`$1<span class="bdg bad" aria-label="новых обращений ${n}">${n}</span>`); return h; }; }
-if(typeof shpTaskStrip==="function"){ const _hs=shpTaskStrip; shpTaskStrip=function(){ const L=S.shop.tech?helpNewList():[]; if(!L.length) return _hs();
+if(typeof shpTaskStrip==="function"){ const _hs=shpTaskStrip; shpTaskStrip=function(){ const L=helpDev()?helpNewList():[]; if(!L.length) return _hs();
   const x=L.slice().sort((a,b)=>b.when-a.when)[0];
   return `<button type="button" class="shp-strip help-strip" data-act="shp-tab" data-v="help">${shpIco("chat",20)}<span>🛠 ${L.length>1?`Новых обращений: <b>${L.length}</b> · `:"Новое обращение: "}<b>${hEsc(x.who||"Без имени")}</b> — «${hEsc(String(x.text||"").slice(0,60))}${String(x.text||"").length>60?"…":""}»</span><span class="shp-strip-go" aria-hidden="true">Открыть ›</span></button>`+_hs(); }; }
-setTimeout(()=>{ if(typeof shpMoreHtml==="function"){ const _hm=shpMoreHtml; shpMoreHtml=function(){ let h=_hm(); if(!S.shop.tech) return h;
+setTimeout(()=>{ if(typeof shpMoreHtml==="function"){ const _hm=shpMoreHtml; shpMoreHtml=function(){ let h=_hm(); if(!helpDev()) return h;
   const m=h.match(/<li>(?:(?!<li>)[\s\S])*?data-v="help"[\s\S]*?<\/li>/); if(!m) return h; const n=helpNewList().length;
   let li=m[0].replace(/Обращения( · новых \d+)?/,"Обращения"+(n?` — <b class="help-new">${n} ${n===1?"новое":"новых"}</b>`:""));
   h=h.replace(m[0],""); return h.replace('<ul class="shp-list">','<ul class="shp-list">'+li.replace("<li>",'<li class="help-first">')); }; } },0);
@@ -13249,9 +13251,10 @@ function prDel(h){
   const yes=/<button type="button" class="btn danger shp-del-yes" data-act="shp-del">Точно удалить\?<\/button><button type="button" class="btn" data-act="shp-del-no">Отмена<\/button>/, one=/<button type="button" class="btn danger" data-act="shp-del">Удалить<\/button>/;
   const ask=yes.test(h); if(!ask&&!one.test(h)) return h;
   h=h.replace(yes,"").replace(one,"");
-  return h+`<section class="card pr-danger" aria-label="Удаление сделки"><h2>Удалить сделку</h2><p class="muted">Пропадут сделка, её задачи и чат — у всех. Вернуть нельзя.</p><div class="pr-dbtns">${ask
-    ?`<button type="button" class="btn danger shp-del-yes" data-act="shp-del">Точно удалить?</button><button type="button" class="btn" data-act="shp-del-no">Отмена</button>`
-    :`<button type="button" class="btn danger pr-del" data-act="shp-del">Удалить сделку…</button>`}</div></section>`; }
+  // маленькая серая надпись внизу (договоры храним — удаляют редко); подтверждение — как раньше
+  return h+(ask
+    ?`<section class="card pr-danger" aria-label="Удаление сделки"><h2>Удалить сделку?</h2><p class="muted">Пропадут сделка, её задачи, чат и договор — у всех. Вернуть нельзя.</p><div class="pr-dbtns"><button type="button" class="btn danger shp-del-yes" data-act="shp-del">Точно удалить</button><button type="button" class="btn" data-act="shp-del-no">Отмена</button></div></section>`
+    :`<p class="pr-dsm"><button type="button" class="pr-del" data-act="shp-del">удалить сделку</button></p>`); }
 
 /* ---- 1) «Все разделы» ---- */
 const PR_GR=[["client","Работа с клиентом",["clients","client","inbset","inb","inbox","smetas","zamers","kp","notes"]],["work","Цех и задачи",["cal","tasks","chats","chess","staff","feed","board"]],
@@ -13415,7 +13418,7 @@ if(typeof accOpen==="function"){ const _prAO=accOpen; accOpen=function(){ const 
 .pr-sn{flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent,#2e6fd0);color:var(--accent-ink,#fff);font:700 14px/26px var(--f-num,var(--f-body,system-ui));text-align:center}
 .pr-ebtns{display:flex;flex-direction:column;gap:8px}.pr-ebtns .btn{min-height:48px;justify-content:center;width:100%}
 .pr-danger{margin:24px 0 8px;padding:14px 16px;box-shadow:inset 0 0 0 1.5px var(--bad,#C7361F)!important}.pr-danger h2{margin:0 0 4px;font-size:17px;color:var(--bad,#C7361F)}.pr-danger p{margin:0 0 12px;font-size:14px}
-.pr-dbtns{display:flex;gap:8px;flex-wrap:wrap}.pr-dbtns .btn{min-height:46px}.pr-del{color:var(--bad,#C7361F)!important;box-shadow:inset 0 0 0 1.5px var(--bad,#C7361F)!important}
+.pr-dbtns{display:flex;gap:8px;flex-wrap:wrap}.pr-dbtns .btn{min-height:46px}.pr-dsm{margin:28px 0 10px;text-align:center}.pr-del{background:none;border:0;padding:8px 10px;font:inherit;font-size:12.5px;color:var(--muted,#8a8f96);text-decoration:underline;text-underline-offset:3px;cursor:pointer;opacity:.75}.pr-del:hover{opacity:1}
 .shp-tb .tb-act:empty{display:none}
 .pr-sheetm{align-items:flex-end}.pr-sheet{width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:10px 16px calc(16px + env(safe-area-inset-bottom,0px));max-height:88vh;overflow:auto}
 .pr-grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 12px}.pr-sheet h2{margin:0 0 6px}.pr-sheet>p.muted{margin:0 0 12px;line-height:1.4}
@@ -14651,6 +14654,61 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
 .dgc-w{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.dgc-in{min-height:44px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font:inherit;font-size:15px;color:var(--ink);background:var(--surface)}.dgc .kpc-sb{margin-top:10px}.dgc-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px 12px}
 `; document.head.appendChild(st); })();
 
+/* ===== Удаление заказов в приложении: директор и технолог (PIN технолога) — галочками, несколько сразу =====
+   Сервер: POST delOrdAdd {ids} (только роль tech), GET delIds (без PIN, только номера и время).
+   Удалённый заказ сразу пропадает у всех (мастера, дизайнеры, снабженец); Базис при «2 Обновить сайт» убирает его файлы.
+   Заказ, выгруженный из Базиса ПОЗЖЕ отметки, снова виден (тот же номер — новый заказ). */
+const DLO_LS="w24-delord";
+function dloLs(v){ try{ if(v===undefined) return localStorage.getItem(DLO_LS)||"[]"; localStorage.setItem(DLO_LS,v); }catch(_){ return "[]"; } }
+function dloList(){ try{ const L=JSON.parse(dloLs()); return Array.isArray(L)?L:[]; }catch(_){ return []; } }
+function dloHide(){ const L=dloList(); if(!L.length) return;
+  L.forEach(x=>{ const id=String(x.id||"").toUpperCase(), o=S.orders[id]; if(!o) return; const ex=Date.parse(o.exportedAt||o.createdAt||"")||0; if(!ex||ex<=(+x.at||0)) delete S.orders[id]; }); }
+function dloCan(){ return !!(S.site&&S.site.stagesUrl)&&((S.shop&&S.shop.tech)||(typeof siteIsAdmin==="function"&&siteIsAdmin())); }
+async function dloRefresh(){
+  for(let i=0;i<50&&!(S.site&&S.site.stagesUrl);i++) await new Promise(r=>setTimeout(r,300)); if(!(S.site&&S.site.stagesUrl)) return;
+  try{ const r=await fetch(S.site.stagesUrl+(S.site.stagesUrl.includes("?")?"&":"?")+"action=delIds",{cache:"no-cache"}); const j=await r.json(); if(!j||!j.ok) return;
+    const v=JSON.stringify(j.items||[]); if(v===dloLs()) return; dloLs(v); dloHide(); if(S.view==="orders"&&!document.querySelector(".modal")) render(); }catch(_){} }
+if(typeof stoHideOutside==="function"){ const _dloH=stoHideOutside; stoHideOutside=function(){ const r=_dloH.apply(this,arguments); dloHide(); return r; }; }
+setTimeout(dloRefresh,0);
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") dloRefresh(); });
+
+/* список заказов: «Выбрать» → галочки → «Удалить выбранные (N)» */
+S.dlo={on:false,sel:{}};
+if(typeof viewOrders==="function"){ const _dloVO=viewOrders; viewOrders=function(){ let h=_dloVO.apply(this,arguments);
+  if(!dloCan()||!Object.keys(S.orders).length){ S.dlo.on=false; return h; }
+  const n=Object.keys(S.dlo.sel).filter(id=>S.dlo.sel[id]&&S.orders[id]).length;
+  h=h.replace(/(<button type="button" class="btn sm refr"[^>]*>[^<]*<\/button>)/,`$1<button type="button" class="btn sm dlo-tg" data-act="dlo-tg" aria-pressed="${S.dlo.on}">${S.dlo.on?"Готово":"Выбрать"}</button>`);
+  if(S.dlo.on){
+    h=h.replace(/<div class="ocard" data-act="order" data-id="([^"]+)"/g,(m,id)=>`<div class="ocard dlo-c${S.dlo.sel[id]?" dlo-on":""}" data-act="dlo-pick" data-id="${id}" aria-pressed="${!!S.dlo.sel[id]}"`)
+         .replace(/<div class="oc-pic" data-th="([^"]+)">/g,(m,id)=>m+`<span class="dlo-box" aria-hidden="true">${S.dlo.sel[id]?"✓":""}</span>`);
+    h+=`<div class="dlo-bar" role="region" aria-label="Удаление заказов"><span>${n?`Выбрано: <b>${n}</b>`:"Отметьте заказы"}</span><button type="button" class="btn" data-act="dlo-tg">Отмена</button><button type="button" class="btn danger" data-act="dlo-del"${n?"":" disabled"}>Удалить${n?` (${n})`:""}</button></div>`;
+  }
+  return h; }; }
+document.addEventListener("click",async e=>{
+  const t=e.target.closest('[data-act^="dlo-"]'); if(!t) return;
+  e.preventDefault(); e.stopPropagation(); const a=t.dataset.act;
+  if(a==="dlo-tg"){ S.dlo.on=!S.dlo.on; S.dlo.sel={}; render(); return; }
+  if(a==="dlo-pick"){ const id=t.dataset.id; S.dlo.sel[id]=!S.dlo.sel[id]; const y=window.scrollY; render(); window.scrollTo(0,y); return; }
+  if(a==="dlo-del"){ const ids=Object.keys(S.dlo.sel).filter(id=>S.dlo.sel[id]&&S.orders[id]); if(!ids.length) return;
+    const names=ids.map(id=>"«"+(S.orders[id].name||id)+"»").slice(0,6).join(", ")+(ids.length>6?" и ещё "+(ids.length-6):"");
+    if(!(await appConfirm(`Удалить ${ids.length===1?"заказ":"заказы ("+ids.length+")"}: ${names}? Они пропадут у всех — у мастеров, дизайнеров и снабженца.`,"Удалить",true))) return;
+    if(!(S.shop&&S.shop.tech)){ toast("Удалять может директор или технолог — войдите с PIN технолога"); return; }
+    t.disabled=true; t.textContent="Удаляю…";
+    const j=await shpPost({action:"delOrdAdd",ids}); if(!j){ t.disabled=false; render(); return; }
+    const L=dloList().filter(x=>!ids.includes(String(x.id).toUpperCase())); ids.forEach(id=>L.push({id,at:j.at||Date.now()})); dloLs(JSON.stringify(L));
+    ids.forEach(id=>{ delete S.orders[id]; }); S.dlo={on:false,sel:{}}; render();
+    toast(ids.length===1?"Заказ удалён":"Удалено заказов: "+ids.length); }
+},true);
+(function(){ const st=document.createElement("style"); st.textContent=`
+.dlo-tg{margin-left:6px}.dlo-tg[aria-pressed="true"]{background:var(--ink,#2B3036);color:#fff}
+.ocard.dlo-c{cursor:pointer;position:relative}.ocard.dlo-c .oc-qr{pointer-events:none;opacity:.35}
+.ocard.dlo-on{box-shadow:inset 0 0 0 2.5px var(--bad,#C7361F)!important}
+.oc-pic{position:relative}.dlo-box{position:absolute;left:8px;top:8px;width:28px;height:28px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 2px #9aa0a6;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;color:#fff;z-index:2}
+.dlo-on .dlo-box{background:var(--bad,#C7361F);box-shadow:none}
+.dlo-bar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:var(--card,#fff);box-shadow:0 -1px 0 rgba(0,0,0,.12),0 -6px 18px rgba(0,0,0,.08)}
+.dlo-bar span{flex:1;font-size:15px}.dlo-bar .btn{min-height:44px}
+body:has(.dlo-bar) .ocards{padding-bottom:84px}`; document.head.appendChild(st); })();
+
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
   const t=ev.target.closest("[data-act],[data-view]"); if(!t) return;
@@ -15027,7 +15085,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="b297700df5";/*cehqr-build*/
+  const BUILD="89e4bdc89a";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
