@@ -16132,16 +16132,19 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="0155be02d9";/*cehqr-build*/
+  const BUILD="a9d34dec97";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
   const TRY="cehqr-upd-try";
-  let want="", busyTimer=0, checking=false;
+  let want="", note="", busyTimer=0, checking=false;
+  let act=Date.now(); ["pointerdown","keydown","touchstart","wheel"].forEach(ev=>document.addEventListener(ev,()=>{ act=Date.now(); },{passive:true,capture:true}));
   function busy(){
-    if(document.querySelector(".modal")) return true;   // открыто окно (форма, выбор, просмотр)
+    try{ if(S&&S.shop&&S.shop.sm&&S.shop.sm.dirty) return true; }catch(_){}   // несохранённая смета — не теряем
+    // открытое окно мешает, только пока человек рядом: 10 минут без касаний — обновляем и с окном (приложение висит открытым без дела)
+    if(document.querySelector(".modal")&&Date.now()-act<600000) return true;
     const a=document.activeElement;
-    if(a&&(/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)||a.isContentEditable)) return true;   // человек печатает
+    if(a&&(/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)||a.isContentEditable)&&(Date.now()-act<600000||(a.value&&a.value!==a.defaultValue))) return true;   // человек печатает (пустое поле без дела 10 мин — не мешает)
     for(const t of document.querySelectorAll("textarea")) if(!t.readOnly&&t.value.trim()&&t.value!==t.defaultValue) return true;   // недописанное сообщение
     return false;
   }
@@ -16151,7 +16154,7 @@ render();
     if(busy()){ busyTimer=setTimeout(go,5000); return; }
     // защита от круга: если уже перезагружались ради этого номера, а пришла всё равно старая страница — ждём 5 минут
     try{ const t=JSON.parse(sessionStorage.getItem(TRY)||"null"); if(t&&t.v===want&&Date.now()-t.at<300000) return; }catch(_){}
-    if(told!==want){ told=want; try{ toast("Вышла новая версия — обновляю"); }catch(_){} }
+    if(told!==want){ told=want; if(note){ try{ sessionStorage.setItem("cehqr-upd-note",note); }catch(_){} } }   // мелкое обновление — тихо; большое — покажем, что нового, после перезагрузки
     const reg=navigator.serviceWorker&&navigator.serviceWorker.getRegistration ? navigator.serviceWorker.getRegistration().then(r=>r&&r.update()).catch(()=>{}) : Promise.resolve();
     busyTimer=-1;
     Promise.race([reg,new Promise(r=>setTimeout(r,2500))]).then(()=>setTimeout(()=>{
@@ -16164,10 +16167,14 @@ render();
   function check(){
     if(checking||navigator.onLine===false) return; checking=true;
     fetch("version.json?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>{
-      const v=j&&typeof j.v==="string"?j.v:"";
+      const v=j&&typeof j.v==="string"?j.v:""; note=j&&typeof j.note==="string"?j.note:"";
       if(v&&v!==BUILD){ want=v; if(!busyTimer) go(); }
     }).catch(()=>{}).then(()=>{ checking=false; });
   }
+  /* после перезагрузки на большое обновление — окно «Что нового» (один раз) */
+  setTimeout(()=>{ let n=""; try{ n=sessionStorage.getItem("cehqr-upd-note")||""; sessionStorage.removeItem("cehqr-upd-note"); }catch(_){} if(!n) return;
+    const m=document.createElement("div"); m.className="modal"; m.innerHTML=`<div class="modal-card" style="width:min(440px,100%)"><h2 style="margin:0 0 8px">Обновление приложения</h2><p style="white-space:pre-line;margin:0 0 14px;line-height:1.45"></p><button type="button" class="btn primary" data-act="qr-close">Понятно</button></div>`;
+    m.querySelector("p").textContent=n; document.body.appendChild(m); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); },2500);
   setTimeout(check,1500);
   setInterval(()=>{ if(document.visibilityState==="visible") check(); },60000);
   document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") check(); });
