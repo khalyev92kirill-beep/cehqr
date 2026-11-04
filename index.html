@@ -829,7 +829,7 @@ function expandParts(orderId, list){
         code: orderId+"-"+pad(n,3),
         name:p.name||"Деталь", art:p.art||"", L:+p.L||0, W:+p.W||0, T:+p.T||0,
         material:p.material||"", edges:p.edges||{}, edgesRaw:p.edgesRaw||[],
-        holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, cuts:Array.isArray(p.cuts)&&p.cuts.length?p.cuts:null, frame:Array.isArray(p.frame)&&p.frame.length===9?p.frame.map(Number):null, box:p.box||null, grain:p.grain||null, mod:p.mod||"", copy: q>1 ? (i+1)+" из "+q : ""
+        holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, cuts:Array.isArray(p.cuts)&&p.cuts.length?p.cuts:null, frame:Array.isArray(p.frame)&&p.frame.length===9?p.frame.map(Number):null, box:p.box||null, grain:p.grain||null, mod:p.mod||"", an:p.an==null?null:p.an, copy: q>1 ? (i+1)+" из "+q : ""
       });
     }
   });
@@ -857,7 +857,7 @@ function openOrder(oid){
     if(S.current.orderId!==oid) return null;
     const res=parseJSON(txt);
     siteRememberOrder(oid,res,res.parts.length);
-    S.current.parts=expandParts(oid,res.parts); S.current.fasteners=res.fasteners||[]; S.current.furnMesh=res.furnMesh||null;
+    S.current.parts=expandParts(oid,res.parts); S.current.fasteners=res.fasteners||[]; S.current.furnMesh=res.furnMesh||null; S.current.anims=res.anims||[];
     Object.keys(res.textures||{}).forEach(m=>{ const t=res.textures[m]; S.textures[m]=t.url||t.data; });
     S.matColors=Object.assign(S.matColors||{},res.colors||{});
     if(!S.orders[oid]) S.orders[oid]={id:oid,name:res.order||oid,count:S.current.parts.length};
@@ -1334,7 +1334,7 @@ function mountAssembly(canvas, parts, opt){
   sun.position.set(span*0.9,span*1.6,span*1.2); scene.add(sun);
   const lineC=new THREE.Color(cssVar("--board-line")).multiplyScalar(0.7), wireC=new THREE.Color(0x2a2c2b);
   const hiC=new THREE.Color(cssVar("--accent"));
-  const items=[];
+  const items=[]; let anApply=null, anTap=null;   // двери и ящики открываются (анимация из Базиса)
   withBox.forEach(p=>{
     const b=p.box, w=Math.max(b[3]-b[0],0.5)*K, h=Math.max(b[4]-b[1],0.5)*K, d=Math.max(b[5]-b[2],0.5)*K;
     const sg=p.shape?shapeGeoGlobal(p,K):null;   // деталь с вырезом — по контуру из Базиса
@@ -1350,7 +1350,7 @@ function mountAssembly(canvas, parts, opt){
     const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo,sg?25:1),new THREE.LineBasicMaterial({color:lineC,transparent:true,opacity:0.8}));
     mesh.add(edges);
     if(glass){ mesh.renderOrder=2; edges.material.color=new THREE.Color(0x6f9aa6); }
-    mesh.userData={code:p.code,glass,home:new THREE.Vector3(cx,cy,cz),facade:/фасад|дверь/i.test(p.name),dims:`${fmt(p.L)}×${fmt(p.W)}`,art:String(p.art||"").trim(),mod:String(p.mod||"")};
+    mesh.userData={code:p.code,glass,an:p.an==null?null:p.an,home:new THREE.Vector3(cx,cy,cz),facade:/фасад|дверь/i.test(p.name),dims:`${fmt(p.L)}×${fmt(p.W)}`,art:String(p.art||"").trim(),mod:String(p.mod||"")};
     scene.add(mesh); items.push(mesh);
   });
   // центры блоков (модулей) — для разбора по блокам
@@ -1422,7 +1422,7 @@ function mountAssembly(canvas, parts, opt){
         geo.setAttribute("position",new THREE.BufferAttribute(new Float32Array(b64(q.p)),3)); geo.setIndex(new THREE.BufferAttribute(q.b===4?new Uint32Array(b64(q.i)):new Uint16Array(b64(q.i)),1)); geo.computeVertexNormals(); return {geo,mat:matOf(q.c,q.mt)}; }catch(e){ return null; } }).filter(Boolean); return geos[gi]; };
     exact.it.forEach(r=>{ const G=exact.g[r[0]]; if(!G) return; const kr=isKrep({n:G.n,b:[0,0,0,99,99,99]});
       const M=new THREE.Matrix4().set(r[1]*K,r[2]*K,r[3]*K,(r[10]-C[0])*K, r[4]*K,r[5]*K,r[6]*K,(r[11]-C[1])*K, r[7]*K,r[8]*K,r[9]*K,(r[12]-C[2])*K, 0,0,0,1);
-      geoOf(r[0]).forEach(x=>{ const m=new THREE.Mesh(x.geo,x.mat); m.matrixAutoUpdate=false; m.matrix.copy(M); (kr?krepGroupX:g0).add(m); }); });
+      geoOf(r[0]).forEach(x=>{ const m=new THREE.Mesh(x.geo,x.mat); m.matrixAutoUpdate=false; m.matrix.copy(M); m.userData.anC=[r[10],r[11],r[12]]; m.userData.anN=G.n||""; (kr?krepGroupX:g0).add(m); }); });
   } else if(exact){
     const g0=new THREE.Group(); scene.add(g0); opt._exactGroup=g0;
     // сетка ячеек 50 мм с габаритами крепежа: треугольник внутри габарита крепежа — это крепёж
@@ -1473,7 +1473,7 @@ function mountAssembly(canvas, parts, opt){
       const geo=new THREE.BoxGeometry(Math.max(sx,1)*K,Math.max(sy,1)*K,Math.max(sz,1)*K);
       const m=new THREE.Mesh(geo,exact?furnHidden:furnMat); m.position.set(...pos);
       if(!exact) m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),furnLine));
-      m.userData={code:"F:"+fi,furn:true}; furnGroup.add(m); furnItems.push(m); return;
+      m.userData={code:"F:"+fi,furn:true,anB:b,anN:f.n}; furnGroup.add(m); furnItems.push(m); return;
     }
     // мелочь без объёма (метки, точки крепежа) — оранжевыми кружками больше не рисуем: только мешали
     return;
@@ -1536,6 +1536,7 @@ function mountAssembly(canvas, parts, opt){
       if(m.children[1]) m.children[1].visible=!wire&&!dim&&st.holes!==false;
       if(m.children[2]) m.children[2].visible=(!!st.wire||sel)&&wire&&st.holes!==false&&(!st.selected||sel||!foc());
     });
+    if(anApply) anApply();
   }
   // подписи размеров поверх 3D
   const layer=canvas.parentElement.querySelector(".asm-labels");
@@ -1717,6 +1718,7 @@ function mountAssembly(canvas, parts, opt){
     if(st.measure){ measClick(e); return; }
     const hit=ray.intersectObjects(pickable(),false)[0];
     const code=hit?hit.object.userData.code:null;
+    if(st.openMode&&hit&&anTap&&anTap(hit.object)) return;   // режим «Открыть»: нажал на дверь или ящик — открылся / закрылся
     // Ctrl/Shift-щелчок или режим «Несколько» — добавить деталь к выделению (повторно — убрать)
     if(st.steps){ if(code&&!code.startsWith("F:")){ const pp=partByCode(code); if(pp) toast((pp.art?"Поз. "+pp.art+" · ":"")+pp.name+" "+fmt(pp.L)+"×"+fmt(pp.W)); } return; }   // в сборке по шагам нажатие только подсказывает деталь
     // режим «нажал — скрыл»
@@ -1864,6 +1866,33 @@ function mountAssembly(canvas, parts, opt){
   asm.focusBox=(lo,hi)=>{ st.target.set(((lo[0]+hi[0])/2-C[0])*K,((lo[1]+hi[1])/2-C[1])*K,((lo[2]+hi[2])/2-C[2])*K);
     const ext=Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2])*K; st.dist=Math.max(size*0.15,ext*2.3); place2(); };
   { const ap=st.apply; st.apply=function(){ const r=ap.apply(this,arguments); if(asm&&asm.st===st&&asm.loop) asm.loop.poke(300); return r; }; }   // смена вида из кода — кадр сразу
+  // ---- двери и ящики открываются, как в Базисе: поворот на петлях / выдвижение по направляющим ----
+  (function(){ const A=(opt.anims||[]); if(!A.length) return; const byId={}; A.forEach(a=>{ byId[a.id]=a; a.f=a.f||0; });
+    const root=a=>{ let r=a, k=0; while(r&&r.par>=0&&byId[r.par]&&k++<8) r=byId[r.par]; return r; };
+    const vec=p=>new THREE.Vector3((p[0]-C[0])*K,(p[1]-C[1])*K,(p[2]-C[2])*K);
+    const own=(a,f,out)=>{ const pa=vec(a.a), pb=vec(a.b), d=pb.clone().sub(pa), len=d.length(); if(len<1e-6){ return out.identity(); } d.normalize();
+      if(a.t==="rot"){ const ang=(isFinite(a.lim)&&a.lim?a.lim:90)*Math.PI/180*f; out.makeTranslation(pa.x,pa.y,pa.z).multiply(new THREE.Matrix4().makeRotationAxis(d,ang)).multiply(new THREE.Matrix4().makeTranslation(-pa.x,-pa.y,-pa.z)); }
+      else { const t=len*(a.par>=0?0.5:1)*f; out.makeTranslation(d.x*t,d.y*t,d.z*t); }
+      return out; };
+    const matOf=(id,f)=>{ const a=byId[id]; if(!a) return new THREE.Matrix4(); const M=own(a,f,new THREE.Matrix4()); return a.par>=0&&byId[a.par]?matOf(a.par,f).multiply(M):M; };
+    // фурнитура: к самой маленькой анимации, внутри которой её центр (петли не трогаем — они на корпусе)
+    const inA=(c,a)=>{ const b=a.box; if(!b) return false; const th=[b[3]-b[0],b[4]-b[1],b[5]-b[2]], ta=a.t==="rot"?th.indexOf(Math.min(...th)):-1;
+      for(let i=0;i<3;i++){ const m=i===ta?45:3; if(c[i]<b[i]-3||c[i]>b[i+3]+m) return false; } return true; };   // ручки — снаружи фасада (спереди), внутрь — нет
+    const vol=a=>{ const b=a.box||[0,0,0,1e5,1e5,1e5]; return (b[3]-b[0]+1)*(b[4]-b[1]+1)*(b[5]-b[2]+1); };
+    const pickA=(c,n)=>{ if(/петл/i.test(n||"")) return null; let best=null; A.forEach(a=>{ if(inA(c,a)&&(!best||vol(a)<vol(best))) best=a; }); return best?best.id:null; };
+    const fx=[], _bb=new THREE.Box3(), _bc=new THREE.Vector3(); [opt._exactGroup,krepGroupX].forEach(g=>g&&g.children.forEach(m=>{ const u=m.userData; if(!u.anC) return;
+      if(!m.geometry.boundingBox) m.geometry.computeBoundingBox(); _bb.copy(m.geometry.boundingBox).applyMatrix4(m.matrix).getCenter(_bc); const id=pickA([_bc.x/K+C[0],_bc.y/K+C[1],_bc.z/K+C[2]],u.anN); if(id!=null){ u.an=id; u.M0=m.matrix.clone(); fx.push(m); } }));
+    furnItems.forEach(m=>{ const u=m.userData, b=u.anB; if(!b) return; const id=pickA([(b[0]+b[3])/2,(b[1]+b[4])/2,(b[2]+b[5])/2],u.anN); if(id!=null){ u.an=id; u.P0=m.position.clone(); fx.push(m); } });
+    const _q=new THREE.Quaternion(), _s=new THREE.Vector3(), _p=new THREE.Vector3(), Mt=new THREE.Matrix4();
+    anApply=function(){ const off=!!st.explode; items.forEach(m=>{ const u=m.userData; if(u.an==null||!byId[u.an]) return; const f=off?0:root(byId[u.an]).f;
+        if(!f){ m.quaternion.set(0,0,0,1); return; } Mt.copy(matOf(u.an,f)).multiply(new THREE.Matrix4().makeTranslation(u.home.x,u.home.y,u.home.z)); Mt.decompose(_p,_q,_s); m.position.copy(_p); m.quaternion.copy(_q); });
+      fx.forEach(m=>{ const u=m.userData, f=off?0:root(byId[u.an]).f; if(u.M0){ m.matrix.copy(f?matOf(u.an,f).multiply(u.M0):u.M0); } else if(u.P0){ m.position.copy(u.P0); if(f) m.position.applyMatrix4(matOf(u.an,f)); } }); };
+    let raf=0; const run=()=>{ cancelAnimationFrame(raf); const t0=performance.now(), from=A.map(a=>a.f);
+      const step=()=>{ const k=Math.min(1,(performance.now()-t0)/700), e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2; A.forEach((a,i)=>{ a.f=from[i]+((a.tg||0)-from[i])*e; }); anApply(); dirty=true; if(asm&&asm.loop) asm.loop.poke(120); if(k<1) raf=requestAnimationFrame(step); }; raf=requestAnimationFrame(step); };
+    anTap=function(obj){ const id=obj&&obj.userData&&obj.userData.an; if(id==null||!byId[id]) return false; const r=root(byId[id]); r.tg=r.tg?0:1; run(); return true; };
+    asm.anims={n:A.filter(a=>!(a.par>=0)).length, all(open){ A.forEach(a=>{ a.tg=open?1:0; }); if(open&&st.explode){ st.explode=0; apply2(); } run(); }, any(){ return A.some(a=>a.tg); }};
+    if(A.some(a=>a.f)) anApply();
+  })();
   asm.loop=perfLoop({dirty:()=>dirty, draw:()=>{ renderer.render(scene,cam); if(dirty){ updCube(); updateLabels(); } }, sig:()=>perfSig(cam,scene)+"|"+canvas.width+"x"+canvas.height});
 }
 // масштаб и сдвиг чертежа: колесо мыши к курсору, перетаскивание, щипок двумя пальцами, кнопки
@@ -2770,11 +2799,12 @@ const DQI={shot:'<svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><c
   more:'<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>',
   warn:'<svg viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>',
   close:'<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  open:'<svg viewBox="0 0 24 24"><path d="M4 3h9v18H4z"/><path d="M13 3l6 2v14l-6 2"/><path d="M10 12h.01"/></svg>',
   draw:'<svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M4 9h16M10 9v12M7 6h.01M7 13h.01M7 17h.01"/></svg>'};
 function dqBar(){
   const st=(asm&&asm.st)||S.asmOrder||{}, cl=clientMode();
   const b=(act,ic,title,on,cls)=>`<button type="button" class="dq-b${cls?" "+cls:""}" data-act="${act}" title="${title}" aria-label="${title}"${on!=null?` aria-pressed="${!!on}"`:""}>${ic}</button>`;
-  return `<div class="dq-bar"><div class="dq-l">${cl?b("dq-shot",DQI.shot,"Снимок 3D",null,"hot"):b("scan-open",DQI.shot,"Камера — сканер QR деталей",null,"hot")}${b("dq-block",DQI.block,"Выбор блока",st.blockMode)}${cl?"":b("asm-steps",DQI.play,"Сборка по шагам",!!st.steps)}${b("dq-hide",DQI.eye,"Скрывать касанием",st.hideMode)}</div>
+  return `<div class="dq-bar"><div class="dq-l">${cl?b("dq-shot",DQI.shot,"Снимок 3D",null,"hot"):b("scan-open",DQI.shot,"Камера — сканер QR деталей",null,"hot")}${b("dq-block",DQI.block,"Выбор блока",st.blockMode)}${cl?"":b("asm-steps",DQI.play,"Сборка по шагам",!!st.steps)}${b("dq-hide",DQI.eye,"Скрывать касанием",st.hideMode)}${S.current&&S.current.anims&&S.current.anims.length?b("dq-doors",DQI.open,"Открыть двери и ящики",!!st.openMode):""}</div>
     <div class="dq-r">${cl?"":`<button type="button" class="dq-b" data-act="dq-go" data-to="fv" title="Вид спереди с размерами" aria-label="Вид спереди с размерами">${DQI.draw}</button>`}${!cl&&typeof vtxBtnHtml==="function"&&typeof shpOn==="function"&&shpOn()?(()=>{ const ln=shpPin()&&S.shop.loaded&&vtxLinked(S.current.orderId); return `<button type="button" class="dq-b dq-vtx${ln?" on":""}" data-act="to-vertaks" title="${ln?"Открыть сделку в Вертаксе":"Привязать заказ к сделке в Вертаксе"}" aria-label="${ln?"Открыть сделку в Вертаксе":"Привязать заказ к сделке в Вертаксе"}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><small>${ln?"Сделка":"В Вертакс"}</small></button>`; })():""}${b("dq-menu",DQI.more,"Меню")}${cl?"":b("dq-warn",DQI.warn,"Сообщить о проблеме")}${b("dq-close",DQI.close,"Закрыть — к списку заказов")}</div></div>
     <div class="dq-cube" aria-label="Виды"><div class="cb"><button type="button" class="f fr" data-act="dq-face" data-f="front">перед</button><button type="button" class="f bk" data-act="dq-face" data-f="back">зад</button><button type="button" class="f rt" data-act="dq-face" data-f="right">прав</button><button type="button" class="f lf" data-act="dq-face" data-f="left">лев</button><button type="button" class="f tp" data-act="dq-face" data-f="top">верх</button><button type="button" class="f bt" data-act="dq-face" data-f="bottom">низ</button></div></div>
     <button type="button" class="dq-help" data-act="dq-help" aria-label="Как пользоваться">?</button><div class="dq-menu" hidden></div>`;
@@ -3238,7 +3268,7 @@ function parseJSON(text){
   if(!list.length) throw new Error("В файле нет деталей");
   const parts=list.map(p=>{
     const L=numOf(p.L??p.length), W=numOf(p.W??p.width);
-    const out={mod:typeof p.mod==="string"?p.mod:"", name:p.name||"", art:p.art||"", qty:p.qty||1, L:Math.max(L,W), W:Math.min(L,W), T:numOf(p.T??p.thickness), material:p.material||"", edges:{}, edgesRaw:[], holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, cuts:Array.isArray(p.cuts)&&p.cuts.length?p.cuts:null, frame:Array.isArray(p.frame)&&p.frame.length===9?p.frame.map(Number):null, box:Array.isArray(p.box)&&p.box.length===6?p.box.map(Number):null, grain:Array.isArray(p.grain)?p.grain.map(Number):null};
+    const out={mod:typeof p.mod==="string"?p.mod:"", name:p.name||"", art:p.art||"", qty:p.qty||1, L:Math.max(L,W), W:Math.min(L,W), T:numOf(p.T??p.thickness), material:p.material||"", edges:{}, edgesRaw:[], holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, cuts:Array.isArray(p.cuts)&&p.cuts.length?p.cuts:null, frame:Array.isArray(p.frame)&&p.frame.length===9?p.frame.map(Number):null, box:Array.isArray(p.box)&&p.box.length===6?p.box.map(Number):null, grain:Array.isArray(p.grain)?p.grain.map(Number):null, an:Number.isInteger(p.an)?p.an:null};
     if(Array.isArray(p.edges)){
       p.edges.forEach(e=>{ const r={elem:e.elem,m:e.material||e.m||"",t:+e.t||0};
         if(/^(L1|L2|W1|W2)$/.test(e.side||"")) out.edges[e.side]={m:r.m,t:r.t}; else out.edgesRaw.push(r); });
@@ -3251,7 +3281,8 @@ function parseJSON(text){
   const fasteners=Array.isArray(j.fasteners)?j.fasteners.filter(f=>f&&Array.isArray(f.b)&&f.b.length===6).map(f=>{ const o={n:String(f.n||""),b:f.b.map(Number)}; if(f.g){ o.g=String(f.g); o.gi=f.gi; } if(Array.isArray(f.o)&&f.o.length===3&&f.o.every(v=>isFinite(+v))) o.o=f.o.map(Number); return o; }):[];
   const furnMesh=j.furnMesh&&(Array.isArray(j.furnMesh.m)||(j.furnMesh.v===2&&Array.isArray(j.furnMesh.it)))?j.furnMesh:null;
   const colors={}; if(j.colors&&typeof j.colors==="object") Object.keys(j.colors).forEach(k=>{ const c=j.colors[k]; if(typeof c==="string"&&/^#[0-9a-f]{6}$/i.test(c)) colors[k]=c; });
-  return {parts, order:j.order||"", source:j.source||"json", textures, fasteners, furnMesh, colors};
+  const anims=Array.isArray(j.anims)?j.anims.filter(a=>a&&Array.isArray(a.a)&&Array.isArray(a.b)&&(a.t==="rot"||a.t==="move")):[];   // двери и ящики, как в Базисе
+  return {parts, order:j.order||"", source:j.source||"json", textures, fasteners, furnMesh, colors, anims};
 }
 function parseCSV(text){
   text=text.replace(/^﻿/,"");
@@ -3332,7 +3363,7 @@ function render(){
     S.asmOrder=S.asmOrder&&S.asmOrder.oid===S.current.orderId?S.asmOrder:{oid:S.current.orderId};
     if(S.dqFull&&S.introOid!==S.current.orderId){ S.introOid=S.current.orderId; S.introT0=-1; } // сбрасывается при выходе к списку — при каждом новом открытии заказа сборка снова
     const intro=!(S.dqFull&&S.introOid===S.current.orderId&&S.introT0)?0:S.introT0===-1?true:performance.now()-S.introT0<4700?S.introT0:0; // страница может перерисоваться во время сборки — продолжаем с того же места
-    if(!(keep&&asmReuse(keep))){ mountAssembly($("#asm"), S.current.parts, {state:S.asmOrder, intro, onPick:showPick, fasteners:curFasteners(), furnMesh:S.current.furnMesh}); if(asm) asm.key=asmKey(); } showPick(S.asmOrder.selected); syncShowAll();
+    if(!(keep&&asmReuse(keep))){ mountAssembly($("#asm"), S.current.parts, {state:S.asmOrder, intro, onPick:showPick, fasteners:curFasteners(), furnMesh:S.current.furnMesh, anims:S.current.anims}); if(asm) asm.key=asmKey(); } showPick(S.asmOrder.selected); syncShowAll();
     document.querySelectorAll(".fv-box").forEach(svgZoom); }
   else if(S.view==="part"){ v.innerHTML=viewPart(); const p=withRules(partByCode(S.partCode)); if(p) mount3D(p);
     S.asmPart=S.asmPart&&S.asmPart.oid===S.current.orderId?S.asmPart:{oid:S.current.orderId};
@@ -11848,7 +11879,7 @@ function opAfter(){
   if(document.querySelector(".op-tiles")&&!S.current.loading) opCntHeavy(S.current.orderId);
   v.querySelectorAll(".dq-bar .dq-b").forEach(b=>{ const L=OP_LB[b.dataset.act]||(b.dataset.dra==="open"?"Чертёж":""); if(L&&!b.querySelector("small")) b.dataset.lb=L; });
   const x=v.querySelector('.dq-bar [data-act="dq-close"]'); if(x){ x.title="Назад — к странице заказа"; x.setAttribute("aria-label","Назад — к странице заказа"); } }
-const OP_LB={"scan-open":"Сканер","dq-shot":"Снимок","dq-block":"Блок","asm-steps":"Шаги","dq-hide":"Скрыть","dq-go":"Вид","dq-menu":"Меню","dq-warn":"Ошибка","dq-close":"Назад"};
+const OP_LB={"scan-open":"Сканер","dq-shot":"Снимок","dq-block":"Блок","asm-steps":"Шаги","dq-hide":"Скрыть","dq-doors":"Открыть","dq-go":"Вид","dq-menu":"Меню","dq-warn":"Ошибка","dq-close":"Назад"};
 function opTarget(k){ if(k==="offc") return document.querySelector('details[data-k="offc"]'); try{ return dqTarget(k); }catch(_){ return null; } }
 function opOpen(k,from3d){ S.op.ret3d=!!from3d; S.dqFull=false; document.body.classList.remove("has-full");
   if(k==="fv"){ S.fvWin=true; S.fvFromDq=!!from3d; S.op.sec="fv"; render(); return; }
@@ -15131,8 +15162,9 @@ document.addEventListener("click", async ev=>{
   else if(a==="dq-help"){ dqHelp(); }
   else if(a==="dq-help-x"){ const m=document.querySelector(".dq-hm"); m&&m.remove(); }
   else if(a==="dq-face"){ if(asm){ const F={front:[0,0],back:[Math.PI,0],right:[Math.PI/2,0],left:[-Math.PI/2,0],top:[asm.st.yaw,1.35],bottom:[asm.st.yaw,-1.3]}[t.dataset.f]; asm.orient(F[0],F[1]); } }
-  else if(a==="dq-block"){ if(asm){ const st=asm.st; st.blockMode=!st.blockMode; if(st.blockMode) st.hideMode=false; dqSync(); toast(st.blockMode?"Выбор блока: вкл — нажмите на шкаф":"Выбор блока: выкл"); } }
-  else if(a==="dq-hide"){ if(asm){ const st=asm.st; st.hideMode=!st.hideMode; if(st.hideMode){ st.blockMode=false; st.selected=null; st.multi={}; st.apply(); showPick(null); } dqSync(); toast(st.hideMode?"Нажимайте на детали — они скроются":"Скрытие касанием: выкл"); } }
+  else if(a==="dq-doors"){ if(asm&&asm.anims){ const st=asm.st; st.openMode=!st.openMode; if(st.openMode){ st.hideMode=false; st.blockMode=false; } asm.anims.all(st.openMode); document.querySelectorAll('.dq-bar [data-act="dq-doors"]').forEach(b=>b.setAttribute("aria-pressed",String(!!st.openMode))); dqSync(); toast(st.openMode?"Открыто. Нажмите на дверь или ящик — закроется, ещё раз — откроется":"Закрыто"); } else toast("В этом заказе нет анимации из Базиса"); }
+  else if(a==="dq-block"){ if(asm){ const st=asm.st; st.blockMode=!st.blockMode; if(st.blockMode){ st.hideMode=false; st.openMode=false; } dqSync(); toast(st.blockMode?"Выбор блока: вкл — нажмите на шкаф":"Выбор блока: выкл"); } }
+  else if(a==="dq-hide"){ if(asm){ const st=asm.st; st.hideMode=!st.hideMode; if(st.hideMode){ st.blockMode=false; st.openMode=false; st.selected=null; st.multi={}; st.apply(); showPick(null); } dqSync(); toast(st.hideMode?"Нажимайте на детали — они скроются":"Скрытие касанием: выкл"); } }
   else if(a==="dq-shot"){ if(asm&&asm.snap){ const url=asm.snap(), o=S.orders[S.current.orderId]||{}, name=`${(o.name||"заказ").replace(/[\\/:*?"<>|]+/g," ").trim()}-${S.current.orderId}.png`;
       fetch(url).then(r=>r.blob()).then(bl=>{ const f=new File([bl],name,{type:"image/png"});
         if(navigator.canShare&&matchMedia("(pointer:coarse)").matches&&navigator.canShare({files:[f]})) navigator.share({files:[f],title:o.name||""}).catch(()=>{});
@@ -15262,7 +15294,7 @@ function pageRefresh(){ try{ Object.keys(localStorage).forEach(k=>{ if(k.indexOf
 })();
 // лёгкий отклик на нажатие кнопок, вкладок, карточек
 document.addEventListener("click",e=>{ const t=e.target&&e.target.closest&&e.target.closest('button,[data-act],summary,.ocard,a.btn,label.btn,[role="tab"]'); if(t&&!t.disabled&&t.tagName!=="CANVAS") haptic("tap"); },true);
-function dqSync(){ if(!asm) return; const st=asm.st; document.querySelectorAll('.dq-bar [data-act="dq-block"]').forEach(b=>b.setAttribute("aria-pressed",String(!!st.blockMode)));
+function dqSync(){ if(!asm) return; const st=asm.st; document.querySelectorAll('.dq-bar [data-act="dq-doors"]').forEach(b=>b.setAttribute("aria-pressed",String(!!st.openMode))); document.querySelectorAll('.dq-bar [data-act="dq-block"]').forEach(b=>b.setAttribute("aria-pressed",String(!!st.blockMode)));
   document.querySelectorAll('.dq-bar [data-act="dq-hide"]').forEach(b=>b.setAttribute("aria-pressed",String(!!st.hideMode))); document.querySelectorAll('.dq-bar [data-act="asm-steps"]').forEach(b=>b.setAttribute("aria-pressed",String(!!st.steps))); }
 document.addEventListener("click", ev=>{ if(document.querySelector(".dq-bar")) setTimeout(dqSync,0); const m=document.querySelector(".dq-menu:not([hidden])"); if(!m) return; const t=ev.target;
   if(t.closest&&t.closest('[data-act="dq-menu"]')) return; if(t.closest&&t.closest(".dq-menu")){ setTimeout(()=>{ m.hidden=true; dqSync(); },0); return; } m.hidden=true; });
@@ -15470,7 +15502,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="6e38d3feed";/*cehqr-build*/
+  const BUILD="7ea0f1a24b";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
