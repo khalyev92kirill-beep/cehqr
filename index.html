@@ -14705,7 +14705,8 @@ document.addEventListener("click",async e=>{
   if(a==="dlo-del"){ const ids=Object.keys(S.dlo.sel).filter(id=>S.dlo.sel[id]&&S.orders[id]); if(!ids.length) return;
     const names=ids.map(id=>"«"+(S.orders[id].name||id)+"»").slice(0,6).join(", ")+(ids.length>6?" и ещё "+(ids.length-6):"");
     if(!(await appConfirm(`Удалить ${ids.length===1?"заказ":"заказы ("+ids.length+")"}: ${names}? Они пропадут у всех — у мастеров, дизайнеров и снабженца.`,"Удалить",true))) return;
-    if(!(S.shop&&S.shop.tech)){ toast("Удалять может директор или технолог — войдите с PIN технолога"); return; }
+    if(!(S.shop&&S.shop.tech)&&typeof shpLoad==="function"&&typeof shpPin==="function"&&shpPin()) await shpLoad(true);
+  if(!(S.shop&&S.shop.tech)){ toast("Удалять может директор или технолог — войдите с PIN технолога"); return; }
     t.disabled=true; t.textContent="Удаляю…";
     const j=await shpPost({action:"delOrdAdd",ids}); if(!j){ t.disabled=false; render(); return; }
     const L=dloList().filter(x=>!ids.includes(String(x.id).toUpperCase())); ids.forEach(id=>L.push({id,at:j.at||Date.now()})); dloLs(JSON.stringify(L));
@@ -15052,6 +15053,46 @@ body.prf-on{overflow:hidden}
 .prf-fl select{font-size:15px;padding:0 6px}
 @media (max-width:360px){.kp-mseg button{font-size:12.5px}.prf-grid{gap:8px}}
 `; document.head.appendChild(st); })();
+
+/* ===== Пробники: пробные выгрузки из Базиса (вопрос в окне выгрузки «Заказ клиента?» → Отмена).
+   Есть только в списке технолога (ссылка технолога): Базис не кладёт их в списки мастеров, дизайнеров и снабженца.
+   На сайте — не в «Заказах», а в «Модули» → вкладка «Пробные». Видят директор и технолог. ===== */
+S.probes=S.probes||{};
+function prbPull(){ Object.keys(S.orders||{}).forEach(id=>{ const o=S.orders[id]; if(o&&o.probe){ S.probes[id]=o; delete S.orders[id]; } }); }
+function prbPush(id){ id=String(id||"").toUpperCase(); if(S.probes[id]&&!S.orders[id]) S.orders[id]=S.probes[id]; }
+if(typeof stoHideOutside==="function"){ const _prbH=stoHideOutside; stoHideOutside=function(){ const r=_prbH.apply(this,arguments); S.probes={}; prbPull(); return r; }; }
+if(typeof viewOrders==="function"){ const _prbVO=viewOrders; viewOrders=function(){ prbPull(); return _prbVO.apply(this,arguments); }; }
+if(typeof goOrder==="function"){ const _prbGO=goOrder; goOrder=function(oid){ prbPush(oid); return _prbGO.apply(this,arguments); }; }
+if(typeof goPart==="function"){ const _prbGP=goPart; goPart=function(code){ const c=String(code||"").replace(/^.*#/,""), i=c.lastIndexOf("-"); if(i>0) prbPush(c.slice(0,i)); return _prbGP.apply(this,arguments); }; }
+/* поиск модулей идёт и по пробникам */
+if(typeof libScan==="function"){ const _prbLS=libScan; libScan=async function(){ prbPull(); const mix=Object.assign({},S.orders,S.probes), own=S.orders; S.orders=mix;
+  try{ return await _prbLS.apply(this,arguments); } finally{ if(S.orders===mix){ S.orders=own; } } }; }
+function prbDate(s){ const d=new Date(s||""); return isNaN(d)?"":d.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})+" "+d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}); }
+function prbView(){ const L=Object.keys(S.probes).map(id=>S.probes[id]).sort((a,b)=>String(b.exportedAt||b.createdAt||"").localeCompare(String(a.exportedAt||a.createdAt||"")));
+  if(!L.length) return `<p class="note">Пробников пока нет. В Базисе нажмите «Выгрузить» и на вопрос «Это заказ клиента?» ответьте «Отмена» — модель попадёт сюда. Мастера, дизайнеры и снабженец её не увидят.</p>`;
+  return `<p class="muted prb-tip">Пробные выгрузки: проверить 3D, сборку и модули. Видите только вы и технолог.</p><ul class="prb-list">${L.map(o=>{ const id=String(o.id||"").toUpperCase();
+    return `<li class="prb-it"><span class="prb-ic" aria-hidden="true">🧪</span><span class="prb-b"><b>${esc(o.name||id)}</b><small class="muted">${esc(id)} · ${o.count||0} дет.${prbDate(o.exportedAt||o.createdAt)?" · "+prbDate(o.exportedAt||o.createdAt):""}</small></span>
+    <span class="prb-a"><button type="button" class="btn sm primary" data-act="order" data-id="${esc(id)}">Открыть 3D</button><button type="button" class="btn sm prb-del" data-act="prb-del" data-id="${esc(id)}" aria-label="Удалить пробник ${esc(o.name||id)}">Удалить</button></span></li>`; }).join("")}</ul>`; }
+if(typeof viewLib==="function"){ const _prbVL=viewLib; viewLib=function(){ S.lib=S.lib||{}; const n=Object.keys(S.probes).length, prb=S.lib.tab==="prb";
+  if(prb) S.lib.tab="lib"; let h=_prbVL.apply(this,arguments); if(prb) S.lib.tab="prb";
+  const btn=`<button type="button" class="${prb?"on":""}" data-act="lib-tab" data-v="prb">Пробные · ${n}</button>`;
+  if(!prb) return h.replace(/(data-v="new">[^<]*<\/button>)/,"$1"+btn);
+  const i=h.indexOf('<div class="seg cat-mode"'), seg=h.slice(i).match(/^<div class="seg cat-mode"[^>]*>(?:<button[^>]*>[^<]*<\/button>)+<\/div>/);
+  if(i<0||!seg) return h+prbView();
+  return h.slice(0,i)+seg[0].replace(/ class="on"/g,' class=""').replace(/(data-v="new">[^<]*<\/button>)/,"$1"+btn)+prbView(); }; }
+document.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.closest('[data-act="prb-del"]'); if(!t) return; e.preventDefault(); e.stopPropagation();
+  const id=t.dataset.id, o=S.probes[id]; if(!o) return;
+  if(!(await appConfirm(`Удалить пробник «${o.name||id}»? Он пропадёт с сайта, а Базис при «Обновить сайт» уберёт его файлы.`,"Удалить",true))) return;
+  if(!(S.shop&&S.shop.tech)&&typeof shpLoad==="function"&&typeof shpPin==="function"&&shpPin()) await shpLoad(true);
+  if(!(S.shop&&S.shop.tech)){ toast("Удалять может директор или технолог — войдите с PIN технолога"); return; }
+  t.disabled=true; t.textContent="Удаляю…"; const j=await shpPost({action:"delOrdAdd",ids:[id]}); if(!j){ t.disabled=false; t.textContent="Удалить"; return; }
+  if(typeof dloList==="function"){ const L=dloList().filter(x=>String(x.id).toUpperCase()!==id); L.push({id,at:j.at||Date.now()}); dloLs(JSON.stringify(L)); }
+  delete S.probes[id]; delete S.orders[id]; if(typeof libPaint==="function") libPaint(); toast("Пробник удалён"); },true);
+(function(){ const st=document.createElement("style"); st.textContent=`.prb-tip{margin:0 0 10px;font-size:13.5px}.prb-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.prb-it{display:grid;grid-template-columns:44px 1fr auto;gap:4px 12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.prb-ic{width:44px;height:44px;border-radius:10px;background:var(--bg,#0001);display:grid;place-items:center;font-size:22px}.prb-b{min-width:0}.prb-b b{display:block;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.prb-b small{display:block;font-size:12.5px;margin-top:2px}
+.prb-a{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.prb-a .btn{min-height:40px}.prb-del{color:var(--bad,#C7361F)}
+@media (max-width:560px){.prb-it{grid-template-columns:44px 1fr}.prb-a{grid-column:1/-1;justify-content:stretch}.prb-a .btn{flex:1}}`; document.head.appendChild(st); })();
 
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
@@ -15429,7 +15470,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="5e5b601c9c";/*cehqr-build*/
+  const BUILD="6e38d3feed";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
