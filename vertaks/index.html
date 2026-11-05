@@ -1928,7 +1928,11 @@ function svgZoom(box){
     if(w>=W0-0.01){ x=X0; y=Y0; }
     svg.setAttribute("viewBox",`${x} ${y} ${w} ${h}`); svgDeZoom(svg,W0/w); box.classList.toggle("zoomed",w<W0-0.01); if(MD&&w!==lastW&&(ud().length||mA)){ lastW=w; drawUD(); } };
   let lastW=w;
-  const toSvg=(cx,cy)=>{ const pt=svg.createSVGPoint(); pt.x=cx; pt.y=cy; return pt.matrixTransform(svg.getScreenCTM().inverse()); };
+  /* Кирилл 06.11: на телефоне точка ставилась выше пальца — getScreenCTM в iOS врёт при прокрутке окна. Считаем сами: рамка svg + viewBox + «по центру, вписать» */
+  const ctm=()=>{ const r=svg.getBoundingClientRect(), vb=svg.viewBox.baseVal, pa=String(svg.getAttribute("preserveAspectRatio")||"xMidYMid meet"), sl=/slice/.test(pa)?Math.max(r.width/vb.width,r.height/vb.height):Math.min(r.width/vb.width,r.height/vb.height);
+    const al=pa.match(/x(Min|Mid|Max)Y(Min|Mid|Max)/)||[0,"Mid","Mid"], fx={Min:0,Mid:0.5,Max:1}[al[1]], fy={Min:0,Mid:0.5,Max:1}[al[2]];
+    return {s:sl, ox:r.left+(r.width-vb.width*sl)*fx, oy:r.top+(r.height-vb.height*sl)*fy, vx:vb.x, vy:vb.y}; };
+  const toSvg=(cx,cy)=>{ const m=ctm(); return {x:m.vx+(cx-m.ox)/m.s, y:m.vy+(cy-m.oy)/m.s}; };
   const zoom=(cx,cy,f)=>{ const p=toSvg(cx,cy), nw=Math.max(W0/15,Math.min(W0,w*f)); f=nw/w; x=p.x-(p.x-x)*f; y=p.y-(p.y-y)*f; w=nw; h=w*H0/W0; set(); };
   const mid=()=>{ const r=svg.getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2]; };
   svg.addEventListener("wheel",e=>{ e.preventDefault(); const d=e.deltaMode===1?e.deltaY*33:e.deltaY; zoom(e.clientX,e.clientY,Math.exp(Math.max(-1,Math.min(1,d*0.0015)))); },{passive:false});
@@ -2047,13 +2051,13 @@ function svgZoom(box){
       loupeHide(); const [a,c]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-c.x,a.y-c.y)||1,mx:(a.x+c.x)/2,my:(a.y+c.y)/2}; drag=null; box.classList.add("zoomed"); return; }
     if(e.pointerType==="touch"&&ptrs.size===0&&!box.classList.contains("full")){ ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); return; } // один палец на целом чертеже — прокрутка страницы
     ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); svg.setPointerCapture(e.pointerId);
-    if(ptrs.size===1){ drag={cx:e.clientX,cy:e.clientY,x,y,k:1/svg.getScreenCTM().a}; svg.classList.add("grab"); }
+    if(ptrs.size===1){ drag={cx:e.clientX,cy:e.clientY,x,y,k:1/ctm().s}; svg.classList.add("grab"); }
     if(ptrs.size===2){ const [a,c]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-c.x,a.y-c.y)||1,mx:(a.x+c.x)/2,my:(a.y+c.y)/2}; drag=null; box.classList.add("zoomed"); }
   });
   svg.addEventListener("pointermove",e=>{ if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(lSvg&&ptrs.size===1){ loupeMove(e.clientX,e.clientY); e.preventDefault(); return; }
     if(pinch&&ptrs.size===2){ const [a,c]=[...ptrs.values()], d=Math.hypot(a.x-c.x,a.y-c.y)||1, mx=(a.x+c.x)/2, my=(a.y+c.y)/2;
-      const k=1/svg.getScreenCTM().a; x-=(mx-pinch.mx)*k; y-=(my-pinch.my)*k; zoom(mx,my,pinch.d/d); pinch={d,mx,my}; e.preventDefault(); return; }
+      const k=1/ctm().s; x-=(mx-pinch.mx)*k; y-=(my-pinch.my)*k; zoom(mx,my,pinch.d/d); pinch={d,mx,my}; e.preventDefault(); return; }
     if(drag){ x=drag.x-(e.clientX-drag.cx)*drag.k; y=drag.y-(e.clientY-drag.cy)*drag.k; set(); } });
   const up=e=>{
     if(lSvg&&ptrs.size===1&&ptrs.has(e.pointerId)){ const lp=lPos; loupeHide(); if(e.type==="pointerup"&&lp){ placeAt(lp[0],lp[1],true); skipClick=true; setTimeout(()=>skipClick=false,400); } }
@@ -18146,7 +18150,7 @@ html.csf-on,html.csf-on body{overflow:hidden}
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="71b5f755be";
+const CHK_BUILD="7e26121e0d";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -18899,7 +18903,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="71b5f755be";/*cehqr-build*/
+  const BUILD="7e26121e0d";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
