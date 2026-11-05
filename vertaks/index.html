@@ -16942,7 +16942,7 @@ html.csf-on,html.csf-on body{overflow:hidden}
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="17d34d169a";
+const CHK_BUILD="2ed8275128";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -17168,6 +17168,30 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
 .exp-cats button[aria-checked="true"]{background:#2b2f33;color:#fff;border-color:#2b2f33}
 .exp-f{display:flex;flex-direction:column;gap:4px;font-weight:600}.exp-f input{min-height:48px;font-size:16px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:var(--surface,#fff);color:inherit;font-weight:400}
 .exp-go{min-height:50px;font-size:17px}.exp-n{margin:0;font-size:12.5px}`; document.head.appendChild(st2);
+  /* отменить расход долгим нажатием на сообщение «💸 Расход…» в чате сделки — только технолог (Кирилл 05.11).
+     Запись убирается из «Куда ушли деньги» (цифры пересчитываются), в чат пишется «❌ Расход отменён…», старое сообщение зачёркнуто. */
+  const EXP_RE=/^💸 Расход: (.+) — ([\d\s\u00a0\u202f.,]+) ₽$/, OFF_RE=/^❌ Расход отменён: (.+) — ([\d\s\u00a0\u202f.,]+) ₽$/;
+  if(typeof shpMsgsHtml==="function"){ const _mh=shpMsgsHtml; shpMsgsHtml=function(){ let h=_mh.apply(this,arguments); try{ const c=S.shop.chat; if(!c||!c.msgs) return h;
+    const off={}; c.msgs.forEach(m=>{ const x=OFF_RE.exec(String(m.text||"")); if(x){ const k=x[1]+"|"+x[2].replace(/\D/g,""); off[k]=(off[k]||0)+1; } });
+    if(!Object.keys(off).length) return h;
+    return h.replace(/<div class="shp-mt">(💸 Расход: [^<]*)<\/div>/g,(all,t)=>{ const x=EXP_RE.exec(t.replace(/&amp;/g,"&")); if(!x) return all; const k=x[1]+"|"+x[2].replace(/\D/g,""); if(off[k]>0){ off[k]--; return `<div class="shp-mt exp-off">${t}<small> — отменён</small></div>`; } return all; }); }catch(_){ return h; } }; }
+  let lpT=0, lpEl=null;
+  const lpStart=e=>{ const mt=e.target.closest&&e.target.closest(".shp-msg .shp-mt"); if(!mt||mt.classList.contains("exp-off")||!S.shop||!S.shop.tech) return; const x=EXP_RE.exec(mt.textContent.trim()); if(!x) return;
+    lpEl=mt; clearTimeout(lpT); lpT=setTimeout(()=>{ lpT=0; try{ navigator.vibrate&&navigator.vibrate(20); }catch(_){} expCancel(x[1],x[2]); },550); };
+  const lpEnd=()=>{ clearTimeout(lpT); lpT=0; lpEl=null; };
+  document.addEventListener("pointerdown",lpStart,true); ["pointerup","pointercancel","pointerleave"].forEach(t=>document.addEventListener(t,lpEnd,true));
+  document.addEventListener("pointermove",e=>{ if(lpT&&lpEl&&(Math.abs(e.movementX)+Math.abs(e.movementY))>6) lpEnd(); },true);
+  document.addEventListener("contextmenu",e=>{ if(e.target.closest&&e.target.closest(".shp-msg .shp-mt")&&S.shop&&S.shop.tech&&EXP_RE.test((e.target.closest(".shp-mt").textContent||"").trim())) e.preventDefault(); },true);
+  async function expCancel(text,money){ const oid=S.shop.cur, sum=+String(money).replace(/[^\d.,]/g,"").replace(/\s/g,"").replace(",",".");
+    const ok=typeof appConfirm==="function"?await appConfirm("Отменить расход «"+text+" — "+money.trim()+" ₽»? Сумма вернётся в «На руках» и «Остаётся».","Отменить расход"):confirm("Отменить расход «"+text+"»?"); if(!ok) return;
+    if(!S.shop.rc[oid]&&typeof shpRcLoad==="function") await shpRcLoad(oid);
+    const L=(S.shop.rc[oid]||[]).filter(r=>String(r.text||"")===text&&Math.abs((+r.sum||0)-sum)<1).sort((a,b)=>b.when-a.when);
+    if(!L.length){ toast("Этот расход уже убран из «Куда ушли деньги»"); return; }
+    const r=L[0], j=await shpPost({action:"receiptDel",order:oid,id:r.id}); if(!j) return;
+    S.shop.rc[oid]=S.shop.rc[oid].filter(x=>x!==r); const o=shpById(oid); if(o) o.receiptsTotal=S.shop.rc[oid].reduce((a,x)=>a+(+x.sum||0),0);
+    const msg="❌ Расход отменён: "+text+" — "+money.trim()+" ₽"; try{ await shpPostRaw({action:"chatSend",chat:oid,text:msg}); if(S.shop.chat&&S.shop.chat.msgs) S.shop.chat.msgs.push({when:Date.now(),who:shpWho(),text:msg,kind:"text"}); }catch(_){}
+    toast("Расход отменён: "+text); shpRenderKeep(); }
+  const st3=document.createElement("style"); st3.textContent=`.shp-mt.exp-off{text-decoration:line-through;opacity:.6}.shp-mt.exp-off small{text-decoration:none;display:inline}.shp-msg .shp-mt{-webkit-touch-callout:none}`; document.head.appendChild(st3);
 })();
 
 /* ---------- события ---------- */
@@ -17564,7 +17588,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="17d34d169a";/*cehqr-build*/
+  const BUILD="2ed8275128";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
