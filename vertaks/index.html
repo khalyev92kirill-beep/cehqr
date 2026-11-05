@@ -5247,7 +5247,7 @@ document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.clo
 
 /* Кирилл 05.11: считаем так — (материалы + все расходы) / 0,35 = сумма клиенту, значит расходы — не больше 35 % суммы */
 const SHP_NORM=0.35;
-function shpNormHint(sum,buy,has){ if(!has||!(sum>0)) return "материалы и фурнитура по чекам снабженца"; const lim=sum*SHP_NORM, d=lim-buy;
+function shpNormHint(sum,buy,has){ if(!has||!(sum>0)) return "материалы и фурнитура по чекам снабженца"; const lim=Math.round(sum*SHP_NORM), d=lim-buy;
   return `макс. предел — 35 % суммы: ${shpMoney(lim)}`+(d<0?`. Перерасход ${shpMoney(-d)}`:""); }
 /* ---------- «Цех»: заказы клиентов по этапам (замер → монтаж) и чат по заказу (данные — Google-таблица, листы «Цех» и «Чат») ---------- */
 const SHP_ST=[{k:"dogovor",n:"Договор и предоплата",s:"Договор"},{k:"zamer",n:"Замер",s:"Замер"},{k:"proekt",n:"Проект у технолога",s:"Проект"},{k:"proekt_ok",n:"Проект готов",s:"Готов"},{k:"zakup",n:"Материалы закуплены",s:"Закуп"},{k:"cex",n:"В производстве",s:"Произв."},{k:"montazh",n:"Монтаж",s:"Монтаж"},{k:"closed",n:"Закрыт · успешно",s:"Успешно"},{k:"lost",n:"Закрыт · не успешно",s:"Не усп."}];
@@ -5449,7 +5449,10 @@ function shpOrderHtml(){
   if(full){ const sum=+o.sum||0, buy=+o.receiptsTotal||0, has=o.sum!==""&&o.sum!=null;
     /* Кирилл 05.11: «непонятно, как работает — сделай пояснительно»: под каждой цифрой — откуда она */
     const it=(l,v,c,hint)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b>${hint?`<small class="shp-mh">${hint}</small>`:""}</div>`, pre=+o.prepay||0, hand=pre-buy;
-    h+=`<div class="card shp-money" aria-label="Деньги по заказу">${it("Сумма",has?shpMoney(sum):"—","","цена по договору")}${it("Предоплата",shpMoney(o.prepay),"","клиент уже заплатил")}${it("Остаток клиента",has?shpMoney(rest):"—",rest>0?"due":"","ещё заплатит: сумма − предоплата")}${it("Закупка по чекам",shpMoney(buy)+(has&&sum>0?` · ${Math.round(buy/sum*100)} %`:""),has&&buy>sum*SHP_NORM?"neg":"",shpNormHint(sum,buy,has))}${it("На руках сейчас",shpMoney(hand),hand<0?"neg":"",hand<0?"потратили больше, чем дал клиент — докладываем свои":"предоплата − потратили: деньги клиента, ещё не потраченные")}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has?(sum-buy<0?"neg":"ok"):"","когда клиент заплатит всё: сумма − потратили. Из этого — зарплата бригаде, доли офиса и прибыль")}</div>`; }
+    /* Кирилл 05.11: на виду три главные цифры, остальное — «Подробнее» (открытое помнит телефон) */
+    let mo=false; try{ mo=localStorage.getItem("shp-mmore")==="1"; }catch(_){}
+    const mBuy=it("Закупка по чекам",shpMoney(buy)+(has&&sum>0?` · ${Math.round(buy/sum*100)} %`:""),(has&&buy>sum*SHP_NORM?"neg ":"")+"wide",shpNormHint(sum,buy,has));
+    h+=`<div class="card shp-money" aria-label="Деньги по заказу">${it("Сумма",has?shpMoney(sum):"—","","цена по договору")}${it("Остаток клиента",has?shpMoney(rest):"—",rest>0?"due":"","ещё заплатит: сумма − предоплата")}${mBuy}<details class="shp-mmore"${mo?" open":""}><summary>Подробнее</summary><div class="shp-mmore-in">${it("Предоплата",shpMoney(o.prepay),"","клиент уже заплатил")}${it("На руках сейчас",shpMoney(hand),hand<0?"neg":"",hand<0?"потратили больше, чем дал клиент — докладываем свои":"предоплата − потратили: деньги клиента, ещё не потраченные")}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has?(sum-buy<0?"neg":"ok"):"","когда клиент заплатит всё: сумма − потратили. Из этого — зарплата бригаде, доли офиса и прибыль")}</div></details></div>`; }
   else if(S.shop.sumSee){ const sum=+o.sum||0, buy=+o.receiptsTotal||0, has=o.sum!==""&&o.sum!=null;   /* снабженец: сумма заказа и закупка */
     const it=(l,v,c,hint)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b>${hint?`<small class="shp-mh">${hint}</small>`:""}</div>`;
     h+=`<div class="card shp-money" aria-label="Сумма заказа">${it("Сумма заказа",has?shpMoney(sum):"—")}${it("Закупка по чекам",shpMoney(buy)+(has&&sum>0?` · ${Math.round(buy/sum*100)} %`:""),has&&buy>sum*SHP_NORM?"neg":"",shpNormHint(sum,buy,has))}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has?(sum-buy<0?"neg":"ok"):"")}</div><p class="muted shp-mh2">Сумма — цена по договору. Закупка — чеки снабженца. Остаётся — сумма минус закупка.</p>`; }
@@ -6611,7 +6614,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
 .shp-nofind{margin:0 0 12px}
 .shp-chip.buy{background:color-mix(in srgb,#2f8f4e 14%,var(--surface));border-color:#2f8f4e;color:inherit}
 .shp-map{margin-left:6px;font-size:13px;white-space:nowrap}
-.shp-money{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin:0 0 14px}@media (min-width:700px){.shp-money{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.shp-money>.shp-m.wide{grid-column:1/-1}.shp-mmore{grid-column:1/-1;border-top:1px solid var(--line);padding-top:6px}.shp-mmore>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600;color:var(--link,#1864ab);list-style:none}.shp-mmore>summary::-webkit-details-marker{display:none}.shp-mmore>summary::after{content:"▾";margin-left:6px}.shp-mmore[open]>summary::after{content:"▴"}.shp-mmore-in{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;padding-bottom:4px}.shp-money{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin:0 0 14px}@media (min-width:700px){.shp-money{grid-template-columns:repeat(5,minmax(0,1fr))}}
 .shp-m{display:grid;gap:2px;min-width:0}.shp-m span{font-size:12px;color:var(--muted)}.shp-m b{font-size:16px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .shp-mh{font-size:11.5px;line-height:1.3;color:var(--muted)}.shp-mh2{font-size:12px;margin:4px 2px 0}
 .shp-m.due b{color:#b3261e}.shp-m.neg b{color:#b3261e}.shp-m.ok b{color:var(--ok,#1e7d32)}
@@ -7097,6 +7100,8 @@ if(VTX){
   document.addEventListener("click",ev=>{ const b=ev.target.closest&&ev.target.closest('[data-act="order"]'); if(!b) return;
     ev.stopImmediatePropagation(); ev.preventDefault(); location.href=(window.SITE_ROOT||"../")+"#"+encodeURIComponent(b.dataset.id||""); },true);
 }
+
+document.addEventListener("toggle",e=>{ const d=e.target; if(d&&d.classList&&d.classList.contains("shp-mmore")) try{ localStorage.setItem("shp-mmore",d.open?"1":"0"); }catch(_){} },true);
 
 /* ---------- быстрый показ: «показываем сразу, обновляем тихо» ----------
    Каждый ответ таблицы (чтение) и файл заказа запоминаем. При следующем открытии экрана показываем
@@ -16937,7 +16942,7 @@ html.csf-on,html.csf-on body{overflow:hidden}
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="523586d60d";
+const CHK_BUILD="2bde1f9204";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -17029,7 +17034,7 @@ function aiOpen(){ document.getElementById("aiM")?.remove(); const m=document.cr
     <div class="ai-list" id="aiList"></div>
     <form class="ai-f" autocomplete="off"><button type="button" class="ai-mic" aria-label="Спросить голосом" aria-pressed="false">🎤</button><input id="aiIn" maxlength="600" placeholder="Ваш вопрос…" enterkeyhint="send"><button type="submit" class="ai-go" aria-label="Отправить">➤</button></form></div>`;
   document.body.appendChild(m); aiPaint();
-  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest(".ai-x")){ aiMicOff(true); m.remove(); try{ speechSynthesis.cancel(); }catch(_){} return; }
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest(".ai-x")){ aiMicOff(true); m.remove(); try{ speechSynthesis.cancel(); }catch(_){} try{ document.activeElement&&document.activeElement.blur(); }catch(_){} setTimeout(()=>window.dispatchEvent(new Event("resize")),350); return; }
     const s=e.target.closest(".ai-say"); if(s){ AI.say=!AI.say; try{ localStorage.setItem("cehqr-ai-say",AI.say?"1":"0"); }catch(_){} s.textContent=AI.say?"🔊":"🔇"; s.setAttribute("aria-pressed",String(AI.say)); if(!AI.say) try{ speechSynthesis.cancel(); }catch(_){} return; }
     const mc=e.target.closest(".ai-mic"); if(mc) aiMic(mc); });
   m.querySelector("form").addEventListener("submit",e=>{ e.preventDefault(); const i=document.getElementById("aiIn"); const t=i.value; i.value=""; aiAsk(t); }); }
@@ -17044,7 +17049,12 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
 .ai-f{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}.ai-f input{flex:1;min-width:0;min-height:48px;font-size:16px;border:1px solid var(--line);border-radius:14px;padding:0 12px;background:var(--surface,#fff);color:inherit}
 .ai-mic,.ai-go{width:52px;min-height:48px;border-radius:14px;border:1px solid var(--line);background:var(--surface,#fff);font-size:20px;cursor:pointer;color:inherit}.ai-fab{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}.ai-fab.rec{background:#c62828!important;opacity:1;animation:aiP 1s infinite;transform:scale(1.15)}.ai-mic.on{background:#c62828;color:#fff;border-color:#c62828;animation:aiP 1s infinite}
 @keyframes aiP{50%{opacity:.6}}@media (prefers-reduced-motion:reduce){.ai-mic.on{animation:none}}`; document.head.appendChild(st);
-  const fab=()=>{ if(document.querySelector(".ai-fab")||!document.body) return; if(typeof clientMode==="function"&&clientMode()) return; /* у клиента помощника нет */ const b=document.createElement("button"); b.type="button"; b.className="ai-fab"; b.setAttribute("aria-label","Спросить ИИ-помощника"); b.title="ИИ-помощник: спросить голосом или текстом"; b.textContent="🎤"; aiDrag(b); document.body.appendChild(b); aiPlace(b); };
+  let FAB=null;
+  /* своя кнопка всегда прямо в <body>: если экран её унёс в скрытый блок или в копию страницы — возвращаем на место, лишние копии убираем */
+  const fab=()=>{ if(!document.body) return; if(typeof clientMode==="function"&&clientMode()){ if(FAB) FAB.remove(); return; } /* у клиента помощника нет */
+    document.querySelectorAll(".ai-fab").forEach(x=>{ if(x!==FAB) x.remove(); });
+    if(FAB){ if(FAB.parentNode!==document.body&&!FAB.classList.contains("drag")&&!FAB.classList.contains("rec")) document.body.appendChild(FAB); return; }
+    const b=document.createElement("button"); FAB=b; b.type="button"; b.className="ai-fab"; b.setAttribute("aria-label","Спросить ИИ-помощника"); b.title="ИИ-помощник: спросить голосом или текстом"; b.textContent="🎤"; aiDrag(b); document.body.appendChild(b); aiPlace(b); };
   /* Кирилл 05.11: кнопку можно перетащить пальцем куда угодно (место запоминается); нажатие без сдвига — открыть помощника */
   function aiPlace(b){ let p=null; try{ p=JSON.parse(localStorage.getItem("cehqr-ai-pos")||"null"); }catch(_){} if(!p) return; const x=Math.min(Math.max(4,p.x*innerWidth),innerWidth-58), y=Math.min(Math.max(4,p.y*innerHeight),innerHeight-58); b.style.left=x+"px"; b.style.top=y+"px"; b.style.right="auto"; b.style.bottom="auto"; b.dataset.moved="1"; }
   /* Кирилл 05.11: нажал — помощник; потащил — переставить; ДЕРЖИШЬ (0,45 с) и говоришь — отпустил, и сказанное уходит в «Мои заметки» */
@@ -17076,12 +17086,56 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
     if(S.nt) S.nt.list=(S.nt.list||[]).concat([j.note]); toast("📝 В заметки: «"+txt.slice(0,60)+(txt.length>60?"…":"")+"»"); try{ typeof ntDraw==="function"&&ntDraw(); }catch(_){} }
   if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",fab); else fab(); setInterval(fab,1000);
   /* Кирилл 05.11: «кнопка иногда исчезает» — держим её всегда на экране: поверх полноэкранных окон, внутри экрана после поворота и смены размера */
-  const keep=()=>{ const b=document.querySelector(".ai-fab"); if(!b) return fab(); b.hidden=false;
+  const keep=()=>{ fab(); const b=FAB; if(!b) return; b.hidden=false; if(getComputedStyle(b).display==="none") b.style.setProperty("display","block","important");
     if(b.dataset.moved){ const r=b.getBoundingClientRect(); if(r.right>innerWidth||r.bottom>innerHeight||r.left<0||r.top<0){ b.style.left=Math.min(Math.max(4,r.left),innerWidth-58)+"px"; b.style.top=Math.min(Math.max(4,r.top),innerHeight-58)+"px"; } } };
   window.addEventListener("resize",keep); window.addEventListener("orientationchange",()=>setTimeout(keep,300)); setInterval(keep,1500);
   /* баннер «Не хватает фурнитуры» внизу — кнопку поднимаем над ним, чтобы не пряталась */
   setInterval(()=>{ const f=document.querySelector(".ai-fab"); if(!f||f.dataset.moved) return; const b=document.getElementById("fmBan"); const r=b&&!b.hidden&&b.offsetParent!==null?b.getBoundingClientRect():null;
     f.style.bottom=r&&r.height?Math.round(innerHeight-r.top+10)+"px":""; },1000); })();
+
+/* ===== «Проще» (Кирилл 05.11: «давайте всё это изменим по порядку») =====
+   2) Шапка: «?» (помощь) и ◐ (оформление) убраны — помощь в плавающем микрофоне и «Все разделы → Как работать», оформление в «Все разделы → Оформление».
+   1) Мастеру в «Все разделы» не показываем клиентов и «Позвонить клиенту».
+   7) «Все разделы» — только по группам: переключатель «Простой режим» убран.
+   3) «Заказы в работе»: вместо трёх кнопок (Обновить, Выбрать, Профильные изделия) — одна «⋯»; обновить — потянуть список вниз. */
+(function(){
+  const st=document.createElement("style"); st.textContent=`body.app1 #prHelpBtn,body.app1 #vtThemeBtn,label.pr-simple:has(#prSimple){display:none!important}
+.head.ord-head{display:flex!important;flex-wrap:nowrap!important;align-items:center;gap:8px}.head.ord-head h1{flex:1 1 auto;min-width:0;margin:0}.head.ord-head .sm-ordm{flex:none;margin-left:auto}.ord-head .refr,.ord-head .dlo-tg,.ord-head .prf-hb{display:none!important}
+.ord-head.dlo-on .dlo-tg{display:inline-flex!important}
+.sm-ordm{position:relative}.sm-ordb{min-width:48px;min-height:44px;font-size:20px;line-height:1}
+.sm-ordp{position:absolute;right:0;top:calc(100% + 6px);z-index:60;min-width:230px;display:flex;flex-direction:column;padding:6px;border-radius:14px;background:var(--surface,#fff);border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.sm-ordp button{min-height:48px;text-align:left;padding:0 12px;border:0;background:none;color:inherit;font:inherit;font-size:16px;border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:10px}
+.sm-ordp button:hover,.sm-ordp button:focus-visible{background:var(--sunk,#f1f2f3)}`; document.head.appendChild(st);
+  if(typeof viewOrders==="function"){ const _v=viewOrders; viewOrders=function(){ let h=_v.apply(this,arguments);
+    const hasPrf=/data-act="prf-open"/.test(h), hasDel=/data-act="dlo-tg"/.test(h), on=!!(S.dlo&&S.dlo.on);
+    const menu=`<span class="sm-ordm"><button type="button" class="btn sm-ordb" data-act="sm-ordm" aria-haspopup="true" aria-expanded="false" aria-label="Ещё действия">⋯</button></span>`;
+    h=h.replace(/(<div class="head ord-head[^"]*"[^>]*><h1>[^<]*<\/h1>)/,`$1${menu}`);
+    if(on) h=h.replace('class="head ord-head','class="head ord-head dlo-on');
+    S._smOrd={prf:hasPrf,del:hasDel}; return h; }; }
+  const close=()=>{ document.querySelector(".sm-ordp")?.remove(); document.querySelectorAll('[data-act="sm-ordm"]').forEach(b=>b.setAttribute("aria-expanded","false")); };
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-act="sm-ordm"]');
+    if(b){ e.preventDefault(); e.stopPropagation(); if(document.querySelector(".sm-ordp")) return close(); const o=S._smOrd||{};
+      const p=document.createElement("div"); p.className="sm-ordp"; p.setAttribute("role","menu");
+      p.innerHTML=`<button type="button" role="menuitem" data-sm="refresh">↻ Обновить список</button>${o.del?`<button type="button" role="menuitem" data-sm="dlo-tg">☑ Выбрать заказы для удаления</button>`:""}${o.prf?`<button type="button" role="menuitem" data-sm="prf-open">▢ Профильные изделия</button>`:""}`;
+      b.parentNode.appendChild(p); b.setAttribute("aria-expanded","true"); p.querySelector("button")?.focus(); return; }
+    const it=e.target.closest&&e.target.closest(".sm-ordp [data-sm]");
+    if(it){ e.preventDefault(); e.stopPropagation(); const a=it.dataset.sm; close();
+      const head=document.querySelector(".ord-head"); let t=head&&head.querySelector(`[data-act="${a}"]`);
+      if(!t){ t=document.createElement("button"); t.type="button"; t.dataset.act=a; t.hidden=true; document.body.appendChild(t); setTimeout(()=>t.remove(),0); }
+      t.click(); return; }
+    if(!(e.target.closest&&e.target.closest(".sm-ordp"))) close(); },true);
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape") close(); });
+  /* обновить список — потянуть его вниз от самого верха (уже было) или «⋯ → Обновить список» */
+  /* 7) один вид «Все разделы» — по группам */
+  try{ localStorage.removeItem("pr-simple"); }catch(_){}
+  try{ if(typeof prSimple==="function") prSimple=function(){ return true; }; if(typeof VX_TAB==="object"&&VX_TAB.more) VX_TAB.more[0]="Все разделы"; }catch(_){}
+  /* 1) мастеру — без клиентов */
+  const smRole=()=>{ try{ return typeof prRole==="function"?prRole():typeof vxRole==="function"?vxRole():""; }catch(_){ return ""; } };
+  if(typeof shpMoreHtml==="function"){ const _m=shpMoreHtml; shpMoreHtml=function(){ let h=_m.apply(this,arguments);
+    h=h.replace(/<label class="pr-simple"[^>]*>(?:(?!<\/label>)[\s\S])*id="prSimple"[\s\S]*?<\/label>/,"");
+    if(smRole()==="master") h=h.replace(/<li\b[^>]*>(?:(?!<\/li>)[\s\S])*data-(?:d)?v="clients"[\s\S]*?<\/li>/g,"");
+    return h; }; }
+})();
 
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
@@ -17477,7 +17531,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="523586d60d";/*cehqr-build*/
+  const BUILD="2bde1f9204";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
