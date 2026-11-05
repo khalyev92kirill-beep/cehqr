@@ -3272,8 +3272,12 @@ function frontView(parts, opt){
   let g="";
   body.slice().sort((a,b)=>a.z0-b.z0).forEach(q=>{
     const wire=opt.wire!==false;
-    g+=`<rect x="${X(q.x0)}" y="${Y(q.y1)}" width="${Math.max(0.6,q.sx*s)}" height="${Math.max(0.6,q.sy*s)}" fill="var(--board)" fill-opacity="${wire?0.18:1}" stroke="var(--ink)" stroke-width="${isDrawer(q)?0.45:0.8}" opacity="${isDrawer(q)&&!wire?0.65:1}"/>`;
+    g+=`<rect x="${X(q.x0)}" y="${Y(q.y1)}" width="${Math.max(0.6,q.sx*s)}" height="${Math.max(0.6,q.sy*s)}" fill="var(--board)" fill-opacity="${wire?0.05:1}" stroke="var(--ink)" stroke-width="${isDrawer(q)?0.45:0.8}" opacity="${isDrawer(q)&&!wire?0.65:1}"/>`;
   });
+  /* Кирилл 05.11: «Каркас» — детали почти прозрачные, сквозь них видно весь крепёж и фурнитуру (как каркас в Базисе) */
+  if(opt.wire!==false&&!opt.hinges) (opt.fasteners||[]).forEach(f=>{ const b=f.b; if(!b) return; const w=b[3]-b[0], h=b[4]-b[1]; if(w<=0||h<=0||Math.max(w,h)>1200) return;
+    const nm=(f.n||"")+" "+(f.g||""), c="#000";
+    g+=`<rect x="${X(b[0])}" y="${Y(b[4])}" width="${Math.max(1.6,w*s)}" height="${Math.max(1.6,h*s)}" rx="${Math.min(2,Math.max(w,h)*s/4)}" fill="${c}" fill-opacity="0.35" stroke="${c}" stroke-width="0.6"><title>${esc(f.n||"")}</title></rect>`; });
   // каркас: фурнитура (направляющие, петли, опоры…) серым контуром, чтобы было видно, где она стоит
   // фурнитуру (петли, полкодержатели, крепёж) на этом чертеже не рисуем — только каркас и размеры
   const label=(x,y,t,rot,anchor)=>`<text x="${x}" y="${y}" font-size="11.5" font-weight="700" fill="${A}" font-family="var(--f-mono)" text-anchor="${anchor||"middle"}" paint-order="stroke" stroke="var(--surface)" stroke-width="3" ${rot?`transform="rotate(-90 ${x} ${y})"`:""}>${t}</text>`;
@@ -3402,17 +3406,19 @@ function frontView(parts, opt){
   g+=`<text x="${xr+8}" y="${(Y(Y0)+Y(Y1))/2}" font-size="13" font-weight="700" fill="var(--ink)" font-family="var(--f-mono)" transform="rotate(-90 ${xr+8} ${(Y(Y0)+Y(Y1))/2})" text-anchor="middle">${Math.round(Y1-Y0)}</text>`;
   // позиции деталей (номер из Базиса) кружками, как на чертеже Базиса; нажатие открывает карточку детали
   if(opt.pos){
-    const placed=[], R0=9;
+    /* Кирилл 05.11: кружки позиций — маленькие, полупрозрачные (деталь под ними видно), от кружка к детали — тонкая стрелка */
+    const placed=[], R0=6.5;
     const src=(HM?facs:body).filter(q=>q.p&&q.p.art).sort((a,b)=>(b.sx*b.sy)-(a.sx*a.sy));
     src.forEach(q=>{
       const art=String(q.p.art).trim(); if(!art) return;
-      let cx=X((q.x0+q.x1)/2), cy=Y((q.y0+q.y1)/2);
-      if(placed.some(b=>b.art===art&&Math.abs(b.ox-cx)<24&&Math.abs(b.oy-cy)<24)) return;   // одинаковая деталь за этой же — один номер
-      const r=art.length>2?R0+2:R0, ox=cx, oy=cy;
-      for(let k=0;k<6&&placed.some(b=>Math.hypot(b.x-cx,b.y-cy)<b.r+r+2);k++) cy+=2*r+3;
+      const ox=X((q.x0+q.x1)/2), oy=Y((q.y0+q.y1)/2);
+      if(placed.some(b=>b.art===art&&Math.abs(b.ox-ox)<24&&Math.abs(b.oy-oy)<24)) return;   // одинаковая деталь за этой же — один номер
+      const r=art.length>2?R0+1.5:R0; let cx=ox+r+9, cy=oy-r-9;
+      for(let k=0;k<8&&placed.some(b=>Math.hypot(b.x-cx,b.y-cy)<b.r+r+2);k++) cy+=2*r+3;
       placed.push({x:cx,y:cy,r,art,ox,oy});
-      const lead=(cy!==oy)?`<line x1="${ox}" y1="${oy}" x2="${cx}" y2="${cy-r}" stroke="var(--ink)" stroke-width="0.5" opacity="0.6"/>`:"";
-      g+=`<g class="fv-pos" data-act="part" data-code="${esc(q.p.code||"")}" style="cursor:pointer">${lead}<title>${esc(q.p.name||"")} · поз. ${esc(art)}</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--surface)" stroke="var(--ink)" stroke-width="1"/><text x="${cx}" y="${cy+3.3}" font-size="${art.length>2?9:10}" font-weight="700" text-anchor="middle" fill="var(--ink)" font-family="var(--f-mono)">${esc(art)}</text></g>`;
+      const dx=ox-cx, dy=oy-cy, L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L, sx0=cx+ux*r, sy0=cy+uy*r, ah=3.2, aw=1.4;
+      const lead=`<line x1="${sx0.toFixed(1)}" y1="${sy0.toFixed(1)}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="var(--ink)" stroke-width="0.45"/><path d="M${ox.toFixed(1)} ${oy.toFixed(1)} L${(ox-ux*ah-uy*aw).toFixed(1)} ${(oy-uy*ah+ux*aw).toFixed(1)} L${(ox-ux*ah+uy*aw).toFixed(1)} ${(oy-uy*ah-ux*aw).toFixed(1)} Z" fill="var(--ink)"/>`;
+      g+=`<g class="fv-pos" data-act="part" data-code="${esc(q.p.code||"")}" style="cursor:pointer">${lead}<title>${esc(q.p.name||"")} · поз. ${esc(art)}</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--surface)" fill-opacity="0.55" stroke="var(--ink)" stroke-width="0.6"/><text x="${cx}" y="${cy+2.6}" font-size="${art.length>2?6.5:7.5}" font-weight="700" text-anchor="middle" fill="var(--ink)" font-family="var(--f-mono)">${esc(art)}</text></g>`;
     });
   }
   // для размеров, которые ставит мастер: масштаб и все грани деталей (к ним прилипают точки)
@@ -8918,10 +8924,13 @@ function isoDraw(items, area){
   const T=([x,y])=>[ox+x*s,oy+y*s];
   proj.sort((a,b)=>a.key-b.key);
   let g=""; const anch={};
-  const FILL={part:"#fff",glass:"#dcecf7",hinge:"#2f6fd6",run:"#2f9e44",leg:"#9aa0a6"};
-  proj.forEach(p=>{ const k=p.it.kind, sw=k==="part"||k==="glass"?0.28:0.2, st=k==="part"||k==="glass"?DRW.INK:"#222";
-    p.f.forEach(f=>{ const pts=f.map(T).map(q=>q[0].toFixed(2)+","+q[1].toFixed(2)).join(" "); g+=`<polygon points="${pts}" fill="${FILL[k]||"#fff"}" stroke="${st}" stroke-width="${sw}" stroke-linejoin="round"/>`; });
-    p.tf=p.f.map(f=>f.map(T)); });
+  const FILL={part:"#fff",glass:"#dcecf7",hinge:"#000",run:"#000",leg:"#000"};
+  /* Кирилл 05.11: сборочный — «каркасом»: детали полупрозрачные (видно, что за ними, ничего не пропадает), фурнитура — поверх всех деталей */
+  const isPart=k=>k==="part"||k==="glass";
+  const drawP=p=>{ const k=p.it.kind, sw=isPart(k)?0.28:0.2, st=isPart(k)?DRW.INK:"#222", fo=k==="part"?0.55:k==="glass"?0.5:0.35;
+    p.f.forEach(f=>{ const pts=f.map(T).map(q=>q[0].toFixed(2)+","+q[1].toFixed(2)).join(" "); g+=`<polygon points="${pts}" fill="${FILL[k]||"#fff"}" fill-opacity="${fo}" stroke="${st}" stroke-width="${sw}" stroke-linejoin="round"/>`; });
+    p.tf=p.f.map(f=>f.map(T)); };
+  proj.filter(p=>isPart(p.it.kind)).forEach(drawP); proj.filter(p=>!isPart(p.it.kind)).forEach(drawP);
   // якорь выноски — точка детали, не закрытая деталями, нарисованными поверх
   const inPoly=(x,y,P)=>{ let c=false; for(let i=0,j=P.length-1;i<P.length;j=i++){ const a=P[i],b=P[j]; if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0]) c=!c; } return c; };
   const pArea=P=>Math.abs(P.reduce((a,q,i)=>{ const r=P[(i+1)%P.length]; return a+q[0]*r[1]-r[0]*q[1]; },0)/2);
@@ -8952,15 +8961,15 @@ function drwLeaders(anch, labels, bb, lim, fs){
   let g="";
   const fit=(t,w)=>{ t=String(t); if(drwTW(t,fs,1)<=w) return t; while(t.length>2&&drwTW(t+"…",fs,1)>w) t=t.slice(0,-1); return t+"…"; };
   ids.forEach(id=>{ labels[id]=fit(labels[id],Math.max(xL-lim.x0,lim.x1-xR,20)); });
-  const dot=(x,y)=>`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="0.55" fill="${DRW.INK}"/>`;
-  const pv=spread(side.L,a=>a.y,lim.y0+fs,lim.y1,gapV); side.L.forEach((a,i)=>{ g+=drwL(a.x,a.y,xL+1,pv[i]-fs*0.35,0.25,"#333")+dot(a.x,a.y)+drwT(xL,pv[i],fit(labels[a.id],xL-lim.x0),{fs,a:"end",b:1}); });
-  const pr=spread(side.R,a=>a.y,lim.y0+fs,lim.y1,gapV); side.R.forEach((a,i)=>{ g+=drwL(a.x,a.y,xR-1,pr[i]-fs*0.35,0.25,"#333")+dot(a.x,a.y)+drwT(xR,pr[i],fit(labels[a.id],lim.x1-xR),{fs,b:1}); });
+  const dot=(x,y,fx,fy)=>{ /* Кирилл 05.11: на выноске — стрелка к детали, а не точка */ const dx=x-fx, dy=y-fy, L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L, a=1.8, w=0.6; return `<path d="M${x.toFixed(2)} ${y.toFixed(2)} L${(x-ux*a-uy*w).toFixed(2)} ${(y-uy*a+ux*w).toFixed(2)} L${(x-ux*a+uy*w).toFixed(2)} ${(y-uy*a-ux*w).toFixed(2)} Z" fill="${DRW.INK}"/>`; };
+  const pv=spread(side.L,a=>a.y,lim.y0+fs,lim.y1,gapV); side.L.forEach((a,i)=>{ g+=drwL(a.x,a.y,xL+1,pv[i]-fs*0.35,0.25,"#333")+dot(a.x,a.y,xL+1,pv[i]-fs*0.35)+drwT(xL,pv[i],fit(labels[a.id],xL-lim.x0),{fs,a:"end",b:1}); });
+  const pr=spread(side.R,a=>a.y,lim.y0+fs,lim.y1,gapV); side.R.forEach((a,i)=>{ g+=drwL(a.x,a.y,xR-1,pr[i]-fs*0.35,0.25,"#333")+dot(a.x,a.y,xR-1,pr[i]-fs*0.35)+drwT(xR,pr[i],fit(labels[a.id],lim.x1-xR),{fs,b:1}); });
   const wOf=a=>drwTW(labels[a.id],fs,1)+2.5;
   const row=(arr,yy,up)=>{ arr.sort((a,b)=>a.x-b.x); const p=arr.map(a=>a.x); const w=arr.map(wOf);
     for(let i=1;i<p.length;i++) p[i]=Math.max(p[i],p[i-1]+(w[i-1]+w[i])/2);
     const over=p.length?p[p.length-1]+w[w.length-1]/2-(lim.x1):0; if(over>0) for(let i=0;i<p.length;i++) p[i]-=over;
     for(let i=0;i<p.length;i++){ if(p[i]-w[i]/2<lim.x0) p[i]=lim.x0+w[i]/2; if(i&&p[i]<p[i-1]+(w[i-1]+w[i])/2) p[i]=p[i-1]+(w[i-1]+w[i])/2; }
-    arr.forEach((a,i)=>{ g+=drwL(a.x,a.y,p[i],up?yy+1:yy-fs-0.2,0.25,"#333")+dot(a.x,a.y)+drwT(p[i],yy,labels[a.id],{fs,a:"middle",b:1}); }); };
+    arr.forEach((a,i)=>{ g+=drwL(a.x,a.y,p[i],up?yy+1:yy-fs-0.2,0.25,"#333")+dot(a.x,a.y,p[i],up?yy+1:yy-fs-0.2)+drwT(p[i],yy,labels[a.id],{fs,a:"middle",b:1}); }); };
   row(side.T,yT,true); row(side.B,yB,false);
   return g;
 }
@@ -12865,6 +12874,9 @@ const dkLine=(x1,y1,x2,y2,w,dash)=>`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed
 const dkText=(x,y,t,o)=>{ o=o||{}; const fs=o.fs||DK.fs;
   return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${fs}" font-weight="${o.w||600}" fill="${DK.ink}" text-anchor="${o.a||"middle"}" ${o.halo===false?"":`paint-order="stroke" stroke="${DK.halo}" stroke-width="${Math.min(4,Math.max(1.5,fs*0.31)).toFixed(1)}" stroke-linejoin="round"`} ${o.rot?`transform="rotate(-90 ${x.toFixed(1)} ${y.toFixed(1)})"`:""}>${t}</text>`; };
 const dkTW=(t,fs)=>String(t).length*(fs||DK.fs)*0.6;
+/* Кирилл 05.11: на чертеже вместо чёрных точек — стрелки (остриё в точке, d: u — вверх, d — вниз, l — влево, r — вправо) */
+function dkArr(x,y,d){ const a=5,w=1.7; let p; if(d==="u") p=[x,y,x-w,y+a,x+w,y+a]; else if(d==="d") p=[x,y,x-w,y-a,x+w,y-a]; else if(d==="l") p=[x,y,x+a,y-w,x+a,y+w]; else p=[x,y,x-a,y-w,x-a,y+w];
+  return `<path d="M${p[0].toFixed(1)} ${p[1].toFixed(1)} L${p[2].toFixed(1)} ${p[3].toFixed(1)} L${p[4].toFixed(1)} ${p[5].toFixed(1)} Z" fill="#000"/>`; }
 function dkSpace(){ const B=[]; return {
   add(b){ B.push(b); }, hit(b,pad){ pad=pad==null?3:pad; return B.some(q=>b[0]<q[2]+pad&&b[2]>q[0]-pad&&b[1]<q[3]+pad&&b[3]>q[1]-pad); },
   lineH(x0,x1,y){ B.push([Math.min(x0,x1),y-0.6,Math.max(x0,x1),y+0.6]); }, lineV(x,y0,y1){ B.push([x-0.6,Math.min(y0,y1),x+0.6,Math.max(y0,y1)]); } }; }
@@ -13003,14 +13015,14 @@ function drillMapV(p, mode){
     const fx=sx.length*(fs+3)>xHi-xLo?DK.fsS:fs, fy=sy.length*(fs+2)>yHi-yLo?DK.fsS:fs;
     const px=dkSpread(sx.map(X),fx+3,xLo,xHi), py=dkSpread(sy.map(t=>-Y(t)),fy+2,yLo,yHi).map(t=>-t);
     sx.forEach((t,i)=>{ const x=X(t);
-      g+=dkLine(x,Y(0)-2,x,yb+4,0.6,"5 3")+`<circle cx="${x.toFixed(1)}" cy="${yb}" r="2" fill="#000"/>`;
+      g+=dkLine(x,Y(0)-2,x,yb+4,0.6,"5 3")+dkArr(x,yb,"r");
       const tx=px[i]; if(Math.abs(tx-x)>1) g+=dkLine(x,yb+4,tx-fx*0.3,yb+12,0.6);
       g+=dkText(tx-fx*0.3+fx*0.78,yb+12,fmt(t),{a:"end",rot:1,fs:fx}); });
     sy.forEach((t,i)=>{ const y=Y(t);
-      g+=dkLine(X(0)+2,y,xl-4,y,0.6,"5 3")+`<circle cx="${xl}" cy="${y.toFixed(1)}" r="2" fill="#000"/>`;
+      g+=dkLine(X(0)+2,y,xl-4,y,0.6,"5 3")+dkArr(xl,y,"u");
       const ty=py[i]; if(Math.abs(ty-y)>1) g+=dkLine(xl-4,y,xl-10,ty-fy*0.3,0.6);
       g+=dkText(xl-10,ty-fy*0.3+fy*0.35,fmt(t),{a:"end",fs:fy}); });
-    g+=`<circle cx="${xl}" cy="${Y(0).toFixed(1)}" r="2" fill="#000"/><circle cx="${X(0)}" cy="${yb}" r="2" fill="#000"/>`+dkLine(X(0)-3,Y(0),xl-4,Y(0),DK.thin)+dkText(xl-10,Y(0)+fs*0.35,"0",{a:"end",w:800})+dkText(X(0)+fs*0.48,yb+12,"0",{a:"end",w:800,rot:1});
+    g+=dkArr(xl,Y(0),"d")+dkArr(X(0),yb,"l")+dkLine(X(0)-3,Y(0),xl-4,Y(0),DK.thin)+dkText(xl-10,Y(0)+fs*0.35,"0",{a:"end",w:800})+dkText(X(0)+fs*0.48,yb+12,"0",{a:"end",w:800,rot:1});
     const ml=Math.max(0,...sx.map(t=>dkTW(fmt(t),fx))); yOver=yb+12+ml+16; xOver=xl-10-Math.max(0,...sy.map(t=>dkTW(fmt(t),fy)))-14;
   } else {
     // цепочкой: каждый размер — между соседними точками, цифра у своего участка
@@ -13031,16 +13043,16 @@ function drillMapV(p, mode){
   if(hasCut){ const fs=DK.fs;
     if(G.xs.length){ const yt=Y(W)-18;
       if(ord){ const last=G.xs[G.xs.length-1], px=dkSpread(G.xs.map(X),fs+3,X(0)+fs*0.4,Math.min(X(L)+fs*2,VW-fs));
-        g+=dkLine(X(0),yt,X(last),yt,DK.lw)+`<circle cx="${X(0)}" cy="${yt}" r="2" fill="#000"/>`;
-        G.xs.forEach((v,i)=>{ const x=X(v); g+=dkLine(x,Y(W)-2,x,yt-4,0.6,"5 3")+`<circle cx="${x.toFixed(1)}" cy="${yt}" r="2" fill="#000"/>`;
+        g+=dkLine(X(0),yt,X(last),yt,DK.lw)+dkArr(X(0),yt,"l");
+        G.xs.forEach((v,i)=>{ const x=X(v); g+=dkLine(x,Y(W)-2,x,yt-4,0.6,"5 3")+dkArr(x,yt,"r");
           if(Math.abs(px[i]-x)>1) g+=dkLine(x,yt-4,px[i]-fs*0.3,yt-12,0.6);
           g+=dkText(px[i]-fs*0.3+fs*0.78,yt-12,fmt(v),{a:"start",rot:1}); }); }
       else { const cx=[0,...G.xs,L]; cx.forEach(v=>{ g+=dkLine(X(v),Y(W)-2,X(v),yt-4,0.6,"5 3"); });
         for(let i=1;i<cx.length;i++) g+=dkDimH(X(cx[i-1]),X(cx[i]),yt,Math.round((cx[i]-cx[i-1])*10)/10,sp,{tick:1,noBelow:1,end:i===1?"l":i===cx.length-1?"r":""}); } }
     if(G.ys.length){ const xr=X(L)+18;
       if(ord){ const last=G.ys[G.ys.length-1], py=dkSpread(G.ys.map(t=>-Y(t)),fs+2,-Y(0)+fs*0.6,-Y(W)+fs*2).map(t=>-t);
-        g+=dkLine(xr,Y(0),xr,Y(last),DK.lw)+`<circle cx="${xr}" cy="${Y(0).toFixed(1)}" r="2" fill="#000"/>`;
-        G.ys.forEach((v,i)=>{ const y=Y(v); g+=dkLine(X(L)+2,y,xr+4,y,0.6,"5 3")+`<circle cx="${xr}" cy="${y.toFixed(1)}" r="2" fill="#000"/>`;
+        g+=dkLine(xr,Y(0),xr,Y(last),DK.lw)+dkArr(xr,Y(0),"d");
+        G.ys.forEach((v,i)=>{ const y=Y(v); g+=dkLine(X(L)+2,y,xr+4,y,0.6,"5 3")+dkArr(xr,y,"u");
           if(Math.abs(py[i]-y)>1) g+=dkLine(xr+4,y,xr+10,py[i]-fs*0.3,0.6);
           g+=dkText(xr+10,py[i]-fs*0.3+fs*0.35,fmt(v),{a:"start"}); }); }
       else { const cy=[0,...G.ys,W]; cy.forEach(v=>{ g+=dkLine(X(L)+2,Y(v),xr+4,Y(v),0.6,"5 3"); });
@@ -13152,24 +13164,30 @@ function frontViewV0(parts, opt){
   const wire=opt.wire!==false;
   let sp=dkSpace2(); let g="";
   // каркас: белые детали (или серые — «Заливка»), чёрный контур
-  body.slice().sort((a,b)=>a.z0-b.z0).forEach(q=>{ g+=`<rect x="${X(q.x0).toFixed(1)}" y="${Y(q.y1).toFixed(1)}" width="${Math.max(0.6,q.sx*s).toFixed(1)}" height="${Math.max(0.6,q.sy*s).toFixed(1)}" fill="${wire?"#fff":"#e2e2e2"}" stroke="#000" stroke-width="${isDrawer(q)?0.5:0.9}"${isDrawer(q)&&!wire?' opacity="0.7"':""}/>`; });
+  body.slice().sort((a,b)=>a.z0-b.z0).forEach(q=>{ g+=`<rect x="${X(q.x0).toFixed(1)}" y="${Y(q.y1).toFixed(1)}" width="${Math.max(0.6,q.sx*s).toFixed(1)}" height="${Math.max(0.6,q.sy*s).toFixed(1)}" fill="${wire?"#fff":"#e2e2e2"}"${wire?' fill-opacity="0.12"':""} stroke="#000" stroke-width="${isDrawer(q)?0.5:0.9}"${isDrawer(q)&&!wire?' opacity="0.7"':""}/>`; });
   /* направляющие ящиков — видно на чертеже (Кирилл 05.11): контур зелёным там, где стоит направляющая у боковины */
   const fmOn=typeof bzFmInst==="function"&&bzFmInst().length>0&&!(typeof window!=="undefined"&&window.__noFm);
   if(fmOn){ const PT=opt.ptf||null, BT=opt.btf||(q=>q);   /* модуль боковой стены повёрнут лицом к нам — фурнитуру поворачиваем так же */
     const inB=q=>{ const r=BT(q), cx=(r[0]+r[3])/2, cy=(r[1]+r[4])/2, cz=(r[2]+r[5])/2; return cx>=X0-5&&cx<=X1+5&&cy>=Y0-120&&cy<=Y1+5&&(!PT||(cz>=m.P.reduce((a,q2)=>Math.min(a,q2.z0),1e9)-30&&cz<=m.P.reduce((a,q2)=>Math.max(a,q2.z1),-1e9)+30))&&bzFmInstKind(q)&&(!PT||m.P.some(q2=>cx>=q2.x0-60&&cx<=q2.x1+60&&cy>=q2.y0-130&&cy<=q2.y1+60&&cz>=q2.z0-60&&cz<=q2.z1+60)); };   /* у стены с угловым рамка большая — фурнитура только рядом с её деталями */
     g+=bzFmSvg(PT?(x,y,z)=>{ const r=PT(x,y,z); return [X(r[0]),Y(r[1])]; }:(x,y,z)=>[X(x),Y(y)],q=>inB(q),0.7).replace(/<circle[^>]*\/>/g,""); }   /* Кирилл 05.11: без кружков-точек фурнитуры (зелёные «кляксы») — только тонкий контур */
   if(!fmOn) (opt.fasteners||[]).filter(f=>/направл|tandem|movento|legrabox|unihopper|actro|quadro|метабокс/i.test(String(f.n||"")+" "+String(f.g||""))&&Math.max(f.b[3]-f.b[0],f.b[5]-f.b[2])>=200&&f.b[0]>=X0-5&&f.b[3]<=X1+5)
-    .forEach(f=>{ const b=f.b; g+=`<rect x="${X(b[0]).toFixed(1)}" y="${Y(b[4]).toFixed(1)}" width="${Math.max(1,(b[3]-b[0])*s).toFixed(1)}" height="${Math.max(1,(b[4]-b[1])*s).toFixed(1)}" fill="#e3f4e6" fill-opacity="0.7" stroke="#2f9e44" stroke-width="0.8"/>`; });
+    .forEach(f=>{ const b=f.b; g+=`<rect x="${X(b[0]).toFixed(1)}" y="${Y(b[4]).toFixed(1)}" width="${Math.max(1,(b[3]-b[0])*s).toFixed(1)}" height="${Math.max(1,(b[4]-b[1])*s).toFixed(1)}" fill="#000" fill-opacity="0.25" stroke="#000" stroke-width="0.8"/>`; });
+  /* Кирилл 05.11: «Каркас» — детали прозрачные, поверх виден ВЕСЬ крепёж и фурнитура: петли синие, направляющие зелёные, ручки жёлтые, остальной крепёж тёмно-серый */
+  if(wire&&!HM) (opt.fasteners||[]).forEach(f=>{ const b=f.b; if(!b) return; const w=b[3]-b[0], h=b[4]-b[1]; if(w<=0||h<=0||Math.max(w,h)>1200||b[3]<X0-5||b[0]>X1+5||b[4]<Y0-5||b[1]>Y1+5) return;
+    const nm=String(f.n||"")+" "+String(f.g||""); if(fmOn&&/направл|tandem|movento|legrabox|unihopper|actro|quadro|метабокс|петл/i.test(nm)) return;   // их уже нарисовали настоящими
+    const c="#000";   // вся фурнитура и крепёж — одним цветом
+    g+=`<rect x="${X(b[0]).toFixed(1)}" y="${Y(b[4]).toFixed(1)}" width="${Math.max(1.6,w*s).toFixed(1)}" height="${Math.max(1.6,h*s).toFixed(1)}" rx="0.8" fill="${c}" fill-opacity="0.35" stroke="${c}" stroke-width="0.6"><title>${esc(String(f.n||""))}</title></rect>`; });
   const iBody=g.length;   // номера позиций потом вставим сюда — под размеры: цифра размера всегда читается
   body.filter(q=>q.sy<=40&&q.sx>=60).forEach(q=>sp.P.add([X(q.x0),Y(q.y1)-0.5,X(q.x1),Y(q.y0)+0.5]));
   body.filter(q=>q.sx<=40&&q.sy>=60).forEach(q=>sp.P.add([X(q.x0)-0.5,Y(q.y1),X(q.x1)+0.5,Y(q.y0)]));
   sp.P.add([0,0,VW,Y(Y1)-1]); sp.P.add([0,Y(Y0)+1,VW,VH]); sp.P.add([X(X1)+1,0,VW,VH]); sp.P.add([0,0,X(X0)-1,VH]);
   // столбик «от нуля»: тонкая линия, точка на базе и на каждом уровне, цифра стоит у своего уровня
   const ordCol=(x,yB,levels)=>{ let h="";
-    const yTop=Math.min(...levels.map(lv=>yB-lv*s)); h+=dkLine(x,yB,x,yTop,DK.thin)+`<circle cx="${x.toFixed(1)}" cy="${yB.toFixed(1)}" r="2.4" fill="#000"/>`;
+    const yTop=Math.min(...levels.map(lv=>yB-lv*s)); h+=dkLine(x,yB,x,yTop,DK.thin)+dkLine(x-3,yB,x+9,yB,0.5)+dkArr(x,yB,"d");
     sp.T.lineV(x,yB,yTop);
     levels.forEach(lv=>{ const y=yB-lv*s, t=dkN(lv);
-      h+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4" fill="#000"/>`;
+      /* Кирилл 05.11: вместо точки — тонкая черта на уровне и стрелка к ней: мастер видит, до какой линии полки размер (низ, середина, верх) */
+      h+=dkLine(x-3,y,x+9,y,0.5)+`<path d="M${x.toFixed(1)} ${y.toFixed(1)} L${(x-1.7).toFixed(1)} ${(y+5).toFixed(1)} L${(x+1.7).toFixed(1)} ${(y+5).toFixed(1)} Z" fill="#000"/>`;
       const mk=(f,dir,r)=>r?[x+5+f*0.8,dir<0?y-5:y+5,dir<0?"start":"end",f,1]:[x+5,dir<0?y-5:y+f+2,"start",f,0];
       const box=c=>c[4]?dkBoxV(c[0],c[1],t,c[2],c[3]):dkBoxH(c[0],c[1],t,c[2],c[3]);
       const C=[mk(fs,-1,0),mk(fs,1,0),mk(DK.fsS,-1,0),mk(DK.fsS,1,0),mk(fs,-1,1),mk(fs,1,1),mk(DK.fsS,-1,1),mk(DK.fsS,1,1)];
@@ -13292,7 +13310,7 @@ function frontViewV0(parts, opt){
   /* ---- номера позиций кружками; нажатие открывает карточку детали. Кружок не ложится на цифры размеров ---- */
   let gp="";
   if(opt.pos){
-    const placed=[], R0=9;
+    const placed=[], R0=6.5;   /* Кирилл 05.11: кружки меньше и полупрозрачные — деталь под ними видно */
     const src=(HM?facs:body).filter(q=>q.p&&q.p.art).sort((a,b)=>(b.sx*b.sy)-(a.sx*a.sy));
     src.forEach(q=>{ const art=String(q.p.art).trim(); if(!art) return;
       const ox=X((q.x0+q.x1)/2), oy=Y((q.y0+q.y1)/2);
@@ -13308,8 +13326,8 @@ function frontViewV0(parts, opt){
       if(!pk) pk=C.find(c=>!hitC(c[0],c[1]))||C[0];
       const cx=pk[0], cy=pk[1];
       placed.push({x:cx,y:cy,r,art,ox,oy}); sp.T.add([cx-r,cy-r,cx+r,cy+r]);
-      const lead=from?(()=>{ const d=Math.hypot(cx-ox,cy-oy)||1; return `<line x1="${ox.toFixed(1)}" y1="${oy.toFixed(1)}" x2="${(cx-(cx-ox)/d*r).toFixed(1)}" y2="${(cy-(cy-oy)/d*r).toFixed(1)}" stroke="#000" stroke-width="0.6"/><circle cx="${ox.toFixed(1)}" cy="${oy.toFixed(1)}" r="1.6" fill="#000"/>`; })():"";
-      gp+=`<g class="fv-pos" data-act="part" data-code="${esc(q.p.code||"")}" style="cursor:pointer">${lead}<title>${esc(q.p.name||"")} · поз. ${esc(art)}</title><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r}" fill="#fff" stroke="#000" stroke-width="1"/><text x="${cx.toFixed(1)}" y="${(cy+3.4).toFixed(1)}" font-size="${art.length>2?9:10}" font-weight="700" text-anchor="middle" fill="#000">${esc(art)}</text></g>`; });
+      const lead=from?(()=>{ const d=Math.hypot(cx-ox,cy-oy)||1; return `<line x1="${ox.toFixed(1)}" y1="${oy.toFixed(1)}" x2="${(cx-(cx-ox)/d*r).toFixed(1)}" y2="${(cy-(cy-oy)/d*r).toFixed(1)}" stroke="#000" stroke-width="0.45"/>`+(()=>{ const ux=(ox-cx)/d, uy=(oy-cy)/d, a=3.4, w=1.4; return `<path d="M${ox.toFixed(1)} ${oy.toFixed(1)} L${(ox-ux*a-uy*w).toFixed(1)} ${(oy-uy*a+ux*w).toFixed(1)} L${(ox-ux*a+uy*w).toFixed(1)} ${(oy-uy*a-ux*w).toFixed(1)} Z" fill="#000"/>`; })(); })():"";
+      gp+=`<g class="fv-pos" data-act="part" data-code="${esc(q.p.code||"")}" style="cursor:pointer">${lead}<title>${esc(q.p.name||"")} · поз. ${esc(art)}</title><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r}" fill="#fff" fill-opacity="0.55" stroke="#000" stroke-width="0.6"/><text x="${cx.toFixed(1)}" y="${(cy+2.6).toFixed(1)}" font-size="${art.length>2?6.5:7.5}" font-weight="700" text-anchor="middle" fill="#000">${esc(art)}</text></g>`; });
   }
   if(gp) g=HM?g+gp:g.slice(0,iBody)+gp+g.slice(iBody);
   // для размеров, которые ставит мастер: масштаб и все грани деталей (к ним прилипают точки)
@@ -16622,7 +16640,7 @@ function bzViews(parts, fs, area){
   const bbIn=q=>{ const c=[(q[0]+q[3])/2,(q[1]+q[4])/2,(q[2]+q[5])/2]; return [0,1,2].every(i=>c[i]>=bb[i]-(i===1?130:15)&&c[i]<=bb[i+3]+15); };   /* опоры под модулем — тоже его */
   if(typeof bzFmInst==="function"&&bzFmInst().length){   /* настоящая фурнитура из Базиса */
     g+=bzFmSvg((x,y,z)=>[X(x),Zt(z)],bbIn,0.12)+bzFmSvg((x,y,z)=>[X(x),Yf(y)],bbIn,0.12)+bzFmSvg((x,y,z)=>[Zs(z),Yf(y)],bbIn,0.12); fs=[]; }
-  (fs||[]).forEach(f=>{ const k=FURN_KIND(f.g||f.n); if(!k) return; const b=f.b, c=k==="run"?"#2f9e44":k==="hinge"?"#2f6fd6":"#777";
+  (fs||[]).forEach(f=>{ const k=FURN_KIND(f.g||f.n); if(!k) return; const b=f.b, c="#000";
     g+=R(X(b[0]),Yf(b[4]),(b[3]-b[0])*s,(b[4]-b[1])*s,c,0.2,k==="leg"?"#ddd":"none")+R(Zs(b[5]),Yf(b[4]),(b[5]-b[2])*s,(b[4]-b[1])*s,c,0.2,k==="leg"?"#ddd":"none"); });
   /* габариты: сверху — ширина и глубина; спереди — ширина и высота; сбоку — глубина и высота */
   g+=dimH(X(bb[0]),X(bb[3]),Zt(bb[2]),Zt(bb[2])+6,W)+dimV(Zt(bb[5]),Zt(bb[2]),X(bb[3]),X(bb[3])+6,Dp).replace(/x2="([\d.]+)"/,(m)=>m);
@@ -16810,13 +16828,13 @@ function bzFmInst(){ const fm=S.current&&S.current.furnMesh; if(!fm||fm.v!==2||!
     out.push({n,R,T,geo,bb:lo.concat(hi),kind:FURN_KIND(n)||(/сушк/i.test(n)?"dry":"other")}); });
   return (BZFM.inst=out); }
 /* рёбра фурнитуры в виде: proj(x,y,z) → [sx,sy]; inBB — фильтр по габариту модуля */
-function bzFmSvg(proj, inBB, sw){ const L=bzFmInst(); if(!L.length) return ""; const C={run:"#2f9e44",hinge:"#2f6fd6",leg:"#333",dry:"#555",other:"#555"};
+function bzFmSvg(proj, inBB, sw){ const L=bzFmInst(); if(!L.length) return ""; const C={run:"#000",hinge:"#000",leg:"#000",dry:"#000",other:"#000"}   /* Кирилл 05.11: вся фурнитура одним цветом — чёрным */;
   let g=""; L.forEach(it=>{ if(inBB&&!inBB(it.bb)) return; const R=it.R,T=it.T; let d="";
     it.geo.forEach(q=>{ const V=q.V,S2=q.S; for(let s=0;s<S2.length;s+=2){ const a=S2[s]*3, b=S2[s+1]*3;
       const pa=proj(R[0]*V[a]+R[1]*V[a+1]+R[2]*V[a+2]+T[0],R[3]*V[a]+R[4]*V[a+1]+R[5]*V[a+2]+T[1],R[6]*V[a]+R[7]*V[a+1]+R[8]*V[a+2]+T[2]);
       const pb=proj(R[0]*V[b]+R[1]*V[b+1]+R[2]*V[b+2]+T[0],R[3]*V[b]+R[4]*V[b+1]+R[5]*V[b+2]+T[1],R[6]*V[b]+R[7]*V[b+1]+R[8]*V[b+2]+T[2]);
       d+=`M${pa[0].toFixed(2)} ${pa[1].toFixed(2)}L${pb[0].toFixed(2)} ${pb[1].toFixed(2)}`; } });
-    if(d) g+=`<path d="${d}" fill="none" stroke="${C[it.kind]||"#555"}" stroke-width="${sw||0.15}" stroke-linecap="round"/>`; });
+    if(d) g+=`<path d="${d}" fill="none" stroke="${C[it.kind]||"#555"}" stroke-opacity="0.6" stroke-width="${sw||0.15}" stroke-linecap="round"/>`; });
   return g; }
 function bzFmInstKind(){ return true; }
 
@@ -16946,7 +16964,7 @@ html.csf-on,html.csf-on body{overflow:hidden}
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="237ada74bc";
+const CHK_BUILD="a87703580f";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -17699,7 +17717,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="237ada74bc";/*cehqr-build*/
+  const BUILD="a87703580f";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
