@@ -3658,10 +3658,10 @@ function viewOrders(){
 /* ---------- картинки заказов для списка: рисуем 3D один раз и запоминаем на устройстве ---------- */
 const TH={mem:{},busy:false,q:[]};
 function thumbDark(){ const h=document.documentElement; return h.classList.contains("sk")&&h.getAttribute("data-vt")==="dark"; }   // Кирилл 05.11: в чёрной теме картинка изделия на чёрном фоне
-function thumbKey(id){ const o=S.orders[id]||{}; return "cehqr-th4"+(thumbDark()?"e":"")+"-"+id+"-"+(o.exportedAt||o.createdAt||o.count||""); }
+function thumbKey(id){ const o=S.orders[id]||{}; return "cehqr-th4"+(thumbDark()?"f":"")+"-"+id+"-"+(o.exportedAt||o.createdAt||o.count||""); }
 function thumbGet(id){ const k=thumbKey(id); if(TH.mem[k]) return TH.mem[k]; try{ const v=localStorage.getItem(k); if(v){ TH.mem[k]=v; return v; } }catch(_){} if(!TH.q.includes(id)) TH.q.push(id);
   /* Кирилл 05.11: в чёрной теме, пока рисуется картинка на чёрном, показываем старую светлую — чтобы список не был пустым */
-  if(thumbDark()){ try{ const o=localStorage.getItem(k.replace("cehqr-th4e-","cehqr-th4-")); if(o) return o; }catch(_){} } return ""; }
+  if(thumbDark()){ try{ const o=localStorage.getItem(k.replace("cehqr-th4f-","cehqr-th4-")); if(o) return o; }catch(_){} } return ""; }
 async function thumbParts(id){
   if(S.current.orderId===id&&S.current.parts.length) return {parts:S.current.parts,tex:{}};
   if(typeof siteOrderText!=="function") return null;   // в приложении Claude — только у открытого заказа
@@ -3671,7 +3671,20 @@ async function thumbParts(id){
   Object.keys(res.textures||{}).forEach(m=>{ const t=res.textures[m]; tex[m]=t.url||t.data; });
   return {parts:expandParts(id,res.parts),tex};
 }
+/* Кирилл 05.11: в чёрной теме картинка заказа — «как сборочный чертёж»: белые линии, детали полупрозрачные, изделие повёрнуто лицом (фасадами) к нам */
+function thumbLineSvg(parts){
+  const ps=(parts||[]).filter(p=>p.box&&!(typeof isTech==="function"&&isTech(p))&&!/^\s*стена/i.test(String(p.material||"")));
+  if(!ps.length) return "";
+  let key="2,1"; try{ key=fvOrient(ps)||key; }catch(_){}
+  const tf=FV_T[key]||(b=>b), C=Math.cos(Math.PI/6), P=(x,y,z)=>[(x-z)*C,-y+(x+z)*0.5];
+  const L=ps.map(p=>{ const b=tf(p.box), [x0,y0,z0,x1,y1,z1]=b, gl=/стекл|зеркал/i.test((p.material||"")+" "+(p.name||""));
+    return {gl,k:(x0+x1)+(y0+y1)+(z0+z1),f:[[[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]],[[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]],[[x1,y0,z0],[x1,y0,z1],[x1,y1,z1],[x1,y1,z0]]].map(f=>f.map(q=>P(...q)))}; });
+  let a=1e9,b=1e9,c=-1e9,d=-1e9; L.forEach(o=>o.f.forEach(f=>f.forEach(([x,y])=>{ if(x<a)a=x; if(x>c)c=x; if(y<b)b=y; if(y>d)d=y; })));
+  const W=480,H=300,M=18, k=Math.min((W-2*M)/Math.max(1,c-a),(H-2*M)/Math.max(1,d-b)), ox=(W-(c-a)*k)/2-a*k, oy=(H-(d-b)*k)/2-b*k;
+  let g=""; L.sort((u,v)=>u.k-v.k).forEach(o=>o.f.forEach(f=>{ g+=`<polygon points="${f.map(([x,y])=>(ox+x*k).toFixed(1)+","+(oy+y*k).toFixed(1)).join(" ")}" fill="${o.gl?"#9fd3e6":"#fff"}" fill-opacity="${o.gl?0.12:0.07}" stroke="#fff" stroke-opacity="0.8" stroke-width="0.7" stroke-linejoin="round"/>`; }));
+  return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#000"/>${g}</svg>`); }
 function thumbRender(parts,tex){
+  if(thumbDark()) return Promise.resolve(thumbLineSvg(parts));
   if(typeof THREE==="undefined") return Promise.resolve("");
   const wk=perfWeak(), W=wk?360:480, H=wk?225:300, ps=parts.filter(p=>p.box); if(!ps.length) return Promise.resolve("");   // сразу размер карточки — без лишнего пережатия
   const R=TH.r||(TH.r=new THREE.WebGLRenderer({antialias:!wk,alpha:false,preserveDrawingBuffer:true})); R.setPixelRatio(1); R.setSize(W,H,false);
@@ -16965,7 +16978,7 @@ html.csf-on,html.csf-on body{overflow:hidden}
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="a87703580f";
+const CHK_BUILD="1e6325c70d";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -17718,7 +17731,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="a87703580f";/*cehqr-build*/
+  const BUILD="1e6325c70d";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
