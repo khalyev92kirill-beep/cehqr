@@ -2210,28 +2210,48 @@ function cutSetSave(o){ try{ localStorage.setItem("cehqr-cutset",JSON.stringify(
 // размер детали вдоль текстуры: [вдоль, поперёк] по направлению текстуры из Базиса (p.grain) и габариту; null — не задана
 function partTexLen(p){ const g=p.grain, b=p.box; if(!g||g.length!==3||!b) return null; const a=g.map(Math.abs), i=a[0]>=a[1]&&a[0]>=a[2]?0:a[1]>=a[2]?1:2, d=b[i+3]-b[i];
   if(Math.abs(d-p.L)<=Math.abs(d-p.W)) return [p.L,p.W]; return [p.W,p.L]; }
+/* полосовой гильотинный раскрой: v=false — полосы вдоль длины плиты (X), v=true — поперёк. Каждая полоса режется на столбцы, под деталью — место для меньших */
+function stripPack(items,W,H,K,v){
+  const LX=v?H:W, LY=v?W:H, sheets=[], tooBig=[];
+  const T=(x,y,w,h)=>v?{x:y,y:x,w:h,h:w}:{x,y,w,h};
+  const opts=it=>{ const o=[[it.l,it.w,it.fix&&it.l<it.w,!!it.man]]; if(it.rotOK&&it.l!==it.w) o.push([it.w,it.l,!(it.fix&&it.l<it.w),true]);
+    return o.map(q=>({q,sx:v?q[1]:q[0],sy:v?q[0]:q[1]})).filter(z=>z.sx<=LX&&z.sy<=LY); };
+  const L=items.map(it=>{ const o=opts(it); return {it,o,pref:o.slice().sort((a,b)=>a.sy-b.sy)[0]}; });
+  L.filter(z=>!z.o.length).forEach(z=>tooBig.push(z.it.p));
+  L.filter(z=>z.o.length).sort((a,b)=>b.pref.sy-a.pref.sy||b.pref.sx-a.pref.sx).forEach(z=>{
+    let best=null;
+    sheets.forEach((s,si)=>s.cells.forEach((c,ci)=>z.o.forEach(o=>{ if(o.sx<=c.w&&o.sy<=c.h){ const sc=si*1e9+(c.h-o.sy)*1e4+Math.min(c.w-o.sx,9999); if(!best||sc<best.sc) best={si,ci,o,sc}; } })));
+    if(!best){ const o=z.pref; let si=sheets.findIndex(s=>LY-s.usedY>=o.sy);
+      if(si<0){ sheets.push({cells:[],usedY:0,placed:[],cuts:0,cutLen:0}); si=sheets.length-1; }
+      const s=sheets[si]; s.cells.push({x:0,y:s.usedY,w:LX,h:o.sy}); s.usedY+=o.sy+K; if(s.usedY<LY){ s.cuts++; s.cutLen+=LX; }
+      best={si,ci:s.cells.length-1,o}; }
+    const s=sheets[best.si], c=s.cells.splice(best.ci,1)[0], o=best.o, g=T(c.x,c.y,o.sx,o.sy);
+    s.placed.push({p:z.it.p,x:g.x,y:g.y,w:o.q[0],h:o.q[1],r:o.q[2],rt:o.q[3]});
+    const rw=c.w-o.sx-K, rh=c.h-o.sy-K;
+    if(rw>0){ s.cells.push({x:c.x+o.sx+K,y:c.y,w:rw,h:c.h}); s.cuts++; s.cutLen+=c.h; }
+    if(rh>0){ s.cells.push({x:c.x,y:c.y+o.sy+K,w:o.sx,h:rh}); s.cuts++; s.cutLen+=o.sx; }
+  });
+  let cuts=0; sheets.forEach(s=>{ const fr=s.cells.slice(); if(LY-s.usedY>0) fr.push({x:0,y:s.usedY,w:LX,h:LY-s.usedY}); s.free=fr.map(f=>T(f.x,f.y,f.w,f.h)); cuts+=s.cuts; delete s.cells; delete s.usedY; });
+  return {sheets,tooBig,cuts};
+}
 function nest(parts, sh){
   const cs=cutSet(), FR=sh.first||cs.first, K=cs.k, TL=cs.tl, TT=cs.tt, TR=cs.tr, TB=cs.tb, T=TL, W=sh.w-TL-TR, H=sh.h-TT-TB, sheets=[];
   /* ориентация как в Базис-Раскрое: текстура детали (направление из модели) — вдоль длины плиты; первым идёт размер вдоль текстуры */
   const RM=typeof cutRotM==="function"?cutRotM():{};   /* деталь повернули вручную на карте (Кирилл 05.11) — кладём только так */
-  const items=parts.map(p=>{ const t=partTexLen(p), l=t?t[0]:p.L, w=t?t[1]:p.W; return RM[p.code]?{p,l:w,w:l,fix:true,man:1}:{p,l,w,fix:!!t}; }).sort((a,b)=>b.l*b.w-a.l*a.w);
-  const tooBig=[];
-  items.forEach(it=>{
-    const opts=[[it.l,it.w,it.fix&&it.l<it.w,!!it.man]]; if(!it.man&&(sh.rot||!it.fix)&&it.l!==it.w) opts.push([it.w,it.l,!(it.fix&&it.l<it.w),true]);
-    if(!opts.some(([a,b])=>a<=W&&b<=H)){ tooBig.push(it.p); return; }
-    let best=null;
-    sheets.forEach((s,si)=>s.free.forEach((f,fi)=>opts.forEach(([a,b,r,rt])=>{ if(a<=f.w&&b<=f.h){ const sc=f.w*f.h-a*b; if(!best||sc<best.sc) best={si,fi,a,b,r,rt,sc}; } })));
-    if(!best){ sheets.push({free:[{x:0,y:0,w:W,h:H}],placed:[],cuts:0,cutLen:0}); const s=sheets.length-1, o=opts.find(([a,b])=>a<=W&&b<=H); best={si:s,fi:0,a:o[0],b:o[1],r:o[2],rt:o[3]}; }
-    const s=sheets[best.si], f=s.free.splice(best.fi,1)[0];
-    s.placed.push({p:it.p,x:f.x,y:f.y,w:best.a,h:best.b,r:best.r,rt:best.rt});
-    const rw=f.w-best.a-K, rh=f.h-best.b-K;   // делим остаток по короткой стороне
-    if(FR==="cross"||(FR!=="along"&&rw*f.h>f.w*rh)){ if(rw>0){ s.free.push({x:f.x+best.a+K,y:f.y,w:rw,h:f.h}); s.cuts++; s.cutLen+=f.h; } if(rh>0){ s.free.push({x:f.x,y:f.y+best.b+K,w:best.a,h:rh}); s.cuts++; s.cutLen+=best.a; } }
-    else { if(rh>0){ s.free.push({x:f.x,y:f.y+best.b+K,w:f.w,h:rh}); s.cuts++; s.cutLen+=f.w; } if(rw>0){ s.free.push({x:f.x+best.a+K,y:f.y,w:rw,h:best.b}); s.cuts++; s.cutLen+=best.b; } }
-  });
+  const items=parts.map(p=>{ const nar=Math.min(p.L,p.W)<=150, t=nar?[Math.max(p.L,p.W),Math.min(p.L,p.W)]:partTexLen(p), l=t?t[0]:p.L, w=t?t[1]:p.W;   /* Кирилл 05.11: узкие длинные (цоколи, планки до 150 мм) — всегда длиной вдоль листа, текстуру не учитываем */ return RM[p.code]?{p,l:w,w:l,fix:true,man:1}:{p,l,w,fix:!!t||!sh.rot}; })   /* у текстурной плиты деталь без направления текстуры тоже не поворачиваем: длина вдоль текстуры */.sort((a,b)=>b.l*b.w-a.l*a.w);
+  const tooBig=[]; items.forEach(it=>{ it.rotOK=!it.man&&(sh.rot||!it.fix); });
+  /* раскладка полосами, как в Базис-Раскрое (Кирилл 05.11): «вдоль» — полосы на всю длину плиты, «поперёк» — на всю ширину, «оба» — что выгоднее */
+  const A=FR!=="cross"?stripPack(items,W,H,K,false):null, B=FR!=="along"?stripPack(items,W,H,K,true):null;
+  const R=!A?B:!B?A:(B.sheets.length<A.sheets.length||(B.sheets.length===A.sheets.length&&B.cuts<A.cuts))?B:A;
+  R.sheets.forEach(x=>sheets.push(x)); R.tooBig.forEach(x=>tooBig.push(x));
   sheets.forEach(s=>{ s.used=s.placed.reduce((a,q)=>a+q.w*q.h,0)/(W*H); });
   return {sheets,tooBig,W,H,T,TL,TT,TR,TB,K,kits:cs.kits};
 }
+/* размер в раскрой: у каждой стороны с кромкой минус 1 мм, как в Базисе (Кирилл 05.11) */
+function cutPart(p){ const e=p.edges||{}, dl=(e.W1?1:0)+(e.W2?1:0), dw=(e.L1?1:0)+(e.L2?1:0); if(!dl&&!dw) return p;
+  return Object.assign({},p,{L:p.L-dl,W:p.W-dw,_fin:p}); }
 function cutMaps(parts){
+  parts=(parts||[]).map(cutPart);
   const cs=cutSet(), pl=/^(\d+)x(\d+)$/.exec(cs.plate||""); if(cs.kits>1){ const P0=parts; parts=[]; for(let i=0;i<cs.kits;i++) parts.push(...P0); }
   const by=new Map(); parts.forEach(p=>{ if(!p.L||!p.W) return; let sh=sheetOf(p.material); if(sh&&pl) sh=Object.assign({},sh,{w:+pl[1],h:+pl[2]}); { const mk=String(p.material).split(/[\r\n]/)[0]; if(sh&&cs.noOri) sh=Object.assign({},sh,{rot:true}); } if(!sh) return; const k=String(p.material).split(/[\r\n]/)[0]; if(!by.has(k)) by.set(k,{sh,ps:[]}); by.get(k).ps.push(p); });
   const OV=cutOv();
@@ -2300,7 +2320,7 @@ function cutOvTxt(o){ return [o.first?({cross:"первые резы попер�
 function cutSetHtml(){ const c=cutSet();
   return `<div class="cs-bar"><button type="button" class="btn cs-gear" data-cs-open aria-label="Настройки раскроя для всех листов" title="Для всех листов: отступы, пропил, плиты, первые резы, ориентация">⚙</button>
     <b class="cs-cur" id="csCur">Лист —</b>
-    <div class="seg cs-fs" role="group" aria-label="Первые резы на этом листе"><button type="button" data-cs-first="cross">Поперёк</button><button type="button" data-cs-first="along">Вдоль</button><button type="button" data-cs-first="both">Оба</button></div>
+    <span class="cs-fl">Первый распил:</span><div class="seg cs-fs" role="group" aria-label="Первые резы на этом листе"><button type="button" data-cs-first="cross">Поперёк</button><button type="button" data-cs-first="along">Вдоль</button><button type="button" data-cs-first="both">Оба</button></div>
     <button type="button" class="btn cs-ori" data-cs-ori>Ориентация: вкл.</button></div>`; }
 function cutCurEl(){ const L=[...document.querySelectorAll(".cut-sheet[data-csi]")]; if(!L.length) return null; const bar=document.querySelector(".cs-bar"), top=bar?bar.getBoundingClientRect().bottom:0, mid=top+(innerHeight-top)*0.35;
   let best=null, bd=1e9; L.forEach(d=>{ const r=d.getBoundingClientRect(); const dd=r.top<=mid&&r.bottom>=mid?0:Math.min(Math.abs(r.top-mid),Math.abs(r.bottom-mid)); if(dd<bd){ bd=dd; best=d; } }); return best; }
@@ -2373,7 +2393,7 @@ document.addEventListener("change",e=>{ const t=e.target.closest&&e.target.close
 document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest("[data-cs-gori]"); if(!t) return; e.preventDefault(); const c=cutSet(); if(!c.noOri&&!confirm("Отключить ориентацию на всех листах? Детали с текстурой могут лечь поперёк рисунка.")) return; c.noOri=!c.noOri; cutSetSave(c); csApply(); });
 document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest("[data-cs-gfirst],[data-cs-reset]"); if(!t) return; e.preventDefault();
   const c=t.hasAttribute("data-cs-reset")?Object.assign({},CUT_DEF):cutSet(); if(!t.hasAttribute("data-cs-reset")) c.first=t.dataset.csGfirst; cutSetSave(c); csApply(); });
-(function(){ const st=document.createElement("style"); st.textContent=`.cs-bar{position:sticky;top:var(--toph,0px);z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 10px;padding:8px 0;background:var(--bg,#fff)}.cs-gear{min-width:48px;min-height:44px;font-size:20px;padding:0}.cs-fs{flex:1 1 220px;display:flex}.cs-fs button{flex:1;min-height:44px}.cs-bar .cs-ori{min-height:44px}.cs-cur{font-size:14px;white-space:nowrap}.cut-ovn{margin:4px 0;font-size:13px;color:#1864ab;display:flex;flex-wrap:wrap;align-items:center;gap:6px}.cut-ovn.bad{color:#b3261e}.cdg-m{position:fixed;z-index:9800;width:220px;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:14px;background:var(--bg,#fff);color:var(--ink);box-shadow:0 8px 24px rgba(0,0,0,.25);border:1px solid var(--line)}.cdg-m .btn{min-height:44px}.cdg-m small{color:var(--muted);font-size:12px}.cdg-ghost{position:fixed;z-index:9800;transform:translate(-50%,-100%);background:#1864ab;color:#fff;font:700 14px system-ui;padding:8px 12px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.3);pointer-events:none;white-space:nowrap}html.cdg-on,html.cdg-on body{-webkit-user-select:none;user-select:none}.cut-sheet.cdg-from{opacity:.55}.cut-sheet.cdg-ok{outline:3px solid #2f9e44;outline-offset:2px;border-radius:6px}.cut-sheet g[data-code]{-webkit-touch-callout:none}.cs-btnp{margin:4px 0 10px}.cs-set.btn{white-space:normal;text-align:left;min-height:44px}.cs-set .muted{font-weight:400;font-size:13px}
+(function(){ const st=document.createElement("style"); st.textContent=`.cs-bar{position:sticky;top:var(--toph,0px);z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 10px;padding:8px 0;background:var(--bg,#fff)}.cs-gear{min-width:48px;min-height:44px;font-size:20px;padding:0}.cs-fs{flex:1 1 220px;display:flex}.cs-fs button{flex:1;min-height:44px}.cs-bar .cs-ori{min-height:44px}.cs-cur{font-size:14px;white-space:nowrap}.cs-fl{font-size:13px;color:var(--muted);white-space:nowrap}.cut-ovn{margin:4px 0;font-size:13px;color:#1864ab;display:flex;flex-wrap:wrap;align-items:center;gap:6px}.cut-ovn.bad{color:#b3261e}.cdg-m{position:fixed;z-index:9800;width:220px;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:14px;background:var(--bg,#fff);color:var(--ink);box-shadow:0 8px 24px rgba(0,0,0,.25);border:1px solid var(--line)}.cdg-m .btn{min-height:44px}.cdg-m small{color:var(--muted);font-size:12px}.cdg-ghost{position:fixed;z-index:9800;transform:translate(-50%,-100%);background:#1864ab;color:#fff;font:700 14px system-ui;padding:8px 12px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.3);pointer-events:none;white-space:nowrap}html.cdg-on,html.cdg-on body{-webkit-user-select:none;user-select:none}.cut-sheet.cdg-from{opacity:.55}.cut-sheet.cdg-ok{outline:3px solid #2f9e44;outline-offset:2px;border-radius:6px}.cut-sheet g[data-code]{-webkit-touch-callout:none}.cs-btnp{margin:4px 0 10px}.cs-set.btn{white-space:normal;text-align:left;min-height:44px}.cs-set .muted{font-weight:400;font-size:13px}
 .cs-m{position:fixed;inset:0;z-index:9600;background:rgba(0,0,0,.3);display:flex;align-items:flex-end;justify-content:center}.cs-mc{background:var(--bg,#fff);color:var(--ink,#111);width:min(560px,100%);max-height:82vh;border-radius:18px 18px 0 0;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}
 .cs-mh{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}.cs-mh b{font-size:17px}.cs-mh .btn{min-height:44px}.cs-mb{overflow:auto;padding-top:4px}
 .cs-x{margin:4px 0 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.cs-set>summary{padding:10px 12px;cursor:pointer;font-weight:600}.cs-set>summary .muted{font-weight:400;font-size:13px}
@@ -5224,6 +5244,10 @@ document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.clo
 .rq-b{display:flex;gap:6px;flex-wrap:wrap;padding:4px 12px 12px}.rq-wa{background:#25d366!important;color:#04210f!important;font-weight:600}.rq-ok{margin:0;padding:0 12px 10px;color:#30d158;font-weight:600;font-size:13px}.rq-mk{display:flex;gap:8px;align-items:center;margin-top:6px}
 @media (max-width:599px){.rq-r{grid-template-columns:minmax(0,1fr) 84px 30px;grid-template-areas:"n q x" "v v v"}.rq-r .rq-n,.rq-r .rq-nm{grid-area:n}.rq-r .rq-q{grid-area:q}.rq-r .rq-v{grid-area:v}.rq-r .rq-x{grid-area:x}}`; document.head.appendChild(st); })();
 
+/* Кирилл 05.11: считаем так — (материалы + все расходы) / 0,35 = сумма клиенту, значит расходы — не больше 35 % суммы */
+const SHP_NORM=0.35;
+function shpNormHint(sum,buy,has){ if(!has||!(sum>0)) return "материалы и фурнитура по чекам снабженца"; const lim=sum*SHP_NORM, d=lim-buy;
+  return `макс. предел — 35 % суммы: ${shpMoney(lim)}`+(d<0?`. Перерасход ${shpMoney(-d)}`:""); }
 /* ---------- «Цех»: заказы клиентов по этапам (замер → монтаж) и чат по заказу (данные — Google-таблица, листы «Цех» и «Чат») ---------- */
 const SHP_ST=[{k:"dogovor",n:"Договор и предоплата",s:"Договор"},{k:"zamer",n:"Замер",s:"Замер"},{k:"proekt",n:"Проект у технолога",s:"Проект"},{k:"proekt_ok",n:"Проект готов",s:"Готов"},{k:"zakup",n:"Материалы закуплены",s:"Закуп"},{k:"cex",n:"В производстве",s:"Произв."},{k:"montazh",n:"Монтаж",s:"Монтаж"},{k:"closed",n:"Закрыт · успешно",s:"Успешно"},{k:"lost",n:"Закрыт · не успешно",s:"Не усп."}];
 /* кто какой этап ставит (технолог — любой и назад; остальные — только свои и только вперёд) — так же проверяет сервер */
@@ -5422,11 +5446,12 @@ function shpOrderHtml(){
   const tel=String(o.phone||"").replace(/[^\d+]/g,"");
   const rest=(+o.sum||0)-(+o.prepay||0);
   if(full){ const sum=+o.sum||0, buy=+o.receiptsTotal||0, has=o.sum!==""&&o.sum!=null;
-    const it=(l,v,c)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b></div>`;
-    h+=`<div class="card shp-money" aria-label="Деньги по заказу">${it("Сумма",has?shpMoney(sum):"—")}${it("Предоплата",shpMoney(o.prepay))}${it("Остаток клиента",has?shpMoney(rest):"—",rest>0?"due":"")}${it("Закупка по чекам",shpMoney(buy))}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has&&sum-buy<0?"neg":"")}</div>`; }
+    /* Кирилл 05.11: «непонятно, как работает — сделай пояснительно»: под каждой цифрой — откуда она */
+    const it=(l,v,c,hint)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b>${hint?`<small class="shp-mh">${hint}</small>`:""}</div>`, pre=+o.prepay||0, hand=pre-buy;
+    h+=`<div class="card shp-money" aria-label="Деньги по заказу">${it("Сумма",has?shpMoney(sum):"—","","цена по договору")}${it("Предоплата",shpMoney(o.prepay),"","клиент уже заплатил")}${it("Остаток клиента",has?shpMoney(rest):"—",rest>0?"due":"","ещё заплатит: сумма − предоплата")}${it("Закупка по чекам",shpMoney(buy)+(has&&sum>0?` · ${Math.round(buy/sum*100)} %`:""),has&&buy>sum*SHP_NORM?"neg":"",shpNormHint(sum,buy,has))}${it("На руках сейчас",shpMoney(hand),hand<0?"neg":"",hand<0?"потратили больше, чем дал клиент — докладываем свои":"предоплата − потратили: деньги клиента, ещё не потраченные")}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has?(sum-buy<0?"neg":"ok"):"","когда клиент заплатит всё: сумма − потратили. Из этого — зарплата бригаде, доли офиса и прибыль")}</div>`; }
   else if(S.shop.sumSee){ const sum=+o.sum||0, buy=+o.receiptsTotal||0, has=o.sum!==""&&o.sum!=null;   /* снабженец: сумма заказа и закупка */
-    const it=(l,v,c)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b></div>`;
-    h+=`<div class="card shp-money" aria-label="Сумма заказа">${it("Сумма заказа",has?shpMoney(sum):"—")}${it("Закупка по чекам",shpMoney(buy))}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has&&sum-buy<0?"neg":"")}</div>`; }
+    const it=(l,v,c,hint)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b>${hint?`<small class="shp-mh">${hint}</small>`:""}</div>`;
+    h+=`<div class="card shp-money" aria-label="Сумма заказа">${it("Сумма заказа",has?shpMoney(sum):"—")}${it("Закупка по чекам",shpMoney(buy)+(has&&sum>0?` · ${Math.round(buy/sum*100)} %`:""),has&&buy>sum*SHP_NORM?"neg":"",shpNormHint(sum,buy,has))}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has?(sum-buy<0?"neg":"ok"):"")}</div><p class="muted shp-mh2">Сумма — цена по договору. Закупка — чеки снабженца. Остаётся — сумма минус закупка.</p>`; }
   h+=`<div class="shp-cols"><div><dl class="card shp-info">${row("Что делаем",esc(o.kind||""))}${row("Описание",esc(o.desc||"").replace(/\n/g,"<br>"))}
     ${o.phone?row("Телефон",tel?`<a href="tel:${esc(tel)}">${esc(o.phone)}</a>`:esc(o.phone)):""}${o.address?row("Адрес",`${esc(o.address)} <a class="shp-map" href="${esc(shpMap(o.address))}" target="_blank" rel="noopener">На карте</a>`):""}
     ${row("Дата замера",o.zamerDate?esc(shpDM(o.zamerDate)):"")}${row("Мастер заказа",esc(o.master||""))}${row("Производство",o.prodFrom||o.prodTo?esc(shpRange(o.prodFrom,o.prodTo)):"")}${row("Монтаж",o.montazhDate?esc(shpRange(o.montazhDate,o.montazhTo)):"")}
@@ -6587,7 +6612,8 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
 .shp-map{margin-left:6px;font-size:13px;white-space:nowrap}
 .shp-money{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin:0 0 14px}@media (min-width:700px){.shp-money{grid-template-columns:repeat(5,minmax(0,1fr))}}
 .shp-m{display:grid;gap:2px;min-width:0}.shp-m span{font-size:12px;color:var(--muted)}.shp-m b{font-size:16px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.shp-m.due b{color:#b3261e}.shp-m.neg b{color:#b3261e}
+.shp-mh{font-size:11.5px;line-height:1.3;color:var(--muted)}.shp-mh2{font-size:12px;margin:4px 2px 0}
+.shp-m.due b{color:#b3261e}.shp-m.neg b{color:#b3261e}.shp-m.ok b{color:var(--ok,#1e7d32)}
 .shp-mbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:0 0 14px}.shp-mlost{display:inline-flex;gap:8px;align-items:center;min-height:44px;font-size:14px;cursor:pointer}.shp-mlost input{width:20px;height:20px}
 .shp-mt tbody tr{cursor:pointer}.shp-mt tbody tr:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}.shp-mt td{vertical-align:top}.shp-mk{display:block;font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shp-mt .shp-neg{color:#ff6b5e;font-weight:700}.shp-mt tfoot td{border-top:2px solid var(--line)}.shp-mt td.num,.shp-mt th.num{white-space:nowrap;font-variant-numeric:tabular-nums}.shp-mt td,.shp-mt th{padding-left:10px;padding-right:10px}
 @media (max-width:699px){.shp-mt thead{display:none}.shp-mt,.shp-mt tbody,.shp-mt tfoot{display:block}.shp-mt tr{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;padding:10px 12px;border-bottom:1px solid var(--line)}
@@ -16406,6 +16432,8 @@ function bzRows(s){ const g=new Map();
   s.placed.forEach(q=>{ const p=q.p, k=[p.art,p.name,p.L,p.W].join("|"); if(!g.has(k)) g.set(k,{p,n:0}); g.get(k).n++; });
   return [...g.values()].sort((a,b)=>a.p.L-b.p.L||a.p.W-b.p.W||String(a.p.art).localeCompare(String(b.p.art),"ru",{numeric:true})); }
 /* сколько сторон кромки по длине и по ширине (для подчёркивания в таблице) */
+/* длина — вдоль текстуры, как в Базисе: [длина, ширина, кромок по длине, по ширине] */
+function bzTex(p){ const c=bzEdgeCnt(p), t=Math.min(p.L,p.W)<=150?[Math.max(p.L,p.W)]:typeof partTexLen==="function"?partTexLen(p):null; return t&&t[0]!==p.L?[p.W,p.L,c.W,c.L]:[p.L,p.W,c.L,c.W]; }
 function bzEdgeCnt(p){ const e=p.edges||{}; return {L:(e.L1?1:0)+(e.L2?1:0), W:(e.W1?1:0)+(e.W2?1:0)}; }
 function cutSvg(m,s){
   const si=m.sheets.indexOf(s), N=m.sheets.length, first=si===0, o=(S.orders&&S.orders[S.current.orderId])||{}, ord=o.name||S.current.orderId||"";
@@ -16423,7 +16451,7 @@ function cutSvg(m,s){
       `Площадь панелей =${bzNum(Math.round(st.pa*100)/100)} кв.м, периметр =${bzNum(st.per)} м. Количество поворотов панелей =${st.rot}`,
       `Площадь обрезков =${bzNum(st.offA)} кв.м, площадь всех отходов =${bzNum(st.wasteA)} кв.м, кол резов =${st.cuts}, длина =${bzNum(st.cl)} м`,
       `КИМ=${bzNum(Math.round(st.kim*100)/100)}%, с учетом обрезков =${bzNum(Math.round(st.kim2*100)/100)}%`,
-      `Количество плит материала =${st.plates}      Размеры деталей чистовые`];
+      `Количество плит материала =${st.plates}      Размеры с учётом кромки: −1 мм на сторону`];
     lines.forEach((t,i)=>{ g+=tx(14,113+i*19.5,t); }); }
   /* плита: чёрная рамка + линия отступа от края */
   g+=`<rect x="${sx}" y="${sy}" width="${SW}" height="${SH}" fill="#fff" stroke="#000" stroke-width="1.6"/><rect x="${sx+TL}" y="${sy+TT}" width="${SW-TL-TR}" height="${SH-TT-TB}" fill="none" stroke="#000" stroke-width="0.8"/>`;
@@ -16443,7 +16471,7 @@ function cutSvg(m,s){
       a+=one(0); if(dbl) a+=one(3); return a; };
     if(lenX){ g+=mark("b",bzEdgeT(e.L1))+mark("t",bzEdgeT(e.L2))+mark("l",bzEdgeT(e.W1))+mark("r",bzEdgeT(e.W2)); }
     else { g+=mark("l",bzEdgeT(e.L1))+mark("r",bzEdgeT(e.L2))+mark("b",bzEdgeT(e.W1))+mark("t",bzEdgeT(e.W2)); }
-    const lab=`«${p.art||""}» ${fmt(p.L)}x${fmt(p.W)}`, vert=h>w*1.25&&w<70, room=vert?h:w, fs=Math.max(6.5,Math.min(12.5,room/(lab.length*0.55)));
+    const tl=bzTex(p), lab=`«${p.art||""}» ${fmt(tl[0])}x${fmt(tl[1])}`, vert=h>w*1.25&&w<70, room=vert?h:w, fs=Math.max(6.5,Math.min(12.5,room/(lab.length*0.55)));
     if(Math.min(w,h)>8){ if(vert) g+=tx(x+w/2+fs*0.35,y+h/2,lab,{anchor:"middle",fs,rot:1}); else g+=tx(x+w/2,y+h/2+fs*0.35,lab,{anchor:"middle",fs}); }
     g+=`</g>`; });
   /* стрелка начала координат и строки карты */
@@ -16458,9 +16486,9 @@ function cutSvg(m,s){
   let tot=0;
   rows.forEach((r,i)=>{ const p=r.p, y0=tY+i*RH, yb=y0+RH, ec=bzEdgeCnt(p); tot+=r.n;
     g+=L(tX,yb,1257,yb,1);
-    g+=tx(tX+8,y0+18,`«${p.art||""}» (${String(p.name||"").slice(0,24)})`)+tx(1036,y0+18,fmt(p.L),{anchor:"middle"})+tx(1086,y0+18,fmt(p.W),{anchor:"middle"})+tx(1142,y0+18,String(r.n),{anchor:"middle"});
+    g+=tx(tX+8,y0+18,`«${p.art||""}» (${String(p.name||"").slice(0,24)})`)+tx(1036,y0+18,fmt(bzTex(p)[0]),{anchor:"middle"})+tx(1086,y0+18,fmt(bzTex(p)[1]),{anchor:"middle"})+tx(1142,y0+18,String(r.n),{anchor:"middle"});
     const ul=(cx,n)=>{ let a=""; for(let j=0;j<n;j++) a+=L(cx-17,y0+21.5+j*3,cx+17,y0+21.5+j*3,0.9); return a; };
-    g+=ul(1036,ec.L)+ul(1086,ec.W);
+    { const tq=bzTex(p); g+=ul(1036,tq[2])+ul(1086,tq[3]); }
     if((p.holes||[]).length) g+=`<rect x="1257" y="${y0}" width="28" height="${RH}" fill="none" stroke="#000" stroke-width="1"/>`+L(1257,y0,1285,yb,0.9)+L(1285,y0,1257,yb,0.9); });
   g+=tx(tX+8,tH-9,"Итого")+tx(1142,tH-9,String(tot),{anchor:"middle"});
   return `<svg class="bz-map" viewBox="0 0 1290 ${HH}" style="width:100%;height:auto;display:block;background:#fff">${g}</svg>`; }
@@ -16908,7 +16936,7 @@ html.csf-on,html.csf-on body{overflow:hidden}
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="31d0c33ef6";
+const CHK_BUILD="bd0111534a";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -17424,7 +17452,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="31d0c33ef6";/*cehqr-build*/
+  const BUILD="bd0111534a";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
