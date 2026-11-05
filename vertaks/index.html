@@ -16942,7 +16942,7 @@ html.csf-on,html.csf-on body{overflow:hidden}
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="2ed8275128";
+const CHK_BUILD="d7a0db765c";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -17143,7 +17143,7 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
       <p class="exp-l">На что ушли деньги</p><div class="exp-cats" role="radiogroup">${EXP_CAT.map(c=>`<button type="button" role="radio" aria-checked="false" data-c="${c}">${c}</button>`).join("")}</div>
       <label class="exp-f">Подробнее<input name="t" maxlength="200" placeholder="Например: такси до клиента, перекрасить фасад"></label>
       <label class="exp-f">Сумма, ₽<input name="s" inputmode="decimal" maxlength="12" placeholder="2 500"></label>
-      <button type="submit" class="btn primary exp-go">Записать расход</button><p class="muted exp-n">Сумма сразу вычтется: «Сколько потратили», «На руках», «Остаётся». Запись появится в «Куда ушли деньги» и в чате сделки.</p></form>`;
+      <button type="submit" class="btn primary exp-go">Записать расход</button><p class="muted exp-n">Сумма сразу вычтется: «Сколько потратили», «На руках», «Остаётся». Запись появится в «Куда ушли деньги» и в «Истории». Мастера суммы не видят.</p></form>`;
     document.body.appendChild(m); let cat="";
     m.addEventListener("click",e=>{ if(e.target===m||e.target.closest(".exp-x")){ m.remove(); return; } const b=e.target.closest("[data-c]"); if(!b) return;
       cat=b.dataset.c; m.querySelectorAll("[data-c]").forEach(x=>x.setAttribute("aria-checked",String(x===b))); const t=m.querySelector('[name="t"]');
@@ -17156,7 +17156,6 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
       const j=await shpPost({action:"receiptAdd",order:oid,sum,text}); if(!j){ btn.disabled=false; btn.textContent="Записать расход"; return; }
       (S.shop.rc[oid]=S.shop.rc[oid]||[]).push({id:j.id,when:j.when,sum:+sum,text,photo:"",who:shpWho()});
       const o=shpById(oid); if(o) o.receiptsTotal=S.shop.rc[oid].reduce((x,r)=>x+(+r.sum||0),0);
-      try{ await shpPostRaw({action:"chatSend",chat:oid,text:"💸 Расход: "+text+" — "+shpMoney(+sum)}); }catch(_){}
       m.remove(); toast("Записано: "+text+" −"+shpMoney(+sum)); shpRenderKeep(); });
     setTimeout(()=>m.querySelector("[data-c]")?.focus(),50); }
   document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-act="shp-exp"]'); if(!b) return; e.preventDefault(); e.stopPropagation(); expOpen(b.dataset.id); },true);
@@ -17168,30 +17167,78 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
 .exp-cats button[aria-checked="true"]{background:#2b2f33;color:#fff;border-color:#2b2f33}
 .exp-f{display:flex;flex-direction:column;gap:4px;font-weight:600}.exp-f input{min-height:48px;font-size:16px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:var(--surface,#fff);color:inherit;font-weight:400}
 .exp-go{min-height:50px;font-size:17px}.exp-n{margin:0;font-size:12.5px}`; document.head.appendChild(st2);
-  /* отменить расход долгим нажатием на сообщение «💸 Расход…» в чате сделки — только технолог (Кирилл 05.11).
-     Запись убирается из «Куда ушли деньги» (цифры пересчитываются), в чат пишется «❌ Расход отменён…», старое сообщение зачёркнуто. */
-  const EXP_RE=/^💸 Расход: (.+) — ([\d\s\u00a0\u202f.,]+) ₽$/, OFF_RE=/^❌ Расход отменён: (.+) — ([\d\s\u00a0\u202f.,]+) ₽$/;
-  if(typeof shpMsgsHtml==="function"){ const _mh=shpMsgsHtml; shpMsgsHtml=function(){ let h=_mh.apply(this,arguments); try{ const c=S.shop.chat; if(!c||!c.msgs) return h;
-    const off={}; c.msgs.forEach(m=>{ const x=OFF_RE.exec(String(m.text||"")); if(x){ const k=x[1]+"|"+x[2].replace(/\D/g,""); off[k]=(off[k]||0)+1; } });
-    if(!Object.keys(off).length) return h;
-    return h.replace(/<div class="shp-mt">(💸 Расход: [^<]*)<\/div>/g,(all,t)=>{ const x=EXP_RE.exec(t.replace(/&amp;/g,"&")); if(!x) return all; const k=x[1]+"|"+x[2].replace(/\D/g,""); if(off[k]>0){ off[k]--; return `<div class="shp-mt exp-off">${t}<small> — отменён</small></div>`; } return all; }); }catch(_){ return h; } }; }
-  let lpT=0, lpEl=null;
-  const lpStart=e=>{ const mt=e.target.closest&&e.target.closest(".shp-msg .shp-mt"); if(!mt||mt.classList.contains("exp-off")||!S.shop||!S.shop.tech) return; const x=EXP_RE.exec(mt.textContent.trim()); if(!x) return;
-    lpEl=mt; clearTimeout(lpT); lpT=setTimeout(()=>{ lpT=0; try{ navigator.vibrate&&navigator.vibrate(20); }catch(_){} expCancel(x[1],x[2]); },550); };
-  const lpEnd=()=>{ clearTimeout(lpT); lpT=0; lpEl=null; };
+  /* долгое нажатие на сообщение чата — только технолог (Кирилл 05.11): «Удалить сообщение»;
+     у старых сообщений «💸 Расход…» — ещё и убрать сам расход из «Куда ушли деньги» */
+  const EXP_RE=/^💸 Расход: (.+) — ([\d\s\u00a0\u202f.,]+) ₽$/;
+  if(typeof shpMsgsHtml==="function"){ const _mh=shpMsgsHtml; shpMsgsHtml=function(){ const h=_mh.apply(this,arguments); try{ const c=S.shop.chat; if(!c||!c.msgs||!c.msgs.length) return h;
+    let k=0; return h.replace(/<div class="(shp-msg[^"]*|shp-sys)"/g,(all,cl)=>{ const m=c.msgs[k++]; return m?`<div class="${cl}" data-w="${m.when}"`:all; }); }catch(_){ return h; } }; }
+  let lpT=0;
+  const lpStart=e=>{ const el=e.target.closest&&e.target.closest(".shp-msg[data-w]"); if(!el||!S.shop||!S.shop.tech||!S.shop.chat||!S.shop.chat.id) return;
+    clearTimeout(lpT); lpT=setTimeout(()=>{ lpT=0; try{ navigator.vibrate&&navigator.vibrate(20); }catch(_){} msgDel(el); },550); };
+  const lpEnd=()=>{ clearTimeout(lpT); lpT=0; };
   document.addEventListener("pointerdown",lpStart,true); ["pointerup","pointercancel","pointerleave"].forEach(t=>document.addEventListener(t,lpEnd,true));
-  document.addEventListener("pointermove",e=>{ if(lpT&&lpEl&&(Math.abs(e.movementX)+Math.abs(e.movementY))>6) lpEnd(); },true);
-  document.addEventListener("contextmenu",e=>{ if(e.target.closest&&e.target.closest(".shp-msg .shp-mt")&&S.shop&&S.shop.tech&&EXP_RE.test((e.target.closest(".shp-mt").textContent||"").trim())) e.preventDefault(); },true);
-  async function expCancel(text,money){ const oid=S.shop.cur, sum=+String(money).replace(/[^\d.,]/g,"").replace(/\s/g,"").replace(",",".");
-    const ok=typeof appConfirm==="function"?await appConfirm("Отменить расход «"+text+" — "+money.trim()+" ₽»? Сумма вернётся в «На руках» и «Остаётся».","Отменить расход"):confirm("Отменить расход «"+text+"»?"); if(!ok) return;
-    if(!S.shop.rc[oid]&&typeof shpRcLoad==="function") await shpRcLoad(oid);
-    const L=(S.shop.rc[oid]||[]).filter(r=>String(r.text||"")===text&&Math.abs((+r.sum||0)-sum)<1).sort((a,b)=>b.when-a.when);
-    if(!L.length){ toast("Этот расход уже убран из «Куда ушли деньги»"); return; }
-    const r=L[0], j=await shpPost({action:"receiptDel",order:oid,id:r.id}); if(!j) return;
-    S.shop.rc[oid]=S.shop.rc[oid].filter(x=>x!==r); const o=shpById(oid); if(o) o.receiptsTotal=S.shop.rc[oid].reduce((a,x)=>a+(+x.sum||0),0);
-    const msg="❌ Расход отменён: "+text+" — "+money.trim()+" ₽"; try{ await shpPostRaw({action:"chatSend",chat:oid,text:msg}); if(S.shop.chat&&S.shop.chat.msgs) S.shop.chat.msgs.push({when:Date.now(),who:shpWho(),text:msg,kind:"text"}); }catch(_){}
-    toast("Расход отменён: "+text); shpRenderKeep(); }
-  const st3=document.createElement("style"); st3.textContent=`.shp-mt.exp-off{text-decoration:line-through;opacity:.6}.shp-mt.exp-off small{text-decoration:none;display:inline}.shp-msg .shp-mt{-webkit-touch-callout:none}`; document.head.appendChild(st3);
+  document.addEventListener("pointermove",e=>{ if(lpT&&(Math.abs(e.movementX)+Math.abs(e.movementY))>6) lpEnd(); },true);
+  document.addEventListener("contextmenu",e=>{ if(e.target.closest&&e.target.closest(".shp-msg[data-w]")&&S.shop&&S.shop.tech) e.preventDefault(); },true);
+  let busy=false;
+  async function msgDel(el){ if(busy) return; busy=true; try{
+    const chat=S.shop.chat.id, when=+el.dataset.w, m=(S.shop.chat.msgs||[]).find(x=>x.when===when); if(!m) return;
+    const x=EXP_RE.exec(String(m.text||"").trim()), oid=S.shop.cur;
+    const q=x?"Удалить сообщение и убрать расход «"+x[1]+" — "+x[2].trim()+" ₽» из «Куда ушли деньги»?":"Удалить это сообщение из чата? Его не увидит никто.";
+    const ok=typeof appConfirm==="function"?await appConfirm(q,"Удалить",true):confirm(q); if(!ok) return;
+    if(x&&oid){ if(!S.shop.rc[oid]&&typeof shpRcLoad==="function") await shpRcLoad(oid);
+      const sum=+x[2].replace(/[^\d.,]/g,"").replace(",","."), L=(S.shop.rc[oid]||[]).filter(r=>String(r.text||"")===x[1]&&Math.abs((+r.sum||0)-sum)<1).sort((a,b)=>b.when-a.when);
+      if(L.length){ const j=await shpPost({action:"receiptDel",order:oid,id:L[0].id}); if(!j) return; S.shop.rc[oid]=S.shop.rc[oid].filter(r=>r!==L[0]); const o=shpById(oid); if(o) o.receiptsTotal=S.shop.rc[oid].reduce((a,r)=>a+(+r.sum||0),0); } }
+    const j=await shpPost({action:"chatDel",chat,when}); if(!j) return;
+    S.shop.chat.msgs=S.shop.chat.msgs.filter(z=>z!==m); toast(x?"Сообщение и расход удалены":"Сообщение удалено"); shpRenderKeep();
+  } finally { busy=false; } }
+  const st3=document.createElement("style"); st3.textContent=`.shp-msg .shp-mt{-webkit-touch-callout:none}`; document.head.appendChild(st3);
+  /* ===== «Файлы сделки» (Кирилл 05.11, вариант 1): спецификация, договор, смета, фото — на Google Диск; 📌 закрепить; 🔒 скрыть от мастеров ===== */
+  S.df=S.df||{};
+  const dfFull=()=>!!(S.shop&&(S.shop.tech||S.shop.role==="office")), dfKb=n=>n>=1048576?(n/1048576).toFixed(1).replace(".",",")+" МБ":n>0?Math.max(1,Math.round(n/1024))+" КБ":"";
+  const dfExt=f=>f.mime==="link"?"🔗":(String(f.name).split(".").pop()||"").slice(0,4).toUpperCase();
+  const dfCls=f=>{ const e=dfExt(f).toLowerCase(); return /pdf/.test(e)?"pdf":/doc|rtf|odt/.test(e)?"doc":/xls|csv|ods/.test(e)?"xls":/jpg|jpeg|png|heic|webp|gif/.test(e)?"img":/b3d|dwg|dxf/.test(e)?"cad":"oth"; };
+  async function dfLoad(id){ S.df[id]="busy"; const j=await shpGet("action=dfiles&order="+encodeURIComponent(id),true);
+    S.df[id]=j&&Array.isArray(j.files)?j.files:j?"old":"err"; if(S.view==="shop"&&S.shop.mode==="order"&&S.shop.cur===id) shpRenderKeep(); }
+  function dfHtml(o){ const L=S.df[o.id]; if(L===undefined) setTimeout(()=>dfLoad(o.id),0);
+    let body;
+    if(L===undefined||L==="busy") body=`<p class="muted">Загружаю файлы…</p>`;
+    else if(L==="old") body=`<p class="note">Обновите скрипт таблицы (Развернуть → Новая версия) — тогда здесь можно будет прикреплять файлы.</p>`;
+    else if(L==="err") body=`<p class="muted">Нет связи — файлы не загрузились. <button type="button" class="linkbtn" data-act="df-re" data-id="${esc(o.id)}">Повторить</button></p>`;
+    else { const row=f=>`<li class="df-i"><span class="df-ic ${dfCls(f)}" aria-hidden="true">${esc(dfExt(f)||"ФАЙЛ")}</span><a class="df-t" href="${esc(f.url)}" target="_blank" rel="noopener"><b>${esc(f.name)}</b><small>${esc(f.who||"")} · ${esc(shpTime(f.when))}${f.size?" · "+dfKb(f.size):""}${f.hide?" · 🔒 мастера не видят":""}</small></a>
+        ${dfFull()?`<button type="button" class="df-b${f.pin?" on":""}" data-act="df-pin" data-id="${esc(o.id)}" data-f="${esc(f.id)}" aria-pressed="${f.pin}" aria-label="${f.pin?"Открепить":"Закрепить наверху"}" title="${f.pin?"Открепить":"Закрепить наверху"}">📌</button><button type="button" class="df-b${f.hide?" on":""}" data-act="df-hide" data-id="${esc(o.id)}" data-f="${esc(f.id)}" aria-pressed="${f.hide}" aria-label="${f.hide?"Показать мастерам":"Скрыть от мастеров"}" title="${f.hide?"Показать мастерам":"Скрыть от мастеров"}">🔒</button>`:""}
+        ${S.shop.tech?`<button type="button" class="df-b" data-act="df-del" data-id="${esc(o.id)}" data-f="${esc(f.id)}" aria-label="Удалить файл" title="Удалить файл">✕</button>`:""}</li>`;
+      const P=L.filter(f=>f.pin).sort((a,b)=>b.when-a.when), R=L.filter(f=>!f.pin).sort((a,b)=>b.when-a.when);
+      body=!L.length?`<p class="muted" style="margin:0">Файлов пока нет. Прикрепите спецификацию, договор, смету или фото.</p>`:
+        (P.length?`<p class="df-sec">Закреплено</p><ul class="df-l">${P.map(row).join("")}</ul>`:"")+(R.length?`${P.length?`<p class="df-sec">Остальные</p>`:""}<ul class="df-l">${R.map(row).join("")}</ul>`:""); }
+    const can=L!=="old";
+    return `<div class="card dz-files" data-deal="${esc(o.id)}"><h2>Файлы сделки</h2>${can?`<div class="df-btns"><label class="btn primary df-up"><input type="file" data-df-up="${esc(o.id)}" hidden>+ Прикрепить файл</label><button type="button" class="btn" data-act="df-link" data-id="${esc(o.id)}">🔗 Ссылка</button></div>`:""}${body}</div>`; }
+  if(typeof shpOrderHtml==="function"){ const _oh=shpOrderHtml; shpOrderHtml=function(){ const h=_oh.apply(this,arguments); try{ const o=typeof shpById==="function"?shpById(S.shop.cur):null; if(!o) return h; return h+dfHtml(o); }catch(_){ return h; } }; }
+  const dfFile=(id,fid)=>Array.isArray(S.df[id])?S.df[id].find(f=>f.id===fid):null;
+  document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.closest('[data-act^="df-"]'); if(!b) return; e.preventDefault(); e.stopPropagation(); const a=b.dataset.act, id=b.dataset.id;
+    if(a==="df-re"){ S.df[id]=undefined; shpRenderKeep(); return; }
+    if(a==="df-link"){ const box=document.createElement("div"); box.className="modal"; box.innerHTML=`<div class="modal-card df-lm"><h2 style="margin:0 0 10px">Ссылка на файл</h2><label class="exp-f">Название<input id="dfLn" maxlength="150" placeholder="Спецификация, договор…"></label><label class="exp-f">Ссылка<input id="dfLu" inputmode="url" placeholder="https://…"></label><div class="df-btns"><button type="button" class="btn" data-x>Отмена</button><button type="button" class="btn primary" data-ok>Добавить</button></div></div>`;
+      document.body.appendChild(box); box.querySelector("#dfLn").focus();
+      box.addEventListener("click",async ev=>{ if(ev.target===box||ev.target.closest("[data-x]")){ box.remove(); return; } if(!ev.target.closest("[data-ok]")) return;
+        const name=box.querySelector("#dfLn").value.trim(), url=box.querySelector("#dfLu").value.trim(); if(!/^https:\/\/\S{4,}$/.test(url)){ toast("Вставьте ссылку, начинается с https://"); return; }
+        const j=await shpPost({action:"dfileAdd",order:id,name:name||url.replace(/^https:\/\//,"").slice(0,60),url}); if(!j) return; box.remove(); if(Array.isArray(S.df[id])) S.df[id].push(j.file); toast("Ссылка добавлена"); shpRenderKeep(); }); return; }
+    const f=dfFile(id,b.dataset.f); if(!f) return;
+    if(a==="df-pin"||a==="df-hide"){ const on=a==="df-pin"?!f.pin:f.pin, hide=a==="df-hide"?!f.hide:f.hide; const j=await shpPost({action:"dfilePin",order:id,id:f.id,on,hide}); if(!j) return; f.pin=on; f.hide=hide; toast(a==="df-pin"?(on?"Закреплено наверху":"Откреплено"):(hide?"Мастера этот файл не видят":"Мастера видят этот файл")); shpRenderKeep(); return; }
+    if(a==="df-del"){ const ok=typeof appConfirm==="function"?await appConfirm("Удалить файл «"+f.name+"»? Он уйдёт в корзину Google Диска.","Удалить",true):confirm("Удалить файл?"); if(!ok) return;
+      const j=await shpPost({action:"dfileDel",order:id,id:f.id}); if(!j) return; S.df[id]=S.df[id].filter(x=>x!==f); toast("Файл удалён"); shpRenderKeep(); return; } },true);
+  document.addEventListener("change",async e=>{ const inp=e.target; if(!inp||!inp.dataset||!inp.dataset.dfUp) return; const id=inp.dataset.dfUp, file=inp.files&&inp.files[0]; inp.value=""; if(!file) return;
+    if(file.size>25*1048576){ toast("Файл больше 25 МБ — положите его на Google Диск и добавьте ссылкой"); return; }
+    const lab=inp.closest("label"); if(lab){ lab.classList.add("busy"); lab.lastChild.textContent=" Загружаю…"; }
+    const data=await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(",")[1]||""); r.onerror=()=>res(""); r.readAsDataURL(file); });
+    if(!data){ toast("Не получилось прочитать файл"); shpRenderKeep(); return; }
+    const j=await shpPost({action:"dfileAdd",order:id,name:file.name,mime:file.type||"application/octet-stream",data});
+    if(j&&j.file){ if(Array.isArray(S.df[id])) S.df[id].push(j.file); toast("Файл прикреплён: "+file.name); } else if(j&&!j.file) toast("Обновите скрипт таблицы — файл не сохранился");
+    shpRenderKeep(); },true);
+  const st4=document.createElement("style"); st4.textContent=`.dz-files h2{margin:0 0 10px}.df-btns{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 6px}.df-btns .btn{min-height:44px;display:inline-flex;align-items:center}.df-up.busy{opacity:.6;pointer-events:none}
+.df-sec{margin:12px 0 0;font-size:12.5px;font-weight:700;color:var(--muted)}.df-l{list-style:none;margin:0;padding:0}.df-i{display:flex;align-items:center;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
+.df-ic{flex:none;width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font:700 11.5px system-ui;color:#fff;background:#607080}.df-ic.pdf{background:#c62828}.df-ic.doc{background:#1565c0}.df-ic.xls{background:#2e7d32}.df-ic.img{background:#6d4c41}.df-ic.cad{background:#6a1b9a}
+.df-t{flex:1;min-width:0;color:inherit;text-decoration:none}.df-t b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;font-size:15px}.df-t small{color:var(--muted);font-size:12.5px}
+.df-b{flex:none;width:38px;height:38px;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--surface,#fff);color:inherit;font-size:16px;opacity:.45}.df-b.on{opacity:1;border-color:#2b2f33}.df-b[data-act="df-del"]{opacity:.8}
+.df-lm{display:flex;flex-direction:column;gap:10px}`; document.head.appendChild(st4);
 })();
 
 /* ---------- события ---------- */
@@ -17588,7 +17635,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="2ed8275128";/*cehqr-build*/
+  const BUILD="d7a0db765c";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
