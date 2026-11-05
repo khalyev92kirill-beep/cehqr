@@ -562,6 +562,8 @@ body.has-full .asm.full.dq .dq-menu{touch-action:pan-y}
 .asm:has(.asm-xbar) .asm-hint{display:none}
 .fv-loupe{position:absolute;width:130px;height:130px;border-radius:50%;overflow:hidden;border:3px solid #d9480f;background:var(--surface);box-shadow:var(--shadow-lg);pointer-events:none;z-index:6;display:none}
 .fv-loupe svg{width:100%;height:100%;display:block}
+/* Кирилл 06.11: долгое нажатие на чертёж выделяло всё синим (iPhone) — на чертежах и картах раскроя выделение и меню выключены */
+.mapbox,.mapbox *,.fv-box,.fv-box *,.cut-sheet,.cut-sheet *,.csf,.csf *,.qk-cut,.qk-svg{-webkit-user-select:none!important;user-select:none!important;-webkit-touch-callout:none!important}
 .fv-mbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;padding:6px;border-top:1px solid var(--line);background:var(--surface)}
 .fv-mbar .fv-mt{flex:1 1 100%;text-align:center;font-size:13px;line-height:1.3}
 .fv-mbar .fv-mt small{color:var(--muted);font-size:11.5px;margin-left:6px}
@@ -2011,7 +2013,7 @@ function svgZoom(box){
         else if(b.dataset.u==="new"){ mA=null; drawUD(); syncBar(); }
         else if(b.dataset.u==="done"){ const mb=box.querySelector('[data-z="meas"]'); if(mb) mb.click(); } }); }
     const mid=S.measMid!==false, n=ud().length;
-    bar.innerHTML=`<div class="fv-mt"><b>${mA?(n?"Следующая точка — цепочкой":"Вторая точка"):"Первая точка"}</b><small>${matchMedia("(pointer:coarse)").matches?"палец — лупа, отпустили — точка":"щёлкните по чертежу"}</small></div>
+    bar.innerHTML=`<div class="fv-mt"><b>${mA?(n?"Следующая точка — цепочкой":"Вторая точка"):"Первая точка"}</b><small>${matchMedia("(pointer:coarse)").matches?"палец — лупа, отпустили — точка · провели вдоль — по полкам":"щёлкните по чертежу"}</small></div>
       <div class="seg" role="group" aria-label="Куда прилипает точка на полке"><button type="button" data-m="edge" aria-pressed="${!mid}">Край полки</button><button type="button" data-m="mid" aria-pressed="${mid}">Середина полки</button></div>
       <button type="button" class="btn sm" data-u="undo" ${n||mA?"":"disabled"}>↶ Последний</button>${mA&&n?`<button type="button" class="btn sm" data-u="new">Новый размер</button>`:""}<button type="button" class="btn sm primary" data-u="done">Готово</button>`;
   }
@@ -2040,6 +2042,18 @@ function svgZoom(box){
     loupe.style.left=lx+"px"; loupe.style.top=(ly<4?cy-br.top+46:ly)+"px";
   }
   function loupeHide(){ if(loupe) loupe.style.display="none"; lSvg=null; lPos=null; }
+  /* Кирилл 06.11: линейка «провести пальцем» — не отпуская ведём вдоль шкафа, каждая полка (горизонтальная деталь), через которую прошёл палец, встаёт в цепочку; назад — последняя убирается */
+  let sw=null;
+  function swStart(cx,cy){ sw={sx:cx,sy:cy,on:false,st:[]}; }
+  function swMove(cx,cy){ if(!sw) return; const p=toSvg(cx,cy), ym=toMMy(p.y);
+    if(!sw.on){ if(Math.abs(cy-sw.sy)<22) return; sw.on=true; if(!mA){ mA=snapAtScreen(sw.sx,sw.sy,true); } sw.x=mA[0]; sw.prev=toMMy(toSvg(sw.sx,sw.sy).y); sw.base=ud().length; }
+    const r=svg.getBoundingClientRect(), tol=22*(w/r.width)/MD.s, lo=Math.min(sw.prev,ym), hi=Math.max(sw.prev,ym), up=ym>sw.prev;
+    const hits=(MD.rs||[]).filter(([x0,y0,x1,y1])=>y1-y0<=40&&x1-x0>=60&&sw.x>=x0-tol&&sw.x<=x1+tol).map(([x0,y0,x1,y1])=>(y0+y1)/2).filter(c=>c>lo&&c<=hi).sort((a,b)=>up?a-b:b-a);
+    hits.forEach(c=>{ const last=sw.st[sw.st.length-1];
+      if(last&&Math.abs(last.c-c)<0.6){ /* вернулись через ту же полку — убрать её */ const L=ud(); const d=L[L.length-1]; if(d&&d.b===last.pt){ L.pop(); mA=d.a; } sw.st.pop(); return; }
+      const pt=snapPt(sw.x,c,tol); if(mA&&Math.abs(pt[1]-mA[1])<0.6) return; const v=Math.round(Math.abs(pt[1]-mA[1])*2)/2; if(!(v>0)) return;
+      const d={a:mA,b:pt,hor:false,v}; ud().push(d); mA=pt; sw.st.push({c,pt}); try{ haptic("sel"); }catch(_){} });
+    sw.prev=ym; if(hits.length){ drawUD(); syncBar(); } }
   svg.addEventListener("click",e=>{
     if(!MD||!box.classList.contains("measuring")) return;
     e.stopPropagation();   // в режиме размера номер позиции не открывает карточку
@@ -2054,20 +2068,20 @@ function svgZoom(box){
     down={x:e.clientX,y:e.clientY};
     if(MD&&e.pointerType==="touch"&&box.classList.contains("measuring")){
       ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); svg.setPointerCapture(e.pointerId); e.preventDefault();
-      if(ptrs.size===1){ loupeShow(e.clientX,e.clientY); return; }
-      loupeHide(); const [a,c]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-c.x,a.y-c.y)||1,mx:(a.x+c.x)/2,my:(a.y+c.y)/2}; drag=null; box.classList.add("zoomed"); return; }
+      if(ptrs.size===1){ loupeShow(e.clientX,e.clientY); swStart(e.clientX,e.clientY); return; }
+      loupeHide(); sw=null; const [a,c]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-c.x,a.y-c.y)||1,mx:(a.x+c.x)/2,my:(a.y+c.y)/2}; drag=null; box.classList.add("zoomed"); return; }
     if(e.pointerType==="touch"&&ptrs.size===0&&!box.classList.contains("full")){ ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); return; } // один палец на целом чертеже — прокрутка страницы
     ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); svg.setPointerCapture(e.pointerId);
     if(ptrs.size===1){ drag={cx:e.clientX,cy:e.clientY,x,y,k:1/ctm().s}; svg.classList.add("grab"); }
     if(ptrs.size===2){ const [a,c]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-c.x,a.y-c.y)||1,mx:(a.x+c.x)/2,my:(a.y+c.y)/2}; drag=null; box.classList.add("zoomed"); }
   });
   svg.addEventListener("pointermove",e=>{ if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(lSvg&&ptrs.size===1){ loupeMove(e.clientX,e.clientY); e.preventDefault(); return; }
+    if(lSvg&&ptrs.size===1){ loupeMove(e.clientX,e.clientY); swMove(e.clientX,e.clientY); e.preventDefault(); return; }
     if(pinch&&ptrs.size===2){ const [a,c]=[...ptrs.values()], d=Math.hypot(a.x-c.x,a.y-c.y)||1, mx=(a.x+c.x)/2, my=(a.y+c.y)/2;
       const k=1/ctm().s; x-=(mx-pinch.mx)*k; y-=(my-pinch.my)*k; zoom(mx,my,pinch.d/d); pinch={d,mx,my}; e.preventDefault(); return; }
     if(drag){ x=drag.x-(e.clientX-drag.cx)*drag.k; y=drag.y-(e.clientY-drag.cy)*drag.k; set(); } });
   const up=e=>{
-    if(lSvg&&ptrs.size===1&&ptrs.has(e.pointerId)){ const lp=lPos; loupeHide(); if(e.type==="pointerup"&&lp){ placeAt(lp[0],lp[1],true); skipClick=true; setTimeout(()=>skipClick=false,400); } }
+    if(lSvg&&ptrs.size===1&&ptrs.has(e.pointerId)){ const lp=lPos, swOn=sw&&sw.on; sw=null; loupeHide(); if(swOn){ drawUD(); syncBar(); skipClick=true; setTimeout(()=>skipClick=false,400); } else if(e.type==="pointerup"&&lp){ placeAt(lp[0],lp[1],true); skipClick=true; setTimeout(()=>skipClick=false,400); } }
     ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null; if(!ptrs.size){ drag=null; svg.classList.remove("grab"); set(); } };
   svg.addEventListener("pointerup",up); svg.addEventListener("pointercancel",up);
   box.querySelector(".fv-zoom").addEventListener("click",e=>{ const z=e.target.closest("button"); if(!z) return; const [cx,cy]=mid();
@@ -2371,6 +2385,7 @@ function cdgMove(x,y){ CDG.lx=x; CDG.ly=y; if(CDG.ghost){ CDG.ghost.style.left=x
   const el=document.elementFromPoint(x,y), d=el&&el.closest&&el.closest(".cut-sheet[data-csi]"), ok=d&&d!==CDG.from&&d.dataset.cmat===CDG.mat?d:null;
   if(ok!==CDG.over){ if(CDG.over) CDG.over.classList.remove("cdg-ok"); CDG.over=ok; if(ok) ok.classList.add("cdg-ok"); }
   const bar=document.querySelector(".cs-bar"), top=bar?bar.getBoundingClientRect().bottom:0; if(y<top+50) window.scrollBy(0,-14); else if(y>innerHeight-60) window.scrollBy(0,14); }
+document.addEventListener("contextmenu",e=>{ if(e.target.closest&&e.target.closest(".mapbox,.fv-box,.cut-sheet,.csf")) e.preventDefault(); });
 document.addEventListener("touchstart",e=>{ const g=e.target.closest&&e.target.closest(".cut-sheet g[data-code]"); if(g&&e.touches.length===1) cdgStart(e,g); },{passive:true});
 document.addEventListener("touchmove",e=>{ if(!CDG.t&&!CDG.on) return; const P=e.touches[0]; if(!CDG.on){ if(Math.hypot(P.clientX-CDG.x,P.clientY-CDG.y)>10){ clearTimeout(CDG.t); CDG.t=null; } return; } e.preventDefault(); cdgMove(P.clientX,P.clientY); },{passive:false});
 document.addEventListener("touchend",e=>{ if(CDG.on){ e.preventDefault(); cdgEnd(true); } else { clearTimeout(CDG.t); CDG.t=null; } },{passive:false});
@@ -18161,7 +18176,7 @@ html.csf-on,html.csf-on body{overflow:hidden}
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="2697583a97";
+const CHK_BUILD="7bbe47b617";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -18914,7 +18929,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="2697583a97";/*cehqr-build*/
+  const BUILD="7bbe47b617";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
