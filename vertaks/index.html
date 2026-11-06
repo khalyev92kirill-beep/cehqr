@@ -3178,6 +3178,7 @@ function asmTools(extra){
     <button type="button" data-act="asm-labels" aria-pressed="${st.labels===undefined?!matchMedia("(pointer:coarse)").matches:st.labels!==false}" title="Размеры">${I.ruler}<span>Размеры</span></button>
     <button type="button" data-act="asm-pos" aria-pressed="${st.pos!==false}" title="Номера позиций деталей">${I.pos}<span>Позиции</span></button>
     <button type="button" data-act="asm-holes" aria-pressed="${st.holes!==false}" title="Отверстия в деталях">${I.holes}<span>Отверстия</span></button>
+    <button type="button" data-act="asm-bg" aria-pressed="false" title="Фон 3D: тёмный или светлый"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg><span>Фон</span></button>
     ${curFasteners().some(f=>Math.max(f.b[3]-f.b[0],f.b[4]-f.b[1],f.b[5]-f.b[2])>=15)?`<button type="button" data-act="asm-furn" aria-pressed="${st.furn!==false}" title="Фурнитура">${I.furn}<span>Фурнитура</span></button>`:""}
     <button type="button" data-act="asm-showall" id="asmShowAll" hidden>${I.eye}<span>Показать все</span></button></div>
     <div class="grp"><button type="button" data-act="asm-view" data-v="3d" aria-pressed="${(st.view||"3d")==="3d"}" title="Объёмный вид">3D</button><button type="button" data-act="asm-view" data-v="front" aria-pressed="${st.view==="front"}" title="Вид спереди без перспективы">Спереди</button><button type="button" data-act="asm-view" data-v="left" aria-pressed="${st.view==="left"}" title="Вид сбоку">Сбоку</button><button type="button" data-act="asm-view" data-v="top" aria-pressed="${st.view==="top"}" title="Вид сверху">Сверху</button></div>
@@ -10424,7 +10425,8 @@ function zmFit(){ const ed=S.zm.ed, cv=document.getElementById("zmCv"); if(!ed||
 function zmDraw(){ const ed=S.zm.ed, cv=document.getElementById("zmCv"); if(!ed||!cv) return; const ctx=cv.getContext("2d");
   ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle="#2B2F34"; ctx.fillRect(0,0,cv.width,cv.height);
   zmScene(ctx,ed.ph,ed.img,ed.T,{k:ed.d,sel:ed.sel,pend:ed.pend,loading:ed.loading,grid:ed.grid}); }
-function zmXY(e){ const r=document.getElementById("zmCv").getBoundingClientRect(), d=S.zm.ed.d; return {x:(e.clientX-r.left)*d,y:(e.clientY-r.top)*d}; }
+/* Кирилл 06.11: «в замере стрелочки ставятся не там, где нажал» — пересчёт по настоящему размеру холста на экране (а не по сохранённому масштабу) */
+function zmXY(e){ const cv=document.getElementById("zmCv"), r=cv.getBoundingClientRect(), d=S.zm.ed.d, kx=r.width?cv.width/r.width:d, ky=r.height?cv.height/r.height:d; return {x:(e.clientX-r.left)*kx,y:(e.clientY-r.top)*ky}; }
 function zmToN(p){ const ed=S.zm.ed, {W,H}=zmEff(ed.ph); return [Math.max(0,Math.min(1,(p.x-ed.T.ox)/ed.T.s/W)),Math.max(0,Math.min(1,(p.y-ed.T.oy)/ed.T.s/H))]; }
 function zmToC(n){ const ed=S.zm.ed, {W,H}=zmEff(ed.ph); return [ed.T.ox+n[0]*W*ed.T.s,ed.T.oy+n[1]*H*ed.T.s]; }
 /* прилипание: к точкам других отметок; на эскизе — к клеткам и к горизонтали/вертикали */
@@ -18200,12 +18202,21 @@ html.csf-on,html.csf-on body{overflow:hidden}
     b.querySelector("button").addEventListener("click",()=>{ try{ localStorage.setItem("w24-icon-upd","1"); }catch(_){} b.remove(); }); document.body.appendChild(b); };
   setTimeout(show,2500);
   const st=document.createElement("style"); st.textContent=`.w24-icn{position:fixed;inset:0;z-index:9700;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center}.w24-icc{background:var(--bg,#fff);color:var(--ink,#111);width:min(520px,100%);border-radius:18px 18px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));font-size:15px;line-height:1.45}.w24-icc img{display:block;border-radius:12px;margin-bottom:8px}.w24-icc b{font-size:18px}.w24-icc ol{padding-left:20px;margin:6px 0}.w24-icc .btn{width:100%;min-height:48px;margin-top:8px}`; document.head.appendChild(st); })();
+/* Кирилл 06.11: «у мастера фон 3D белый — сделать кнопку: фон белый или чёрный». Запоминается на телефоне. Без выбора — как тема приложения. */
+(function(){ const K="cehqr-3dbg", get=()=>{ try{ return localStorage.getItem(K)||""; }catch(_){ return ""; } };
+  const dark=()=>{ const v=get(); if(v) return v==="dark"; const t=document.documentElement; return t.classList.contains("vt")&&t.getAttribute("data-vt")!=="light"||matchMedia("(prefers-color-scheme: dark)").matches&&!/light/.test(t.getAttribute("data-theme")||""); };
+  const apply=()=>{ const v=get(), h=document.documentElement; h.classList.toggle("bg3d-dark",v==="dark"); h.classList.toggle("bg3d-light",v==="light"); };
+  apply();
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-act="asm-bg"]'); if(!b) return; e.preventDefault(); e.stopImmediatePropagation();
+    const nv=dark()?"light":"dark"; try{ localStorage.setItem(K,nv); }catch(_){} apply(); if(typeof toast==="function") toast(nv==="dark"?"Фон 3D: тёмный":"Фон 3D: светлый"); },true);
+  const st=document.createElement("style"); st.textContent=`html.bg3d-dark.bg3d-dark .asm,html.bg3d-dark.bg3d-dark .asm.full,html.bg3d-dark.bg3d-dark .asm.full.dq{background:radial-gradient(120% 90% at 50% 35%,#2a2b2e 0%,#151618 70%,#0b0b0c 100%)!important}
+html.bg3d-light.bg3d-light .asm,html.bg3d-light.bg3d-light .asm.full,html.bg3d-light.bg3d-light .asm.full.dq{background:radial-gradient(120% 90% at 50% 35%,#ffffff 0%,#eceeeb 70%,#d6d8d4 100%)!important}`; document.head.appendChild(st); })();
 
 /* ===== «Проверщик» (Кирилл 05.11, вариант 1): приложение само проверяет каждый открытый заказ —
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="326bbfad39";
+const CHK_BUILD="94fd3e08f2";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -18963,7 +18974,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="326bbfad39";/*cehqr-build*/
+  const BUILD="94fd3e08f2";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
