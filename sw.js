@@ -1,5 +1,5 @@
-// Технолог 3D — работа как приложение и без интернета (для уже открытых заказов). Сборка: edc64ba238
-const BUILD="edc64ba238", SHELL_C="cehqr-shell", DATA="cehqr-data", LIBC="cehqr-libs";   // имена постоянные: при обновлении сайта сохранённое не стирается
+// Технолог 3D — работа как приложение и без интернета (для уже открытых заказов). Сборка: f2d0a2e488
+const BUILD="f2d0a2e488", SHELL_C="cehqr-shell", DATA="cehqr-data", LIBC="cehqr-libs";   // имена постоянные: при обновлении сайта сохранённое не стирается
 const SHELL=["./","index.html","manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"];
 const LIBS=/cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com/;
 // установка: страницы берём прямо с сервера (cache:"reload"), а не из кэша браузера — иначе можно сохранить старую
