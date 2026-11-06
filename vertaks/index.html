@@ -3198,8 +3198,10 @@ const FV_T={ "2,1":b=>b, "2,-1":b=>[-b[3],b[1],-b[5],-b[0],b[4],-b[2]], "0,1":b=
 const FV_P={ "2,1":(x,y,z)=>[x,y,z], "2,-1":(x,y,z)=>[-x,y,-z], "0,1":(x,y,z)=>[-z,y,x], "0,-1":(x,y,z)=>[z,y,-x] };
 function fvOrient(ps, all){
   const bb=L=>{ const lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9]; L.forEach(p=>{ for(let i=0;i<3;i++){ lo[i]=Math.min(lo[i],p.box[i]); hi[i]=Math.max(hi[i],p.box[i+3]); } }); return {lo,hi,c:[0,1,2].map(i=>(lo[i]+hi[i])/2)}; };
-  ps=ps.filter(p=>p.box); if(!ps.length) return "2,1"; const m=bb(ps); all=all||m;
-  const FAC=/фасад|дверь|дверц/i, BACK=/^\s*з\.?\s*с\b|задн/i;
+  ps=ps.filter(p=>p.box); if(!ps.length) return "2,1"; const FAC=/фасад|дверь|дверц/i, BACK=/^\s*з\.?\s*с\b|задн/i;
+  /* Кирилл 06.11 (Стручкова, угловой НМ2): цокольный «фасад» на всю длину кухни раздувал габарит модуля — середина уезжала,
+     и вид спереди смотрел со стороны стены. Середину и высоту считаем по корпусу (без фасадов), фасады — только высокие (не цоколь). */
+  const car=ps.filter(p=>!FAC.test(p.name||"")), m=bb(car.length>=2?car:ps); all=all||m;
   const back=ps.filter(p=>{ const d=[0,1,2].map(i=>p.box[i+3]-p.box[i]); const t=Math.min(...d); return (t<=8||(t<=20&&BACK.test(p.name||"")))&&t!==d[1]&&d[1]>=200&&Math.max(d[0],d[2])>=100; })
     .sort((a,b)=>{ const A=(a.box[3]-a.box[0])*(a.box[4]-a.box[1])*(a.box[5]-a.box[2]), B=(b.box[3]-b.box[0])*(b.box[4]-b.box[1])*(b.box[5]-b.box[2]); return B-A; })[0];
   let ax, sg;
@@ -3207,10 +3209,10 @@ function fvOrient(ps, all){
   else { const H=m.hi[1]-m.lo[1], sides=ps.filter(p=>p.box[4]-p.box[1]>=H*0.5&&!FAC.test(p.name||"")&&!BACK.test(p.name||""));
     const thinX=sides.filter(p=>p.box[3]-p.box[0]<=40&&p.box[5]-p.box[2]>40).length, thinZ=sides.filter(p=>p.box[5]-p.box[2]<=40&&p.box[3]-p.box[0]>40).length;
     ax=thinX>thinZ?2:thinZ>thinX?0:((m.hi[0]-m.lo[0])<(m.hi[2]-m.lo[2])?0:2);
-    const fc=ps.filter(p=>FAC.test(p.name||"")); if(fc.length){ const c=fc.reduce((a,p)=>a+(p.box[ax]+p.box[ax+3])/2,0)/fc.length; sg=c>m.c[ax]?1:-1; } else sg=m.c[ax]<all.c[ax]?1:-1; }
+    const fc0=ps.filter(p=>FAC.test(p.name||"")), fcT=fc0.filter(p=>p.box[4]-p.box[1]>=H*0.4), fc=fcT.length?fcT:fc0; if(fc.length){ const c=fc.reduce((a,p)=>a+(p.box[ax]+p.box[ax+3])/2,0)/fc.length; sg=c>m.c[ax]?1:-1; } else sg=m.c[ax]<all.c[ax]?1:-1; }
   return ax+","+sg; }
 function moduleViews(parts, fasteners, mode, wire, hinges, pos, gaps){
-  parts=parts.filter(p=>!/^\s*стена/i.test(String(p.material||""))&&!isTech(p)); fasteners=(fasteners||[]).filter(f=>!isTechF(f));   // стены комнаты в чертёж не берём
+  parts=parts.filter(p=>!/^\s*стена/i.test(String(p.material||""))&&!/^\s*(сталь|металл)/i.test(String(p.material||""))&&!isTech(p));   // встроенная техника (сталь) — не мебель fasteners=(fasteners||[]).filter(f=>!isTechF(f));   // стены комнаты в чертёж не берём
   const withBox=parts.filter(p=>p.box), groups=new Map();
   withBox.forEach(p=>{ if(!p.mod) return; if(!groups.has(p.mod)) groups.set(p.mod,[]); groups.get(p.mod).push(p); });
   /* Кирилл 05.11 (обувница: «вид спереди показывает одну деталь»): детали без блока — тоже изделие; если в модели нет ни одного
@@ -3241,12 +3243,12 @@ function moduleViews(parts, fasteners, mode, wire, hinges, pos, gaps){
   const bb=ps=>{ const lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9]; ps.forEach(p=>{ for(let i=0;i<3;i++){ lo[i]=Math.min(lo[i],p.box[i]); hi[i]=Math.max(hi[i],p.box[i+3]); } }); return {lo,hi,c:[0,1,2].map(i=>(lo[i]+hi[i])/2)}; };
   const all=bb(withBox), out=[];
   [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0],"ru",{numeric:true})).forEach(([mod,ps])=>{
-    const m=bb(ps), key=fvOrient(ps,all);
+    const m=bb(ps), key=fvOrient(ps,all), mc=(L=>L.length>=2?bb(L):m)(ps.filter(p=>!/фасад|дверь|дверц/i.test(p.name||"")));
     const tf=FV_T[key], ax=+key.split(",")[0];
     const loose=ps.map(p=>Object.assign({},p,{box:tf(p.box)}));
     const fs=(fasteners||[]).filter(f=>f.b[0]>=m.lo[0]-5&&f.b[3]<=m.hi[0]+5&&f.b[1]>=m.lo[1]-5&&f.b[4]<=m.hi[1]+5&&f.b[2]>=m.lo[2]-5&&f.b[5]<=m.hi[2]+5).map(f=>{ const r=Object.assign({},f,{b:tf(f.b)}); if(f.o) r.o=tf(f.o.concat(f.o)).slice(0,3); return r; });
     const fv=frontView(loose,{mode,fasteners:fs,wire,hinges,pos,gaps,ptf:FV_P[key],btf:tf}); if(!fv||!fv.svg) return;   // без секций (фартук, планки, тумба) — тоже рисуем: контур и габариты   // угловой модуль тоже рисуем (Кирилл 05.11: каждый блок — с размерами)
-    const w=Math.round(ax===2?m.hi[0]-m.lo[0]:m.hi[2]-m.lo[2]), h=Math.round(m.hi[1]-m.lo[1]), d=Math.round(m.hi[ax]-m.lo[ax]);
+    const w=Math.round(ax===2?mc.hi[0]-mc.lo[0]:mc.hi[2]-mc.lo[2]), h=Math.round(mc.hi[1]-mc.lo[1]), d=Math.round(mc.hi[ax]-mc.lo[ax]);
     out.push({title:mod.replace(/#\d+$/,""), size:`${w}×${h}×${d}`, svg:fv.svg});
   });
   return out.length?out:one();
@@ -18217,7 +18219,7 @@ html.bg3d-light.bg3d-light .asm,html.bg3d-light.bg3d-light .asm.full,html.bg3d-l
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="af2fda53fe";
+const CHK_BUILD="4426f43e40";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -18983,7 +18985,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="af2fda53fe";/*cehqr-build*/
+  const BUILD="4426f43e40";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
