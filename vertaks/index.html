@@ -3059,7 +3059,7 @@ function showPick(code){
   el.hidden=false; el.className="asm-pick tag acts"; el.dataset.code=code;
   const acts=inPart?"":`<span class="tg-acts"><button type="button" class="tg-b main" data-act="part" data-code="${esc(p.code)}" title="Чертёж и присадка">${IC.draw}<span>Присадка${nh?` · ${nh}`:""}</span></button>`
     +`<button type="button" class="tg-b" data-act="asm-iso" data-code="${esc(p.code)}" title="Показать только эту деталь">${IC.iso}<span>Только эта</span></button>`
-    +`<button type="button" class="tg-b" data-act="asm-zoom" data-code="${esc(p.code)}" title="Приблизить к детали">${IC.zoom}<span>Приблизить</span></button>`
+    /* Кирилл 07.11: кнопку «Приблизить» убрали — не нужна */
     +(clientMode()?"":`<button type="button" class="tg-b" data-act="asm-multi" aria-pressed="${!!(asm&&asm.st&&asm.st.multiMode)}" title="Выделять несколько деталей">${'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><path d="M13 3h8v8M3 13v8h8" stroke-dasharray="2 2"/></svg>'}<span>Несколько</span></button>`)
     +(clientMode()?"":`<button type="button" class="tg-b" data-act="prob" data-code="${esc(p.code)}" title="Сообщить о проблеме с деталью">⚠<span>Проблема</span></button>`)
     +(seq.length>1&&si>=0?`<span class="tg-nav"><button type="button" class="tg-b" data-act="asm-nav" data-d="-1" title="Предыдущая деталь" aria-label="Предыдущая деталь">‹</button><span class="mono">${si+1}/${seq.length}</span><button type="button" class="tg-b" data-act="asm-nav" data-d="1" title="Следующая деталь" aria-label="Следующая деталь">›</button></span>`:"")+`</span>`;
@@ -17058,6 +17058,17 @@ function qkNest(list,K,rot){ const SW=num(K.shL)||2800, SH=num(K.shW)||2070, tr=
     const [l,b,r]=opts[0], sh={st:[{y:0,h:b,x:l+kf}],y:b+kf,p:[]}; sh.p.push(Object.assign({},x,{x:tr,y:tr,l,b,r})); sheets.push(sh); });
   sheets.forEach(sh=>{ sh.fill=Math.round(sh.p.reduce((a,x)=>a+x.l*x.b,0)/(SW*SH)*100); });
   return {sheets,over,SW,SH}; }
+/* Кирилл 07.11: «полки, стойки, ящики — пальцем»: своя начинка корпуса. P.inn["корпус|ярус"] = {xs:[стойки от левого края корпуса, мм], sec:[{sh:[низ полки от низа корпуса], dr:ящиков, rod:высота штанги}]} */
+const QK_DRH=180, QK_FT2={slide:{n:"Направляющие шариковые 450",p:450},rod:{n:"Штанга с держателями",p:450}};
+function qkInn(P,ci,lv,h,w,nDef){ const t=16, I=P&&P.inn&&P.inn[ci+"|"+lv];
+  let xs=I&&Array.isArray(I.xs)?I.xs.map(Number).filter(v=>v>=t+100&&v<=w-2*t-100).sort((a,b)=>a-b):[];
+  xs=xs.filter((v,i)=>!i||v-xs[i-1]>=t+100);
+  const sl=[t].concat(xs.map(v=>v+t)), sr=xs.concat([w-t]), sw=sl.map((l,i)=>Math.max(50,sr[i]-l));
+  let sec;
+  if(I&&Array.isArray(I.sec)) sec=sl.map((_,i)=>{ const z=I.sec[i]||{sh:[],dr:0,rod:0}, dr=Math.max(0,Math.min(Math.floor((h-2*t-100)/QK_DRH),Math.round(+z.dr||0))), lo=t+dr*QK_DRH;
+    return {sh:(z.sh||[]).map(Number).filter(v=>v>=lo&&v<=h-2*t).sort((a,b)=>a-b),dr,rod:+z.rod>0&&+z.rod<h-t?Math.round(+z.rod):0}; });
+  else { const n=Math.max(0,Math.round(+nDef||0)), gp=(h-2*t-t*n)/(n+1), sh=[]; for(let i=1;i<=n;i++) sh.push(Math.round((t+gp*i+t*(i-1))*10)/10); sec=[{sh,dr:0,rod:0}]; }
+  return {xs,sl,sw,sec}; }
 function qkWard(p,s){ const K=s.sk, t=16, W=num(p.W), H=num(p.H), D=num(p.D), nW=(p.wl?1:0)+(p.wr?1:0), pk=num(K.plank)||40, legs=num(p.legs)||num(K.legs)||100, topH=p.ceil?num(K.top2):num(K.top1), gap=num(K.gap)||3;
   const Wc=W-pk*nW, Hc=H-legs-topH, Dc=D-16-num(K.zp), warn=[];
   if(!(W>0&&H>0&&D>0)) return {ok:false,warn:["Впишите ширину, высоту и глубину"]};
@@ -17068,10 +17079,13 @@ function qkWard(p,s){ const K=s.sk, t=16, W=num(p.W), H=num(p.H), D=num(p.D), nW
   const low=num(p.low), hasA=low>0&&Hc-low>=250, hL=hasA?low:Hc, hA=hasA?Hc-low:0;
   if(dw0>(num(K.dmax)||600)+1) warn.push("Дверь шире "+(num(K.dmax)||600)+" мм — "+Math.round(dw0-gap)+" мм");
   const ED=p.ed||{}, parts=[], add=(n,m,L,B,q,ec)=>{ L=Math.round(L*10)/10; B=Math.round(B*10)/10; const base=n; if(ED[base]!=null) ec=ED[base]; if(L>QK_LMAX&&/планка|цоколь/i.test(n)){ const k=Math.ceil(L/QK_LMAX); L=Math.round(L/k*10)/10; q*=k; n+=" (составная)"; } const f=parts.find(x=>x.n===n&&x.m===m&&x.L===L&&x.B===B); if(f){ f.q+=q; return; } parts.push({n,base,m,L,B,q,ec,e:qkEdgeMM(ec,L,B)}); };
-  const fit={hinge:0,pin:0,handle:0,leg:0,conf:0}; let nDoor=0, nCorp=0;
-  const lev=(h,sh,pre)=>corp.forEach(c=>{ if(!(h>0)) return; const w=c.w; nCorp++;
+  const fit={hinge:0,pin:0,handle:0,leg:0,conf:0,slide:0,rod:0}; let nDoor=0, nCorp=0;
+  const lev=(h,sh,pre)=>corp.forEach((c,ci)=>{ if(!(h>0)) return; const w=c.w; nCorp++;
     add(pre+"Дно","body",w,Dc,1,"L1"); add(pre+"Бок","body",h-t,Dc,2,"L1"); add(pre+"Крыша","body",w-2*t,Dc,1,"L1");
-    if(sh>0){ add(pre+"Полка","body",w-2*t,Dc,sh,"L1"); fit.pin+=4*sh; }
+    { const I=qkInn(p,ci,pre?1:0,h,w,sh); I.xs.forEach(()=>{ add(pre+"Стойка","body",h-2*t,Dc,1,"L1"); fit.conf+=4; });
+      I.sec.forEach((S2,k)=>{ const sw=I.sw[k]; if(S2.sh.length){ add(pre+"Полка","body",sw,Dc,S2.sh.length,"L1"); fit.pin+=4*S2.sh.length; }
+        if(S2.dr>0){ const bw=sw-26, bd=Math.max(250,Dc-60); add(pre+"Ящик: бок","body",bd,150,2*S2.dr,"L1"); add(pre+"Ящик: перед/зад","body",bw-2*t,150,2*S2.dr,"L1"); add(pre+"Ящик: фасад","body",sw-4,QK_DRH-4,S2.dr,"4"); add(pre+"Ящик: дно","dvp",bw,bd,S2.dr,"0"); fit.slide+=S2.dr; fit.conf+=8*S2.dr; }
+        if(S2.rod) fit.rod+=1; }); }
     add(pre+"Задняя стенка","dvp",h-4,w-4,1,"0"); fit.conf+=8;
     const dh=h-gap, dw=w/c.dn-gap; add(pre+"Дверь","front",dh,dw,c.dn,"4"); nDoor+=c.dn; fit.handle+=c.dn;
     fit.hinge+=c.dn*(qkHinges(dh,K.hrule)+(dw>600?1:0)); });
@@ -17096,7 +17110,7 @@ function qkProds(q){ const s=qkSet(), M=new Map(), works=[], gens=[], CUT=new Ma
     cut("ldsp",bn,G.parts.filter(x=>x.m==="body"||(same&&x.m==="front")),false,pi); if(!same) cut("front",fn,G.parts.filter(x=>x.m==="front"),false,pi); cut("ldsp",s.ft.dvp.n,G.parts.filter(x=>x.m==="dvp"),true,pi);
     const eb=p.eb&&p.eb.n?p.eb:s.ft.edge, ef=same?eb:(p.ef&&p.ef.n?p.ef:s.ft.edge);
     put("edge",eb.n,"м",num(eb.p),G.edge.body+(same||ef.n===eb.n?G.edge.front:0),"m",pi); if(!same&&ef.n!==eb.n) put("edge",ef.n,"м",num(ef.p),G.edge.front,"m",pi);
-    Object.entries({hinge:G.fit.hinge,pin:G.fit.pin,handle:G.fit.handle,leg:G.fit.leg,conf:G.fit.conf}).forEach(([k,v])=>{ if(v>0) put("furn",s.ft[k].n,"шт",num(s.ft[k].p),v,"pc",pi); });
+    Object.entries({hinge:G.fit.hinge,pin:G.fit.pin,handle:G.fit.handle,leg:G.fit.leg,conf:G.fit.conf,slide:G.fit.slide,rod:G.fit.rod}).forEach(([k,v])=>{ const f=(s.ft&&s.ft[k])||QK_FT2[k]; if(v>0&&f) put("furn",f.n,"шт",num(f.p),v,"pc",pi); });
     corp+=G.nBox; door+=G.nDoor; });
   const NEST={}; CUT.forEach((c,k)=>{ if(c.parts.length) NEST[k]=Object.assign(qkNest(c.parts,s.sk,c.dvp||!s.sk.tex),{n:c.n,cat:c.cat,dvp:c.dvp}); });
   const REAL=(q.pr||[]).length?qkSheetsReal([].concat(...(q.pr||[]).map(P=>qkWardPos(P,qkWard(P,s),s)))):null;
@@ -17289,7 +17303,13 @@ function qkWardPos(P,G,s){ if(!G||!G.ok) return []; const t=16, D=G.D, zc1=D-16,
     lev.forEach(([y,h,n,pre])=>{ if(!(h>0)) return; const mod=(pre?"Антресоль ":"Корпус ")+(ci+1);
       add(pre+"Дно","body",[x,y,zc0,x+w,y+t,zc1],"L1",mod,0); add(pre+"Бок","body",[x,y+t,zc0,x+t,y+h,zc1],"L1",mod,1); add(pre+"Бок","body",[x+w-t,y+t,zc0,x+w,y+h,zc1],"L1",mod,1);
       add(pre+"Крыша","body",[x+t,y+h-t,zc0,x+w-t,y+h,zc1],"L1",mod,0);
-      const gp=(h-2*t-t*n)/(n+1); for(let i=1;i<=n;i++){ const yb=y+t+gp*i+t*(i-1); add(pre+"Полка","body",[x+t,yb,zc0,x+w-t,yb+t,zc1],"L1",mod,0); }
+      { const I=qkInn(P,ci,pre?1:0,h,w,n); I.xs.forEach(sx=>add(pre+"Стойка","body",[x+sx,y+t,zc0,x+sx+t,y+h-t,zc1],"L1",mod,1));
+        I.sec.forEach((S2,k)=>{ const L=x+I.sl[k], R=L+I.sw[k]; S2.sh.forEach(yb=>add(pre+"Полка","body",[L,y+yb,zc0,R,y+yb+t,zc1],"L1",mod,0));
+          const zf=zc1-2-t, bd=Math.max(250,G.Dc-60); for(let j=0;j<S2.dr;j++){ const yb=y+t+j*QK_DRH;
+            add(pre+"Ящик: фасад","body",[L+2,yb+2,zf,R-2,yb+QK_DRH-2,zf+t],"4",mod,0);
+            add(pre+"Ящик: бок","body",[L+13,yb+10,zf-bd,L+13+t,yb+160,zf],"L1",mod,2); add(pre+"Ящик: бок","body",[R-13-t,yb+10,zf-bd,R-13,yb+160,zf],"L1",mod,2);
+            add(pre+"Ящик: перед/зад","body",[L+13+t,yb+10,zf-t,R-13-t,yb+160,zf],"L1",mod,0); add(pre+"Ящик: перед/зад","body",[L+13+t,yb+10,zf-bd,R-13-t,yb+160,zf-bd+t],"L1",mod,0);
+            add(pre+"Ящик: дно","dvp",[L+13,yb+6,zf-bd,R-13,yb+10,zf],"0",mod,0); } }); }
       add(pre+"Задняя стенка","dvp",[x+2,y+2,zc0-3,x+w-2,y+h-2,zc0],"0",mod,1);
       const gap=num(s.sk.gap)||3, dw=w/c.dn; for(let j=0;j<c.dn;j++) add(pre+"Дверь","front",[x+dw*j+gap/2,y+gap/2,zc1,x+dw*(j+1)-gap/2,y+h-gap/2,D],"4",mod,1); });
     x+=w; });
@@ -18703,7 +18723,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="690bd3ed18";
+const CHK_BUILD="d5b1e5eca7";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -19475,7 +19495,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="690bd3ed18";/*cehqr-build*/
+  const BUILD="d5b1e5eca7";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
