@@ -18611,11 +18611,99 @@ html.csf-on,html.csf-on body{overflow:hidden}
   const st=document.createElement("style"); st.textContent=`html.bg3d-dark.bg3d-dark .asm,html.bg3d-dark.bg3d-dark .asm.full,html.bg3d-dark.bg3d-dark .asm.full.dq{background:radial-gradient(120% 90% at 50% 35%,#2a2b2e 0%,#151618 70%,#0b0b0c 100%)!important}
 html.bg3d-light.bg3d-light .asm,html.bg3d-light.bg3d-light .asm.full,html.bg3d-light.bg3d-light .asm.full.dq{background:radial-gradient(120% 90% at 50% 35%,#ffffff 0%,#eceeeb 70%,#d6d8d4 100%)!important}`; document.head.appendChild(st); })();
 
+/* ===== Кирилл 07.11: «деталь, которую выбрал, перемещается; внутри раскроя можно поставить куда хочу; второй палец — поворот».
+   Удержать деталь ~0,35 с → она поднимается и едет под пальцем (без синей таблички), прилипает к краю листа и к соседям с учётом пропила.
+   Красная — налезает, туда не встанет. Второй палец коснулся экрана — поворот на 90°. Отпустили на другом листе этого материала — перенос (как раньше).
+   Хранится у этого телефона: «cehqr-cutov-<заказ>-pos» → {"материал|лист": {"код#n": {x,y,w,h}}}. ===== */
+function cutPos(){ try{ return JSON.parse(localStorage.getItem(cutOvKey()+"-pos")||"{}")||{}; }catch(_){ return {}; } }
+function cutPosSet(k,v){ const m=cutPos(); if(v&&Object.keys(v).length) m[k]=v; else delete m[k]; try{ localStorage.setItem(cutOvKey()+"-pos",JSON.stringify(m)); }catch(_){} }
+function cposKeys(s){ const n={}; return s.placed.map(q=>{ const c=q.p.code||"?"; n[c]=(n[c]||0)+1; return c+"#"+n[c]; }); }
+function cposHit(a,b,K){ return a.x<b.x+b.w+K-0.5&&b.x<a.x+a.w+K-0.5&&a.y<b.y+b.h+K-0.5&&b.y<a.y+a.h+K-0.5; }
+/* после обычного раскроя кладём «руками поставленные» детали на их места (если всё ещё влезает и ни на что не налезает) */
+{ const _cpM=cutMaps; cutMaps=function(parts){ const R=_cpM.apply(this,arguments), P=cutPos();
+  R.forEach(m=>{ const W=m.W, H=m.H, K=m.K||4; m.sheets.forEach((s,i)=>{ const pp=P[m.mat+"|"+i]; if(!pp) return; const ks=cposKeys(s); let any=false;
+    const pl=s.placed.map((q,j)=>{ const v=pp[ks[j]]; return v&&v.w&&v.h&&Math.min(v.w,v.h)===Math.min(q.w,q.h)&&Math.max(v.w,v.h)===Math.max(q.w,q.h)?{q,v}:{q,v:null}; });
+    const box=pl.map(z=>z.v?{x:z.v.x,y:z.v.y,w:z.v.w,h:z.v.h}:{x:z.q.x,y:z.q.y,w:z.q.w,h:z.q.h});
+    const bad=box.some((b,j)=>b.x<-0.5||b.y<-0.5||b.x+b.w>W+0.5||b.y+b.h>H+0.5||box.some((c,k)=>k!==j&&cposHit(b,c,K)));
+    if(bad){ s.posFail=true; return; }
+    pl.forEach((z,j)=>{ if(!z.v) return; any=true; const sw=z.v.w!==z.q.w; z.q.x=z.v.x; z.q.y=z.v.y; z.q.w=z.v.w; z.q.h=z.v.h; if(sw) z.q.r=!z.q.r; });
+    if(any){ s.man=true; s.free=[]; } }); });
+  return R; }; }
+const CPD={t:null,on:false,g:null,svg:null,sheet:null,si:-1,mat:"",key:"",q:null,others:[],W:0,H:0,K:4,u:1,X0:0,Y0:0,px:1,sx:0,sy:0,p0:null,cur:null,ov:null,rot:false,lx:0,ly:0,eat:false,csf:false};
+function cpdSheetEl(g){ if(g.closest(".csf")){ const L=typeof csfSheets==="function"?csfSheets():[]; return typeof CSF!=="undefined"&&CSF?L[CSF.i]:null; } return g.closest(".cut-sheet[data-csi]"); }
+function cpdUser(svg,x,y){ const pt=svg.createSVGPoint(); pt.x=x; pt.y=y; const M=svg.getScreenCTM(); return M?pt.matrixTransform(M.inverse()):{x,y}; }
+function cpdStart(e,g){ const P=e.touches?e.touches[0]:e, d=cpdSheetEl(g); if(!d||d.dataset.cmat==null) return false;
+  CPD.sx=P.clientX; CPD.sy=P.clientY; CPD.g=g; CPD.sheet=d; CPD.csf=!!g.closest(".csf");
+  clearTimeout(CPD.t); CPD.t=setTimeout(()=>cpdLift(),350); return true; }
+function cpdLift(){ CPD.t=null; const g=CPD.g, d=CPD.sheet, svg=g&&g.ownerSVGElement, rc=g&&g.querySelector("rect"); if(!svg||!rc) return;
+  const mat=d.dataset.cmat, si=+d.dataset.csi, M=cutMaps(S.current.parts).find(x=>x.mat===mat), s=M&&M.sheets[si]; if(!s) return;
+  const sel=`g[data-code="${CSS.escape(g.dataset.code)}"]`, nth=[...svg.querySelectorAll(sel)].indexOf(g), idx=s.placed.map((q,j)=>({q,j})).filter(z=>z.q.p.code===g.dataset.code)[nth];
+  if(!idx) return; const ks=cposKeys(s), q=idx.q;
+  const u=(+rc.getAttribute("width"))/q.w; if(!(u>0)) return;
+  Object.assign(CPD,{on:true,eat:true,svg,si,mat,key:ks[idx.j],q,W:M.W,H:M.H,K:M.K||4,u,X0:+rc.getAttribute("x")-q.x*u,Y0:+rc.getAttribute("y")-q.y*u,
+    others:s.placed.filter(z=>z!==q).map(z=>({x:z.x,y:z.y,w:z.w,h:z.h})),p0:{x:q.x,y:q.y,w:q.w,h:q.h},rot:false,tgt:null});
+  const a=cpdUser(svg,CPD.sx,CPD.sy); CPD.grab={x:(a.x-CPD.X0)/u-q.x,y:(a.y-CPD.Y0)/u-q.y};
+  try{ navigator.vibrate&&navigator.vibrate(20); }catch(_){}
+  g.style.opacity=".25"; const ns="http://www.w3.org/2000/svg", ov=document.createElementNS(ns,"g"); ov.setAttribute("class","cpd-ov"); ov.setAttribute("pointer-events","none");
+  ov.innerHTML=`<rect class="cpd-r" rx="2"/><text class="cpd-t" text-anchor="middle" dominant-baseline="middle"></text>`; svg.appendChild(ov); CPD.ov=ov;
+  document.documentElement.classList.add("cpd-on"); cpdPlace(CPD.sx,CPD.sy); }
+function cpdPlace(cx,cy){ CPD.lx=cx; CPD.ly=cy; const a=cpdUser(CPD.svg,cx,cy), u=CPD.u, q=CPD.p0, w=CPD.rot?q.h:q.w, h=CPD.rot?q.w:q.h, K=CPD.K;
+  const gx=CPD.grab.x/q.w*w, gy=CPD.grab.y/q.h*h;
+  let x=(a.x-CPD.X0)/u-gx, y=(a.y-CPD.Y0)/u-gy;
+  /* прилипание: к краю листа и к соседям (через пропил), порог ~14 px экрана */
+  const SM=CPD.svg.getScreenCTM(), pxmm=(SM?Math.hypot(SM.a,SM.b):1)*u||1, th=Math.max(4,14/pxmm);
+  const sxs=[0,CPD.W-w], sys=[0,CPD.H-h]; CPD.others.forEach(o=>{ sxs.push(o.x+o.w+K,o.x-w-K,o.x,o.x+o.w-w); sys.push(o.y+o.h+K,o.y-h-K,o.y,o.y+o.h-h); });
+  const sn=(v,L)=>{ let b=v,bd=th; L.forEach(t=>{ const dd=Math.abs(t-v); if(dd<bd){ bd=dd; b=t; } }); return b; };
+  x=sn(x,sxs); y=sn(y,sys);
+  const inside=x>=-0.5&&y>=-0.5&&x+w<=CPD.W+0.5&&y+h<=CPD.H+0.5; x=Math.round(x); y=Math.round(y);
+  const c={x,y,w,h}, hit=CPD.others.some(o=>cposHit(c,o,K)); CPD.cur=Object.assign(c,{ok:inside&&!hit,inside});
+  /* над другим листом этого же материала (только в списке листов) — перенос на тот лист */
+  CPD.tgt=null; if(!CPD.csf&&!inside){ const el=document.elementFromPoint(cx,cy), dd=el&&el.closest&&el.closest(".cut-sheet[data-csi]"); if(dd&&dd!==CPD.sheet&&dd.dataset.cmat===CPD.mat) CPD.tgt=dd; }
+  document.querySelectorAll(".cut-sheet.cdg-ok").forEach(z=>{ if(z!==CPD.tgt) z.classList.remove("cdg-ok"); }); if(CPD.tgt) CPD.tgt.classList.add("cdg-ok");
+  const r=CPD.ov.querySelector("rect"), t=CPD.ov.querySelector("text"), X=CPD.X0+x*u, Y=CPD.Y0+y*u;
+  r.setAttribute("x",X); r.setAttribute("y",Y); r.setAttribute("width",w*u); r.setAttribute("height",h*u); CPD.ov.setAttribute("data-st",CPD.tgt?"move":c.ok?"ok":"bad");
+  t.setAttribute("x",X+w*u/2); t.setAttribute("y",Y+h*u/2); t.setAttribute("font-size",Math.max(9,Math.min(h*u*0.55,28))); t.textContent=Math.round(w)+"×"+Math.round(h);
+  if(!CPD.csf){ const bar=document.querySelector(".cs-bar"), top=bar?bar.getBoundingClientRect().bottom:0; if(cy<top+50) window.scrollBy(0,-14); else if(cy>innerHeight-60) window.scrollBy(0,14); } }
+function cpdRotate(){ if(!CPD.on) return; const p=CPD.p0, tex=partTexLen(CPD.q.p)&&!(sheetOf(CPD.mat)||{}).rot;
+  CPD.rot=!CPD.rot; cpdPlace(CPD.lx,CPD.ly); try{ navigator.vibrate&&navigator.vibrate(15); }catch(_){} if(tex&&CPD.rot) toast("У детали текстура — после поворота рисунок пойдёт поперёк"); }
+function cpdEnd(drop){ clearTimeout(CPD.t); CPD.t=null; if(!CPD.on) return false; CPD.on=false; document.documentElement.classList.remove("cpd-on");
+  if(CPD.ov) CPD.ov.remove(); CPD.ov=null; if(CPD.g) CPD.g.style.opacity=""; document.querySelectorAll(".cut-sheet.cdg-ok").forEach(z=>z.classList.remove("cdg-ok"));
+  if(!drop) return true; const moved=Math.hypot(CPD.lx-CPD.sx,CPD.ly-CPD.sy)>=14||CPD.rot;
+  if(!moved){ if(typeof cdgMenu==="function") cdgMenu(CPD.g.dataset.code,CPD.lx,CPD.ly); return true; }
+  if(CPD.tgt){ Object.assign(CDG,{on:true,code:CPD.g.dataset.code,mat:CPD.mat,from:CPD.sheet,over:CPD.tgt,x:CPD.sx,y:CPD.sy,lx:CPD.lx,ly:CPD.ly}); cdgEnd(true); return true; }
+  const c=CPD.cur; if(!c||!c.ok){ toast(c&&!c.inside?"Деталь вышла за край листа — вернул на место":"Тут деталь налезает на другую — вернул на место"); return true; }
+  const k=CPD.mat+"|"+CPD.si, pp=Object.assign({},cutPos()[k]||{}); pp[CPD.key]={x:c.x,y:c.y,w:c.w,h:c.h}; cutPosSet(k,pp);
+  const no=CPD.sheet.dataset.cno, fi=CPD.csf&&typeof CSF!=="undefined"&&CSF?CSF.i:-1, y0=window.scrollY; render(); window.scrollTo(0,y0);
+  const nd=document.querySelector(`.cut-sheet[data-cno="${no}"]`); if(fi>=0&&typeof csfOpen==="function") csfOpen(fi); else if(typeof cutKeepSheet==="function") cutKeepSheet(no);
+  toast(CPD.rot?"Деталь повёрнута и поставлена":"Деталь поставлена"); return true; }
+/* старое перетаскивание (синяя табличка) больше не запускаем — его заменило это */
+cdgStart=function(){};
+document.addEventListener("touchstart",e=>{ if(CPD.on){ if(e.touches.length>=2){ e.preventDefault(); cpdRotate(); } return; }
+  const g=e.target.closest&&e.target.closest('.cut-sheet g[data-code],.csf g[data-code]'); if(g&&e.touches.length===1) cpdStart(e,g); else { clearTimeout(CPD.t); CPD.t=null; } },{passive:false,capture:true});
+document.addEventListener("touchmove",e=>{ if(!CPD.t&&!CPD.on) return; const P=e.touches[0];
+  if(!CPD.on){ if(Math.hypot(P.clientX-CPD.sx,P.clientY-CPD.sy)>10){ clearTimeout(CPD.t); CPD.t=null; } return; }
+  e.preventDefault(); e.stopPropagation(); cpdPlace(P.clientX,P.clientY); },{passive:false,capture:true});
+document.addEventListener("touchend",e=>{ if(CPD.on){ if(e.touches.length) return; e.preventDefault(); cpdEnd(true); } else { clearTimeout(CPD.t); CPD.t=null; } },{passive:false,capture:true});
+document.addEventListener("touchcancel",()=>{ if(CPD.on) cpdEnd(false); clearTimeout(CPD.t); CPD.t=null; },true);
+document.addEventListener("mousedown",e=>{ if(e.button) return; const g=e.target.closest&&e.target.closest('.cut-sheet g[data-code],.csf g[data-code]'); if(g) cpdStart(e,g); },true);
+document.addEventListener("mousemove",e=>{ if(CPD.t&&!CPD.on&&Math.hypot(e.clientX-CPD.sx,e.clientY-CPD.sy)>6){ clearTimeout(CPD.t); CPD.t=null; } if(CPD.on) cpdPlace(e.clientX,e.clientY); },true);
+document.addEventListener("mouseup",()=>{ if(CPD.on) cpdEnd(true); else { clearTimeout(CPD.t); CPD.t=null; } },true);
+document.addEventListener("keydown",e=>{ if(CPD.on&&(e.key==="r"||e.key==="R"||e.key==="к"||e.key==="К")){ e.preventDefault(); cpdRotate(); } if(CPD.on&&e.key==="Escape") cpdEnd(false); });
+document.addEventListener("click",e=>{ if(CPD.eat){ CPD.eat=false; if(e.target.closest&&e.target.closest(".cut-sheet,.csf")){ e.preventDefault(); e.stopImmediatePropagation(); } } },true);
+/* у листа, где детали поставлены руками: пометка и «Вернуть как было» */
+function cposDeco(){ const P=cutPos(); document.querySelectorAll(".cut-sheet[data-csi]").forEach(d=>{ if(d.querySelector(":scope > .cpd-note")) return; const k=d.dataset.cmat+"|"+d.dataset.csi; if(!P[k]) return;
+  const n=document.createElement("p"); n.className="cut-ovn cpd-note"; n.innerHTML=`Детали на этом листе поставлены вручную <button type="button" class="btn sm" data-cpos-x="${esc(k)}">Вернуть как было</button>`;
+  const sv=d.querySelector(".cut-h"); if(sv) sv.after(n); else d.insertBefore(n,d.firstChild); }); }
+try{ const _cpR=render; render=function(){ const r=_cpR.apply(this,arguments); try{ cposDeco(); }catch(e){ console.error(e); } return r; }; }catch(_){}
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-cpos-x]"); if(!b) return; e.preventDefault(); e.stopImmediatePropagation(); const no=b.closest(".cut-sheet")?.dataset.cno; cutPosSet(b.dataset.cposX,null); const y=window.scrollY; render(); window.scrollTo(0,y); if(no&&typeof cutKeepSheet==="function") cutKeepSheet(no); toast("Лист разложен как было"); },true);
+(function(){ const st=document.createElement("style"); st.textContent=`.cpd-ov .cpd-r{fill:#DCEBFF;stroke:#0A84FF;stroke-width:2.5;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))}.cpd-ov[data-st="bad"] .cpd-r{fill:#FFE3E0;stroke:#FF453A}.cpd-ov[data-st="move"] .cpd-r{fill:#E3F8E9;stroke:#30D158}.cpd-ov .cpd-t{fill:#000;font-weight:700;font-family:system-ui,sans-serif}
+html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}.cpd-note{margin:4px 0}`; document.head.appendChild(st); })();
+
 /* ===== «Проверщик» (Кирилл 05.11, вариант 1): приложение само проверяет каждый открытый заказ —
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="b00f3c4db9";
+const CHK_BUILD="cbd45e2b6c";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -19387,7 +19475,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="b00f3c4db9";/*cehqr-build*/
+  const BUILD="cbd45e2b6c";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
