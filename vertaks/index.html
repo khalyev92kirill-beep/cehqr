@@ -2047,7 +2047,13 @@ function svgZoom(box){
   let sw=null;
   function swStart(cx,cy){ sw={sx:cx,sy:cy,on:false,st:[]}; }
   function swMove(cx,cy){ if(!sw) return; const p=toSvg(cx,cy), ym=toMMy(p.y);
-    if(!sw.on){ if(Math.abs(cy-sw.sy)<22) return; sw.on=true; if(!mA){ mA=snapAtScreen(sw.sx,sw.sy,true); } sw.x=mA[0]; sw.prev=toMMy(toSvg(sw.sx,sw.sy).y); sw.base=ud().length; }
+    if(!sw.on){ if(Math.abs(cy-sw.sy)<22) return; sw.on=true; sw.prev=toMMy(toSvg(sw.sx,sw.sy).y);
+      /* Кирилл 06.11: цепочка снизу начиналась от середины полки (дна) — надо от низа стойки. Первая точка — низ ближайшей стойки
+         (ведём вверх) или её верх (ведём вниз); дальше точки сами встают посередине полок, через которые прошёл палец */
+      if(!mA){ const s0=snapAtScreen(sw.sx,sw.sy,true), f=toSvg(sw.sx,sw.sy), fx=toMMx(f.x), fy=toMMy(f.y), upw=cy<sw.sy;
+        const st=(MD.rs||[]).filter(([x0,y0,x1,y1])=>x1-x0<=40&&y1-y0>=60&&fy>=y0-60&&fy<=y1+60).sort((a,b)=>Math.abs((a[0]+a[2])/2-fx)-Math.abs((b[0]+b[2])/2-fx))[0];
+        if(st){ mA=[s0[0], upw?st[1]:st[3]]; sw.prev=mA[1]; } else mA=s0; }
+      sw.x=mA[0]; sw.base=ud().length; }
     const r=svg.getBoundingClientRect(), tol=22*(w/r.width)/MD.s, lo=Math.min(sw.prev,ym), hi=Math.max(sw.prev,ym), up=ym>sw.prev;
     const hits=(MD.rs||[]).filter(([x0,y0,x1,y1])=>y1-y0<=40&&x1-x0>=60&&sw.x>=x0-tol&&sw.x<=x1+tol).map(([x0,y0,x1,y1])=>(y0+y1)/2).filter(c=>c>lo&&c<=hi).sort((a,b)=>up?a-b:b-a);
     hits.forEach(c=>{ const last=sw.st[sw.st.length-1];
@@ -11940,6 +11946,7 @@ function licAdminHtml(){ const L=S.lic=S.lic||{}; if(!L.tried&&!L.busy) licLoad(
   const V=f==="soon"?soon:f==="end"?end:I;
   let h=head;
   if(!L.d.secret) h+=`<div class="lic-warn"><b>Нет свойства LIC_SECRET.</b> Компании не получат пропуск. Apps Script → Настройки проекта → Свойства скрипта → LIC_SECRET = любая длинная строка (придумайте сами, никому не показывайте).</div>`;
+  if(L.d.trig===false) h+=`<div class="lic-warn"><b>Напоминания о подписке не включились.</b> Apps Script → выберите функцию vklyuchit_podpiski → «Выполнить» (один раз).</div>`;
   h+=`<div class="lic-seg" role="group" aria-label="Какие компании показать">${[["all","Все",I.length+1],["soon","Скоро конец",soon.length],["end","Закончилась",end.length]].map(([k,n,c])=>`<button type="button" data-act="lic-f" data-v="${k}" aria-pressed="${f===k}">${n} ${c}</button>`).join("")}</div>`;
   h+=`<ul class="lic-list">${f==="all"?`<li><div class="lic-row own"><span class="lic-rb"><b>${esc(licHomeName())}</b><span class="muted">своя компания · без срока</span></span><span class="lic-dc ok">навсегда</span></div></li>`:""}
     ${V.map(x=>`<li><button type="button" class="lic-row" data-act="lic-open" data-c="${esc(x.code)}"><span class="lic-rb"><b>${esc(x.name)} <span class="lic-code-s">· ${esc(x.code)}</span></b><span class="muted">${esc([licSub(x),x.note].filter(Boolean).join(" · "))}</span></span>${licChip(x)}</button></li>`).join("")}</ul>`;
@@ -18108,14 +18115,27 @@ function csfOpen(i){ const L=csfSheets(); if(!L.length) return; i=Math.max(0,Mat
   if(!CSF){ const w=document.createElement("div"); w.className="csf"; w.setAttribute("role","dialog"); w.setAttribute("aria-label","Карта раскроя");
     w.innerHTML=`<div class="csf-top"><button type="button" class="btn csf-x">‹ Назад</button><b class="csf-t"></b>
       <span class="csf-nav"><button type="button" class="btn csf-p" aria-label="Предыдущий лист">‹</button><button type="button" class="btn csf-n" aria-label="Следующий лист">›</button></span>
-      <button type="button" class="btn csf-r" aria-label="Повернуть лист">⟳</button><span class="csf-z"><button type="button" class="btn csf-zo" aria-label="Отдалить">−</button><button type="button" class="btn csf-zi" aria-label="Приблизить">+</button></span></div><div class="csf-b"><div class="csf-in"></div></div>`;
+      <button type="button" class="btn csf-r" aria-label="Повернуть лист">⟳</button><span class="csf-z"><button type="button" class="btn csf-zo" aria-label="Отдалить">−</button><button type="button" class="btn csf-zi" aria-label="Приблизить">+</button></span></div><div class="csf-opt" role="group" aria-label="Раскрой этого листа"><span class="csf-ol">Этот лист — первый распил:</span><span class="seg csf-fs"><button type="button" data-csf-first="cross">Поперёк</button><button type="button" data-csf-first="along">Вдоль</button><button type="button" data-csf-first="both">Оба</button></span><button type="button" class="btn csf-ori" data-csf-ori>Ориентация: вкл.</button></div><div class="csf-b"><div class="csf-in"></div></div>`;
     document.body.appendChild(w); CSF={w,i:0,z:1,rot:innerHeight>innerWidth*1.15}; document.documentElement.classList.add("csf-on");
     try{ history.pushState({csf:1},""); }catch(_){} }
   CSF.i=i; CSF.z=1; const src=[...L[i].querySelectorAll("svg")].find(x=>!x.closest(".csf-open")), c=src.cloneNode(true); c.removeAttribute("style"); c.classList.add("csf-svg");
   const inn=CSF.w.querySelector(".csf-in"); inn.innerHTML=""; inn.appendChild(c); csfZoom(1);
   CSF.w.querySelector(".csf-t").textContent=L.length>1?`Лист ${i+1} из ${L.length}`:"Карта раскроя";
   CSF.w.querySelector(".csf-p").disabled=i===0; CSF.w.querySelector(".csf-n").disabled=i===L.length-1;
-  CSF.w.querySelector(".csf-nav").hidden=L.length<2; CSF.w.querySelector(".csf-b").scrollTo(0,0); }
+  CSF.w.querySelector(".csf-nav").hidden=L.length<2; CSF.w.querySelector(".csf-b").scrollTo(0,0); csfOptSync(); }
+/* Кирилл 06.11: «каждый лист менять отдельно — вдоль / поперёк плиты — на самом листе»: настройки этого листа прямо в окне листа */
+function csfOptSync(){ if(!CSF) return; const d=csfSheets()[CSF.i], c=cutSet(), op=CSF.w.querySelector(".csf-opt"); if(!op) return;
+  if(!d||d.dataset.cmat==null){ op.hidden=true; return; } op.hidden=false;
+  const fi=d.dataset.cfirst||c.first, ori=d.dataset.cori?d.dataset.cori==="on":!c.noOri;
+  op.querySelectorAll("[data-csf-first]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.csfFirst===fi)));
+  const o=op.querySelector("[data-csf-ori]"); o.textContent=ori?"Ориентация: вкл.":"Ориентация: откл."; o.setAttribute("aria-pressed",String(!ori)); }
+function csfSetSheet(t){ const d=csfSheets()[CSF.i]; if(!d) return; const k=d.dataset.cmat+"|"+d.dataset.csi, o=Object.assign({},cutOv()[k]||{}), c=cutSet(), no=d.dataset.cno, i=CSF.i;
+  if(t.hasAttribute("data-csf-first")){ o.first=t.dataset.csfFirst===c.first?"":t.dataset.csfFirst; }
+  else { const cur=d.dataset.cori?d.dataset.cori==="on":!c.noOri, nx=!cur, sh0=sheetOf(d.dataset.cmat);
+    if(!nx&&sh0&&!sh0.rot&&!confirm("Материал с текстурой. Если отключить ориентацию, детали могут лечь поперёк рисунка.\nОтключить ориентацию на этом листе?")) return;
+    o.ori=(nx===!c.noOri)?"":(nx?"on":"off"); }
+  cutOvSet(k,o); const y=window.scrollY; render(); window.scrollTo(0,y);
+  requestAnimationFrame(()=>{ csfOpen(i); const nd=document.querySelector(`.cut-sheet[data-cno="${no}"]`); toast(nd&&nd.querySelector(".cut-ovn.bad")?"На этом листе так не получилось — детали не уместились":`Лист ${no}: перераскроен`); }); }
 function csfZoom(z){ if(!CSF) return; CSF.z=Math.max(1,Math.min(5,z)); const s=CSF.w.querySelector(".csf-svg"); if(!s) return;
   const B=CSF.w.querySelector(".csf-b"), inn=CSF.w.querySelector(".csf-in"), vb=(s.getAttribute("viewBox")||"0 0 1290 900").split(/[\s,]+/).map(Number), ar=vb[3]/vb[2]||0.7;
   const R=CSF.rot&&ar<1, aw=B.clientWidth-16, ah=B.clientHeight-16;
@@ -18131,7 +18151,11 @@ document.addEventListener("keydown",e=>{ if(CSF&&e.key==="Escape") csfClose(); }
 window.addEventListener("resize",()=>{ if(CSF) csfZoom(CSF.z); });
 document.addEventListener("click",e=>{ const t=e.target;
   const o=t.closest&&t.closest(".csf-open"); if(o){ e.preventDefault(); e.stopPropagation(); csfOpen(csfSheets().indexOf(o.parentElement)); return; }
+  /* Кирилл 06.11: «нажимаю на лист раскроя — должен открываться в окне»: нажатие на лист (не на деталь) — на весь экран */
+  if(!CSF){ const sv=t.closest&&t.closest(".cut-sheet svg"), d=sv&&sv.closest(".cut-sheet");
+    if(sv&&d&&!t.closest("[data-act],button,a,.csf-open")){ const i=csfSheets().indexOf(d); if(i>=0){ e.preventDefault(); e.stopPropagation(); csfOpen(i); return; } } }
   if(!CSF||!CSF.w.contains(t)) return;
+  if(t.closest("[data-csf-first],[data-csf-ori]")){ e.preventDefault(); e.stopPropagation(); csfSetSheet(t.closest("[data-csf-first],[data-csf-ori]")); return; }
   if(t.closest(".csf-x")){ e.preventDefault(); e.stopPropagation(); csfClose(); return; }
   if(t.closest(".csf-p")){ e.stopPropagation(); csfOpen(CSF.i-1); return; }
   if(t.closest(".csf-n")){ e.stopPropagation(); csfOpen(CSF.i+1); return; }
@@ -18155,6 +18179,10 @@ html.csf-on,html.csf-on body{overflow:hidden}
 .csf-top{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
 .csf-top .btn{min-height:44px;min-width:44px}.csf-t{flex:1;min-width:0;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .csf-nav,.csf-z{display:inline-flex;gap:6px}
+.csf-opt{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 12px 8px;border-bottom:1px solid var(--line)}.csf-ol{font-size:13px;color:var(--muted);width:100%}
+.csf-fs{display:flex;flex:1 1 200px}.csf-fs button{flex:1;min-height:44px}.csf-opt .csf-ori{min-height:44px}
+@media (max-width:820px){.cut-sheet svg.bz-map{min-width:0!important;width:100%!important;height:auto!important}.cut-sheet{overflow-x:hidden!important}}
+.cut-sheet svg{cursor:zoom-in}
 .csf-b{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;background:#e9ecef;touch-action:pan-x pan-y pinch-zoom}
 .csf-in{padding:8px;width:max-content;min-width:100%;box-sizing:border-box;display:flex;justify-content:center;position:relative;margin:0 auto}
 .csf-svg{display:block;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.15);max-width:none!important}
@@ -18177,7 +18205,7 @@ html.csf-on,html.csf-on body{overflow:hidden}
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="56bf5ce340";
+const CHK_BUILD="326bbfad39";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -18216,6 +18244,11 @@ function chkRun(){ if(CHK.run||!S.current||!S.current.orderId||S.current.loading
     (typeof HELP_ERR!=="undefined"?HELP_ERR:[]).slice(-3).forEach(e=>out.push({sig:"js-"+String(e).replace(/^\S+\s/,"").slice(0,60),t:"Ошибка в программе: "+e}));
   }catch(e){ out.push({sig:"chk-err",t:"Проверщик сломался: "+String(e&&e.message||e).slice(0,150)}); }
   CHK.last={oid,nm,out,at:Date.now()}; CHK.run=false;
+  /* Кирилл 06.11: геометрия заказа — на Диск Кирилла для разбора ошибок чертежей (без клиента): раз в сутки на заказ и сборку, только своя компания */
+  try{ const gk="cehqr-geo-"+oid+"@"+CHK_BUILD, co=typeof licCo==="function"&&licCo();
+    if(!co&&!/^QK/.test(oid)&&chkFresh(gk)&&typeof helpUrl==="function"&&helpUrl()){
+      const ps=(S.current.parts||[]).map(p=>({c:p.code||"",n:p.name||"",a:p.art||"",m:String(p.material||"").split(/[\r\n]/)[0],mod:p.mod||"",b:p.box||null,L:p.L||0,W:p.W||0}));
+      fetch(helpUrl(),{method:"POST",body:JSON.stringify({action:"dbgGeo",oid,build:CHK_BUILD,parts:ps})}).then(r=>r.json()).then(j=>{ if(j&&j.ok) chkMark(gk); }).catch(()=>{}); } }catch(_){}
   const fresh=out.filter(x=>chkFresh(oid+"|"+x.sig));
   if(typeof siteIsAdmin==="function"&&siteIsAdmin()||S.shop&&S.shop.tech) toast(out.length?`🔎 Проверка заказа: замечаний ${out.length}${fresh.length?" — отправлено в «Вопросы и ошибки»":""}`:"🔎 Проверка заказа: всё в порядке");
   if(!fresh.length||typeof helpUrl!=="function"||!helpUrl()) return;
@@ -18930,7 +18963,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="56bf5ce340";/*cehqr-build*/
+  const BUILD="326bbfad39";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
