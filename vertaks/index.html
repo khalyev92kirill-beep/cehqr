@@ -15764,6 +15764,54 @@ function smnDims(d,cm){ const R=smnDimsCalc(d); if(!R.length) return ""; const w
 document.addEventListener("change",e=>{ const t=e.target.closest&&e.target.closest("[data-wl]"); if(!t) return; const sm=S.shop&&S.shop.sm; if(!sm||!sm.data) return; const v=Math.round(+String(t.value).replace(/\s/g,"").replace(",","."))||0;
   sm.data.wl=Object.assign({},sm.data.wl||{}); if(v>0) sm.data.wl[t.dataset.wl]=v; else delete sm.data.wl[t.dataset.wl]; sm.dirty=true; shpRenderKeep(); },true);
 (function(){ const st=document.createElement("style"); st.textContent=`.smn-dims{display:grid;gap:8px;margin:0 0 12px}.smn-dim{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;background:#10331f;color:#d3f9d8;border-radius:12px;padding:10px 12px}.smn-dim b{font-size:15.5px}.smn-dim small{display:block;color:#8ce99a;font-size:12px}.smn-wl{display:flex;align-items:center;gap:6px;font-size:13px;color:#d3f9d8}.smn-wl input{width:90px}.smn-rest{flex:1 1 100%;margin:0;font-size:14px}.smn-rest.ok{color:#ffd43b}.smn-rest.bad{color:#ff8787}html[data-vt="light"] .smn-dim{background:#ebfbee;color:#1b4332}html[data-vt="light"] .smn-dim small,html[data-vt="light"] .smn-wl{color:#2b8a3e}html[data-vt="light"] .smn-rest.ok{color:#9c6b00}html[data-vt="light"] .smn-rest.bad{color:#c92a2a}`; document.head.appendChild(st); })();
+/* ---- Кирилл 07.11: интерфейс сметы «чтобы всё понятно — зашли: что, где, куда, как».
+   Два вида: «По шагам» (дизайнерам и новичкам: один шаг — один экран, внизу «Дальше») и «Всё сразу» (как было, + отметки ✓/⚠ и «Что дальше»). ---- */
+const SMN_STEPS=[["room","Помещение"],["mods","Модули"],["mat","Материалы"],["price","Цена"],["send","Отправить"]];
+function smnMode(){ if(S.shop.smMode) return S.shop.smMode; let v=""; try{ v=localStorage.getItem("w24-smMode")||""; }catch(_){} return S.shop.smMode=v==="all"?"all":"steps"; }
+function smnStepSt(d,c,sm){ const nm=(d.mods||[]).filter(m=>m.t!=="gap").length, bad=c.lines.filter(l=>l.q>0&&(!l.m||!l.p)).length;
+  return {room:"ok",mods:nm?"ok":"todo",mat:!nm?"todo":bad?"warn":"ok",price:c.total>0&&!bad?"ok":"todo",send:sm.offer&&(sm.offer.sent||sm.offer.agreed)?"ok":sm.saved&&!sm.dirty?"todo":"todo",bad,nm}; }
+function smnNext(d,c,sm){ const s=smnStepSt(d,c,sm);
+  if(!s.nm) return ["mods","Добавьте модули: нажмите «+ Модуль» и выберите шкаф из каталога."];
+  if(s.bad) return ["mat",`У ${s.bad} ${s.bad===1?"позиции":"позиций"} нет материала или цены — выберите или впишите цену.`];
+  if(sm.dirty||!sm.saved) return ["send","Сохраните смету — кнопка «Сохранить» вверху."];
+  return ["send","Всё готово — отправьте клиенту КП или ссылку на 3D."]; }
+const SMN_HINT={room:"Проверьте высоту потолка, цоколь, столешницу и фартук. Впишите длину стен — внизу покажу, сколько места осталось.",mods:"Добавьте шкафы слева направо по стене. Нажмите на модуль — размеры, двери, ручки или пуш-ап, своя фурнитура.",mat:"Выберите корпус, фасады, кромку, столешницу и фурнитуру. Плитка с ⚠ — нет материала или цены.",price:"Проверьте работы и итог. Здесь же скидка клиенту, доставка и примечание для КП.",send:"Сохраните и отправьте клиенту: КП в PDF, три варианта цены или покажите 3D."};
+function smnModeBar(){ const md=smnMode(); return `<div class="smn-mode" role="group" aria-label="Как показать смету"><button type="button" data-smmode="steps" aria-pressed="${md==="steps"}">По шагам</button><button type="button" data-smmode="all" aria-pressed="${md==="all"}">Всё сразу</button></div>`; }
+function smnStepsHtml(d,c,M,sm){ const st=smnStepSt(d,c,sm), cur=S.shop.smStp||"mods", ix=SMN_STEPS.findIndex(x=>x[0]===cur), ic=k=>st[k]==="ok"?"✓":st[k]==="warn"?"!":String(SMN_STEPS.findIndex(x=>x[0]===k)+1);
+  let h=`<nav class="smn-stp" aria-label="Шаги сметы">${SMN_STEPS.map(([k,n],i)=>`<button type="button" data-stp="${k}" class="${k===cur?"cur ":""}${st[k]}" aria-current="${k===cur?"step":"false"}"><i aria-hidden="true">${ic(k)}</i><span>${n}</span></button>`).join("")}</nav>`;
+  h+=`<h2 class="smn-sth">${ix+1}. ${SMN_STEPS[ix][1]}</h2><p class="smn-hint2">${esc(SMN_HINT[cur])}</p>`;
+  let b="";
+  if(cur==="room"){ const L0=d.lin||{}; b+=`<button type="button" class="sm-room" data-act="sm-room"><span>Помещение</span><b>${+d.tiers===3?"3 яруса · ":""}потолок ${esc(String(d.H))} · цоколь ${esc(String(d.P))} · столешница ${esc(String(d.T))} · фартук ${esc(String(d.A))}</b><span class="sm-ed">✎</span></button>`+smnDims(d,false)+`<button type="button" class="sm-room" data-act="sm-lin"><span>Погонные</span><b>столешница ${smMM(L0.top)} · фартук ${smMM(L0.apron)} · цоколь ${smMM(L0.plinth)} · подсветка ${smMM(L0.led)}</b><span class="sm-ed">✎</span></button>`; if(!(d.mods||[]).length) b+=`<p class="muted">Длину стен можно вписать после того, как добавите модули.</p>`; }
+  if(cur==="mods") b+=smnModsBody(d,c,M,false).replace(/<button type="button" class="sm-room" data-act="sm-room">[\s\S]*?<\/button>/,"");
+  if(cur==="mat") b+=smnMatBody(d,c,false);
+  if(cur==="price") b+=`<details class="smn-wd"><summary>Работы · ${c.works.filter(w=>w.q>0).length} строк · клиенту ${esc(smnRub(c.wC))}</summary>${smnWorkBody(d,c)}</details>`+smnSumBody(d,c,M,false,sm);
+  if(cur==="send") b+=`<div class="smn-send">${!sm.saved||sm.dirty?`<button type="button" class="btn primary" data-act="sm-save">💾 Сохранить смету</button>`:`<p class="muted">✓ Смета сохранена</p>`}<button type="button" class="btn" data-act="sm-kp">📄 КП в PDF — отправить клиенту</button><button type="button" class="btn" data-act="sm-xvar">Сделать 3 варианта цены</button><button type="button" class="btn" data-stp3d="1">🧊 Показать 3D</button><button type="button" class="btn" data-act="sm-client">Для клиента — без внутренних цифр</button>${sm.deal?`<button type="button" class="btn" data-act="sm-sum">Сумму и ЗП — в сделку</button>`:`<button type="button" class="btn ok-btn" data-act="sm-deal">✅ Клиент согласен → в сделку</button>`}</div>`;
+  h+=`<div class="smn-stb">${b}</div>`;
+  const pv=SMN_STEPS[ix-1], nx=SMN_STEPS[ix+1];
+  h+=`<div class="smn-stn">${pv?`<button type="button" class="btn" data-stp="${pv[0]}">‹ ${pv[1]}</button>`:"<span></span>"}${nx?`<button type="button" class="btn primary" data-stp="${nx[0]}">Дальше: ${nx[1].toLowerCase()} ›</button>`:""}</div>`;
+  return h; }
+function smnAllTop(d,c,sm){ const st=smnStepSt(d,c,sm), nx=smnNext(d,c,sm), tab={room:"mods",mods:"mods",mat:"mat",price:"sum",send:"sum"};
+  return `<div class="smn-chk">${SMN_STEPS.map(([k,n],i)=>`<button type="button" class="${st[k]}" data-act="sm-tab" data-v="${tab[k]}"><i aria-hidden="true">${st[k]==="ok"?"✓":st[k]==="warn"?"!":i+1}</i>${n}</button>`).join("")}</div><p class="smn-what"><b>Что дальше:</b> ${esc(nx[1])}</p>`; }
+{ const _smnSec0=smnSec; smnSec=function(){ return S.shop._stp?"":_smnSec0.apply(this,arguments); }; }
+{ const _smnH0=smHtml; smHtml=function(){ const sm=S.shop.sm; if(!sm||sm.busy||!S.shop.full||!sm.data||S.shop.smPane==="var"||S.shop.smClient||S.shop.smView==="table"||(typeof qkIs==="function"&&qkIs(sm))) return _smnH0.apply(this,arguments);
+  const d=sm.data, steps=smnMode()==="steps"; let h;
+  if(!steps){ h=_smnH0.apply(this,arguments); const c=smCalc(d); return h.replace(/<div class="smn(?=[" ])/,smnModeBar()+smnAllTop(d,c,sm)+'$&'); }
+  const t0=S.shop.smTab; S.shop._stp=true; S.shop.smTab=""; try{ h=_smnH0.apply(this,arguments); } finally { S.shop._stp=false; S.shop.smTab=t0; }
+  const c=smCalc(d), M=smnMods(d,c);
+  h=h.replace(/<div class="smn-acts smn-acts2">[\s\S]*?<\/div>/,"").replace('<div class="smn-main">','<div class="smn-main">'+smnStepsHtml(d,c,M,sm));
+  return h.replace(/<div class="smn(?=[" ])/,smnModeBar()+'$&'); }; }
+document.addEventListener("click",ev=>{ const m=ev.target.closest&&ev.target.closest("[data-smmode]"); if(m){ S.shop.smMode=m.dataset.smmode; try{ localStorage.setItem("w24-smMode",S.shop.smMode); }catch(_){} shpRenderKeep(); return; }
+  const s=ev.target.closest&&ev.target.closest("[data-stp]"); if(s){ S.shop.smStp=s.dataset.stp; shpRenderKeep(); const n=document.querySelector(".smn-stp"); if(n) window.scrollTo(0,Math.max(0,n.getBoundingClientRect().top+window.scrollY-80)); return; }
+  const t3=ev.target.closest&&ev.target.closest("[data-stp3d]"); if(t3){ S.shop.smStp="mods"; S.shop.smMv="3d"; shpRenderKeep(); setTimeout(()=>document.getElementById("sm3d")?.scrollIntoView({block:"center"}),300); return; }
+  if(smnMode()!=="steps"||!S.shop.sm) return; const a=ev.target.closest&&ev.target.closest('[data-act="sm-tab"]'); if(!a||a.closest(".modal")) return;
+  ev.stopPropagation(); ev.preventDefault(); const v=a.dataset.v; S.shop.smStp=v==="mat"?"mat":v==="work"||v==="sum"?"price":"mods"; shpRenderKeep(); },true);
+(function(){ const st=document.createElement("style"); st.textContent=`.smn-mode{display:flex;gap:4px;margin:8px 0;padding:3px;border-radius:12px;background:var(--sunk,#111);width:max-content}.smn-mode button{min-height:40px;padding:0 16px;border:0;border-radius:10px;background:none;color:inherit;font:inherit;font-weight:600;cursor:pointer;opacity:.6}.smn-mode button[aria-pressed="true"]{background:#fff;color:#000;opacity:1}
+.smn-stp{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:6px 0 10px}.smn-stp button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 2px;border:0;border-top:4px solid rgba(255,255,255,.15);background:none;color:inherit;font:inherit;font-size:12px;cursor:pointer;opacity:.65}.smn-stp button i{font-style:normal;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.12);font-weight:700}.smn-stp button.ok{border-top-color:#30D158}.smn-stp button.ok i{background:#30D158;color:#000}.smn-stp button.warn i{background:#FFD60A;color:#000}.smn-stp button.warn{border-top-color:#FFD60A}.smn-stp button.cur{opacity:1;font-weight:700;border-top-color:#fff}
+.smn-sth{margin:4px 0 2px;font-size:24px}.smn-hint2{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:rgba(48,209,88,.12);color:#bfe9c6;font-size:14px;line-height:1.4}html[data-vt="light"] .smn-hint2{color:#14642f}
+.smn-stn{display:flex;justify-content:space-between;gap:8px;margin:16px 0 8px}.smn-stn .btn{min-height:48px;flex:1}.smn-stn .btn.primary{flex:2}
+.smn-send{display:grid;gap:8px}.smn-send .btn{min-height:48px;justify-content:flex-start;text-align:left}.smn-wd{margin:0 0 10px}.smn-wd summary{cursor:pointer;padding:10px 0;font-weight:600}
+.smn-chk{display:flex;gap:6px;overflow-x:auto;margin:6px 0}.smn-chk button{flex:none;display:flex;align-items:center;gap:6px;min-height:40px;padding:0 12px 0 6px;border-radius:999px;border:1px solid rgba(255,255,255,.15);background:none;color:inherit;font:inherit;font-size:13px;cursor:pointer}.smn-chk i{font-style:normal;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.12);font-weight:700;font-size:12px}.smn-chk .ok i{background:#30D158;color:#000}.smn-chk .warn i{background:#FFD60A;color:#000}
+.smn-what{margin:4px 0 10px;padding:10px 12px;border-radius:12px;background:rgba(255,214,10,.12);color:#ffe08a;font-size:14px}html[data-vt="light"] .smn-what{color:#7a5a00}`; document.head.appendChild(st); })();
 
 /* ---------- ДОГОВОР → ПЕЧАТЬ / PDF и МОНТАЖ БЕЗ КЛИЕНТА ----------
    Договор: шаблон владельца (brand/dogovor_shablon.html → DG_TPL), заполняется из сделки, согласованного клиентом расчёта (только цены клиента),
@@ -18523,7 +18571,7 @@ html.bg3d-light.bg3d-light .asm,html.bg3d-light.bg3d-light .asm.full,html.bg3d-l
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="0ea8635218";
+const CHK_BUILD="36f4247b58";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -19295,7 +19343,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="0ea8635218";/*cehqr-build*/
+  const BUILD="36f4247b58";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
