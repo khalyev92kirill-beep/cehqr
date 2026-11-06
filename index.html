@@ -7590,13 +7590,16 @@ function smOffK(){ return Math.max(0.3,1-Math.min(70,Math.max(0,smCfg().office))
 function smOffP(){ return Math.round((1-smOffK())*1000)/10; }
 const SM_BR=0.18, SM_KMIN=0.30, SM_KMAX=0.45, SM_WASTE=1.15, SM_SHEET=2.8*2.07, SM_T=16;
 const SM_TYPES={cornL:{n:"Угловой низ",ic:"⌟"},cornU:{n:"Угловой верх",ic:"⌝"},low:{n:"Низ",ic:"▭"},sink:{n:"Низ под мойку",ic:"◡"},drw:{n:"Низ с ящиками",ic:"☰"},up:{n:"Верх",ic:"▔"},upF:{n:"Верх до потолка",ic:"▐"},up2:{n:"Антресоль (3-й ярус)",ic:"▀"},gap:{n:"Пустое место",ic:"␣"},tall:{n:"Пенал",ic:"▯"},cab:{n:"Шкаф",ic:"▥"}};
+/* Кирилл 07.11: «смета по модулям — очень гибкая»: ручка / пуш-ап / профиль, сушилка по ширине верха, своя фурнитура в каждом модуле (+ сколько угодно) */
+const SM_DRYW=[400,450,500,600,700,800,900];
+const SM_OP={handle:"Ручка",push:"Пуш-ап",gola:"Профиль",none:"Без"};
 const SM_SLOTS=[
   {k:"body",n:"Корпус (ЛДСП)",sec:"ldsp",kind:"sheet"},{k:"front",n:"Фасады",sec:"ldsp|plit",kind:"front"},{k:"frontU",n:"Фасады верха (если другие)",sec:"ldsp|plit",kind:"front"},{k:"back",n:"Задняя стенка (ДВПО)",sec:"plit",kind:"sheet",q:"двпо"},
   {k:"edge",n:"Кромка корпуса",sec:"edge",kind:"m"},{k:"edgeF",n:"Кромка фасадов",sec:"edge",kind:"m"},{k:"top",n:"Столешница",sec:"top",kind:"lin",lin:"top"},{k:"apron",n:"Фартук",sec:"top|plit",kind:"lin",lin:"apron"},{k:"plinth",n:"Цоколь",sec:"prof",kind:"lin",lin:"plinth"},
-  {k:"hinge",n:"Петли",sec:"hinge",kind:"pc"},{k:"slide",n:"Направляющие (комплект)",sec:"drw",kind:"pc"},{k:"handle",n:"Ручки",sec:"furn",kind:"pc",q:"ручк"},
+  {k:"hinge",n:"Петли",sec:"hinge",kind:"pc"},{k:"slide",n:"Направляющие (комплект)",sec:"drw",kind:"pc"},{k:"handle",n:"Ручки",sec:"furn",kind:"pc",q:"ручк"},{k:"push",n:"Пуш-ап (толкатели)",sec:"furn",kind:"pc",q:"толкат"},{k:"gola",n:"Профиль Gola (вместо ручек)",sec:"prof|furn",kind:"pc",q:"gola"},
   {k:"legs",n:"Опоры",sec:"furn|prof",kind:"pc",q:"опор"},{k:"hang",n:"Навесы",sec:"furn",kind:"pc",q:"навес"},
   {k:"led",n:"Подсветка: лента",sec:"",kind:"lin",lin:"led",q:"лента"},{k:"ledp",n:"Подсветка: профиль",sec:"prof|furn",kind:"lin",lin:"led",q:"профиль"},
-  {k:"psu",n:"Подсветка: блок питания",sec:"",kind:"pc",q:"блок питания"},{k:"sw",n:"Подсветка: выключатель / датчик",sec:"",kind:"pc",q:"выключ"}];
+  {k:"psu",n:"Подсветка: блок питания",sec:"",kind:"pc",q:"блок питания"},{k:"sw",n:"Подсветка: выключатель / датчик",sec:"",kind:"pc",q:"выключ"}].concat(SM_DRYW.map(w=>({k:"dry"+w,n:"Сушилка "+w,sec:"furn",kind:"pc",q:"сушк "+w})));
 function smNew(o){ const cf=smCfg(); return {H:2700,P:/шкаф|прихож|гардероб|купе/i.test((o&&o.kind)||"")&&!/кухн/i.test((o&&o.kind)||"")?cf.plC:cf.plK,T:40,A:600,mods:[],lin:{top:0,apron:0,plinth:0,led:0},mat:{},k:0.38,deliv:cf.deliv,mont:null,note:"",kind:(o&&o.kind)||""}; }
 function smWallH(d){ return Math.max(300,(+d.H||2700)-(+d.P||0)-720-(+d.T||0)-(+d.A||0)); }   // от фартука до потолка
 /* кухни всегда до потолка: сверху антресоль — 40 мм, если натяжной потолок есть (d.st), 110 мм — если нет (решение Кирилла 05.11) */
@@ -7613,10 +7616,13 @@ const smIsUp=t=>/^(up|up2|upF|cornU)$/.test(t), smIsLow=t=>/^(low|sink|drw|cornL
 function smInsSet(t){ return smIsLow(t)&&t!=="drw"&&t!=="cornL"?SM_INS.low:t==="tall"||t==="cab"?SM_INS.tall:smIsUp(t)&&t!=="cornU"?SM_INS.up:null; }
 function smTop(m){ return m.top!=null?m.top:(m.t==="sink"?"sink":""); }
 /* расход по модулям: площадь корпуса/фасадов (по группам)/задних стенок (м²), кромка (м), петли, направляющие, ручки, опоры, навесы */
-function smNeed(d){ const r={body:0,front:0,back:0,edge:0,edgeF:0,hinge:0,slide:0,handle:0,legs:0,hang:0,fronts:{},fmMat:{},cut:{hob:0,sink:0},tech:{},mods:{floor:0,up:0,tall:0},w:{evro:0,shelf:0,fdoor:0,modS:0,modT:0,drw:0,mods:0}}, t=SM_T, mat=d.mat||{};
+function smNeed(d){ let r={body:0,front:0,back:0,edge:0,edgeF:0,hinge:0,slide:0,handle:0,push:0,gola:0,fx:{},legs:0,hang:0,fronts:{},fmMat:{},cut:{hob:0,sink:0},tech:{},mods:{floor:0,up:0,tall:0},w:{evro:0,shelf:0,fdoor:0,modS:0,modT:0,drw:0,mods:0}}, t=SM_T, mat=d.mat||{};
   const fkey=m=>{ if(m.fm&&(m.fm.n||m.fm.p)){ const k="fm:"+(m.fm.n||"вручную "+m.fm.p); r.fmMat[k]=m.fm; return k; } return smIsUp(m.t)&&mat.frontU&&(mat.frontU.n||mat.frontU.p)?"frontU":"front"; };
   const addF=(m,a)=>{ const k=fkey(m); r.fronts[k]=(r.fronts[k]||0)+a; r.front+=a; };
   (d.mods||[]).forEach(m=>{ if(m.t==="gap") return; const n=Math.max(0,+m.n||0), w=+m.w||0, h=+m.h||0, dp=+m.d||0; let doors=Math.max(0,+m.doors||0), sh=Math.max(0,+m.sh||0), dr=Math.max(0,+m.dr||0); if(!n||!w||!h||!dp) return;
+    const r0=r; r={__proto__:r0}; r.handle=0;   /* ручки модуля считаем отдельно, потом раскладываем по способу открывания */
+    smFxAdd(r0,m,n);
+    try{
     const top=smTop(m), ins=smInsSet(m.t)?(m.ins||""):""; if(top==="hob") r.cut.hob+=n; if(top==="sink") r.cut.sink+=n; if(ins) r.tech[ins]=(r.tech[ins]||0)+n; if(top) r.tech[top]=(r.tech[top]||0)+n;
     if(m.t==="cornL"||m.t==="cornU"){ const b=+m.w2||w, low=m.t==="cornL", pl=w*dp+Math.max(0,b-dp)*dp;   // Г-образный: две «ноги» по стенам
       const body2=2*h*dp+pl*(sh+(low?1:2))+(low?2*(w+b)*100:0), fw=Math.max(0,w-dp)+Math.max(0,b-dp);
@@ -7639,8 +7645,17 @@ function smNeed(d){ const r={body:0,front:0,back:0,edge:0,edgeF:0,hinge:0,slide:
     if(doors){ const dw=w/doors; ef+=doors*2*(dw+fh); if(!noHinge) r.hinge+=doors*(fh<=1000?2:fh<=1600?3:4)*n; r.handle+=doors*n; }
     if(ins==="oven"&&fh>0){ ef+=2*(w+fh); r.handle+=n; }
     if(dr) ef+=dr*2*(w+h/dr);
-    r.body+=body*n/1e6; r.edge+=edge*n/1000; r.edgeF+=ef*n/1000; });
+    r.body+=body*n/1e6; r.edge+=edge*n/1000; r.edgeF+=ef*n/1000;
+    } finally { const hd=r.handle; Object.keys(r).forEach(k=>{ if(k!=="handle") r0[k]=r[k]; }); r=r0; smOpAdd(r,m,hd,n,w,dr); } });
   return r; }
+function smOp(m){ return m&&SM_OP[m.op]?m.op:"handle"; }
+/* hd — сколько ручек нужно модулю (уже × n) */
+function smOpAdd(r,m,hd,n,w,dr){ const o=smOp(m); if(!hd) return; if(o==="handle") r.handle+=hd; else if(o==="push") r.push+=hd; else if(o==="gola") r.gola+=Math.max(1,dr)*n; }
+function smDryW(w){ return SM_DRYW.reduce((a,b)=>Math.abs(b-w)<Math.abs(a-w)?b:a,SM_DRYW[0]); }
+function smFxKey(f){ return String(f.n||"").trim().toLowerCase()+"|"+(f.p==null||f.p===""?"":+f.p); }
+function smFxAdd(r,m,n){ if(m.ins==="dry"&&smIsUp(m.t)){ const k="dry"+smDryW(+m.w||0); r[k]=(r[k]||0)+n; }
+  (m.fx||[]).forEach(f=>{ if(!f||!String(f.n||"").trim()) return; const k=smFxKey(f), q=(+f.q||1)*n; const o=r.fx[k]||(r.fx[k]={n:String(f.n).trim(),p:f.p,u:f.u||"шт",q:0}); o.q+=q; r["fx:"+k]=(r["fx:"+k]||0)+q; }); }
+function smFxSlots(need){ return Object.keys(need.fx||{}).map(k=>({k:"fx:"+k,n:need.fx[k].n,sec:"furn",kind:"fx",mm:{n:need.fx[k].n,p:need.fx[k].p},dyn:true})); }
 function smItem(slot,d){ const m=(d.mat||{})[slot.k]; return m&&(m.n||m.p)?m:null; }
 function smBase(name){ const b=S.sup&&S.sup.base&&S.sup.base.get(supPKey(name)); return b||null; }
 /* цена и количество по слоту: {q, u, p, sum, note} */
@@ -7665,6 +7680,8 @@ function smLine(slot,d,need){ if((slot.k==="edgeF"||slot.k==="edge")&&!smItem(sl
   else if(slot.kind==="lin"){ q=+lin[slot.lin]||0; u="м"; if(!(q>0)&&m){ q=smLinAuto(d)[slot.lin]||0; if(q) note="по модулям — поправьте в «Погонные», если иначе"; } }
   else if(slot.k==="psu"){ const ld=+smLinEff(d).led||0; q=ld>0?Math.ceil(ld/5):0; note=q?"1 на 5 м ленты":""; }
   else if(slot.k==="sw"){ q=(+smLinEff(d).led||0)>0?1:0; }
+  else if(slot.kind==="fx"){ const f=(need.fx||{})[slot.k.slice(3)]; q=f?Math.round(f.q*100)/100:0; u=f&&f.u||"шт"; note="добавлено в модулях"; }
+  else if(slot.k==="gola"){ q=need.gola||0; u="шт"; note=q?"по рядам фасадов — профиль на ширину модуля":""; }
   else q=need[slot.k]||0;
   if(m&&m.q!=null&&m.q!=="") { q=+m.q; note="количество вручную"; }
   const p=smPrice(slot,m,u); return {q,u,p,sum:Math.round(q*(p||0)),note,m}; }
@@ -7675,7 +7692,7 @@ function smPrice(slot,m,u){ if(!m) return 0; if(m.p!=null&&m.p!=="") return +m.p
 const fmtN=v=>(Math.round((+v||0)*100)/100).toLocaleString("ru-RU");
 function smMont(d,need){ const L=smLinEff(d); return need.mods.floor*1225+need.mods.up*1400+need.mods.tall*2100+((+L.top||0)>0?1500:0)+((+L.apron||0)>0?1050:0); }
 function smFmSlots(need){ return Object.keys(need.fronts).filter(k=>k.startsWith("fm:")).map(k=>({k,n:"Фасады: "+k.slice(3),sec:"ldsp|plit",kind:"front",mm:need.fmMat[k],dyn:true})); }
-function smCalc(d){ const need=smNeed(d), lines=SM_SLOTS.concat(smFmSlots(need)).map(s=>Object.assign({s},smLine(s,d,need))).filter(l=>l.q>0||l.m);
+function smCalc(d){ const need=smNeed(d), lines=SM_SLOTS.concat(smFmSlots(need),smFxSlots(need)).map(s=>Object.assign({s},smLine(s,d,need))).filter(l=>l.q>0||l.m);
   const mats=lines.reduce((a,l)=>a+l.sum,0), k=Math.min(SM_KMAX,Math.max(SM_KMIN,+d.k||0.38)), deliv=+d.deliv||0, mk=Object.assign({},smCfg().mk,d.mk||{});
   let matsK=0, ldspA=0; lines.forEach(l=>{ const g=smMkGrp(l); l.g=g; l.sumK=Math.round(l.sum*(1+(+mk[g]||0)/100)); matsK+=l.sumK; if(l.s.kind==="sheet"&&l.s.k==="body") ldspA+=need.body; if(l.s.kind==="front"&&l.u==="лист") ldspA+=need.fronts[l.s.k]||0; });
   const works=smWorks(d,need,ldspA), wC=works.reduce((a,x)=>a+x.sc,0), wM=works.reduce((a,x)=>a+x.sm,0);
@@ -7697,7 +7714,7 @@ function smMkGrp(l){ const k=l.s.k; if(k==="body"||k==="back"||k==="edge"||k==="
 function smWorks(d,need,ldspA){ const W=need.w, L=smLinEff(d), q={};
   q["R-01"]=Math.round(ldspA*100)/100; q["R-04"]=Math.round(need.back*100)/100; q["K-01"]=Math.ceil(need.edge+(need.edgeF||0)); q["PR-1"]=W.evro; q["PR-2"]=need.hinge;
   q["O-01"]=Math.round((ldspA+need.back)*100)/100; q["S-01"]=W.modS; q["S-03"]=W.modT; q["S-02"]=W.drw; q["S-04"]=W.fdoor; q["S-07"]=W.shelf; q["S-08"]=W.mods;
-  q["F-01"]=need.hinge; q["F-03"]=need.slide; q["F-04"]=need.handle; q["F-05"]=need.legs;
+  q["F-01"]=need.hinge; q["F-03"]=need.slide; q["F-04"]=need.handle+(need.push||0); q["F-05"]=need.legs;
   q["U-01"]=need.mods.floor; q["U-02"]=need.mods.up; q["U-03"]=need.mods.tall; q["U-04"]=(+L.top||0)>0?Math.ceil((+L.top)/3):0; q["U-05"]=(+L.apron||0)>0?Math.ceil((+L.apron)/3):0;
   q["U-15"]=need.cut.hob+need.cut.sink; q["U-08"]=need.cut.sink; q["U-10"]=["hob","oven","dw","fridge","hood","mw"].reduce((a,k)=>a+(need.tech[k]||0),0)+2*(need.tech.ovenmw||0);   // духовка+СВЧ — 2 прибора
   const any=W.mods>0; q["U-16"]=any?1:0; q["U-17"]=any?1:0;
@@ -7732,7 +7749,7 @@ async function smLost(){ const sm=S.shop.sm; if(!(await appConfirm("Клиент
 
 /* ---- экран (вариант А): схема модулей рядами, материалы плитками, итог с ползунком прижат снизу ---- */
 const SM_GROUPS=[{k:"body",n:"Корпус",s:["body"]},{k:"front",n:"Фасады",s:["front","frontU"],dyn:true},{k:"top",n:"Столешница",s:["top"]},{k:"apron",n:"Фартук",s:["apron"]},
-  {k:"furn",n:"Фурнитура",s:["hinge","slide","handle","legs","hang"],ic:"⚙"},{k:"led",n:"Подсветка",s:["led","ledp","psu","sw"],ic:"💡"},{k:"edge",n:"Кромка",s:["edge","edgeF"]},{k:"back",n:"Задняя стенка",s:["back"]},{k:"plinth",n:"Цоколь",s:["plinth"]}];
+  {k:"furn",n:"Фурнитура",s:["hinge","slide","handle","push","gola","legs","hang"],ic:"⚙"},{k:"dry",n:"Сушилки",s:SM_DRYW.map(w=>"dry"+w),ic:"▤"},{k:"fx",n:"Своя фурнитура модулей",s:[],dyn:true,dk:"fx",ic:"✚"},{k:"led",n:"Подсветка",s:["led","ledp","psu","sw"],ic:"💡"},{k:"edge",n:"Кромка",s:["edge","edgeF"]},{k:"back",n:"Задняя стенка",s:["back"]},{k:"plinth",n:"Цоколь",s:["plinth"]}];
 const SM_ROWS=[{k:"up2",n:"Антресоль (3-й ярус)",t:["up2"]},{k:"up",n:"Верх",t:["cornU","up","upF"]},{k:"low",n:"Низ и пеналы",t:["cornL","low","sink","drw","tall"]},{k:"cab",n:"Шкафы",t:["cab"]}];
 function smHtml(){ const sm=S.shop.sm, o=sm&&shpById(sm.deal);
   const back=`<button type="button" class="btn" data-act="sm-back">← ${S.shop.smFrom==="smetas"?"Сметы":"К заказу"}</button>`;
@@ -7764,7 +7781,7 @@ function smHtml(){ const sm=S.shop.sm, o=sm&&shpById(sm.deal);
   }
   /* материалы плитками */
   if(tb==="mat"){
-  h+=`<div class="sm-tiles">${SM_GROUPS.map(g=>{ const ls=g.s.map(k=>{ const s=SM_SLOTS.find(x=>x.k===k); return c.lines.find(x=>x.s.k===k)||Object.assign({s},smLine(s,d,c.need)); }).concat(g.dyn?c.lines.filter(x=>x.s.dyn):[]), need=ls.some(l=>l.q>0), sum=ls.reduce((a,l)=>a+l.sum,0), bad=ls.filter(l=>l.q>0&&(!l.m||!l.p)).length;
+  h+=`<div class="sm-tiles">${SM_GROUPS.map(g=>{ const ls=g.s.map(k=>{ const s=SM_SLOTS.find(x=>x.k===k); return c.lines.find(x=>x.s.k===k)||Object.assign({s},smLine(s,d,c.need)); }).concat(g.dyn?c.lines.filter(x=>x.s.dyn&&x.s.kind===(g.dk||"front")):[]), need=ls.some(l=>l.q>0), sum=ls.reduce((a,l)=>a+l.sum,0), bad=ls.filter(l=>l.q>0&&(!l.m||!l.p)).length;
       if(!need&&!ls.some(l=>l.m)&&!S.shop.smAll) return "";
       const one=g.s.length===1&&!g.dyn?ls[0]:null, m=one&&one.m, fm0=g.dyn?(ls[0].m||null):null, sw=(m||fm0)&&(m||fm0).n&&S.cat&&S.cat.data?smSw((m||fm0).n):"";
       const sub=one?(m&&m.n?esc(m.n):"не выбрано"):g.dyn?ls.filter(l=>l.q>0||l.m).map(l=>esc((l.m&&l.m.n)||"не выбрано")+" — "+fmtN(l.q)+" "+l.u).join("; "):ls.filter(l=>l.q>0).map(l=>esc(l.s.n.replace(/^Подсветка: /,"").replace(/ \(.*\)/,"").toLowerCase())+" "+fmtN(l.q)).join(", ");
@@ -7826,7 +7843,7 @@ function smLinModal(){ const d=S.shop.sm.data, L=d.lin||(d.lin={}); const F=[["t
 function smGrpModal(gk){ const g=SM_GROUPS.find(x=>x.k===gk), d=S.shop.sm.data, c=smCalc(d); if(!g) return; document.getElementById("smGrpM")?.remove();
   const x=document.createElement("div"); x.className="modal"; x.id="smGrpM";
   x.innerHTML=`<div class="modal-card" style="width:min(480px,100%)"><h2 style="margin:0 0 10px">${esc(g.n)}</h2><ul class="shp-zl">${g.s.map(k=>{ const s=SM_SLOTS.find(z=>z.k===k), l=c.lines.find(z=>z.s.k===k)||Object.assign({s},smLine(s,d,c.need)), m=l.m; if(k==="frontU"&&!m&&!l.q) return `<li><button type="button" class="shp-zli sm-sl" data-k="frontU"><span><b>Фасады верха другие?</b><small class="muted">нажмите и выберите — верх посчитается отдельно</small></span><b>+</b></button></li>`;
-      return `<li><button type="button" class="shp-zli sm-sl" data-k="${k}"><span><b>${esc(s.n.replace(/^Подсветка: /,""))}</b><small class="muted">${m&&m.n?esc(m.n):"<span class=\"sm-need\">не выбрано — нажмите</span>"}</small><small class="muted">${l.q?esc(fmtN(l.q)+" "+l.u)+(S.shop.smClient?"":(l.p?" × "+esc(shpRub(l.p)):" · нет цены")):"не нужно по модулям"}</small></span><b>${S.shop.smClient?"":l.sum?esc(shpRub(l.sum)):"—"}</b></button>${m&&m.n&&smPriceEd()?`<button type="button" class="sm-pe sm-pe2" data-pe="${esc(m.n)}" data-u="${esc(l.u==="лист"?"лист":l.u||"шт")}" title="Изменить цену в прайсе — для всех смет" aria-label="Изменить цену: ${esc(m.n)}">✎ ₽</button>`:""}</li>`; }).join("")}${g.dyn?c.lines.filter(l=>l.s.dyn).map(l=>`<li><div class="shp-zli"><span><b>${esc(l.s.n)}</b><small class="muted">свой фасад у модуля · ${esc(fmtN(l.q)+" "+l.u)}${S.shop.smClient?"":(l.p?" × "+esc(shpRub(l.p)):" · нет цены")} · менять — в окошке модуля</small></span><b>${S.shop.smClient?"":l.sum?esc(shpRub(l.sum)):"—"}</b></div></li>`).join(""):""}</ul>
+      return `<li><button type="button" class="shp-zli sm-sl" data-k="${k}"><span><b>${esc(s.n.replace(/^Подсветка: /,""))}</b><small class="muted">${m&&m.n?esc(m.n):"<span class=\"sm-need\">не выбрано — нажмите</span>"}</small><small class="muted">${l.q?esc(fmtN(l.q)+" "+l.u)+(S.shop.smClient?"":(l.p?" × "+esc(shpRub(l.p)):" · нет цены")):"не нужно по модулям"}</small></span><b>${S.shop.smClient?"":l.sum?esc(shpRub(l.sum)):"—"}</b></button>${m&&m.n&&smPriceEd()?`<button type="button" class="sm-pe sm-pe2" data-pe="${esc(m.n)}" data-u="${esc(l.u==="лист"?"лист":l.u||"шт")}" title="Изменить цену в прайсе — для всех смет" aria-label="Изменить цену: ${esc(m.n)}">✎ ₽</button>`:""}</li>`; }).join("")}${g.dyn?c.lines.filter(l=>l.s.dyn&&l.s.kind===(g.dk||"front")).map(l=>`<li><div class="shp-zli"><span><b>${esc(l.s.n)}</b><small class="muted">свой фасад у модуля · ${esc(fmtN(l.q)+" "+l.u)}${S.shop.smClient?"":(l.p?" × "+esc(shpRub(l.p)):" · нет цены")} · менять — в окошке модуля</small></span><b>${S.shop.smClient?"":l.sum?esc(shpRub(l.sum)):"—"}</b></div></li>`).join(""):""}</ul>
     <button class="btn" type="button" data-act="qr-close" style="margin-top:10px">Готово</button></div>`;
   document.body.appendChild(x);
   x.addEventListener("click",e=>{ const b=e.target.closest("[data-k]"); if(b){ x.remove(); S.shop.smGrp=gk; return smPickModal(b.dataset.k); } if(e.target===x||e.target.closest('[data-act="qr-close"]')) x.remove(); }); }
@@ -7845,19 +7862,24 @@ function smModModal(i,dr){ const d=S.shop.sm.data, room=i<0, m0=room?d:d.mods[i]
   let tiers=+d.tiers===3?3:2, stc=!!d.st, swc=+d.sw||0; const F0=x.querySelector("form"), tn=()=>{ if(!room) return; const v=k=>+String(F0.elements[k].value).replace(",",".")||0, t={H:v("H"),P:v("P"),T:v("T"),A:v("A"),U:v("U")||720,tiers,st:stc}; const wl=smWallH(t);
     F0.elements.U.closest("label").hidden=true; x.querySelector(".sm-tnote").textContent=tiers===3?`Верх ${smUpH(t)} мм + антресоль ${smUp2H(t)} мм (${stc?"натяжной потолок есть":"натяжного потолка нет"}) — до потолка.`:`Верх ${wl} мм — до потолка.`; };
   if(room){ if(!d.U) F0.elements.U.value="720"; tn(); F0.addEventListener("input",tn); x.querySelectorAll("[data-tr]").forEach(b=>b.addEventListener("click",()=>{ tiers=+b.dataset.tr; x.querySelectorAll("[data-tr]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); tn(); })); x.querySelectorAll("[data-swc]").forEach(b=>b.addEventListener("click",()=>{ swc=+b.dataset.swc; x.querySelectorAll("[data-swc]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); })); x.querySelectorAll("[data-stc]").forEach(b=>b.addEventListener("click",()=>{ stc=b.dataset.stc==="1"; x.querySelectorAll("[data-stc]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); tn(); })); }
-  let topS=smTop(m), insS=m.ins||"";
+  let topS=smTop(m), insS=m.ins||"", opS=smOp(m), fxS=JSON.parse(JSON.stringify(m.fx||[]));
+  const fxPaint=()=>{ const el=x.querySelector("[data-fxl]"); if(el) el.innerHTML=smFxList(fxS); }; fxPaint();
+  x.querySelectorAll("[data-opn]").forEach(b=>b.addEventListener("click",()=>{ opS=b.dataset.opn; x.querySelectorAll("[data-opn]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); }));
+  x.addEventListener("click",e=>{ const qb=e.target.closest("[data-fxq]"); if(qb){ const f=fxS[+qb.dataset.fxq]; if(f){ f.q=Math.max(1,Math.round((+f.q||1)+(+qb.dataset.d)));  fxPaint(); } return; }
+    const xb=e.target.closest("[data-fxx]"); if(xb){ fxS.splice(+xb.dataset.fxx,1); fxPaint(); } });
   let hsS=smHs(m); x.querySelectorAll("[data-hs]").forEach(b=>b.addEventListener("click",()=>{ hsS=b.dataset.hs; x.querySelectorAll("[data-hs]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); }));
   x.querySelectorAll("[data-tp]").forEach(b=>b.addEventListener("click",()=>{ topS=b.dataset.tp; x.querySelectorAll("[data-tp]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); }));
-  x.querySelectorAll("[data-is]").forEach(b=>b.addEventListener("click",()=>{ insS=b.dataset.is; x.querySelectorAll("[data-is]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); }));
+  x.querySelectorAll("[data-is]").forEach(b=>b.addEventListener("click",()=>{ insS=b.dataset.is; x.querySelectorAll("[data-is]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); const dn=x.querySelector(".sm-drn"); if(dn) dn.hidden=insS!=="dry"; }));
   let wall=+m.wall||1; x.querySelectorAll("[data-wl]").forEach(b=>b.addEventListener("click",()=>{ wall=+b.dataset.wl; x.querySelectorAll("[data-wl]").forEach(z=>z.setAttribute("aria-pressed",String(z===b))); }));
   const apply=()=>{ const f=F0.elements; const before=JSON.stringify(m0), n0=+m0.n||1; F.forEach(([k])=>{ m[k]=Math.max(0,Math.round(+String(f[k].value).replace(",","."))||0); });
-    if(!room){ m.wall=wall; if(f.t&&f.t.value!==m.t){ if(m.t==="gap"){ const df=smDef(f.value||f.t.value,d); Object.keys(df).forEach(k=>{ if(k!=="w"&&k!=="n") m[k]=df[k]; }); delete m.gt; } if(f.t.value==="gap") m.gt=m.t; m.t=f.t.value; if(/^corn/.test(m.t)&&!m.w2) m.w2=m.w; } m.top=smIsLow(m.t)?topS:""; m.ins=smInsSet(m.t)&&insS in smInsSet(m.t)?insS:""; m.hs=hsS; if(m.ins==="oven"){ m.sh=0; m.doors=0; m.dr=0; } if(m!==m0){ Object.keys(m0).forEach(k=>{ delete m0[k]; }); Object.assign(m0,m); } }
+    if(!room){ m.wall=wall; if(f.t&&f.t.value!==m.t){ if(m.t==="gap"){ const df=smDef(f.value||f.t.value,d); Object.keys(df).forEach(k=>{ if(k!=="w"&&k!=="n") m[k]=df[k]; }); delete m.gt; } if(f.t.value==="gap") m.gt=m.t; m.t=f.t.value; if(/^corn/.test(m.t)&&!m.w2) m.w2=m.w; } m.top=smIsLow(m.t)?topS:""; m.ins=smInsSet(m.t)&&insS in smInsSet(m.t)?insS:""; m.hs=hsS; m.op=opS; if(fxS.length) m.fx=fxS; else delete m.fx; if(m.ins==="oven"){ m.sh=0; m.doors=0; m.dr=0; } if(m!==m0){ Object.keys(m0).forEach(k=>{ delete m0[k]; }); Object.assign(m0,m); } }
     if(room){ d.tiers=tiers; d.st=stc; d.sw=swc; } if(room&&f.upd.checked){ const uh=smUpH(d), u2=smUp2H(d), th=Math.max(1200,(+d.H||0)-(+d.P||0)); d.mods.forEach(z=>{ if(z.t==="up") z.h=uh; if(z.t==="up2") z.h=u2; if(z.t==="upF") z.h=smWallH(d); if(z.t==="tall"||z.t==="cab") z.h=th; }); }
     if(!room&&n0>1&&+m0.n===n0){ const nm=JSON.parse(JSON.stringify(m0)); if(JSON.stringify(Object.assign({},nm,{n:n0}))!==before){ const old=JSON.parse(before); old.n=n0-1; nm.n=1; d.mods.splice(i,1,old,nm); } }
     S.shop.sm.dirty=true; };
   x.querySelectorAll("[data-vt]").forEach(b=>b.addEventListener("click",()=>{ const f=F0.elements, c=JSON.parse(JSON.stringify(m)); F.forEach(([k])=>{ c[k]=Math.max(0,Math.round(+String(f[k].value).replace(",","."))||0); }); c.wall=wall; c.top=smIsLow(c.t)?topS:""; c.ins=insS;
     const y=x.querySelector(".modal-card").scrollTop; x.remove(); smModModal(i,smVidSwap(c,b.dataset.vt,d)); const z=document.querySelector("#smModM .modal-card"); if(z) z.scrollTop=y; document.querySelector(`#smModM [data-vt="${b.dataset.vt}"]`)?.focus(); }));
   x.addEventListener("click",e=>{ const xb=e.target.closest("[data-x]"); if(xb){ const a=xb.dataset.x;
+      if(a==="fxadd"){ smFxPick(f=>{ const j=fxS.findIndex(z=>smFxKey(z)===smFxKey(f)); if(j>=0) fxS[j].q=(+fxS[j].q||1)+f.q; else fxS.push(f); fxPaint(); }); return; }
       if(a==="fm"){ apply(); x.remove(); shpRenderKeep(); return smPickModal("mod:"+i); }
       if(a==="fm0"){ apply(); delete m0.fm; x.remove(); return shpRenderKeep(); }
       if(a==="del"){ if(m0.t==="gap") d.mods.splice(i,1); else { const gap={t:"gap",gt:/^corn/.test(m0.t)?m0.t:m0.t,w:m0.w,wall:m0.wall,n:1}; if((+m0.n||1)>1){ m0.n-=1; d.mods.splice(i+1,0,gap); } else d.mods.splice(i,1,gap); } } else if(a==="dup") d.mods.splice(i+1,0,Object.assign({},m0,{n:1})); else { const j=a==="l"?i-1:i+1; if(j<0||j>=d.mods.length) return; [d.mods[i],d.mods[j]]=[d.mods[j],d.mods[i]]; }
@@ -7868,8 +7890,37 @@ function smModModal(i,dr){ const d=S.shop.sm.data, room=i<0, m0=room?d:d.mods[i]
 function smHs(m){ return m&&/^(L|R|LR)$/.test(m.hs)?m.hs:((+(m&&m.doors)||0)>=2?"LR":"L"); }
 function smModExtra(m,i){ const ins=smInsSet(m.t), top=smTop(m), seg=(attr,obj,cur,lab)=>`<p class="sm-ml">${lab}</p><div class="shp-seg shp-wseg sm-seg2" role="group" aria-label="${lab}">${Object.keys(obj).map(k=>`<button type="button" data-${attr}="${k}" aria-pressed="${k===cur}">${esc(obj[k])}</button>`).join("")}</div>`;
   const hsSeg=m.t!=="gap"&&!(m.ins==="oven")?seg("hs",{L:"◧ Петли слева",LR:"◧◨ Парами",R:"◨ Петли справа"},smHs(m),"Двери открываются (для показа клиенту)"):"";
-  return hsSeg+`<p class="sm-ml">Фасад</p><div class="sm-fm">${m.fm&&(m.fm.n||m.fm.p)?`<button type="button" class="btn sm" data-x="fm">✎ ${esc(m.fm.n||"вручную")}</button><button type="button" class="btn sm" data-x="fm0">Как у кухни</button>`:`<span class="muted">как у всей кухни</span><button type="button" class="btn sm" data-x="fm">Другой фасад…</button>`}</div>
-    ${smIsLow(m.t)?seg("tp",SM_TOPS,top,"Сверху, на столешнице"):""}${ins?seg("is",ins,m.ins||"",m.t==="tall"||m.t==="cab"?"Внутри пенала":smIsUp(m.t)?"Внутри верха":"Внутри"):""}`; }
+  const hasF=m.t!=="gap"&&((+m.doors||0)+(+m.dr||0)>0||/^corn/.test(m.t)||m.ins==="dw");
+  const opSeg=hasF?seg("opn",SM_OP,smOp(m),"Как открываются (ручка, пуш-ап, профиль)"):"";
+  return hsSeg+opSeg+`<p class="sm-ml">Фасад</p><div class="sm-fm">${m.fm&&(m.fm.n||m.fm.p)?`<button type="button" class="btn sm" data-x="fm">✎ ${esc(m.fm.n||"вручную")}</button><button type="button" class="btn sm" data-x="fm0">Как у кухни</button>`:`<span class="muted">как у всей кухни</span><button type="button" class="btn sm" data-x="fm">Другой фасад…</button>`}</div>
+    ${smIsLow(m.t)?seg("tp",SM_TOPS,top,"Сверху, на столешнице"):""}${ins?seg("is",ins,m.ins||"",m.t==="tall"||m.t==="cab"?"Внутри пенала":smIsUp(m.t)?"Внутри верха":"Внутри"):""}${smIsUp(m.t)?`<p class="muted sm-drn"${m.ins==="dry"?"":" hidden"}>Сушилка подберётся по ширине модуля: <b>${smDryW(+m.w||0)} мм</b>. Цену выберите в «Материалы → Сушилки».</p>`:""}
+    ${m.t==="gap"?"":`<p class="sm-ml">Фурнитура этого модуля</p><div class="sm-fx" data-fxl></div><button type="button" class="btn sm sm-fxadd" data-x="fxadd">+ Добавить фурнитуру</button>`}`; }
+/* список своей фурнитуры в окне модуля */
+function smFxList(L){ return L.length?`<ul class="sm-fxl">${L.map((f,j)=>`<li><span><b>${esc(f.n)}</b><small class="muted">${f.p!=null&&f.p!==""?esc(shpRub(+f.p))+" за "+esc(f.u||"шт"):"цена из базы"}</small></span><span class="sm-fxq"><button type="button" data-fxq="${j}" data-d="-1" aria-label="Меньше">−</button><b>${esc(fmtN(f.q||1))}</b><button type="button" data-fxq="${j}" data-d="1" aria-label="Больше">+</button></span><button type="button" class="sm-fxx" data-fxx="${j}" aria-label="Убрать ${esc(f.n)}">×</button></li>`).join("")}</ul>`:`<p class="muted" style="margin:2px 0 6px">Петли, ручки и направляющие считаются сами. Сюда — всё остальное: карго, подъёмник, лоток, доводчик…</p>`; }
+/* выбор фурнитуры: база Базиса (разделы, фирмы, поиск), частые — одним нажатием, или своё вручную */
+const SM_FXQ=["Ручка","Толкатель","Сушка","Карго","Подъёмник","Лоток","Доводчик","Корзина"];
+function smFxPick(cb){ if(typeof catLoad==="function") catLoad(); document.getElementById("smFxM")?.remove(); const x=document.createElement("div"); x.className="modal"; x.id="smFxM"; let q="", sec="", br="", pick=null, own=false;
+  const draw=()=>{ const D=S.cat&&S.cat.data, w=q.split(/\s+/).filter(Boolean);
+    x.querySelector(".modal-card").innerHTML=`<h2 style="margin:0 0 4px">Добавить фурнитуру</h2><p class="muted" style="margin:0 0 8px">Из базы Базиса или вручную. Количество — на один модуль.</p>
+      ${own?`<div class="sm-grid" style="grid-template-columns:2fr 1fr 1fr"><label>Название<input class="sm-in" name="n" maxlength="80" placeholder="Подъёмник Aventos"></label><label>Цена, ₽<input class="sm-in" name="p" inputmode="decimal"></label><label>Сколько<input class="sm-in" name="q" inputmode="decimal" value="1"></label></div>`
+      :`<input class="ca-q" type="search" placeholder="Поиск: сушка, карго, подъёмник…" aria-label="Поиск" value="${esc(q)}"><div class="cat-chips smo-brs">${SM_FXQ.map(t=>`<button type="button" class="chip${q===t.toLowerCase()?" on":""}" data-fq="${esc(t.toLowerCase())}">${esc(t)}</button>`).join("")}</div>
+      <div class="sm-pl">${D&&typeof smnOptMat==="function"?smnOptMat(D,w,sec,br,pick):'<p class="muted">Загружаю базу…</p>'}</div>
+      ${pick?`<div class="sm-grid" style="grid-template-columns:2fr 1fr"><label>Название<input class="sm-in" name="n" maxlength="80" value="${esc(pick.nm)}"></label><label>Сколько на модуль<input class="sm-in" name="q" inputmode="decimal" value="1"></label></div>`:""}`}
+      <div class="smn-acts"><button type="button" class="btn primary" data-f="add"${pick||own?"":" disabled"}>Добавить</button><button type="button" class="btn" data-f="own">${own?"← Из базы":"+ Своё вручную"}</button><button type="button" class="btn" data-f="close">Закрыть</button></div>`;
+    if(!D&&!own) setTimeout(()=>{ if(document.body.contains(x)&&!x.querySelector(".sm-it")) draw(); },600); };
+  x.innerHTML=`<div class="modal-card sm-pick"></div>`; document.body.appendChild(x); draw();
+  x.addEventListener("input",e=>{ if(e.target.classList.contains("ca-q")){ q=e.target.value.toLowerCase().replace(/ё/g,"е"); const p=e.target.selectionStart; clearTimeout(x._t); x._t=setTimeout(()=>{ draw(); const i=x.querySelector(".ca-q"); if(i){ i.focus(); i.setSelectionRange(p,p); } },200); } });
+  x.addEventListener("click",e=>{ const fq=e.target.closest("[data-fq]"); if(fq){ q=q===fq.dataset.fq?"":fq.dataset.fq; sec=""; pick=null; return draw(); }
+    const sc=e.target.closest("[data-sec]"); if(sc){ sec=sc.dataset.sec; br=""; pick=null; return draw(); }
+    const bb=e.target.closest("[data-br]"); if(bb){ br=bb.dataset.br; pick=null; return draw(); }
+    const it=e.target.closest(".sm-it"); if(it){ pick={nm:it.dataset.nm,u:it.dataset.u||"шт"}; draw(); x.querySelector("[name=q]")?.focus(); return; }
+    const fb=e.target.closest("[data-f]"); if(!fb){ if(e.target===x) x.remove(); return; }
+    const a=fb.dataset.f, g=n=>x.querySelector(`[name=${n}]`), num=v=>+String(v||"").replace(/\s/g,"").replace(",",".");
+    if(a==="own"){ own=!own; pick=null; return draw(); }
+    if(a==="add"){ const n=(g("n")&&g("n").value.trim())||(pick&&pick.nm)||""; if(!n){ g("n")&&g("n").focus(); return; } const qq=Math.max(0.01,num(g("q").value)||1), p=own&&g("p").value.trim()!==""?num(g("p").value):"";
+      x.remove(); return cb({n,q:qq,u:(pick&&pick.u)||"шт",p}); }
+    if(a==="close") x.remove(); }); }
+(function(){ const st=document.createElement("style"); st.textContent=`.sm-fxl{list-style:none;margin:0 0 6px;padding:0}.sm-fxl li{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}.sm-fxl li>span:first-child{flex:1;min-width:0}.sm-fxl small{display:block;font-size:12px}.sm-fxq{display:flex;align-items:center;gap:6px}.sm-fxq button,.sm-fxx{min-width:40px;min-height:40px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit;font-size:18px;cursor:pointer}.sm-fxq b{min-width:22px;text-align:center}.sm-fxadd{width:100%;min-height:44px;border-style:dashed}.sm-drn{font-size:13px;margin:6px 0}`; document.head.appendChild(st); })();
 /* ---- выбор материала: из базы Базиса (как «Материалы») или вручную ---- */
 function smPickModal(k,qo){ const d=S.shop.sm.data, mi=qo?-1:String(k).startsWith("mod:")?+String(k).slice(4):-1, s=qo?qo.s:mi>=0?{k,n:"Фасад этого модуля",sec:"ldsp|plit",kind:"front"}:SM_SLOTS.find(x=>x.k===k), cur=(qo?qo.cur:mi>=0?(d.mods[mi]||{}).fm:(d.mat||{})[k])||{}; if(!s) return;   /* qo — быстрая смета (site_qk.js): свой раздел и куда положить */
   if(typeof catLoad==="function") catLoad();
@@ -15230,8 +15281,8 @@ function smnName(m){ if(m.t==="gap") return "Пустое место"; if(m.lib&
 function smnSize(m){ return /^corn/.test(m.t)?`${+m.w||0}/${+m.w2||+m.w||0}×${+m.h||0}×${+m.d||0}`:`${+m.w||0}×${+m.h||0}×${+m.d||0}`; }
 function smnDesc(m){ const a=[], dr=+m.dr||0, dv=+m.doors||0, sh=+m.sh||0, pl=(n,f)=>n+" "+(n%10===1&&n%100!==11?f[0]:n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?f[1]:f[2]);
   if(dv) a.push(pl(dv,["дверь","двери","дверей"])); if(dr) a.push(pl(dr,["ящик","ящика","ящиков"])); if(sh) a.push(pl(sh,["полка","полки","полок"]));
-  const tl={hob:"под варочную",sink:"под мойку",oven:"под духовку",dw:"под посудомойку",ovenmw:"духовка + СВЧ",fridge:"под холодильник",boiler:"под бойлер",hood:"над вытяжкой",dry:"сушка",mw:"ниша СВЧ"};
-  const tp=smTop(m); if(tp&&tl[tp]&&m.t!=="sink") a.push(tl[tp]); if(m.ins&&tl[m.ins]) a.push(tl[m.ins]); if(m.lib) a.push("из библиотеки"); return a.join(", "); }
+  const tl={hob:"под варочную",sink:"под мойку",oven:"под духовку",dw:"под посудомойку",ovenmw:"духовка + СВЧ",fridge:"под холодильник",boiler:"под бойлер",hood:"над вытяжкой",dry:"сушилка "+(typeof smDryW==="function"?smDryW(+m.w||0):""),mw:"ниша СВЧ"};
+  const tp=smTop(m); if(tp&&tl[tp]&&m.t!=="sink") a.push(tl[tp]); if(m.ins&&tl[m.ins]) a.push(tl[m.ins]); if(m.lib) a.push("из библиотеки"); if(m.op==="push") a.push("пуш-ап"); else if(m.op==="gola") a.push("профиль"); else if(m.op==="none") a.push("без ручек"); if(m.fx&&m.fx.length) a.push("+ "+m.fx.length+" фурн."); return a.join(", "); }
 /* каталог модулей: готовые заготовки на основе тех же типов (smDef) — размеры и расход считает движок */
 const SMN_CT=[["low","Нижние"],["up","Верхние"],["tall","Пеналы"],["corn","Угловые"],["cab","Шкафы"],["lib","Из библиотеки"]];
 const SMN_PRE=[
@@ -15248,7 +15299,7 @@ const SMN_PRE=[
 const SMN_WS={low:[300,400,450,500,600,800],sink:[600,800,900],drw:[300,400,450,500,600,800],up:[300,400,450,500,600,800],upF:[400,500,600,800],up2:[400,500,600,800],tall:[400,450,500,600],cab:[800,1000,1200,1600,2000]};
 /* ---- расчёт по модулям: доля каждой строки материалов и работ — по вкладу модуля; «Общее по заказу» = мебель − сумма модулей ---- */
 function smnShare(l,nm,need){ const k=l.s.k; let a=0,b=0;
-  if(l.s.kind==="front"){ a=nm.fronts[k]||0; b=need.fronts[k]||0; } else if(k==="body"||k==="back"||k==="edge"||k==="edgeF"||["hinge","slide","handle","legs","hang"].includes(k)){ a=nm[k]||0; b=need[k]||0; } else return 0;
+  if(l.s.kind==="front"){ a=nm.fronts[k]||0; b=need.fronts[k]||0; } else if(typeof need[k]==="number"){ a=nm[k]||0; b=need[k]||0; } else return 0;
   return b>0?a/b:0; }
 function smnMods(d,c){ const offK=smOffK(), out=[]; let sum=0;
   (d.mods||[]).forEach((m,i)=>{ if(m.t==="gap"||!(+m.n>0)){ out.push(null); return; }
@@ -15347,7 +15398,7 @@ function smnModsBody(d,c,M,cm){ const mv=S.shop.smMv||"cards", mat=d.mat||{}, nm
   if(M.common>0||(d.lin&&(+d.lin.top||+d.lin.apron||+d.lin.plinth||+d.lin.led))) h+=`<div class="smn-com2"><div class="smn-ch"><b>Общее по заказу</b><b>${esc(smnRub(M.common))}</b></div>${smnCommonHtml(d,c,M)}</div>`;
   const L0=d.lin||{}; h+=`<button type="button" class="sm-room" data-act="sm-lin"><span>Погонные</span><b>столешница ${smMM(L0.top)} · фартук ${smMM(L0.apron)} · цоколь ${smMM(L0.plinth)} · подсветка ${smMM(L0.led)}</b><span class="sm-ed">✎</span></button>`;
   return h; }
-function smnMatBody(d,c,cm){ let h=`<div class="sm-tiles smn-mats">${SM_GROUPS.map(g=>{ const ls=g.s.map(k=>{ const s=SM_SLOTS.find(x=>x.k===k); return c.lines.find(x=>x.s.k===k)||Object.assign({s},smLine(s,d,c.need)); }).concat(g.dyn?c.lines.filter(x=>x.s.dyn):[]), need=ls.some(l=>l.q>0), sum=ls.reduce((a,l)=>a+(l.sumK||0),0), sumR=ls.reduce((a,l)=>a+l.sum,0), bad=ls.filter(l=>l.q>0&&(!l.m||!l.p)).length;
+function smnMatBody(d,c,cm){ let h=`<div class="sm-tiles smn-mats">${SM_GROUPS.map(g=>{ const ls=g.s.map(k=>{ const s=SM_SLOTS.find(x=>x.k===k); return c.lines.find(x=>x.s.k===k)||Object.assign({s},smLine(s,d,c.need)); }).concat(g.dyn?c.lines.filter(x=>x.s.dyn&&x.s.kind===(g.dk||"front")):[]), need=ls.some(l=>l.q>0), sum=ls.reduce((a,l)=>a+(l.sumK||0),0), sumR=ls.reduce((a,l)=>a+l.sum,0), bad=ls.filter(l=>l.q>0&&(!l.m||!l.p)).length;
       if(!need&&!ls.some(l=>l.m)&&!S.shop.smAll) return "";
       const one=g.s.length===1&&!g.dyn?ls[0]:null, m=one&&one.m, fm0=g.dyn?(ls[0].m||null):null, sw=(m||fm0)&&(m||fm0).n&&S.cat&&S.cat.data?smSw((m||fm0).n):"";
       const sub=one?(m&&m.n?esc(m.n):"не выбрано"):g.dyn?ls.filter(l=>l.q>0||l.m).map(l=>esc((l.m&&l.m.n)||"не выбрано")+" — "+fmtN(l.q)+" "+l.u).join("; "):ls.filter(l=>l.q>0).map(l=>esc(l.s.n.replace(/^Подсветка: /,"").replace(/ \(.*\)/,"").toLowerCase())+" "+fmtN(l.q)).join(", ");
@@ -18471,7 +18522,7 @@ html.bg3d-light.bg3d-light .asm,html.bg3d-light.bg3d-light .asm.full,html.bg3d-l
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="1480c9c16d";
+const CHK_BUILD="0ea8635218";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -18808,7 +18859,7 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
      всего приложения через CSS zoom: старые iOS по-разному считают координаты пальца и деталей. На айфонах уменьшаем по-другому —
      ширина страницы (как будто экран на 14 % шире): вид тот же, а координаты везде честные. */
   try{ const ios=/iPhone|iPad|iPod/.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
-    if(ios){ document.documentElement.classList.add("ios-nz"); st.textContent=st.textContent.split("html.vt.sk.sk.sk body{zoom:.86}").join("html.vt.sk.sk.sk:not(.ios-nz) body{zoom:.86}");
+    if(ios){ document.documentElement.classList.add("ios-nz"); /* страница шире экрана в 1/0,86 раза → шрифт поля 16 px на экране выглядит как 13,8 px, и айфон сам приближает при вводе. 19 px ≈ 16 px на экране — не приближает */ st.textContent+="html.ios-nz input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),html.ios-nz select,html.ios-nz textarea{font-size:19px!important}"; st.textContent=st.textContent.split("html.vt.sk.sk.sk body{zoom:.86}").join("html.vt.sk.sk.sk:not(.ios-nz) body{zoom:.86}");
       const vp=()=>{ const m=document.querySelector('meta[name="viewport"]'); if(!m) return; const land=Math.abs(window.orientation||0)===90||innerWidth>innerHeight, sw=land?Math.max(screen.width,screen.height):Math.min(screen.width,screen.height);
         const c=`width=${Math.round(sw/0.86)},viewport-fit=cover`; if(m.getAttribute("content")!==c) m.setAttribute("content",c); };
       vp(); addEventListener("orientationchange",()=>setTimeout(vp,60)); } }catch(_){}
@@ -19001,6 +19052,8 @@ function plFilter(){ const i=$("#plQ"), b=$("#plBody"); if(!i||!b) return; const
   function unzoom(){ const vv=window.visualViewport; if(!vv||vv.scale<=1.02) return; const m=document.querySelector('meta[name="viewport"]'); if(!m) return;
     const c0=m.getAttribute("content"); if(/maximum-scale/.test(c0)) return; m.setAttribute("content",c0+",maximum-scale=1"); setTimeout(()=>m.setAttribute("content",c0),400); }
   if(window.visualViewport) visualViewport.addEventListener("resize",()=>{ if(full()) unzoom(); });
+  /* Кирилл 07.11: «ввёл цифру — экран приблизился и так и остался». После ввода (поле потеряло фокус и новое не выбрано) — возвращаем обычный масштаб */
+  document.addEventListener("focusout",()=>setTimeout(()=>{ const a=document.activeElement; if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return; unzoom(); },250));
   new MutationObserver(()=>{ if(full()) unzoom(); }).observe(document.body,{attributes:true,attributeFilter:["class"]});
 })();
 // обновить страницу: свежий список, заказы и картинки (в приложении с иконкой нет кнопки браузера)
@@ -19241,7 +19294,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="1480c9c16d";/*cehqr-build*/
+  const BUILD="0ea8635218";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
