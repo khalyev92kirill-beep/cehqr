@@ -18808,7 +18808,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="c65ad6145f";
+const CHK_BUILD="44b74497c6";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -19179,6 +19179,46 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
       if(q.size&&!tm) tm=setTimeout(flush,120); }).observe(document.body,{childList:true,subtree:true,characterData:true}); };
   if(document.body) go(); else document.addEventListener("DOMContentLoaded",go);
 })();
+
+/* ===== Кирилл 07.11: «кнопка Назад везде возвращает туда, откуда пришли».
+   Приложение запоминает экраны по порядку (как браузер). Любая кнопка «Назад» / «‹ …» / «← …» возвращает на предыдущий экран
+   с тем же местом прокрутки. Если запомненного нет — кнопка работает как раньше. ===== */
+const BK={st:[],cur:null,key:"",busy:false};
+function bkSnap(){ const sh=S.shop||{};
+  return {view:S.view,oid:S.current&&S.current.orderId||"",part:S.partCode||"",dq:!!S.dqFull,op:S.op?S.op.sec||null:null,bs:!!S.backShop,
+    shop:{mode:sh.mode||"",cur:sh.cur||"",otab:sh.otab||"",chTab:sh.chTab||"",smFrom:sh.smFrom||"",back:sh.back||""},y:window.scrollY}; }
+function bkKey(s){ return [s.view,(s.view==="order"||s.view==="part")?s.oid:"",s.view==="part"?s.part:"",s.view==="order"?(s.dq?"3d":"p")+"|"+(s.op||""):"",s.view==="shop"?s.shop.mode+"|"+(/^(order|smeta|form|client)$/.test(s.shop.mode)?s.shop.cur:""):""].join("~"); }
+function bkTrack(){ if(BK.busy) return; const s=bkSnap(), k=bkKey(s); if(!BK.key){ BK.key=k; BK.cur=s; return; }
+  if(k===BK.key){ BK.cur=Object.assign(s,{y:BK.cur?BK.cur.y:s.y}); return; }
+  if(BK.cur){ BK.st.push(BK.cur); if(BK.st.length>40) BK.st.shift(); }
+  /* шаг «туда-обратно» (A → B → A) не копим: возвращаемся к A */
+  const n=BK.st.length; if(n>=2&&bkKey(BK.st[n-2])===k){ BK.st.splice(n-2,2); }
+  BK.key=k; BK.cur=s; }
+/* место прокрутки уходящего экрана — до перерисовки */
+{ const _bkR=render; render=function(){ if(BK.cur&&!BK.busy) BK.cur.y=window.scrollY; const r=_bkR.apply(this,arguments); try{ bkTrack(); }catch(e){ console.error(e); } return r; }; }
+function bkRestore(s){ BK.busy=true;
+  try{ const sh=S.shop;
+    if(s.view==="shop"&&sh){ Object.assign(sh,{mode:s.shop.mode,cur:s.shop.cur,otab:s.shop.otab||sh.otab,chTab:s.shop.chTab||sh.chTab,smFrom:s.shop.smFrom||sh.smFrom,back:s.shop.back||sh.back}); S.view="shop"; document.body.classList.remove("has-full"); if(typeof disposeAsm==="function") disposeAsm(); render(); }
+    else if(s.view==="part"&&s.part){ goPart(s.part); }
+    else if(s.view==="order"&&s.oid){ if(!S.current||S.current.orderId!==s.oid) openOrder(s.oid); S.dqOid=s.oid; S.dqFull=s.dq; S.backShop=s.bs; if(S.op) S.op.sec=s.op; S.fvWin=false;
+      document.body.classList.toggle("has-full",!!s.dq); try{ history.replaceState(null,"",location.pathname+location.search+"#"+s.oid); }catch(_){} S.view="order"; render(); }
+    else if(s.view==="orders"){ try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){} setView("orders"); }
+    else { S.view=s.view; render(); }
+  } finally { BK.busy=false; }
+  BK.cur=bkSnap(); BK.key=bkKey(BK.cur); const y=s.y||0; requestAnimationFrame(()=>window.scrollTo(0,y)); setTimeout(()=>window.scrollTo(0,y),120); }
+function bkBack(){ while(BK.st.length){ const s=BK.st.pop(); if(bkKey(s)!==BK.key){ bkRestore(s); return true; } } return false; }
+function bkIsBack(t){ if(!t||t.closest(".modal,.csf,.smn-stp,.smn-stn,.pnav,.qk-fbar,.dq-menu,[data-stp],[data-x],#qkInM,.cut-sheet")) return false;
+  const a=t.getAttribute("data-act")||"", op=t.getAttribute("data-op")||"";
+  if(/^(sm-back|shp-back|inb-back|dq-close)$/.test(a)||op==="back") return true;
+  if(t.closest("[data-act],[data-op]")&&!a) return false;
+  const tx=(t.textContent||"").trim(), al=t.getAttribute("aria-label")||"";
+  if(/предыдущ|следующ/i.test(al)) return false;
+  return /^(‹|←|<)\s*\S/.test(tx)||/^назад$/i.test(tx)||/^назад/i.test(al); }
+window.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.closest("button,a,[data-act],[data-op]"); if(!t||!bkIsBack(t)||!BK.st.length) return;
+  /* несохранённая смета: спросить, как раньше (черновик всё равно останется в памяти телефона) */
+  const sm=S.shop&&S.shop.sm; if(S.view==="shop"&&S.shop.mode==="smeta"&&sm&&sm.dirty&&t.getAttribute("data-act")==="sm-back"){ e.preventDefault(); e.stopImmediatePropagation(); if(!(await appConfirm("Смета не сохранена. Выйти без сохранения? Её можно будет вернуть на «Сметы».","Выйти"))) return; bkBack()||render(); return; }
+  if(document.body.classList.contains("has-full")&&t.getAttribute("data-act")==="dq-close"&&S.asmOrder&&S.asmOrder.oid&&/^QK/i.test(S.asmOrder.oid||"")) return;   /* 3D черновика быстрой сметы — у него свой «Назад» в смету */
+  e.preventDefault(); e.stopImmediatePropagation(); if(!bkBack()) { BK.st=[]; t.click(); } },true);
 
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
@@ -19581,7 +19621,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="c65ad6145f";/*cehqr-build*/
+  const BUILD="44b74497c6";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
