@@ -15854,6 +15854,27 @@ async function smnMyAdd(m){ const c=JSON.parse(JSON.stringify(m)); ["n","wall","
   if(ex>=0){ if(!(await appConfirm(`«${nm}» уже есть в «Мои». Заменить?`,"Заменить",false))) return; L[ex]={k:L[ex].k,n:nm,m:c}; } else L.push({k,n:nm,m:c});
   if(await smnMySave(L)) toast("Сохранено в «Мои модули»: "+nm); }
 (function(){ const st=document.createElement("style"); st.textContent=`.smn-mydel{min-width:40px;min-height:40px;border-radius:10px;border:1px solid var(--line);background:none;color:inherit;font-size:18px;cursor:pointer;margin-right:6px}.sm-mysave{width:100%;min-height:46px;margin-top:10px}`; document.head.appendChild(st); })();
+/* ---- Кирилл 07.11: «посчитали, случайно потянули вниз — страница обновилась, всё пропало».
+   1) несохранённая смета каждые 2 с кладётся в память телефона; после обновления на «Сметы» — «Вернуть несохранённую смету»;
+   2) страница не обновляется сама, если потянуть вниз (там, где телефон это позволяет). ---- */
+const SMD_K="w24-smDraft";
+function smdGet(){ try{ const v=JSON.parse(localStorage.getItem(SMD_K)||"null"); return v&&v.sm&&v.sm.data&&Date.now()-v.when<7*864e5?v:null; }catch(_){ return null; } }
+let smdLast="";
+setInterval(()=>{ try{ const sm=S.shop&&S.shop.sm; if(!sm||!sm.data||sm.busy) return;
+  if(!sm.dirty){ const d=smdGet(); if(d&&(d.sm.id||"")===(sm.id||"")&&(d.sm.client||"")===(sm.client||"")){ localStorage.removeItem(SMD_K); smdLast=""; } return; }
+  const o={when:Date.now(),sm:{id:sm.id||"",deal:sm.deal||"",client:sm.client||"",phone:sm.phone||"",kind:sm.kind||"",status:sm.status||"",data:sm.data,saved:sm.saved||null}}, js=JSON.stringify(o.sm);
+  if(js===smdLast) return; smdLast=js; localStorage.setItem(SMD_K,JSON.stringify(o)); }catch(_){} },2000);
+if(typeof smListHtml==="function"){ const _smdL=smListHtml; smListHtml=function(){ const h=_smdL.apply(this,arguments), d=smdGet(); if(!d||(S.shop.sm&&S.shop.sm.dirty)) return h;
+  const t=new Date(d.when).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const b=`<div class="smd-ban" role="status"><b>Есть несохранённая смета</b><span>${esc([d.sm.kind,d.sm.client].filter(Boolean).join(" · ")||"без названия")} · ${esc(t)}</span><div class="smd-acts"><button type="button" class="btn primary" data-smd="open">Вернуть и продолжить</button><button type="button" class="btn" data-smd="drop">Удалить</button></div></div>`;
+  const i=h.indexOf('<div class="sm-tf'); return i>0?h.slice(0,i)+b+h.slice(i):b+h; }; }
+document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.closest("[data-smd]"); if(!b) return; e.preventDefault(); e.stopPropagation(); const d=smdGet(); if(!d) return shpRenderKeep();
+  if(b.dataset.smd==="drop"){ if(!(await appConfirm("Удалить несохранённую смету? Вернуть будет нельзя.","Удалить",true))) return; try{ localStorage.removeItem(SMD_K); }catch(_){} return shpRenderKeep(); }
+  S.shop.sm=Object.assign({},d.sm,{dirty:true,busy:false}); S.shop.cur=d.sm.id||""; S.shop.smFrom="smetas"; S.shop.smAll=false; S.shop.mode="smeta"; window.scrollTo(0,0);
+  if(typeof catLoad==="function") catLoad(); if(!S.sup.priceOk&&typeof supPriceLoad==="function") supPriceLoad().then(()=>shpRenderKeep()); shpRenderKeep(); toast("Смета вернулась — не забудьте «Сохранить»"); },true);
+/* при уходе со страницы с несохранённой сметой — спросить (на компьютере) и сразу записать черновик */
+window.addEventListener("beforeunload",e=>{ const sm=S.shop&&S.shop.sm; if(sm&&sm.dirty&&sm.data){ try{ localStorage.setItem(SMD_K,JSON.stringify({when:Date.now(),sm:{id:sm.id||"",deal:sm.deal||"",client:sm.client||"",phone:sm.phone||"",kind:sm.kind||"",status:sm.status||"",data:sm.data,saved:sm.saved||null}})); }catch(_){} } });
+(function(){ const st=document.createElement("style"); st.textContent=`html,body{overscroll-behavior-y:none}.smd-ban{display:grid;gap:6px;margin:10px 0;padding:12px 14px;border-radius:14px;background:rgba(255,214,10,.12);border:1px solid rgba(255,214,10,.4)}.smd-ban b{color:#FFD60A}.smd-acts{display:flex;gap:8px;flex-wrap:wrap}.smd-acts .btn{min-height:44px}html[data-vt="light"] .smd-ban b{color:#7a5a00}`; document.head.appendChild(st); })();
 
 /* ---------- ДОГОВОР → ПЕЧАТЬ / PDF и МОНТАЖ БЕЗ КЛИЕНТА ----------
    Договор: шаблон владельца (brand/dogovor_shablon.html → DG_TPL), заполняется из сделки, согласованного клиентом расчёта (только цены клиента),
@@ -18788,7 +18809,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="129de8c395";
+const CHK_BUILD="c65ad6145f";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -19561,7 +19582,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="129de8c395";/*cehqr-build*/
+  const BUILD="c65ad6145f";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
