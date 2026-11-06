@@ -17232,6 +17232,25 @@ function qkClientHtml(c,q){ const it=c.items.filter(x=>x.q>0&&x.n), dr=(q.dr||[]
     ${(q.pr||[]).map((p,i)=>{ const G=c.PR.gens[i]; return G&&G.ok?`<div class="qk-r qk-r2"><span class="qk-tl">Шкаф распашной ${N(p.W)} × ${N(p.H)} × ${N(p.D)}<small>${esc(qkWardSub(G))}</small></span></div>`:""; }).join("")}
     ${dr.map(x=>`<div class="qk-r qk-r2"><span class="qk-tl">Дверь в алюминиевом профиле ${N(x.w)} × ${N(x.h)}${+x.n>1?" — "+x.n+" шт":""}</span></div>`).join("")}</section>
     <section class="qk-card qk-sum">${[["Изготовление, монтаж и доставка",c.total]].filter(x=>x[1]>0).map(([n,v])=>`<div class="qk-tot"><span>${n}</span><span>${N(v)}</span></div>`).join("")}<div class="qk-tot big"><span>Итого</span><b>${N(c.total)} ₽</b></div></section>`; }
+const QK_STEPS=[["what","Что делаем"],["mat","Материалы"],["price","Цена"],["send","Отправить"]];
+const QK_HINT={what:"Добавьте изделие — детали, кромка, фурнитура и раскрой посчитаются сами. Можно несколько шкафов и дверей.",mat:"Проверьте материалы. Из шкафа — посчитаны сами, нужно только выбрать декор и цену. Добавьте, что ещё нужно.",price:"Расходы и коэффициент. Выбрали коэффициент — цена клиенту пересчитается сразу.",send:"Сохраните смету и отправьте клиенту: КП в PDF или 3D."};
+function qkStepsHtml(c,q,d,sm){ const cur=QK_STEPS.some(x=>x[0]===q.stp)?q.stp:"what", ix=QK_STEPS.findIndex(x=>x[0]===cur), has=(q.pr||[]).length||(q.dr||[]).length||c.items.some(x=>x.q>0);
+  const st={what:has?"ok":"todo",mat:!has?"todo":c.noPrice?"warn":"ok",price:c.total>0&&!c.noPrice?"ok":"todo",send:sm.saved&&!sm.dirty?"ok":"todo"};
+  let h=`<nav class="smn-stp qk-stp" aria-label="Шаги сметы">${QK_STEPS.map(([k,n],i)=>`<button type="button" data-qk="stp" data-v="${k}" class="${k===cur?"cur ":""}${st[k]}" aria-current="${k===cur?"step":"false"}"><i aria-hidden="true">${st[k]==="ok"?"✓":st[k]==="warn"?"!":i+1}</i><span>${n}</span></button>`).join("")}</nav>
+    <div class="qk-sth"><h2 class="smn-sth">${ix+1}. ${QK_STEPS[ix][1]}</h2><button type="button" class="btn sm" data-qk="set">⚙ Мои цены</button></div><p class="smn-hint2">${esc(QK_HINT[cur])}</p><div class="qk">`;
+  if(cur==="what"){ const card=(attr,ic,t,sub,on)=>`<button type="button" class="qk-big${on?" on":""}" ${attr}><span class="qk-bi" aria-hidden="true">${ic}</span><span><b>${t}</b><small>${sub}</small></span></button>`;
+    h+=card('data-qk="prod" data-i="-1"',"🚪","Шкаф по размерам","размеры ниши → полки, стойки, ящики пальцем",!has)+card('data-qk="door" data-i="-1"',"▥","Двери-купе в профиле","размер проёма, профиль, заполнение")+card('data-qk="stp" data-v="mat"',"✚","Только материалы","ЛДСП, кромка, фурнитура — списком");
+    if((q.pr||[]).length) h+=qkWardListHtml(c,q); if((q.dr||[]).length) h+=qkProfHtml(c,q); }
+  if(cur==="mat"){ const parts=qkItemsHtml(c,q).split('<section class="qk-card">').filter(Boolean), full=[], empty=[];
+    parts.forEach((x,i)=>{ if(/class="qk-r"/.test(x)) full.push('<section class="qk-card">'+x); else empty.push(QK_CAT[i]); });
+    h+=full.join("")||`<p class="qk-sub">Пока пусто. Добавьте материал кнопками ниже или шкаф на шаге 1.</p>`;
+    if(empty.length) h+=`<section class="qk-card"><div class="qk-h"><b>Добавить</b></div><div class="qk-chips">${empty.map(([k,n])=>`<button type="button" class="btn" data-qk="add" data-c="${k}">+ ${esc(n)}</button>`).join("")}</div></section>`; }
+  if(cur==="price") h+=qkExHtml(c,q)+qkKHtml(c,d)+qkInHtml()+qkSumHtml(c,sm).replace(/<div class="qk-acts">[\s\S]*?<\/div><\/section>$/,"</section>");
+  if(cur==="send") h+=`<section class="qk-card"><div class="qk-tot big"><span>Клиенту</span><b>${N(c.total)} ₽</b></div>${c.noPrice?`<p class="qk-bad">У ${c.noPrice} ${pl(c.noPrice,"позиции","позиций","позиций")} нет цены — шаг 2</p>`:""}</section>
+    <div class="smn-send">${!sm.saved||sm.dirty?`<button type="button" class="btn primary" data-act="sm-save">💾 Сохранить смету</button>`:`<p class="muted">✓ Смета сохранена</p>`}<button type="button" class="btn" data-act="sm-kp">📄 КП в PDF — отправить клиенту</button>${(q.pr||[]).length?`<button type="button" class="btn" data-qk="3d" data-i="-1">🧊 3D и раскрой — показать клиенту</button>`:""}<button type="button" class="btn" data-act="sm-client">Для клиента — без внутренних цифр</button>${sm.deal?`<button type="button" class="btn" data-act="sm-sum">Записать сумму в сделку</button>`:`<button type="button" class="btn ok-btn" data-act="sm-deal">✅ Клиент согласен → создать сделку</button>`}</div>`;
+  h+=`</div>`; const pv=QK_STEPS[ix-1], nx=QK_STEPS[ix+1];
+  h+=`<div class="smn-stn">${pv?`<button type="button" class="btn" data-qk="stp" data-v="${pv[0]}">‹ ${pv[1]}</button>`:"<span></span>"}${nx?`<button type="button" class="btn primary" data-qk="stp" data-v="${nx[0]}">Дальше: ${nx[1].toLowerCase()} ›</button>`:""}</div>`;
+  return h; }
 function qkHtml(){ const sm=S.shop.sm, d=sm.data; if(!QK.set) setTimeout(qkLoad,0);
   if(d.qk.fresh&&QK.set&&!QK.set.off&&qkEmpty(d.qk)) d.qk=qkNew();
   const q=d.qk, c=smCalc(d), cm=!!S.shop.smClient, o=shpById(sm.deal), tab=q.tab==="prof"&&!q.ward?"prof":"body";
@@ -17239,12 +17258,7 @@ function qkHtml(){ const sm=S.shop.sm, d=sm.data; if(!QK.set) setTimeout(qkLoad,
   let h=`<div class="head sm-head smn-head"><div>${back}<h1>${esc([sm.kind,sm.client].filter(Boolean).join(" · ")||"Смета")}</h1><div class="smn-meta"><p class="muted">${o?`сделка № ${esc(o.num)}`:sm.status==="lost"?"отказ":"без сделки"} · ${q.ward?"шкаф по размерам":"быстрая смета"}${sm.saved?` · сохранена ${esc(shpTime(sm.saved.when))}`:" · новая"}${sm.dirty?" · <b class=\"sm-dirty\">не сохранена</b>":""}</p>${sm.dirty?`<button type="button" class="btn primary" data-act="sm-save">Сохранить</button>`:""}</div></div></div>`;
   if(cm) return h+`<div class="qk">${qkClientHtml(c,q)}</div><div class="sm-spacer" style="height:90px"></div><div class="sm-dock${VTX?" vtx":""}"><button type="button" class="sm-unlock" data-act="sm-unlock"><span class="sm-ulbar"></span>🔒 Удержите 2 секунды — вернуть полный вид</button></div>`;
   if(typeof smTrialHtml==="function") h+=smTrialHtml(); h+=smKindBar();
-  if(q.ward) h+=`<div class="qk-top"><span></span><button type="button" class="btn" data-qk="set">⚙ Мои цены</button></div>`; else h+=`<div class="qk-top"><div class="qk-seg qk-tabs" role="group" aria-label="Что считаем">${[["body","Корпус"],["prof","Алюминиевый профиль"]].map(([k,n])=>`<button type="button" data-qk="tab" data-v="${k}" aria-pressed="${tab===k}">${n}</button>`).join("")}</div>
-    <button type="button" class="btn" data-qk="set">⚙ Мои цены</button></div>`;
-  h+=`<div class="qk">`;
-  if(tab==="prof") h+=qkProfHtml(c,q);
-  else h+=qkWardListHtml(c,q)+qkItemsHtml(c,q)+qkExHtml(c,q);
-  h+=qkKHtml(c,d)+qkInHtml()+qkSumHtml(c,sm)+`</div>`;
+  h+=qkStepsHtml(c,q,d,sm);   /* Кирилл 07.11: быстрая смета по шагам — «Что делаем → Материалы → Цена → Отправить» */
   h+=`<div class="sm-spacer"></div><div class="sm-dock smn-dock${VTX?" vtx":""}"><button type="button" class="smn-dk" data-qk="top" aria-label="К итогу"><span class="smn-dkl"><small>Клиенту${c.noPrice?` · <span class="badc">⚠ ${c.noPrice} без цены</span>`:""}</small>${c.total>0?`<b id="smTot">${esc(shpRub(c.total))}</b>`:`<b id="smTot" class="sm-tot0" data-empty="1">Добавьте материал</b>`}</span><span class="smn-dkr"><small class="muted">М <b>${N(c.M)}</b></small></span><i aria-hidden="true">▴</i></button></div>`;
   return h; }
 /* Кирилл 07.11: «быструю и подробную смету — крупно, сейчас непонятно»: новая смета начинается с выбора из двух больших карточек */
@@ -17484,6 +17498,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="mods"){ delete d.qk; d.picked=1; sm.dirty=true; window.scrollTo(0,0); return shpRenderKeep(); }
   if(a==="rmback"){ const P=(q.pr||[])[+t.dataset.i]; if(P){ delete P.rmk; qkDirty(); toast("Детали возвращены в смету"); } return shpRenderKeep(); }
   if(a==="tab"){ q.tab=t.dataset.v; shpRenderKeep(); return window.scrollTo(0,0); }
+  if(a==="stp"){ q.stp=t.dataset.v; shpRenderKeep(); return window.scrollTo(0,0); }
   if(a==="set"){ if(!QK.set) await qkLoad(); return qkSetModal(); }
   if(a==="add") return qkAddModal(t.dataset.c);
   if(a==="ed") return qkEdModal(t.dataset.c,+t.dataset.i);
@@ -17616,6 +17631,8 @@ o+=`<text x="${sx+sw/2}" y="${Y(L.y)+70}" font-size="48" class="dimw">${Math.rou
     paint(); });
   paint(); }
 (function(){ const st=document.createElement("style"); st.textContent=`.qk-ward,html.vt.sk.sk.sk[data-vt] .qk-card.qk-ward{border:2px solid #FFD60A!important}html.vt.sk.sk.sk[data-vt] .qk-wadd small,.qk-wadd small{color:#3a3000!important}html.vt.sk.sk.sk[data-vt] .qk-wadd b{color:#000!important}.qk-wadd{display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin-top:8px;padding:14px;border-radius:14px;border:0;background:#FFD60A;color:#000;font:inherit;cursor:pointer}.qk-wadd b{display:block;font-size:18px}.qk-wadd small{display:block;color:#3a3000!important;font-size:13px;line-height:1.35;margin-top:2px}.qk-wi{font-size:30px;line-height:1}
+.smn-stp.qk-stp{grid-template-columns:repeat(4,1fr)}.sm-trial{padding:8px 12px!important;font-size:13.5px!important;line-height:1.35!important}.sm-trial .btn{min-height:36px!important;padding:4px 12px!important;font-size:13px!important}.sm-kind{margin:6px 0!important}
+.qk-sth{display:flex;align-items:center;justify-content:space-between;gap:8px}.qk-big{display:flex;align-items:center;gap:14px;width:100%;text-align:left;margin:0 0 10px;padding:16px;border-radius:16px;border:2px solid #2c2c2e;background:#151515;color:inherit;font:inherit;cursor:pointer}.qk-big.on{border-color:#FFD60A}.qk-big b{display:block;font-size:18px}.qk-big small{display:block;font-size:13px;margin-top:2px}.qk-bi{font-size:30px;line-height:1;flex:none;width:40px;text-align:center}.qk-chips{display:flex;flex-wrap:wrap;gap:8px}.qk-chips .btn{min-height:44px}html[data-vt="light"] .qk-big{background:#fff;border-color:#d0d4d9}
 .qk-in-tb{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}.qk-in-tb .btn{min-height:44px}.qk-in-v{display:flex;justify-content:center;touch-action:none}.qk-in-svg{width:100%;height:auto;touch-action:none;user-select:none;-webkit-user-select:none}
 .qk-in-svg .pl{fill:#3a3a3e}.qk-in-svg .bd{fill:#c9a27a}.qk-in-svg .in{fill:#1b1b1d}.qk-in-svg .sec{fill:transparent;cursor:pointer}.qk-in-svg .sec.on{fill:rgba(10,132,255,.14)}
 .qk-in-svg .shf,.qk-in-svg .stn{fill:#c9a27a;cursor:grab}.qk-in-svg .shf.on,.qk-in-svg .stn.on{fill:#0A84FF}.qk-in-svg .qkdr{fill:#5a4630;stroke:#c9a27a;stroke-width:6}.qk-in-svg .qkdr.on{stroke:#0A84FF}
@@ -18827,7 +18844,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="6d27abf0a7";
+const CHK_BUILD="7cb069dc43";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -19640,7 +19657,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="6d27abf0a7";/*cehqr-build*/
+  const BUILD="7cb069dc43";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
