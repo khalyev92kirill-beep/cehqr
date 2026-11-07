@@ -17168,7 +17168,7 @@ function qkProds(q){ const s=qkSet(), M=new Map(), works=[], gens=[], CUT=new Ma
   return {items,works,gens,NEST}; }
 function qkCalc(d){ const q=d.qk, PR=qkProds(q);
   const sh=(q.it.ldsp||[]).filter(x=>/^л/.test(x.u||"")).reduce((a,x)=>a+num(x.q),0)+PR.items.filter(x=>x.cat!=="edge"&&/^л/.test(x.u)).reduce((a,x)=>a+x.q,0), items=PR.items.slice();
-  QK_CAT.forEach(([k])=>(q.it[k]||[]).forEach((x,i)=>{ const qq=k==="edge"&&x.au?Math.ceil(sh*12):num(x.q); items.push(Object.assign({},x,{cat:k,i,q:qq,sum:Math.round(qq*num(x.p))})); }));
+  QK_CAT.forEach(([k])=>(q.it[k]||[]).forEach((x,i)=>{ const qq=k==="edge"&&x.au?(x.for?Math.ceil((q.it.ldsp||[]).concat(q.it.front||[]).filter(y=>y.n===x.for).reduce((a,y)=>a+num(y.q),0)*12):Math.ceil(sh*12)):num(x.q); items.push(Object.assign({},x,{cat:k,i,q:qq,sum:Math.round(qq*num(x.p))})); }));
   const em=items.filter(x=>x.cat==="edge").reduce((a,x)=>a+x.q,0), P=qkProf(q);
   const matB=items.reduce((a,x)=>a+x.sum,0), matP=P.L.reduce((a,x)=>a+x.sum,0), mat=matB+matP;
   const exF=mat>0?(q.ex||[]).reduce((a,x)=>a+num(x.s),0):0, exP=Math.round(mat*num(q.ep)/100), exS=exF+exP, GR=qkGroups(items,q), gW=GR.reduce((a,g)=>a+g.wk,0), M=mat+exS+gW;
@@ -17200,7 +17200,7 @@ function qkClsP(key){ const s=qkSet(), c=(s.cls||{})[key]||{}, W=s.wk||QK_DEF.wk
 function qkGroups(items,q){ const G=new Map(), get=k=>{ if(!G.has(k)) G.set(k,{key:k,rows:[],sheets:0,edgeM:0,mat:0}); return G.get(k); };
   items.filter(x=>(x.cat==="ldsp"||x.cat==="front")&&/^л/.test(x.u||"")).forEach(x=>{ const g=get(qkCls(x.n)); g.rows.push(x); g.sheets+=+x.q||0; g.mat+=x.sum; });
   const keys=[...G.keys()];
-  items.filter(x=>x.cat==="edge").forEach(x=>{ const c=qkCls(x.n), k=keys.includes(c)?c:keys.length===1?keys[0]:"Кромка (общая)"; const g=get(k); g.rows.push(x); g.edgeM+=+x.q||0; g.mat+=x.sum; });
+  items.filter(x=>x.cat==="edge").forEach(x=>{ const c=x.for?qkCls(x.for):qkCls(x.n), k=keys.includes(c)?c:keys.length===1?keys[0]:"Кромка (общая)"; const g=get(k); g.rows.push(x); g.edgeM+=+x.q||0; g.mat+=x.sum; });
   return [...G.values()].map(g=>{ const P=qkClsP(g.key), cutS=Math.round(g.sheets*P.cut), edgS=Math.round(g.edgeM*P.edg); return Object.assign(g,P,{cutS,edgS,wk:cutS+edgS,sum:g.mat+cutS+edgS}); }); }
 function qkGrpOpen(k){ try{ const o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); return o[k]!==0; }catch(_){ return true; } }
 function qkRowHtml(x,k){ const it=qkCatIt(x.n), sw=it&&typeof catSw==="function"?catSw(it,"cat-sw qk-sw"):`<span class="qk-sw0"></span>`;
@@ -17212,7 +17212,8 @@ function qkGroupsHtml(c,q){ const GR=c.GR||[]; if(!GR.length) return "";
     return `<section class="qk-card qk-grp${op?" on":""}"><button type="button" class="qk-h qk-gh" data-qkg="${esc(g.key)}" aria-expanded="${op}"><b>${op?"▾":"▸"} ${esc(g.key)}</b><span>${N(g.sum)} ₽</span></button>
       ${op?g.rows.map(x=>qkRowHtml(x,x.cat)).join("")+(g.sheets?`<div class="qk-r qk-r2"><span class="qk-tl">Распил<small>${F(g.sheets)} ${pl(g.sheets,"лист","листа","листов")} × цена за лист</small></span>${pin("cut",g.cut,"Распил, ₽ за лист")}<span class="qk-u">₽</span><b class="qk-s">${N(g.cutS)}</b></div>`:"")
         +(g.edgeM?`<div class="qk-r qk-r2"><span class="qk-tl">Кромление<small>${F(g.edgeM)} м × цена за метр</small></span>${pin("edg",g.edg,"Кромление, ₽ за метр")}<span class="qk-u">₽</span><b class="qk-s">${N(g.edgS)}</b></div>`:"")
-        +(g.sheets&&!g.edgeM?`<button type="button" class="qk-add" data-qk="add" data-c="edge">+ Кромка к «${esc(g.key)}»</button>`:""):""}</section>`; }).join(""); }
+        +g.rows.filter(x=>x.cat!=="edge"&&!x.prod&&!(q.it.edge||[]).some(e=>e.for===x.n)&&!(((q.it.ldsp||[]).concat(q.it.front||[]).find(y=>/^л/.test(y.u||""))||{}).n===x.n&&(q.it.edge||[]).some(e=>!e.for))).map(x=>`<button type="button" class="qk-add" data-qte="${esc(x.n)}">+ Кромка в тон «${esc(String(x.n).replace(/^ЛДСП,?\s*\d+\s*мм,?\s*/i,""))}»</button>`).join("")
+        +`<div class="qk-gadd"><button type="button" class="qk-add" data-qk="add" data-c="ldsp">+ Лист</button><button type="button" class="qk-add" data-qk="add" data-c="edge">+ Кромка</button></div>`:""}</section>`; }).join(""); }
 function qkItemsHtml(c,q){ return QK_CAT.map(([k,n])=>{ const L=c.items.filter(x=>x.cat===k), sum=L.reduce((a,x)=>a+x.sum,0);
     let rows=L.map(x=>{ const it=qkCatIt(x.n), sw=it&&typeof catSw==="function"?catSw(it,"cat-sw qk-sw"):`<span class="qk-sw0"></span>`;
       if(x.prod) return `<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="prod" data-i="${x.pi}"><b>${esc(x.n)}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u)+" · ":`<span class="qk-bad">нет цены</span> · `}из шкафа${x.sub?" · "+esc(x.sub):""}</small>${x.cut?`<span class="qk-cutl" data-qk="3d" data-i="-1">▦ 3D и раскрой</span>`:""}</button><span class="qk-ro">${F(x.q)}</span><span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>`;
@@ -17316,9 +17317,12 @@ const _qkH=smHtml; smHtml=function(){ const sm=S.shop.sm; if(sm&&!sm.busy&&qkPic
 function qkModal(id,inner,full){ document.getElementById(id)?.remove(); const m=document.createElement("div"); m.className="modal"+(full?" qk-full":""); m.id=id; m.innerHTML=`<div class="modal-card qk-m" role="dialog"${full?" data-no-sheet":""}>${inner}</div>`; document.body.appendChild(m); return m; }
 const uSel=(name,cur)=>`<select name="${name}" aria-label="Единица">${QK_U.concat(QK_U.includes(cur)||!cur?[]:[cur]).map(u=>`<option${u===cur?" selected":""}>${esc(u)}</option>`).join("")}</select>`;
 function qkDirty(){ const sm=S.shop.sm; sm.dirty=true; if(sm.data.qk) sm.data.qk.fresh=0; }
+/* Кирилл 07.11: у каждого листа своя кромка в тон — считается от его листов (12 м на лист) */
+function qkToneEdge(q,sheet,quiet){ if(!sheet||typeof smAutoEdge!=="function") return false; q.it.edge=q.it.edge||[]; if(q.it.edge.some(e=>e.for===sheet)) return true;
+  const t={mat:{body:{n:sheet}}}; try{ smAutoEdge(t,"body",true); }catch(_){} const e=t.mat.edge; if(!(e&&e.n)){ if(!quiet) toast("Кромку в тон не нашёл — выберите вручную"); return false; }
+  const first=(q.it.ldsp||[]).concat(q.it.front||[]).find(y=>/^л/.test(y.u||"")&&y.n!==sheet); q.it.edge.forEach(x=>{ if(x.au&&!x.for){ if(first) x.for=first.n; else delete x.au; } });   /* старая «авто» кромка — за первым листом */ q.it.edge.push({n:e.n,u:"м",p:qkPrice(e.n,"м"),q:0,au:1,for:sheet}); if(!quiet) toast("Кромка в тон: "+e.n); return true; }
 function qkPush(cat,x){ const q=S.shop.sm.data.qk; (q.it[cat]=q.it[cat]||[]).push(x); qkDirty();
-  if(cat==="ldsp"&&/лдсп|ldsp/i.test(x.n||"")&&!q.it.edge.length&&typeof smAutoEdge==="function"){ const t={mat:{body:{n:x.n}}}; try{ smAutoEdge(t,"body",true); }catch(_){} const e=t.mat.edge;
-    if(e&&e.n){ q.it.edge.push({n:e.n,u:"м",p:qkPrice(e.n,"м"),q:0,au:1}); toast("Кромка в тон: "+e.n); } } }
+  if((cat==="ldsp"||cat==="front")&&/лдсп|ldsp/i.test(x.n||"")&&/^л/.test(x.u||"л")) qkToneEdge(q,x.n,false); }
 /* «+ Добавить» в разделе: мои позиции, библиотека, своя новая */
 function qkAddModal(cat){ const s=qkSet(), own=(s.own||[]).map((x,i)=>Object.assign({i},x)).filter(x=>x.c===cat), C=QK_CAT.find(x=>x[0]===cat);
   const m=qkModal("qkAddM",`<h2>${esc(C[1])}</h2><button type="button" class="btn primary qk-wide" data-a="lib">📚 Из библиотеки — база Базиса с ценами</button>
@@ -17526,6 +17530,7 @@ document.addEventListener("change",e=>{ const t=e.target.closest&&e.target.close
   if(last==="qm"&&raw==="") delete o.qm; else if(t.dataset.t==="t") o[last]=raw; else o[last]=num(raw);
   if(a[0]==="it"&&a[1]==="edge"&&last==="q"){ if(raw==="") { o.au=1; } else delete o.au; }
   qkDirty(); shpRenderKeep(); },true);
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qte]"); if(!b) return; e.preventDefault(); e.stopPropagation(); const sm=S.shop.sm; if(!sm||!sm.data||!sm.data.qk) return; if(typeof catLoad==="function") catLoad(); if(qkToneEdge(sm.data.qk,b.dataset.qte,false)){ qkDirty(); shpRenderKeep(); } },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qkg]"); if(!b) return; e.preventDefault(); e.stopPropagation(); let o={}; try{ o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); }catch(_){} const k=b.dataset.qkg; if(o[k]===0) delete o[k]; else o[k]=0; try{ localStorage.setItem("w24-qkgrp",JSON.stringify(o)); }catch(_){} shpRenderKeep(); },true);
 document.addEventListener("change",async e=>{ const t=e.target.closest&&e.target.closest("[data-qcls]"); if(!t) return; e.stopPropagation(); const [key,f]=t.dataset.qcls.split("|"), v=num(t.value); if(!QK.set) QK.set={firm:null,mine:null};
   const m=QK.set.mine=QK.set.mine||{}; m.cls=m.cls||{}; m.cls[key]=Object.assign({},m.cls[key]||{},{[f]:v}); qkDirty(); shpRenderKeep(); if(await qkSaveMine()) toast("Цена сохранена в «Мои цены»: "+key); },true);
@@ -17582,7 +17587,7 @@ const st=document.createElement("style"); st.textContent=`
 .qk-u{width:34px;font-size:13px;opacity:.7;flex:none}.qk-s{width:72px;text-align:right;flex:none;font-weight:600}.qk-x{flex:none;width:30px;height:30px;border-radius:50%;border:0;background:rgba(127,127,127,.15);color:inherit;font-size:18px;line-height:1;cursor:pointer}
 .qk-add{margin-top:6px;font:inherit;font-size:14px;padding:7px 13px;border-radius:20px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit;cursor:pointer}
 .qk-sub{font-size:13px;opacity:.65;margin:0 0 4px}.qk-hint{font-size:12.5px;opacity:.65;margin:6px 0 0}.qk-lbl{font-size:13px;opacity:.75;margin:10px 0 4px;font-weight:600}.qk-bad{color:#d93025;font-size:13px}
-.qk-gh{width:100%;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0;text-align:left}.qk-grp:not(.on) .qk-gh{margin:0}.qk-ks{display:flex;flex-wrap:wrap;gap:6px}.qk-k{font:inherit;font-size:14px;padding:6px 12px;border-radius:18px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit;cursor:pointer}.qk-k.on{background:#111;color:#fff;border-color:#111;font-weight:600}.qk-kin{width:74px}
+.qk-gadd{display:flex;gap:8px}.qk-gadd .qk-add{flex:1}.qk-gh{width:100%;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0;text-align:left}.qk-grp:not(.on) .qk-gh{margin:0}.qk-ks{display:flex;flex-wrap:wrap;gap:6px}.qk-k{font:inherit;font-size:14px;padding:6px 12px;border-radius:18px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit;cursor:pointer}.qk-k.on{background:#111;color:#fff;border-color:#111;font-weight:600}.qk-kin{width:74px}
 .qk-tot{display:flex;justify-content:space-between;gap:8px;padding:5px 0;font-size:15px}.qk-tot.big{font-size:22px;font-weight:700;padding-top:10px;border-top:1px solid rgba(127,127,127,.25);margin-top:4px}
 .qk-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.qk-door{flex:none;width:48px;height:48px;display:grid;place-items:center;background:none;border:0;cursor:pointer;padding:0}.qk-door i{display:block;border:3px solid #a9a9a9;border-radius:3px;background:#a9cdd3;box-sizing:border-box}
 .qk-ro{width:64px;text-align:right;flex:none;font-size:15px}.qk-svg{display:block}.qk-svg .pl{fill:rgba(127,127,127,.35)}.qk-svg .dr{fill:rgba(127,127,127,.1);stroke:currentColor;stroke-width:.8}.qk-svg .hd{fill:currentColor}
@@ -20155,7 +20160,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="4f3620df4d";
+const CHK_BUILD="935c259a1b";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20968,7 +20973,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="4f3620df4d";/*cehqr-build*/
+  const BUILD="935c259a1b";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
