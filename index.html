@@ -17220,13 +17220,13 @@ function qkRowHtml(x,k){ const it=qkCatIt(x.n), sw=it&&typeof catSw==="function"
   if(x.prod) return `<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="prod" data-i="${x.pi}"><b>${esc(x.n)}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u)+" · ":`<span class="qk-bad">нет цены</span> · `}из шкафа${x.sub?" · "+esc(x.sub):""}</small>${x.cut?`<span class="qk-cutl" data-qk="3d" data-i="-1">▦ 3D и раскрой</span>`:""}</button><span class="qk-ro">${F(x.q)}</span><span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>`;
   return `<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="ed" data-c="${k}" data-i="${x.i}"><b>${esc(x.n||"без названия")}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u):`<span class="qk-bad">нет цены — нажмите</span>`}${x.au?" · авто 12 м на лист":""}</small></button>
     ${inp(`it.${k}.${x.i}.q`,x.au?"":x.q,"n",x.au?x.q:"0","qk-q","Количество: "+(x.n||""))}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>`; }
-function qkGroupsHtml(c,q){ const GR=c.GR||[]; if(!GR.length) return "";
+function qkGroupsHtml(c,q,only){ const GR=only||c.GR||[]; if(!GR.length) return "";
   return GR.map(g=>{ const op=qkGrpOpen(g.key), pin=(f,v,l)=>`<input class="qk-in qk-p qk-clsp" data-qcls="${esc(g.key)}|${f}" inputmode="decimal" value="${esc(String(v))}" aria-label="${esc(l)}">`;
     return `<section class="qk-card qk-grp${op?" on":""}"><button type="button" class="qk-h qk-gh" data-qkg="${esc(g.key)}" aria-expanded="${op}"><b>${op?"▾":"▸"} ${esc(g.key)}</b><span>${N(g.sum)} ₽</span></button>
       ${op?g.rows.map(x=>qkRowHtml(x,x.cat)).join("")+(g.sheets?`<div class="qk-r qk-r2"><span class="qk-tl">Распил<small>${F(g.sheets)} ${pl(g.sheets,"лист","листа","листов")} × цена за лист</small></span>${pin("cut",g.cut,"Распил, ₽ за лист")}<span class="qk-u">₽</span><b class="qk-s">${N(g.cutS)}</b></div>`:"")
         +(g.edgeM?`<div class="qk-r qk-r2"><span class="qk-tl">Кромление<small>${F(g.edgeM)} м × цена за метр</small></span>${pin("edg",g.edg,"Кромление, ₽ за метр")}<span class="qk-u">₽</span><b class="qk-s">${N(g.edgS)}</b></div>`:"")
         +(g.rows.filter(x=>x.cat==="edge").length>=g.rows.filter(x=>x.cat!=="edge").length?[]:g.rows).filter(x=>x.cat!=="edge"&&!x.prod&&!(q.it.edge||[]).some(e=>e.for===x.n)&&!(((q.it.ldsp||[]).concat(q.it.front||[]).find(y=>/^л/.test(y.u||""))||{}).n===x.n&&(q.it.edge||[]).some(e=>!e.for))).map(x=>`<button type="button" class="qk-add" data-qte="${esc(x.n)}">+ Кромка в тон «${esc(String(x.n).replace(/^ЛДСП,?\s*\d+\s*мм,?\s*/i,""))}»</button>`).join("")
-        +`<div class="qk-gadd"><button type="button" class="qk-add" data-qk="add" data-c="ldsp">+ Лист</button><button type="button" class="qk-add" data-qk="add" data-c="edge" data-qfor="${esc((g.rows.find(x=>x.cat!=="edge"&&!(q.it.edge||[]).some(e=>e.for===x.n))||g.rows.find(x=>x.cat!=="edge")||{}).n||"")}">+ Кромка</button></div>`:""}</section>`; }).join(""); }
+        +`<div class="qk-gadd"><button type="button" class="qk-add" data-qk="add" data-c="${/^МДФ/.test(g.key)?"front":"ldsp"}">+ Лист</button><button type="button" class="qk-add" data-qk="add" data-c="edge" data-qfor="${esc((g.rows.find(x=>x.cat!=="edge"&&!(q.it.edge||[]).some(e=>e.for===x.n))||g.rows.find(x=>x.cat!=="edge")||{}).n||"")}">+ Кромка</button></div>`:""}</section>`; }).join(""); }
 /* ===== Кирилл 07.11 (вариант А): смета списком по разделам, как в Базисе — «нажал Столешница — там только столешницы; петли — только петли; ящики — только ящики».
    Фурнитура: тип → фирма («Накладные с доводчиком» → Hettich / Blum / DTC…). Раздел позиции — по группе базы Базиса или по названию. ===== */
 const QK_SEC=[["top","Столешница","other",/Погонные материалы\/Столешница/i,/столешн/i],["apron","Фартук и стеновые панели","other",/Фартук|Стеновая панель/i,/фартук|стенов/i],
@@ -17243,6 +17243,20 @@ function qkDType(n,g){ const s=(String(n)+" "+String(g)).toLowerCase(); if(/ша
 function qkBrand(it){ const g=String(it.g||""), m=/^Каталог (\w+)/.exec(g); if(m) return m[1]; const p=g.split("/"); let b=p[2]||""; if(!b||/^(Остальное|Петли|Прочее|Комплекты|Петли для схемы|Используемые.*|Наполнение.*)$/i.test(b)){ const k=/(hettich|blum|dtc|makmart|samet|firmax|boyard|gtv|unihopper|mf|tdf|kerron|amix)/i.exec(it.n); b=k?k[1]:"Другие"; } b=b.replace(/^BLUM$/i,"Blum").replace(/^MAKMART$/i,"Makmart"); return b; }
 function qkSecItems(key){ const D=S.cat&&S.cat.data; if(!D) return null; const S0=QK_SEC.find(x=>x[0]===key); if(!S0) return [];
   if(key==="other") return []; return D.items.filter(it=>!/^(Листовые|Кромочные|Материалы для построения|Инструменты)/.test(it.g)&&(S0[3].test(it.g)||(S0[4]&&!/^Фурнитура/.test(it.g)&&S0[4].test(it.n)))&&!/Подъ[её]мн/.test(key==="hinge"?it.g:"")); }
+/* Кирилл 07.11 (вариант А): «Материалы» сразу списком по порядку — ЛДСП → МДФ и фасады → Кромка → Столешница → Фартук → Петли → Ящики… Нажали — раскрылось. */
+function qkMatListHtml(c,q){ const GR=c.GR||[], inG=new Set(GR.flatMap(g=>g.rows)), isM=k=>/^МДФ/.test(k), rest=cat=>c.items.filter(y=>y.cat===cat&&!inG.has(y));
+  const by={}; c.items.filter(x=>x.cat==="furn"||x.cat==="other").forEach(x=>{ const k=qkSecOf(x); (by[k]=by[k]||[]).push(x); });
+  const empty=!c.items.length&&!(q.pr||[]).length;
+  const mat=[["m:ldsp","ЛДСП",GR.filter(g=>!isM(g.key)&&g.key!=="Кромка (общая)"),rest("ldsp"),"ldsp","+ ЛДСП — из базы (Egger, ExtraVert, Kastamonu…)"],["m:mdf","МДФ и фасады",GR.filter(g=>isM(g.key)),rest("front"),"front","+ МДФ / фасад — из базы"],["m:edge","Кромка",GR.filter(g=>g.key==="Кромка (общая)"),rest("edge"),"edge","+ Кромка — из базы"]];
+  const row=(k,n,cnt,sum,body,def)=>{ let op=S.qkSecOpen===k; if(!op){ try{ const o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); op=o["sec:"+k]===1||(o["sec:"+k]!==0&&def); }catch(_){ op=def; } }
+    return `<div class="qk-sec${op?" on":""}"><button type="button" class="qk-sech" data-qsec="${esc(k)}" data-op="${op?1:0}"><b>${op?"▾":"▸"} ${esc(n)}</b><span>${cnt?`${cnt} поз. · ${N(sum)}`:"—"}</span></button>${op?`<div class="qk-secb">${body}</div>`:""}</div>`; };
+  let h=`<section class="qk-card qk-secs">`;
+  mat.forEach(([k,n,G,R0,cat,lab])=>{ const cnt=G.reduce((a,g)=>a+g.rows.length,0)+R0.length, sum=G.reduce((a,g)=>a+g.sum,0)+R0.reduce((a,x)=>a+x.sum,0);
+    h+=row(k,n,cnt,sum,qkGroupsHtml(c,q,G)+R0.map(x=>qkRowHtml(x,cat)).join("")+`<button type="button" class="qk-add" data-qk="add" data-c="${cat}">${esc(lab)}</button>`,cnt>0||(empty&&k==="m:ldsp")); });
+  const CUS=(q.secOn||[]).filter(k=>/^c:/.test(k)).map(k=>[k,k.slice(2),"furn"]);
+  QK_SEC.filter(x=>x[0]!=="other").concat(CUS,[QK_SEC.find(x=>x[0]==="other")]).forEach(([k,n])=>{ const L=by[k]||[], sum=L.reduce((a,x)=>a+x.sum,0);
+    h+=row(k,n,L.length,sum,L.map(x=>qkRowHtml(x,x.cat)).join("")+`<button type="button" class="qk-add" data-qsp="${esc(k)}">+ ${esc(n)} — из раздела</button>`,L.length>0); });
+  return h+`<button type="button" class="qk-add qk-secadd2" data-qsecadd="1">+ Свой раздел · двери в профиле · купе · работы</button></section>`; }
 function qkSecHtml(c,q){ const by={}; c.items.filter(x=>x.cat==="furn"||x.cat==="other").forEach(x=>{ const k=qkSecOf(x); (by[k]=by[k]||[]).push(x); });
   /* Кирилл 07.11: «гибко — внизу сами добавляют раздел: написал подсветка — выбрал подсветку; свои разделы» — видны разделы с позициями и добавленные */
   const on=new Set((q.secOn||[]).concat(Object.keys(by))), CUS=(q.secOn||[]).filter(k=>/^c:/.test(k)).map(k=>[k,k.slice(2),"furn"]);
@@ -17352,13 +17366,7 @@ function qkStepsHtml(c,q,d,sm){ const cur=QK_STEPS.some(x=>x[0]===q.stp)?q.stp:"
   if(cur==="what"){ const card=(attr,ic,t,sub,on)=>`<button type="button" class="qk-big${on?" on":""}" ${attr}><span class="qk-bi" aria-hidden="true">${ic}</span><span><b>${t}</b><small>${sub}</small></span></button>`;
     h+=card('data-qk="kupe" data-i="-1"',"🚪","Двери-купе (раздвижные)","ширина и высота проёма, сколько дверей → профиль, зеркало, стекло, ЛДСП",!has)+card('data-qk="door" data-i="-1"',"▥","Распашные двери в алюминиевом профиле","рамка из профиля, стекло, петли")+card('data-qk="stp" data-v="mat"',"✚","Только материалы","ЛДСП, кромка, фурнитура — списком");
     if((q.pr||[]).length) h+=qkWardListHtml(c,q); if((q.kp||[]).length) h+=kpqListHtml(c,q); if((q.dr||[]).length) h+=qkProfHtml(c,q); }
-  if(cur==="mat"){ const parts=qkItemsHtml(c,q).split('<section class="qk-card">').filter(Boolean), full=[], empty=[], gh=qkGroupsHtml(c,q), inG=new Set((c.GR||[]).flatMap(g=>g.rows));
-    parts.forEach((x,i)=>{ const k=QK_CAT[i][0], rest=c.items.filter(y=>y.cat===k&&!inG.has(y));
-      if(gh&&(k==="ldsp"||k==="front"||k==="edge")){ if(!rest.length){ empty.push(QK_CAT[i]); return; } full.push(`<section class="qk-card"><div class="qk-h"><b>${QK_CAT[i][1]}</b></div>${rest.map(y=>qkRowHtml(y,k)).join("")}</section>`); return; }
-      if(k==="furn"||k==="other") return;   /* фурнитура и прочее — разделами ниже (Кирилл 07.11) */
-      if(/class="qk-r"/.test(x)) full.push('<section class="qk-card">'+x); else empty.push(QK_CAT[i]); });
-    h+=(gh+full.join(""))||`<p class="qk-sub">Пока пусто. Добавьте материал кнопками ниже или шкаф на шаге 1.</p>`; h+=qkSecHtml(c,q);
-    if(empty.length) h+=`<section class="qk-card"><div class="qk-h"><b>Добавить</b></div><div class="qk-chips">${empty.map(([k,n])=>`<button type="button" class="btn" data-qk="add" data-c="${k}">+ ${esc(n)}</button>`).join("")}</div></section>`; }
+  if(cur==="mat") h+=qkMatListHtml(c,q);   /* Кирилл 07.11: всё списком по порядку */
   if(cur==="price") h+=qkExHtml(c,q)+qkKHtml(c,d)+qkInHtml()+qkSumHtml(c,sm).replace(/<div class="qk-acts">[\s\S]*?<\/div><\/section>$/,"</section>");
   if(cur==="send") h+=`<section class="qk-card"><div class="qk-tot big"><span>Клиенту</span><b>${N(c.total)} ₽</b></div>${c.noPrice?`<p class="qk-bad">У ${c.noPrice} ${pl(c.noPrice,"позиции","позиций","позиций")} нет цены — шаг 2</p>`:""}</section>
     <div class="smn-send">${!sm.saved||sm.dirty?`<button type="button" class="btn primary" data-act="sm-save">💾 Сохранить смету</button>`:`<p class="muted">✓ Смета сохранена</p>`}<button type="button" class="btn" data-act="sm-kp">📄 КП в PDF — отправить клиенту</button>${(q.pr||[]).length?`<button type="button" class="btn" data-qk="3d" data-i="-1">🧊 3D и раскрой — показать клиенту</button>`:""}<button type="button" class="btn" data-act="sm-client">Для клиента — без внутренних цифр</button>${sm.deal?`<button type="button" class="btn" data-act="sm-sum">Записать сумму в сделку</button>`:`<button type="button" class="btn ok-btn" data-act="sm-deal">✅ Клиент согласен → создать сделку</button>`}</div>`;
@@ -17613,8 +17621,8 @@ document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closes
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qfor]"); if(b) S.qkEdgeFor=b.dataset.qfor||""; else if(e.target.closest&&e.target.closest('[data-qk="add"]')) S.qkEdgeFor=""; },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qsecadd]"); if(!b) return; e.preventDefault(); e.stopPropagation(); qkSecAddModal(); },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qsec],[data-qsp]"); if(!b) return; e.preventDefault(); e.stopPropagation();
-  if(b.dataset.qsp) return qkSecPick(b.dataset.qsp); const k=b.dataset.qsec, has=b.closest(".qk-sec").classList.contains("on"); let o={}; try{ o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); }catch(_){}
-  if(has){ o["sec:"+k]=0; if(S.qkSecOpen===k) S.qkSecOpen=""; } else { delete o["sec:"+k]; S.qkSecOpen=k; } try{ localStorage.setItem("w24-qkgrp",JSON.stringify(o)); }catch(_){} shpRenderKeep(); },true);
+  if(b.dataset.qsp) return qkSecPick(b.dataset.qsp); const k=b.dataset.qsec, has=b.dataset.op==="1"||b.closest(".qk-sec").classList.contains("on"); let o={}; try{ o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); }catch(_){}
+  if(has){ o["sec:"+k]=0; if(S.qkSecOpen===k) S.qkSecOpen=""; } else { o["sec:"+k]=1; S.qkSecOpen=k; } try{ localStorage.setItem("w24-qkgrp",JSON.stringify(o)); }catch(_){} shpRenderKeep(); },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qkg]"); if(!b) return; e.preventDefault(); e.stopPropagation(); let o={}; try{ o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); }catch(_){} const k=b.dataset.qkg; if(o[k]===0) delete o[k]; else o[k]=0; try{ localStorage.setItem("w24-qkgrp",JSON.stringify(o)); }catch(_){} shpRenderKeep(); },true);
 document.addEventListener("change",async e=>{ const t=e.target.closest&&e.target.closest("[data-qcls]"); if(!t) return; e.stopPropagation(); const [key,f]=t.dataset.qcls.split("|"), v=num(t.value); if(!QK.set) QK.set={firm:null,mine:null};
   const m=QK.set.mine=QK.set.mine||{}; m.cls=m.cls||{}; m.cls[key]=Object.assign({},m.cls[key]||{},{[f]:v}); qkDirty(); shpRenderKeep(); if(await qkSaveMine()) toast("Цена сохранена в «Мои цены»: "+key); },true);
@@ -17674,7 +17682,7 @@ const st=document.createElement("style"); st.textContent=`
 .qk-sec{border-top:1px solid rgba(127,127,127,.18)}.qk-sech{width:100%;display:flex;justify-content:space-between;gap:8px;padding:12px 2px;background:none;border:0;color:inherit;font:inherit;cursor:pointer;text-align:left}.qk-sech span{opacity:.7}
 .qk-spf{width:100%;box-sizing:border-box;margin:10px 0 6px;min-height:44px}.qk-spl{list-style:none;margin:6px 0 0;padding:0;max-height:62vh;overflow:auto}.qk-spl li button{width:100%;display:flex;justify-content:space-between;gap:10px;padding:11px 4px;border:0;border-bottom:1px solid rgba(127,127,127,.18);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.qk-spl li button b{white-space:nowrap}
 .qk-spb{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.qk-spb button{border:1px solid rgba(127,127,127,.4);border-radius:999px;padding:5px 11px;background:none;color:inherit;font:inherit;font-size:13px;cursor:pointer}.qk-spb button.on{background:var(--ink,#fff);color:var(--bg,#000)}
-.qk-secadd{width:100%;min-height:48px;margin-top:10px}.qk-gadd{display:flex;gap:8px}.qk-gadd .qk-add{flex:1}.qk-gh{width:100%;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0;text-align:left}.qk-grp:not(.on) .qk-gh{margin:0}.qk-ks{display:flex;flex-wrap:wrap;gap:6px}.qk-k{font:inherit;font-size:14px;padding:6px 12px;border-radius:18px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit;cursor:pointer}.qk-k.on{background:#111;color:#fff;border-color:#111;font-weight:600}.qk-kin{width:74px}
+.qk-secadd{width:100%;min-height:48px;margin-top:10px}.qk-secb{padding:0 0 10px}.qk-secb .qk-card{margin:6px 0;box-shadow:none}.qk-secadd2{margin-top:10px}.qk-gadd{display:flex;gap:8px}.qk-gadd .qk-add{flex:1}.qk-gh{width:100%;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0;text-align:left}.qk-grp:not(.on) .qk-gh{margin:0}.qk-ks{display:flex;flex-wrap:wrap;gap:6px}.qk-k{font:inherit;font-size:14px;padding:6px 12px;border-radius:18px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit;cursor:pointer}.qk-k.on{background:#111;color:#fff;border-color:#111;font-weight:600}.qk-kin{width:74px}
 .qk-tot{display:flex;justify-content:space-between;gap:8px;padding:5px 0;font-size:15px}.qk-tot.big{font-size:22px;font-weight:700;padding-top:10px;border-top:1px solid rgba(127,127,127,.25);margin-top:4px}
 .qk-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.qk-door{flex:none;width:48px;height:48px;display:grid;place-items:center;background:none;border:0;cursor:pointer;padding:0}.qk-door i{display:block;border:3px solid #a9a9a9;border-radius:3px;background:#a9cdd3;box-sizing:border-box}
 .qk-ro{width:64px;text-align:right;flex:none;font-size:15px}.qk-svg{display:block}.qk-svg .pl{fill:rgba(127,127,127,.35)}.qk-svg .dr{fill:rgba(127,127,127,.1);stroke:currentColor;stroke-width:.8}.qk-svg .hd{fill:currentColor}
@@ -20273,7 +20281,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="37de039cc3";
+const CHK_BUILD="5bfdf8befb";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21086,7 +21094,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="37de039cc3";/*cehqr-build*/
+  const BUILD="5bfdf8befb";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
