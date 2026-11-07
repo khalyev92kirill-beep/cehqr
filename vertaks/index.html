@@ -5633,7 +5633,7 @@ function shpFormHtml(){
   const ids=Object.keys(S.orders||{}).sort();
   const opt3d=`<option value="">Не привязан</option>`+ids.map(id=>`<option value="${esc(id)}"${o.t3d===id?" selected":""}>${esc(id)} · ${esc(S.orders[id].name||"")}</option>`).join("")+(o.t3d&&!ids.includes(o.t3d)?`<option value="${esc(o.t3d)}" selected>${esc(o.t3d)}</option>`:"");
   const f=(label,name,val,extra)=>`<label>${label}<input name="${name}" value="${esc(val==null?"":String(val))}" ${extra||""}></label>`;
-  return `<div class="head"><h1>${isNew?"Новый заказ":"Изменить заказ № "+esc(o.num)}</h1></div>
+  return `<div class="head"><h1>${isNew?"Новый заказ":"Изменить заказ № "+esc(o.num)}</h1><div class="head-actions"><button type="button" class="btn" data-act="shp-cancel">← Назад</button></div></div>
   <form class="card shp-form" id="shpForm" autocomplete="off">
     ${f("Клиент *","client",o.client,'required maxlength="120" list="shpClientsL" autocomplete="off" placeholder="Начните вводить — выберите из списка или впишите нового"')}
     ${f("Телефон","phone",o.phone,'type="tel" inputmode="tel" maxlength="40" placeholder="+7 914 …"')}
@@ -18771,6 +18771,20 @@ setTimeout(()=>{ try{ onbState(); }catch(_){} },1500);
 .onb-f{display:grid;gap:10px}.onb-f label{display:grid;gap:4px;font-weight:600}.onb-f input{min-height:48px;font-size:17px}.onb-go{min-height:52px;margin-top:4px}
 .onb-b{display:flex;gap:8px;flex-wrap:wrap}.onb-b .btn{min-height:48px;flex:1 1 180px}.onb-pp{grid-column:1/-1}`; document.head.appendChild(st); })();
 
+/* ===== Кирилл 07.11 (вариант А): «дизайнер считает смету с клиентом, а тут обновление — и всё пропадает».
+   Черновик сметы уже пишется в память телефона (site_smnew.js, ключ w24-smDraft). Добавлено:
+   1) пока открыта смета (и человек рядом — 30 мин), приложение не перезагружается на новую версию (site_pwa.js → busy);
+   2) перезагрузилось из-за обновления — смета сама открывается там же, без поиска кнопки «Вернуть». ===== */
+let smdAct2=Date.now(); ["pointerdown","keydown","touchstart"].forEach(ev=>document.addEventListener(ev,()=>{ smdAct2=Date.now(); },{passive:true,capture:true}));
+function smdOpen2(){ try{ return S.view==="shop"&&S.shop&&S.shop.mode==="smeta"&&S.shop.sm&&S.shop.sm.data&&!S.shop.sm.busy; }catch(_){ return false; } }
+window.__w24Busy=()=>smdOpen2()&&Date.now()-smdAct2<1800000;
+(function(){ let upd=false; try{ const x=JSON.parse(sessionStorage.getItem("cehqr-upd-try")||"null"); upd=!!(x&&Date.now()-x.at<120000); }catch(_){} if(!upd) return;
+  let tries=0; const t=setInterval(()=>{ tries++; if(tries>40){ clearInterval(t); return; } if(!(S.shop&&S.shop.loaded)) return; clearInterval(t);
+    const d=typeof smdGet==="function"?smdGet():null; if(!d||smdOpen2()) return;
+    S.shop.sm=Object.assign({},d.sm,{dirty:true,busy:false}); S.shop.cur=d.sm.id||""; S.shop.smFrom="smetas"; S.shop.mode="smeta"; S.view="shop"; window.scrollTo(0,0);
+    try{ if(typeof catLoad==="function") catLoad(); if(!S.sup.priceOk&&typeof supPriceLoad==="function") supPriceLoad().then(()=>shpRenderKeep()); }catch(_){}
+    render(); toast("Приложение обновилось — смета на месте. Не забудьте «Сохранить»"); },500); })();
+
 /* ---------- Смета: «Не забыли?» и светофор продажи (Кирилл 05.11) ----------
    1) Перед «КП в PDF», «Отправить клиенту», «Клиент согласен» и «Сумму — в сделку» — короткий список того, что часто забывают.
       Что смета нашла сама — отмечено; остальное дизайнер отмечает «есть» или «не нужно» (сохраняется в смете, d.chk). Пока не всё — дальше не пускает.
@@ -19957,7 +19971,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="0827035bde";
+const CHK_BUILD="6cd6576a36";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20770,7 +20784,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="0827035bde";/*cehqr-build*/
+  const BUILD="6cd6576a36";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -20779,6 +20793,7 @@ render();
   let act=Date.now(); ["pointerdown","keydown","touchstart","wheel"].forEach(ev=>document.addEventListener(ev,()=>{ act=Date.now(); },{passive:true,capture:true}));
   function busy(){
     try{ if(S&&S.shop&&S.shop.sm&&S.shop.sm.dirty) return true; }catch(_){}   // несохранённая смета — не теряем
+    try{ if(typeof window.__w24Busy==="function"&&window.__w24Busy()) return true; }catch(_){}   // открыта смета — ждём (Кирилл 07.11)
     // открытое окно мешает, только пока человек рядом: 10 минут без касаний — обновляем и с окном (приложение висит открытым без дела)
     if(document.querySelector(".modal")&&Date.now()-act<600000) return true;
     const a=document.activeElement;
