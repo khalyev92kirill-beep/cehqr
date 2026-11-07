@@ -18785,6 +18785,61 @@ window.__w24Busy=()=>smdOpen2()&&Date.now()-smdAct2<1800000;
     try{ if(typeof catLoad==="function") catLoad(); if(!S.sup.priceOk&&typeof supPriceLoad==="function") supPriceLoad().then(()=>shpRenderKeep()); }catch(_){}
     render(); toast("Приложение обновилось — смета на месте. Не забудьте «Сохранить»"); },500); })();
 
+/* ===== Документы (Кирилл 07.11, вариант А): «договоры по фото, чтобы не потерялись; акт — мастер сфотографировал подписанный клиентом и вложил
+   под договором; и только тогда получает зарплату». Файлы — в «Файлах сделки» (Google Диск) с началом имени «Договор · » / «Акт · ».
+   «Все разделы» → «📁 Документы» (директор, технолог, дизайнер): по каждой сделке договор есть/нет, акт есть/ждём.
+   В сделке на монтаже/закрытой — карточка «Акт сдачи» с кнопкой «📷 Сфотографировать акт» (видит мастер). Без акта ЗП бригаде «ждёт акта» (сервер). ===== */
+const DOC_DG="Договор · ", DOC_ACT="Акт · ";
+S.docs={map:null,busy:false};
+function docCan(){ return !!(S.shop&&(S.shop.tech||S.shop.role==="office")); }
+async function docLoad(){ if(S.docs.busy) return; S.docs.busy=true; const j=await shpGet("action=docs",true); S.docs.busy=false; S.docs.map=j&&j.ok?j.docs||{}:"err"; S.docs.from=j&&j.actFrom||0; const m=document.getElementById("docM"); if(m&&m._draw) m._draw(); }
+function docActNeed(o){ return /^(montazh|closed)$/.test(o.stage||""); }
+async function docUpload(id,kind,files){ const pre=kind==="act"?DOC_ACT:DOC_DG; let n=0;
+  for(const x of [...files].slice(0,12)){ let data="", mime=x.type||"application/octet-stream", name=x.name;
+    try{ if(/^image\//.test(mime)&&typeof tzImg==="function"){ data=await tzImg(x); mime="image/jpeg"; name=name.replace(/\.[a-z0-9]+$/i,"")+".jpg"; } else { if(x.size>25*1048576){ toast("«"+x.name+"» больше 25 МБ"); continue; } data=await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(",")[1]||""); r.onerror=()=>res(""); r.readAsDataURL(x); }); } }catch(_){ data=""; }
+    if(!data){ toast("Не получилось прочитать "+x.name); continue; } toast("Загружаю "+(n+1)+"…");
+    const j=await shpPost({action:"dfileAdd",order:id,name:pre+shpToday().split("-").reverse().join(".")+" "+name,mime,data,hide:kind!=="act"}); if(j&&j.file){ n++; if(S.df&&Array.isArray(S.df[id])) S.df[id].push(j.file); } }
+  if(n){ toast(kind==="act"?"Акт вложен — зарплата по заказу пойдёт":"Договор сохранён"); if(S.docs.map&&S.docs.map!=="err"){ const x=S.docs.map[id]||(S.docs.map[id]={dg:0,act:0}); x[kind==="act"?"act":"dg"]+=n; } }
+  return n; }
+function docPick(id,kind,after){ const i=document.createElement("input"); i.type="file"; i.accept="image/*,application/pdf"; i.multiple=true; i.capture=""; i.style.display="none"; document.body.appendChild(i);
+  i.addEventListener("change",async()=>{ const f=i.files; i.remove(); if(f&&f.length){ await docUpload(id,kind,f); after&&after(); } }); i.click(); }
+/* раздел «Документы» */
+function docModal(){ document.getElementById("docM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="docM"; const st={f:"all"};
+  m._draw=()=>{ const M=S.docs.map, L=(S.shop.orders||[]).filter(o=>o.stage!=="lost").slice().sort((a,b)=>(b.created||0)-(a.created||0));
+    const row=o=>{ const x=(M&&M!=="err"&&M[o.id])||{dg:0,act:0}, need=docActNeed(o);
+      return {o,x,need,miss:!x.dg||(need&&!x.act)}; };
+    const R=L.map(row), V=st.f==="miss"?R.filter(r=>r.miss):R, nm=R.filter(r=>r.miss).length;
+    m.innerHTML=`<div class="modal-card doc-mm"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">📁 Документы</h2><button type="button" class="btn sm" data-dc="x">Закрыть</button></div>
+      <p class="muted" style="margin:4px 0 10px">Договор — фото или скан, чтобы не потерялся. Акт сдачи — фотографирует мастер, когда клиент подписал; без акта зарплата за заказ ждёт.</p>
+      <div class="doc-seg"><button type="button" data-dc="f" data-v="all" aria-pressed="${st.f==="all"}">Все ${R.length}</button><button type="button" data-dc="f" data-v="miss" aria-pressed="${st.f==="miss"}">Чего-то нет ${nm}</button></div>
+      ${M===null?`<p class="muted">Загружаю…</p>`:M==="err"?`<p class="note">Не загрузилось — обновите скрипт таблицы.</p>`:!V.length?`<p class="muted">Всё на месте 👍</p>`:`<ul class="doc-l">${V.slice(0,80).map(({o,x,need})=>`<li class="doc-i">
+        <button type="button" class="doc-t" data-dc="open" data-id="${esc(o.id)}"><b>№ ${esc(o.num||"")} ${esc(o.client||"")}</b><small class="muted">${esc(o.kind||"")}${o.master?" · 👷 "+esc(o.master):""}</small></button>
+        <div class="doc-r"><span>📄 Договор</span>${x.dg?`<b class="doc-ok">✓ ${x.dg} фото</b>`:`<b class="doc-no">нет</b>`}<button type="button" class="btn sm" data-dc="up" data-k="dg" data-id="${esc(o.id)}">📷${x.dg?" ещё":" Сфотографировать"}</button></div>
+        <div class="doc-r"><span>📄 Акт сдачи</span>${x.act?`<b class="doc-ok">✓ есть</b>`:need?`<b class="doc-wt">ждём от мастера</b>`:`<span class="muted">после монтажа</span>`}${need&&!x.act?`<button type="button" class="btn sm" data-dc="up" data-k="act" data-id="${esc(o.id)}">📷 Вложить</button>`:""}</div></li>`).join("")}</ul>`}</div>`; };
+  m._draw(); document.body.appendChild(m); if(S.docs.map===null||S.docs.map==="err"){ S.docs.map=null; docLoad(); }
+  m.addEventListener("click",e=>{ const b=e.target.closest("[data-dc]"); if(e.target===m||(b&&b.dataset.dc==="x")){ m.remove(); return; } if(!b) return; const a=b.dataset.dc;
+    if(a==="f"){ st.f=b.dataset.v; m._draw(); } else if(a==="open"){ m.remove(); shpGo("order",b.dataset.id); } else if(a==="up") docPick(b.dataset.id,b.dataset.k,()=>m._draw()); }); }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="doc-open"]'); if(!t) return; e.stopPropagation(); docModal(); },true);
+if(typeof shpMoreHtml==="function"){ const _dcM=shpMoreHtml; shpMoreHtml=function(){ let h=String(_dcM.apply(this,arguments)); if(docCan()) h=`<div class="firm-top dir-top doc-top"><span>📁 <b>Документы</b> — договоры и акты</span><button type="button" class="btn" data-act="doc-open">Открыть</button></div>`+h; return h; }; }
+/* в сделке: «Акт сдачи» (монтаж / закрыт) */
+function docActCard(o){ if(!docActNeed(o)) return ""; const L=S.df&&S.df[o.id]; if(L===undefined&&typeof tzFiles==="function") tzFiles(o.id);
+  const A=Array.isArray(L)?L.filter(f=>String(f.name).indexOf(DOC_ACT)===0):[];
+  return `<div class="card doc-act"><div class="shp-rc-h"><h2>📄 Акт сдачи</h2>${A.length?`<b class="doc-ok">✓ вложен</b>`:`<b class="doc-no">нужен</b>`}</div>
+    ${A.length?`<ul class="tz-fl">${A.map(f=>`<li class="tz-f"><a href="${esc(f.url)}" target="_blank" rel="noopener">🖼 ${esc(String(f.name).slice(DOC_ACT.length))}</a><small class="muted">${esc(f.who||"")}</small></li>`).join("")}</ul>`:`<p class="muted" style="margin:4px 0 8px">Клиент подписал акт → сфотографируйте и вложите сюда. Без акта зарплата за этот заказ не начислится.</p>`}
+    <button type="button" class="btn ${A.length?"":"primary "}doc-big" data-act="doc-act" data-id="${esc(o.id)}">📷 ${A.length?"Добавить ещё фото":"Сфотографировать акт"}</button></div>`; }
+if(typeof shpOrderHtml==="function"){ const _dcO=shpOrderHtml; shpOrderHtml=function(){ const h=_dcO.apply(this,arguments); try{ const o=shpById(S.shop.cur); if(!o) return h; const c=docActCard(o); if(!c) return h; const i=String(h).indexOf('<div class="card');
+  return i>0?h.slice(0,i)+c+h.slice(i):h+c; }catch(_){ return h; } }; }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="doc-act"]'); if(!t) return; e.stopPropagation(); docPick(t.dataset.id,"act",()=>shpRenderKeep()); },true);
+/* «Моя зарплата»: что ждёт акта */
+if(typeof shpZpHtml==="function"){ const _dcZ=shpZpHtml; shpZpHtml=function(){ const h=_dcZ.apply(this,arguments); try{ const W=S.shop.zp&&S.shop.zp.waitAct; if(!W||!W.length) return h; const sum=W.reduce((a,x)=>a+(+x.amount||0),0);
+  const b=`<div class="card doc-wait"><h2 style="margin:0 0 4px">⏳ Ждёт акта · ${shpRub(sum)}</h2><p class="muted" style="margin:0 0 6px">Заказ закрыт, но фото акта нет — зарплата начислится, как только вложите акт.</p><ul class="doc-l">${W.map(x=>`<li class="doc-r"><span>№ ${esc(x.num||"")} ${esc(x.client||"")}${S.shop.tech?" · "+esc(x.person):""}</span><b>${shpRub(x.amount)}</b><button type="button" class="btn sm" data-act="doc-act" data-id="${esc(x.order)}">📷 Акт</button></li>`).join("")}</ul></div>`;
+  const i=String(h).indexOf("</div></div>"); return i>0?h.slice(0,i+12)+b+h.slice(i+12):b+h; }catch(_){ return h; } }; }
+(function(){ const st=document.createElement("style"); st.textContent=`.doc-mm{width:min(620px,100%);max-height:92vh;overflow:auto}.doc-seg{display:flex;gap:8px;margin:0 0 10px}.doc-seg button{flex:1;min-height:42px;border-radius:12px;border:1px solid var(--line,#444);background:none;color:inherit;font:inherit;font-weight:600}.doc-seg button[aria-pressed="true"]{background:var(--ink,#fff);color:var(--bg,#000)}
+.doc-l{list-style:none;margin:0;padding:0;display:grid;gap:8px}.doc-i{padding:10px 12px;border:1px solid var(--line,#333);border-radius:14px;display:grid;gap:6px}.doc-t{display:grid;text-align:left;background:none;border:0;color:inherit;font:inherit;padding:0;cursor:pointer}
+.doc-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px}.doc-r>span:first-child{flex:1 1 110px}.doc-ok{color:#30a46c}.doc-no{color:#e5484d}.doc-wt{color:#ffb020}.doc-big{width:100%;min-height:52px}.doc-wait{border-color:#ffb020}`; document.head.appendChild(st); })();
+if(typeof prAllHtml==="function"){ const _dcA=prAllHtml; prAllHtml=function(){ let o=String(_dcA.apply(this,arguments)); if(!docCan()||o.indexOf('data-act="doc-open"')>=0) return o; const b=`<div class="firm-top dir-top doc-top"><span>📁 <b>Документы</b> — договоры и акты</span><button type="button" class="btn" data-act="doc-open">Открыть</button></div>`;
+  const m=o.match(/<div class="firm-top dir-top due-top">[\s\S]*?<\/button><\/div>/); return m?o.replace(m[0],m[0]+b):b+o; }; }
+
 /* ---------- Смета: «Не забыли?» и светофор продажи (Кирилл 05.11) ----------
    1) Перед «КП в PDF», «Отправить клиенту», «Клиент согласен» и «Сумму — в сделку» — короткий список того, что часто забывают.
       Что смета нашла сама — отмечено; остальное дизайнер отмечает «есть» или «не нужно» (сохраняется в смете, d.chk). Пока не всё — дальше не пускает.
@@ -19971,7 +20026,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="6cd6576a36";
+const CHK_BUILD="af5253299b";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20784,7 +20839,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="6cd6576a36";/*cehqr-build*/
+  const BUILD="af5253299b";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
