@@ -19104,6 +19104,76 @@ if(typeof prAllHtml==="function"){ const _glA=prAllHtml; prAllHtml=function(){ l
 if(typeof shpMoreHtml==="function"){ const _glM=shpMoreHtml; shpMoreHtml=function(){ let h=String(_glM.apply(this,arguments)); if(glavOn()&&h.indexOf('data-act="glav-ctl"')<0) h=`<div class="firm-top dir-top gl-top"><span>👑 <b>Контроль дизайнеров</b> — сметы и коэффициенты</span><button type="button" class="btn" data-act="glav-ctl">Открыть</button></div>`+h; return h; }; }
 (function(){ const st=document.createElement("style"); st.textContent=`.gl-mm{width:min(560px,100%);max-height:90vh;overflow:auto}.gl-mon{display:flex;align-items:center;gap:10px;margin:10px 0}.gl-l{list-style:none;margin:0;padding:0}.gl-l li{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;padding:10px 0;border-bottom:1px solid rgba(127,127,127,.2)}.gl-l li>div{display:grid}.gl-k{font-weight:700}.gl-k.r{color:#e5484d}.gl-k.g{color:#30a46c}.gl-k.y{color:#e0b000}.gl-low{width:100%;color:#e5484d}`; document.head.appendChild(st); })();
 
+/* ===== «Смета для дизайнера» по подписке (Кирилл 07.11, вариант А): страница …/smeta/ — та же сборка, флаг APP_DES.
+   Дизайнер любой фирмы: имя + телефон + свой PIN → быстрая смета с базой цен; свои цены меняет только где нужно. 14 дней бесплатно, дальше 990 ₽/мес.
+   Запросы к таблице подменяются: smeta/smetaList/smetaSave → desSm*, qkSet → desSet, цены → desPrice (только база Базиса). Сделок, цеха, чатов нет. ===== */
+if(window.APP_DES){
+  const DK="w24-des"; let DES={tok:"",me:null};
+  try{ DES.tok=localStorage.getItem(DK)||""; DES.me=JSON.parse(localStorage.getItem(DK+"-me")||"null"); }catch(_){}
+  document.documentElement.classList.add("des");
+  const MAPG={smeta:"desSmGet",smetaList:"desSmList",qkSet:"desSet",price:"desPrice",smScale:"desScale"}, MAPP={smetaSave:"desSmSave",qkSetSave:"desSetSave",smetaDel:"desSmDel",desReg:"desReg",desLogin:"desLogin"};
+  const kpOf=()=>{ const k=Object.assign({},DES.kp||{}); const logo=k.logo||""; delete k.logo; if(!k.name) k.name=(DES.me&&(DES.me.firm||DES.me.name))||""; if(!k.phone) k.phone=DES.me&&DES.me.phone?"+"+DES.me.phone:""; return {kp:Object.assign({range:true,minus:10,plus:15},k),logo}; };
+  const fake=a=>a==="cfg"?{ok:true,cfg:kpOf()}:a==="shop"?{ok:true,tech:false,role:"office",orders:[],general:{lastAt:0},tasks:[],staff:[]}:a==="cfg"?{ok:true,cfg:{kp:{name:(DES.me&&(DES.me.firm||DES.me.name))||"",phone:DES.me&&DES.me.phone?"+"+DES.me.phone:"",range:true,minus:10,plus:15}}}
+    :{ok:true,items:[],tasks:[],events:[],messages:[],staff:[],online:[],files:[],cfg:{}};
+  const _f=window.fetch.bind(window);
+  try{ DES.kp=JSON.parse(localStorage.getItem(DK+"-kp")||"null"); }catch(_){} 
+  const kpKeep=()=>{ try{ localStorage.setItem(DK+"-kp",JSON.stringify(DES.kp||{})); }catch(_){} };
+  async function kpGrab(r){ try{ const j=await r.clone().json(); if(j&&j.ok&&j.kp){ DES.kp=j.kp; kpKeep(); if(S.shop){ const c=kpOf(); S.shop.cfgAll=Object.assign(S.shop.cfgAll||{},c); } } }catch(_){} return kickChk(r); }
+  let kicked=0; async function kickChk(r){ try{ const j=await r.clone().json(); if(j&&j.error==="pin"&&j.kicked) kickOut(); }catch(_){} return r; }
+  function kickOut(){ if(kicked) return; kicked=1; try{ [DK,DK+"-me",DK+"-kp","cehqr-officepin","cehqr-who"].forEach(k=>localStorage.removeItem(k)); }catch(_){}
+    const d=document.createElement("div"); d.className="modal"; d.innerHTML=`<div class="modal-card"><h2 style="margin-top:0">Вход с другого устройства</h2><p>С вашим аккаунтом вошли на другом телефоне или компьютере. Одна подписка — не больше двух устройств, поэтому здесь вход закрыт.</p><p class="muted">Если это были не вы — войдите здесь снова: выйдет то, другое устройство.</p><button type="button" class="btn primary" style="width:100%" onclick="location.reload()">Понятно</button></div>`; document.body.appendChild(d); }
+  window.fetch=async function(u,o){ try{ const su=S.site&&S.site.stagesUrl, us=typeof u==="string"?u:(u&&u.url)||""; if(!su||us.indexOf(su)!==0) return _f(u,o);
+      if(o&&o.method==="POST"){ let b={}; try{ b=JSON.parse(o.body||"{}"); }catch(_){} const a=String(b.action||""); if(/^des[A-Z]/.test(a)||MAPP[a]){ b.action=MAPP[a]||a; if(DES.tok) b.pin=DES.tok; return kickChk(await _f(su,Object.assign({},o,{body:JSON.stringify(b)}))); }
+        if(a==="cfgSave"&&(b.key==="kp"||b.key==="logo")){ const K=Object.assign({},DES.kp||{}); if(b.key==="logo") K.logo=b.value||""; else Object.assign(K,b.value||{},{logo:K.logo||""});
+          const j=await post({action:"desSetSave",kpOnly:true,kp:K,pin:DES.tok}); if(j&&j.ok){ DES.kp=K; kpKeep(); setTimeout(desKpPaint,60); } else if(j&&j.error==="big") toast("Логотип слишком большой — выберите попроще"); else if(j&&j.error==="lic") toast("Срок закончился — продлите подписку");
+          return new Response(JSON.stringify(j&&j.ok?{ok:true}:{ok:false,error:(j&&j.error)||"net"}),{headers:{"Content-Type":"application/json"}}); }
+        return new Response(JSON.stringify(fake(a)),{headers:{"Content-Type":"application/json"}}); }
+      const U=new URL(us), a=U.searchParams.get("action")||""; if(/^des[A-Z]/.test(a)||MAPG[a]){ U.searchParams.set("action",MAPG[a]||a); if(DES.tok) U.searchParams.set("pin",DES.tok); if(a==="qkSet") return kpGrab(await _f(U.href,o)); return kickChk(await _f(U.href,o)); }
+      return new Response(JSON.stringify(fake(a)),{headers:{"Content-Type":"application/json"}}); }catch(e){ return _f(u,o); } };
+  if(window.firmBar!==undefined||true){ const _fb=window.firmBar; window.firmBar=r=>["smetas"]; }
+  const save=(tok,me)=>{ DES.tok=tok; DES.me=me; try{ localStorage.setItem(DK,tok); localStorage.setItem(DK+"-me",JSON.stringify(me)); localStorage.setItem("cehqr-officepin",tok); localStorage.setItem("cehqr-who",String(me.name||"").slice(0,40)); }catch(_){} };
+  const out=()=>{ try{ [DK,DK+"-me",DK+"-kp","cehqr-officepin","cehqr-who"].forEach(k=>localStorage.removeItem(k)); }catch(_){} location.reload(); };
+  async function post(b){ try{ const r=await _f(S.site.stagesUrl,{method:"POST",body:JSON.stringify(b)}); return await r.json(); }catch(_){ return null; } }
+  async function meLoad(){ if(!DES.tok) return; try{ const r=await _f(S.site.stagesUrl+"?action=desMe&pin="+encodeURIComponent(DES.tok),{cache:"no-cache"}); const j=await r.json(); if(j&&j.ok){ DES.me=j.me; try{ localStorage.setItem(DK+"-me",JSON.stringify(j.me)); }catch(_){} if(S.view==="shop") render(); } else if(j&&j.error==="pin"){ if(j.kicked) kickOut(); else out(); } }catch(_){} }
+  setTimeout(meLoad,1500);
+  async function kpLoad(){ if(!DES.tok) return; try{ await kpGrab(await _f(S.site.stagesUrl+"?action=desSet&pin="+encodeURIComponent(DES.tok),{cache:"no-cache"})); }catch(_){} }
+  setTimeout(kpLoad,1800);
+  window.__w24Ready=window.__w24Ready||0;
+  function desLoginHtml(){ const st=S.desSt=S.desSt||{mode:"reg"};
+    return `<div class="des-wrap"><div class="des-hero"><h1>Смета за 5 минут</h1><p>Для дизайнеров мебели. ЛДСП, МДФ, кромка, фурнитура — списком, с ценами. Коэффициент и цена клиенту сразу, КП в PDF клиенту.</p>
+      <ul><li>Вся база материалов с ценами уже есть</li><li>Меняете цену только там, где у вас другая — она запоминается</li><li>Петли, ящики, столешницы — по разделам и фирмам</li><li>14 дней бесплатно, дальше 990 ₽ в месяц</li></ul></div>
+      <form class="des-f" id="desF" autocomplete="on"><div class="des-seg"><button type="button" data-ds="reg" aria-pressed="${st.mode==="reg"}">Я новый</button><button type="button" data-ds="login" aria-pressed="${st.mode==="login"}">Уже есть аккаунт</button></div>
+        ${st.mode==="reg"?`<label>Имя<input name="name" maxlength="40" autocomplete="name" required></label><label>Фирма / город (по желанию)<input name="firm" maxlength="80"></label>`:""}
+        <label>Телефон<input name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="+7 914 …"></label>
+        <label>${st.mode==="reg"?"Придумайте PIN (4–12 цифр)":"Ваш PIN"}<input name="ppin" type="password" inputmode="numeric" maxlength="12" required autocomplete="${st.mode==="reg"?"new-password":"current-password"}"></label>
+        <button type="submit" class="btn primary des-go">${st.mode==="reg"?"Начать бесплатно — 14 дней":"Войти"}</button><p class="des-err" id="desErr"></p></form></div>`; }
+  if(typeof shpLoginHtml==="function"){ const _dl=shpLoginHtml; shpLoginHtml=function(){ window.__w24Ready=1; return desLoginHtml(); }; }
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-ds]"); if(!b) return; e.preventDefault(); e.stopPropagation(); S.desSt={mode:b.dataset.ds}; render(); },true);
+  document.addEventListener("submit",async e=>{ const f=e.target; if(!f||f.id!=="desF") return; e.preventDefault(); e.stopPropagation(); const g=n=>(f.elements[n]&&f.elements[n].value||"").trim(), err=document.getElementById("desErr");
+    const reg=(S.desSt||{}).mode!=="login", sb=f.querySelector("[type=submit]"); sb.disabled=true; const j=await post({action:reg?"desReg":"desLogin",name:g("name"),firm:g("firm"),phone:g("phone"),ppin:g("ppin"),ua:navigator.userAgent.slice(0,60)}); sb.disabled=false;
+    if(!j){ err.textContent="Нет связи — проверьте интернет"; return; } if(!j.ok){ err.textContent=j.msg||"Не получилось"; return; }
+    save(j.session,j.me); toast(reg?"Добро пожаловать! 14 дней бесплатно":"Вы вошли"); setTimeout(()=>location.reload(),400); },true);
+  /* после входа: сразу «Сметы», полоска подписки */
+  { const _dr=render; render=function(){ try{ if(DES.tok&&S.view==="shop"&&S.shop&&S.shop.loaded&&!S.desGo){ S.desGo=1; S.shop.mode="smetas"; } }catch(_){} return _dr.apply(this,arguments); }; }
+  function desBar(){ const m=DES.me; if(!m) return ""; const left=m.left, ro=m.ro, ct=m.contact||"https://t.me/timebel_ceh_bot";
+    return `<div class="des-bar${ro?" bad":""}"><span>${ro?"<b>Бесплатный срок закончился</b> — сметы только для просмотра":`<b>${esc(m.name)}</b> · ${left>0?(left<=14&&m.until-Date.now()<15*864e5?"бесплатно ещё "+left+" "+(left===1?"день":left<5?"дня":"дней"):"подписка до "+new Date(m.until).toLocaleDateString("ru-RU")):""}`}</span>
+      <a class="btn sm" href="${esc(ct)}" target="_blank" rel="noopener">${ro?"Продлить — "+(m.price||990)+" ₽/мес":"Продлить"}</a><button type="button" class="btn sm" data-deskp="1">Моё КП</button><button type="button" class="btn sm" data-desout="1">Выйти</button></div>`; }
+  function desKpPaint(){ const m=document.getElementById("desKpM"); if(!m||typeof kpcHtml!=="function") return; m.querySelector(".des-kpb").innerHTML=kpcHtml().replace(/<h2 class="kpc-h">[^<]*<\/h2>/,""); }
+  function desKpOpen(){ document.getElementById("desKpM")?.remove(); if(S.shop){ S.shop.cfgAll=Object.assign(S.shop.cfgAll||{},kpOf()); S.shop.kpD=null; }
+    const m=document.createElement("div"); m.className="modal"; m.id="desKpM";
+    m.innerHTML=`<div class="modal-card des-kpm"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">Моё КП</h2><button type="button" class="btn sm" data-deskpx="1">Закрыть</button></div><p class="muted" style="margin:6px 0 10px">Ваше название, телефон и логотип — в шапке КП и спецификации. Видите только вы.</p><div class="des-kpb"></div></div>`;
+    document.body.appendChild(m); desKpPaint(); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-deskpx]")) m.remove(); }); }
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-deskp]"); if(!b) return; e.stopPropagation(); desKpOpen(); },true);
+  if(typeof viewShop==="function"){ const _dv=viewShop; viewShop=function(){ const h=_dv.apply(this,arguments); try{ if(DES.tok&&S.shop&&S.shop.mode==="smetas") return desBar()+h; }catch(_){} return h; }; }
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-desout]"); if(!b) return; e.stopPropagation(); out(); },true);
+  (function(){ const st=document.createElement("style"); st.textContent=`#desKpM .kpc-sw,#desKpM .kpc-sw+p,#desKpM label:has(.r),#desKpM #kpcEx{display:none!important}#desKpM .modal-card{max-width:560px}`+`html.des .sm-trial,html.des [data-act="sm-deal"],html.des [data-act="sm-sum"],html.des [data-act="sm-xsend"],html.des [data-act="sm-unlock"],html.des #appBar,html.des .pc-sw,html.des #role{display:none!important}
+html.des .wrap{padding-bottom:40px}html.des.pc .wrap,html.des.pc .top-in{margin-left:auto!important;margin-right:auto!important;max-width:1100px}
+.des-wrap{max-width:520px;margin:10px auto;display:grid;gap:16px}.des-hero h1{margin:0 0 6px;font-size:30px}.des-hero p{margin:0 0 8px;opacity:.8}.des-hero ul{margin:0;padding-left:20px;display:grid;gap:4px}
+.des-f{display:grid;gap:10px;padding:16px;border-radius:16px;outline:1px solid rgba(127,127,127,.3)}.des-f label{display:grid;gap:4px;font-weight:600}.des-f input{min-height:48px;font-size:17px}.des-go{min-height:52px}
+.des-seg{display:flex;gap:6px}.des-seg button{flex:1;min-height:44px;border-radius:12px;border:1px solid rgba(127,127,127,.4);background:none;color:inherit;font:inherit;font-weight:600}.des-seg button[aria-pressed="true"]{background:var(--ink,#fff);color:var(--bg,#000)}
+.des-err{color:#e5484d;margin:0;min-height:1em}.des-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0 12px;padding:10px 12px;border-radius:12px;outline:1px solid rgba(127,127,127,.3)}.des-bar span{flex:1 1 200px}.des-bar.bad{outline-color:#e5484d}`; document.head.appendChild(st); })();
+}
+
 /* ---------- Смета: «Не забыли?» и светофор продажи (Кирилл 05.11) ----------
    1) Перед «КП в PDF», «Отправить клиенту», «Клиент согласен» и «Сумму — в сделку» — короткий список того, что часто забывают.
       Что смета нашла сама — отмечено; остальное дизайнер отмечает «есть» или «не нужно» (сохраняется в смете, d.chk). Пока не всё — дальше не пускает.
@@ -20311,7 +20381,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="aea67999e1";
+const CHK_BUILD="7321d7ff72";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21124,7 +21194,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="aea67999e1";/*cehqr-build*/
+  const BUILD="7321d7ff72";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
