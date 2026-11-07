@@ -17621,65 +17621,69 @@ function qkPmModal(P,s,done,opt){ opt=opt||{}; const t=QK_T;
   const push=()=>{ undo.push(JSON.stringify(PM.items)); if(undo.length>40) undo.shift(); };
   const m=qkModal("qkPmM",`<div class="qk-fbar"><button type="button" class="btn" data-e="cancel">${opt.step?"‹ Размеры":"‹ Отмена"}</button><b>${opt.step?"2. Внутри шкафа":"Детали шкафа"}</b><button type="button" class="btn primary" data-e="ok">В смету</button></div>
     <div class="pm-top"><button type="button" class="pm-sz" data-e="size"></button><button type="button" class="btn sm" data-e="theme"></button><button type="button" class="btn sm" data-e="doors"></button><button type="button" class="btn sm" data-e="undo">↩</button></div>
-    <div class="pm-mini"></div><div class="pm-v"></div><div class="pm-bar"></div>`,true);
+    <div class="shp-seg pm-views" role="group" aria-label="Вид"></div><div class="pm-mini"></div><div class="pm-v"></div><div class="pm-bar"></div>`,true);
   m.classList.add("pm-modal");
   const corps=()=>{ const g=G0(); if(!g.ok) return [{x0:0,x1:PM.W||1000}]; let x=P.wl?g.pk:0; const L=g.corp.map(c=>{ const r={x0:x,x1:x+c.w}; x+=c.w; return r; }); return L; };
-  const isH=it=>it.w>=it.h; const vis=it=>!(it.k==="door"&&!doors)&&it.k!=="back";
-  const gapLabels=(items,fs)=>{ let o=""; const H=items.filter(it=>vis(it)&&isH(it)&&it.k!=="rod"&&it.k!=="fx"&&it.k!=="plinth"&&!(it.k==="drw"&&!/фасад/.test(it.n))&&it.w>60), done2=new Set();
-    H.forEach(a=>{ let best=null, bd=1e9; H.forEach(b=>{ if(b===a) return; const ov=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x); if(ov<Math.min(a.w,b.w)*0.5) return; const g=b.y-(a.y+a.h); if(g>8&&g<bd){ bd=g; best=b; } });
-      if(!best) return; const x0=Math.max(a.x,best.x), x1=Math.min(a.x+a.w,best.x+best.w), key=Math.round(x0)+"|"+Math.round(a.y+a.h); if(done2.has(key)) return; done2.add(key);
-      if(bd>fs*1.3) o+=`<text x="${(x0+x1)/2}" y="${-(a.y+a.h+bd/2)+fs*0.35}" font-size="${fs}" class="pm-dim">${Math.round(bd)}</text>`; }); return o; };
-  const paint=()=>{ m.dataset.th=theme; const cs=corps(), f=foc>0&&cs[foc-1]?cs[foc-1]:{x0:Math.min(0,...PM.items.map(i=>i.x)),x1:Math.max(PM.W,...PM.items.map(i=>i.x+i.w))};
-    const X0=f.x0-90, X1=f.x1+90, Y0=-30, Y1=Math.max(PM.H,...PM.items.map(i=>i.y+i.h))+90;
+  /* Кирилл 07.11: вид спереди / сбоку / сверху — во всех трёх двигаем и меняем длину. h — ось по горизонтали экрана, v — по вертикали; сверху: перед шкафа внизу */
+  const AX={x:"w",y:"h",z:"d"}, VWS={front:{h:"x",v:"y",flip:false,n:"Спереди"},side:{h:"z",v:"y",flip:false,n:"Сбоку"},top:{h:"x",v:"z",flip:true,n:"Сверху"}};
+  let view="front"; const VW=()=>VWS[view];
+  const hp=it=>it[VW().h], hl=it=>it[AX[VW().h]], vp=it=>it[VW().v], vl=it=>it[AX[VW().v]];
+  const isH=it=>view==="front"?it.w>=it.h:hl(it)>=vl(it);
+  const sy=(v,l)=>VW().flip?v:-(v+l);
+  const focR=()=>{ const cs=corps(); return foc>0&&cs[foc-1]?cs[foc-1]:null; };
+  const vis=it=>{ if(it.k==="door"&&!doors) return false; if(view==="front") return it.k!=="back"; const f=focR(); if(f&&view==="side"&&(it.x+it.w<=f.x0+1||it.x>=f.x1-1)) return false; return true; };
+  const dimOf=a=>a==="x"?PM.W:a==="y"?PM.H:PM.D;
+  const paint=()=>{ m.dataset.th=theme; const cs=corps(), f=focR(), V=VW();
+    const VI=PM.items.filter(vis), hs0=VI.map(hp), hs1=VI.map(it=>hp(it)+hl(it)), vs0=VI.map(vp), vs1=VI.map(it=>vp(it)+vl(it));
+    let X0=Math.min(0,...hs0), X1=Math.max(dimOf(V.h),...hs1); if(f&&V.h==="x"){ X0=f.x0; X1=f.x1; } const vmin=Math.min(0,...vs0), vmax=Math.max(dimOf(V.v),...vs1), pad=Math.max(60,(X1-X0)*0.06);
+    X0-=pad; X1+=pad; const SY0=V.flip?vmin-pad:-(vmax+pad), SY1=V.flip?vmax+pad:-(vmin-pad*0.4);
     m.querySelector('[data-e="size"]').innerHTML=`<b>${N(num(P.W))} × ${N(num(P.H))} × ${N(num(P.D))}</b><small>размеры шкафа ✎</small>`;
     m.querySelector('[data-e="theme"]').textContent=theme==="light"?"☾ Тёмный":"☀ Светлый"; m.querySelector('[data-e="doors"]').textContent=doors?"Двери: видны":"Двери: скрыты";
+    m.querySelector(".pm-views").innerHTML=Object.keys(VWS).map(k=>`<button type="button" data-view="${k}" aria-pressed="${view===k}">${VWS[k].n}</button>`).join("");
     m.querySelector(".pm-mini").innerHTML=cs.length>1?`<button type="button" class="pm-mc${foc===0?" on":""}" data-foc="0">Весь</button>`+cs.map((c,i)=>`<button type="button" class="pm-mc${foc===i+1?" on":""}" data-foc="${i+1}" style="flex:${Math.max(1,(c.x1-c.x0)/300)}">${i+1}</button>`).join(""):"";
-    const fs=Math.max(36,Math.min(80,(X1-X0)/14)); let o=`<rect x="${X0}" y="${-Y1}" width="${X1-X0}" height="${Y1-Y0}" class="pm-bg" data-bg="1"/>`;
-    const bk=PM.items.filter(it=>it.k==="back"); bk.forEach(it=>{ o+=`<rect x="${it.x}" y="${-(it.y+it.h)}" width="${it.w}" height="${it.h}" class="pm-back"/>`; });
-    PM.items.forEach(it=>{ if(!vis(it)) return; const on=sel&&(sel===it.id||(it.gid&&PM.items.find(z=>z.id===sel&&z.gid===it.gid))); const cls="pm-p k-"+it.k+(it.mat&&it.mat.n?" cust":"")+(on?" on":"");
-      if(it.k==="rod") o+=`<rect x="${it.x}" y="${-(it.y+it.h)}" width="${it.w}" height="${Math.max(it.h,20)}" rx="10" class="${cls}" data-id="${it.id}"/>`;
-      else if(it.k==="led") o+=`<rect x="${it.x}" y="${-(it.y+Math.max(it.h,14))}" width="${Math.max(it.w,14)}" height="${Math.max(it.h,14)}" rx="6" class="${cls}" data-id="${it.id}"/>`;
-      else if(it.k==="fx") o+=`<g data-id="${it.id}" class="${cls}"><rect x="${it.x}" y="${-(it.y+it.h)}" width="${it.w}" height="${it.h}" rx="16"/><text x="${it.x+it.w/2}" y="${-(it.y+it.h/2)+fs*0.35}" font-size="${Math.min(fs,it.h*0.6)}">${esc(String(it.n).slice(0,Math.max(4,Math.floor(it.w/(fs*0.55)))))}</text></g>`;
-      else o+=`<rect x="${it.x}" y="${-(it.y+it.h)}" width="${it.w}" height="${it.h}" class="${cls}" data-id="${it.id}"/>`; });
-    /* Кирилл 07.11: размеры видны только пока тянете — от соседней детали снизу/сверху (или слева/справа); отпустили — исчезают */
-    if(drag&&drag.S&&(drag.moved||drag.mode==="h")){ const D2=drag.S, ids=new Set(grp(D2).map(z=>z.id)), V=PM.items.filter(it=>vis(it)&&!ids.has(it.id)&&it.k!=="rod"&&it.k!=="fx");
-      const ln=(x1,y1,x2,y2,v,tx,ty)=>`<line x1="${x1}" y1="${-y1}" x2="${x2}" y2="${-y2}" class="pm-dl"/><text x="${tx}" y="${-ty}" font-size="${fs}" class="pm-dim pm-dimb">${Math.round(v)}</text>`;
-      if(isH(D2)){ const cx=D2.x+D2.w/2, col=V.filter(it=>it.x<=cx&&it.x+it.w>=cx), bel=col.filter(it=>it.y+it.h<=D2.y+0.5).sort((a,b)=>b.y+b.h-(a.y+a.h))[0], abv=col.filter(it=>it.y>=D2.y+D2.h-0.5).sort((a,b)=>a.y-b.y)[0];
-        const lo=bel?bel.y+bel.h:0, hi=abv?abv.y:PM.H; o+=ln(cx,lo,cx,D2.y,D2.y-lo,cx+fs*0.9,(lo+D2.y)/2-fs*0.3)+ln(cx,D2.y+D2.h,cx,hi,hi-(D2.y+D2.h),cx+fs*0.9,(D2.y+D2.h+hi)/2-fs*0.3); }
-      else { const cy=D2.y+D2.h/2, row=V.filter(it=>it.y<=cy&&it.y+it.h>=cy), lf=row.filter(it=>it.x+it.w<=D2.x+0.5).sort((a,b)=>b.x+b.w-(a.x+a.w))[0], rt=row.filter(it=>it.x>=D2.x+D2.w-0.5).sort((a,b)=>a.x-b.x)[0];
-        const lo=lf?lf.x+lf.w:0, hi=rt?rt.x:PM.W; o+=ln(lo,cy,D2.x,cy,D2.x-lo,(lo+D2.x)/2,cy+fs*0.5)+ln(D2.x+D2.w,cy,hi,cy,hi-(D2.x+D2.w),(D2.x+D2.w+hi)/2,cy+fs*0.5); } }
+    const fs=Math.max(30,Math.min(80,(X1-X0)/14)); let o=`<rect x="${X0}" y="${SY0}" width="${X1-X0}" height="${SY1-SY0}" class="pm-bg" data-bg="1"/>`;
+    if(view==="front") PM.items.filter(it=>it.k==="back").forEach(it=>{ o+=`<rect x="${it.x}" y="${-(it.y+it.h)}" width="${it.w}" height="${it.h}" class="pm-back"/>`; });
+    const ord=view==="front"?VI:VI.slice().sort((a,b)=>hl(b)*vl(b)-hl(a)*vl(a));
+    ord.forEach(it=>{ const on=sel&&(sel===it.id||(it.gid&&PM.items.find(z=>z.id===sel&&z.gid===it.gid))); const cls="pm-p k-"+it.k+(it.mat&&it.mat.n?" cust":"")+(on?" on":"");
+      const x=hp(it), w=Math.max(hl(it),it.k==="led"?14:1), h=Math.max(vl(it),it.k==="led"||it.k==="rod"?14:1), y=sy(vp(it),h);
+      if(it.k==="fx"&&view==="front") o+=`<g data-id="${it.id}" class="${cls}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16"/><text x="${x+w/2}" y="${y+h/2+fs*0.35}" font-size="${Math.min(fs,h*0.6)}">${esc(String(it.n).slice(0,Math.max(4,Math.floor(w/(fs*0.55)))))}</text></g>`;
+      else o+=`<rect x="${x}" y="${y}" width="${w}" height="${h}"${it.k==="rod"||it.k==="led"?` rx="8"`:""} class="${cls}" data-id="${it.id}"/>`; });
+    /* размеры — только пока тянете: от соседней детали до выбранной */
+    if(drag&&drag.S&&(drag.moved||drag.mode==="h")){ const D2=drag.S, ids=new Set(grp(D2).map(z=>z.id)), Vs=VI.filter(it=>!ids.has(it.id)&&it.k!=="rod"&&it.k!=="fx"&&it.k!=="led");
+      const ln=(h1,v1,h2,v2,val,th,tv)=>`<line x1="${h1}" y1="${V.flip?v1:-v1}" x2="${h2}" y2="${V.flip?v2:-v2}" class="pm-dl"/><text x="${th}" y="${V.flip?tv:-tv}" font-size="${fs}" class="pm-dim pm-dimb">${Math.round(val)}</text>`;
+      if(isH(D2)){ const c=hp(D2)+hl(D2)/2, col=Vs.filter(it=>hp(it)<=c&&hp(it)+hl(it)>=c), a0=vp(D2), a1=vp(D2)+vl(D2), bel=col.filter(it=>vp(it)+vl(it)<=a0+0.5).sort((a,b)=>vp(b)+vl(b)-(vp(a)+vl(a)))[0], abv=col.filter(it=>vp(it)>=a1-0.5).sort((a,b)=>vp(a)-vp(b))[0];
+        const lo=bel?vp(bel)+vl(bel):0, hi=abv?vp(abv):dimOf(V.v); o+=ln(c,lo,c,a0,a0-lo,c+fs*0.9,(lo+a0)/2-fs*0.3)+ln(c,a1,c,hi,hi-a1,c+fs*0.9,(a1+hi)/2-fs*0.3); }
+      else { const c=vp(D2)+vl(D2)/2, row=Vs.filter(it=>vp(it)<=c&&vp(it)+vl(it)>=c), a0=hp(D2), a1=hp(D2)+hl(D2), lf=row.filter(it=>hp(it)+hl(it)<=a0+0.5).sort((a,b)=>hp(b)+hl(b)-(hp(a)+hl(a)))[0], rt=row.filter(it=>hp(it)>=a1-0.5).sort((a,b)=>hp(a)-hp(b))[0];
+        const lo=lf?hp(lf)+hl(lf):0, hi=rt?hp(rt):dimOf(V.h); o+=ln(lo,c,a0,c,a0-lo,(lo+a0)/2,c+fs*0.5)+ln(a1,c,hi,c,hi-a1,(a1+hi)/2,c+fs*0.5); } }
     const S=sel&&PM.items.find(z=>z.id===sel);
-    if(S&&S.k!=="drw"){ const r=Math.max(18,(X1-X0)/34), h=isH(S); const hs=h?[[S.x,S.y+S.h/2,"l"],[S.x+S.w,S.y+S.h/2,"r"]]:[[S.x+S.w/2,S.y,"b"],[S.x+S.w/2,S.y+S.h,"t"]];
-      hs.forEach(([x,y,e])=>{ o+=`<circle cx="${x}" cy="${-y}" r="${r}" class="pm-h" data-hd="${e}"/>`; });
-      const ln=Math.round(h?S.w:S.h); o+=`<text x="${h?S.x+S.w/2:S.x+S.w+r*1.4}" y="${h?-(S.y+S.h)-r*0.8:-(S.y+S.h/2)}" font-size="${fs*0.9}" class="pm-len" text-anchor="${h?"middle":"start"}">${ln}</text>`; }
-    m.querySelector(".pm-v").innerHTML=`<svg class="pm-svg" viewBox="${X0} ${-Y1} ${X1-X0} ${Y1-Y0}" preserveAspectRatio="xMidYMid meet">${o}</svg>`;
+    if(S&&S.k!=="drw"&&vis(S)){ const r=Math.max(16,(X1-X0)/34), h=isH(S), x=hp(S), w=hl(S), vv=vp(S), vh=vl(S), Y=v=>V.flip?v:-v;
+      const hs=h?[[x,vv+vh/2,"l"],[x+w,vv+vh/2,"r"]]:[[x+w/2,vv,"b"],[x+w/2,vv+vh,"t"]];
+      hs.forEach(([a,b,e])=>{ o+=`<circle cx="${a}" cy="${Y(b)}" r="${r}" class="pm-h" data-hd="${e}"/>`; });
+      const ln=Math.round(h?w:vh); o+=`<text x="${h?x+w/2:x+w+r*1.4}" y="${h?Y(V.flip?vv:vv+vh)-r*0.8:Y(vv+vh/2)}" font-size="${fs*0.9}" class="pm-len" text-anchor="${h?"middle":"start"}">${ln}</text>`; }
+    m.querySelector(".pm-v").innerHTML=`<svg class="pm-svg" viewBox="${X0} ${SY0} ${X1-X0} ${SY1-SY0}" preserveAspectRatio="xMidYMid meet">${o}</svg>`;
     const bar=m.querySelector(".pm-bar");
     if(S){ const mn=S.mat&&S.mat.n?S.mat.n:S.m==="front"?"как фасад":S.m==="dvp"?"ДВП":"как корпус";
-      bar.innerHTML=`<div class="pm-sel"><b>${esc(S.k==="drw"?"Ящик":S.n)}</b><small>${Math.round(S.w)} × ${Math.round(S.h)} · глубина ${Math.round(S.d)} · ${esc(mn)}</small></div>
+      bar.innerHTML=`<div class="pm-sel"><b>${esc(S.k==="drw"?"Ящик":S.n)}</b><small>ширина ${Math.round(S.w)} · высота ${Math.round(S.h)} · глубина ${Math.round(S.d)} · ${esc(mn)}</small></div>
         <div class="pm-acts"><button type="button" class="btn" data-e="del">🗑 Удалить</button><button type="button" class="btn" data-e="copy">⧉ Копия</button>${S.k==="rod"||S.k==="fx"?"":`<button type="button" class="btn" data-e="mat">🎨 Материал</button>`}<button type="button" class="btn" data-e="num">✎ Размеры</button>${S.k==="drw"||S.k==="leg"?"":`<button type="button" class="btn" data-e="rot">↻ Повернуть</button>`}${S.k==="led"?`<button type="button" class="btn" data-e="prof">${S.prof===false?"Без профиля":"В профиле"}</button>`:""}<button type="button" class="btn" data-e="unsel">Готово</button></div>`; }
+    else if(view!=="front") bar.innerHTML=`<p class="pm-hint">${view==="side"?"Сбоку: тяните полку за кружок спереди — меняется глубина; тяните деталь — сдвигается вперёд-назад.":"Сверху: перед шкафа — внизу. Кружки — глубина и ширина детали."} Новые детали добавляются в виде «Спереди».</p>`;
     else bar.innerHTML=`<p class="pm-hint">Нажмите на деталь и тяните — пока тянете, видно расстояние до соседних деталей. Синие кружки — длина. Нажмите на пустое место — туда добавится новое.</p><div class="pm-acts">${[["shelf","+ Полка"],["stand","+ Стойка"],["drw","+ Ящик"],["rod","+ Штанга"],["led","💡 Подсветка"],["plank","+ Планка"],["plinth","+ Цоколь"],["leg","+ Ножка"],["oside","+ Наружная боковина"],["fx","+ Другое"]].map(([k,n])=>`<button type="button" class="btn" data-add="${k}">${n}</button>`).join("")}</div>`; };
-  const svgPt=e=>{ const sv=m.querySelector("svg"), pt=sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const u=pt.matrixTransform(sv.getScreenCTM().inverse()); return {x:u.x,y:-u.y}; };
+  const svgPt=e=>{ const sv=m.querySelector("svg"), pt=sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const u=pt.matrixTransform(sv.getScreenCTM().inverse()); return {h:u.x,v:VW().flip?u.y:-u.y}; };
   const pxmm=()=>{ const M=m.querySelector("svg").getScreenCTM(); return M?Math.hypot(M.a,M.b):1; };
-  /* прилипание к граням других деталей */
   const snapV=(v,list,th)=>{ let b=v,bd=th; list.forEach(x=>{ const d=Math.abs(x-v); if(d<bd){ bd=d; b=x; } }); return b; };
-  const edgesX=ex=>{ const L=[]; PM.items.forEach(it=>{ if(ex.has(it.id)||!vis(it)) return; L.push(it.x,it.x+it.w); }); L.push(0,PM.W); return L; };
-  const edgesY=ex=>{ const L=[]; PM.items.forEach(it=>{ if(ex.has(it.id)||!vis(it)) return; L.push(it.y,it.y+it.h); }); L.push(0,PM.H); return L; };
+  const edgesA=(a,ex)=>{ const L=[0,dimOf(a)]; PM.items.forEach(it=>{ if(ex.has(it.id)||!vis(it)) return; L.push(it[a],it[a]+it[AX[a]]); }); return L; };
   const grp=it=>it.gid?PM.items.filter(z=>z.gid===it.gid):[it];
-  m.addEventListener("pointerdown",e=>{ const sv=e.target.closest("svg"); if(!sv) return; const p=svgPt(e); lastPt=p;
+  m.addEventListener("pointerdown",e=>{ const sv=e.target.closest("svg"); if(!sv) return; const p=svgPt(e); if(view==="front") lastPt={x:p.h,y:p.v};
     const hd=e.target.closest("[data-hd]"), el=e.target.closest("[data-id]");
-    if(hd&&sel){ const S=PM.items.find(z=>z.id===sel); push(); drag={mode:"h",e:hd.dataset.hd,S,o:{x:S.x,y:S.y,w:S.w,h:S.h},p0:p}; }
-    else if(el){ const it=PM.items.find(z=>z.id===+el.dataset.id); if(!it) return; sel=it.id; push(); const G=grp(it); drag={mode:"m",S:it,G,o:G.map(z=>({z,x:z.x,y:z.y})),p0:p,moved:false}; }
+    if(hd&&sel){ const S=PM.items.find(z=>z.id===sel); push(); drag={mode:"h",e:hd.dataset.hd,S,o:{h0:hp(S),hl:hl(S),v0:vp(S),vl:vl(S)},p0:p}; }
+    else if(el){ const it=PM.items.find(z=>z.id===+el.dataset.id); if(!it) return; sel=it.id; push(); const G=grp(it), V=VW(); drag={mode:"m",S:it,G,o:G.map(z=>({z,h:z[V.h],v:z[V.v]})),p0:p,moved:false}; }
     else { sel=null; drag=null; }
     try{ sv.setPointerCapture(e.pointerId); }catch(_){} e.preventDefault(); paint(); });
-  m.addEventListener("pointermove",e=>{ if(!drag) return; e.preventDefault(); const p=svgPt(e), dx=p.x-drag.p0.x, dy=p.y-drag.p0.y, th=12/pxmm(), S=drag.S;
-    if(drag.mode==="m"){ if(Math.hypot(dx,dy)*pxmm()<4&&!drag.moved) return; drag.moved=true; const ids=new Set(drag.G.map(z=>z.id)), h=isH(S);
-      if(h){ let ny=drag.o.find(o=>o.z===S).y+dy; const ys=edgesY(ids); ny=snapV(ny,ys,th); const ny2=snapV(ny+S.h,ys,th)-S.h; if(Math.abs(ny2-ny)>0.01&&Math.abs(ny2-(drag.o.find(o=>o.z===S).y+dy))<th) ny=ny2; ny=Math.round(ny); const dd=ny-drag.o.find(o=>o.z===S).y; drag.o.forEach(o=>{ o.z.y=o.y+dd; }); }
-      else { let nx=drag.o.find(o=>o.z===S).x+dx; const xs=edgesX(ids); nx=snapV(nx,xs,th); const nx2=snapV(nx+S.w,xs,th)-S.w; if(Math.abs(nx2-(drag.o.find(o=>o.z===S).x+dx))<th) nx=nx2; nx=Math.round(nx); const dd=nx-drag.o.find(o=>o.z===S).x; drag.o.forEach(o=>{ o.z.x=o.x+dd; }); } }
+  m.addEventListener("pointermove",e=>{ if(!drag) return; e.preventDefault(); const V=VW(), p=svgPt(e), dh=p.h-drag.p0.h, dv=p.v-drag.p0.v, th=12/pxmm(), S=drag.S;
+    if(drag.mode==="m"){ if(Math.hypot(dh,dv)*pxmm()<4&&!drag.moved) return; drag.moved=true; const ids=new Set(drag.G.map(z=>z.id)), h=isH(S), ax=h?V.v:V.h, d0=h?dv:dh, o0=drag.o.find(o=>o.z===S), base=h?o0.v:o0.h, len=S[AX[ax]];
+      const E=edgesA(ax,ids); let n=snapV(base+d0,E,th); const n2=snapV(base+d0+len,E,th)-len; if(Math.abs(n2-(base+d0))<Math.abs(n-(base+d0))||n===base+d0) n=n2; n=Math.round(n); const dd=n-base; drag.o.forEach(o=>{ o.z[ax]=(h?o.v:o.h)+dd; }); }
     else { const o=drag.o, ids=new Set([S.id]);
-      if(drag.e==="l"){ let nx=snapV(o.x+dx,edgesX(ids),th); nx=Math.min(Math.round(nx),o.x+o.w-50); S.x=nx; S.w=o.x+o.w-nx; }
-      if(drag.e==="r"){ let r=snapV(o.x+o.w+dx,edgesX(ids),th); r=Math.max(Math.round(r),o.x+50); S.w=r-o.x; }
-      if(drag.e==="b"){ let ny=snapV(o.y+dy,edgesY(ids),th); ny=Math.min(Math.round(ny),o.y+o.h-50); S.y=ny; S.h=o.y+o.h-ny; }
-      if(drag.e==="t"){ let tp=snapV(o.y+o.h+dy,edgesY(ids),th); tp=Math.max(Math.round(tp),o.y+50); S.h=tp-o.y; } }
+      if(drag.e==="l"||drag.e==="r"){ const ax=V.h, E=edgesA(ax,ids); if(drag.e==="l"){ let n=Math.min(Math.round(snapV(o.h0+dh,E,th)),o.h0+o.hl-20); S[ax]=n; S[AX[ax]]=o.h0+o.hl-n; } else { let r=Math.max(Math.round(snapV(o.h0+o.hl+dh,E,th)),o.h0+20); S[AX[ax]]=r-o.h0; } }
+      else { const ax=V.v, E=edgesA(ax,ids); if(drag.e==="b"){ let n=Math.min(Math.round(snapV(o.v0+dv,E,th)),o.v0+o.vl-20); S[ax]=n; S[AX[ax]]=o.v0+o.vl-n; } else { let tp=Math.max(Math.round(snapV(o.v0+o.vl+dv,E,th)),o.v0+20); S[AX[ax]]=tp-o.v0; } } }
     paint(); });
   const up=()=>{ if(drag&&drag.mode==="m"&&!drag.moved) undo.pop(); const was=!!drag; drag=null; if(was) paint(); }; m.addEventListener("pointerup",up); m.addEventListener("pointercancel",up);
   /* куда добавить: точка последнего касания (или середина корпуса) — ищем проём */
@@ -17711,6 +17715,7 @@ function qkPmModal(P,s,done,opt){ opt=opt||{}; const t=QK_T;
     x.querySelector("form").addEventListener("submit",e=>{ e.preventDefault(); const g=n=>num(x.querySelector(`[name=${n}]`).value); push(); const L=Math.max(20,g("l")), D=Math.max(5,g("d")), T=Math.max(3,g("t"));
       if(h){ S.w=L; S.h=T; } else { S.h=L; S.w=T; } const zf=S.z+S.d; S.d=D; S.z=zf-D; S.x=g("x"); S.y=g("y"); x.remove(); paint(); }); };
   m.addEventListener("click",async e=>{ const fb=e.target.closest("[data-foc]"); if(fb){ foc=+fb.dataset.foc; paint(); return; }
+    const vb=e.target.closest("[data-view]"); if(vb){ view=vb.dataset.view; paint(); return; }
     const ad=e.target.closest("[data-add]"); if(ad){ const k=ad.dataset.add; if(k==="fx") return qkFxAsk(f=>add("fx",f)); return add(k); }
     const b=e.target.closest("[data-e]"); if(!b) return; const a=b.dataset.e, S=sel&&PM.items.find(z=>z.id===sel);
     if(a==="cancel"){ if(opt.step){ P.pm=PM; opt.back&&opt.back(); } m.remove(); return; }
@@ -17795,7 +17800,7 @@ o+=`<text x="${sx+sw/2}" y="${Y(L.y)+70}" font-size="48" class="dimw">${Math.rou
 (function(){ const st=document.createElement("style"); st.textContent=`.qk-ward,html.vt.sk.sk.sk[data-vt] .qk-card.qk-ward{border:2px solid #FFD60A!important}html.vt.sk.sk.sk[data-vt] .qk-wadd small,.qk-wadd small{color:#3a3000!important}html.vt.sk.sk.sk[data-vt] .qk-wadd b{color:#000!important}.qk-wadd{display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin-top:8px;padding:14px;border-radius:14px;border:0;background:#FFD60A;color:#000;font:inherit;cursor:pointer}.qk-wadd b{display:block;font-size:18px}.qk-wadd small{display:block;color:#3a3000!important;font-size:13px;line-height:1.35;margin-top:2px}.qk-wi{font-size:30px;line-height:1}
 .smn-stp.qk-stp{grid-template-columns:repeat(4,1fr)}.sm-trial{padding:8px 12px!important;font-size:13.5px!important;line-height:1.35!important}.sm-trial .btn{min-height:36px!important;padding:4px 12px!important;font-size:13px!important}.sm-kind{margin:6px 0!important}
 .qk-sth{display:flex;align-items:center;justify-content:space-between;gap:8px}.qk-big{display:flex;align-items:center;gap:14px;width:100%;text-align:left;margin:0 0 10px;padding:16px;border-radius:16px;border:2px solid #2c2c2e;background:#151515;color:inherit;font:inherit;cursor:pointer}.qk-big.on{border-color:#FFD60A}.qk-big b{display:block;font-size:18px}.qk-big small{display:block;font-size:13px;margin-top:2px}.qk-bi{font-size:30px;line-height:1;flex:none;width:40px;text-align:center}.qk-chips{display:flex;flex-wrap:wrap;gap:8px}.qk-chips .btn{min-height:44px}html[data-vt="light"] .qk-big{background:#fff;border-color:#d0d4d9}
-.pm-modal[data-th="light"] .modal-card,.pm-modal[data-th="light"]{--pmbg:#fff;--pmink:#111}.pm-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0}.pm-sz{flex:1;min-width:150px;text-align:left;border:1.5px solid #0A84FF;border-radius:12px;padding:6px 10px;background:none;color:inherit;font:inherit;cursor:pointer}.pm-sz b{display:block;color:#3b9bff}.pm-sz small{font-size:12px;opacity:.7}
+.pm-modal[data-th="light"] .modal-card,.pm-modal[data-th="light"]{--pmbg:#fff;--pmink:#111}.pm-views{display:flex;margin:4px 0}.pm-views button{flex:1;min-height:42px}.pm-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0}.pm-sz{flex:1;min-width:150px;text-align:left;border:1.5px solid #0A84FF;border-radius:12px;padding:6px 10px;background:none;color:inherit;font:inherit;cursor:pointer}.pm-sz b{display:block;color:#3b9bff}.pm-sz small{font-size:12px;opacity:.7}
 .pm-mini{display:flex;gap:4px;margin:4px 0 8px}.pm-mc{flex:1;min-height:40px;border:1.5px solid #666;border-radius:8px;background:none;color:inherit;font:inherit;cursor:pointer}.pm-mc.on{border:2.5px solid #0A84FF;color:#3b9bff;font-weight:700}
 .pm-v{touch-action:none;border-radius:14px;overflow:hidden;background:#000}.pm-modal[data-th="light"] .pm-v{background:#fff}html.vt.sk.sk.sk[data-vt] .pm-mc{border:1.5px solid #666!important;border-radius:8px!important;background:transparent!important;box-shadow:none!important}html.vt.sk.sk.sk[data-vt] .pm-mc.on{border:2.5px solid #0A84FF!important;color:#3b9bff!important}html.vt.sk.sk.sk[data-vt] .pm-sz{border:1.5px solid #0A84FF!important}.pm-svg{width:100%;height:min(58vh,560px);display:block;touch-action:none;user-select:none;-webkit-user-select:none}
 .pm-svg .pm-bg{fill:#000}.pm-svg .pm-back{fill:#151515}.pm-svg .pm-p,.pm-svg .pm-p rect{fill:#000;stroke:#ddd;stroke-width:1.2;vector-effect:non-scaling-stroke;cursor:grab}.pm-svg .pm-p.on,.pm-svg .pm-p.on rect{stroke:#0A84FF;stroke-width:2.5;fill:rgba(10,132,255,.25)}.pm-svg .pm-p.cust{fill:#3a2f22}
@@ -19015,7 +19020,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="38fff0814d";
+const CHK_BUILD="f706cfa734";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -19828,7 +19833,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="38fff0814d";/*cehqr-build*/
+  const BUILD="f706cfa734";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
