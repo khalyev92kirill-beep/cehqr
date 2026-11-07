@@ -18398,6 +18398,70 @@ body.tl-staff :is(${H("staff")}),body.tl-staff .firm-top:not(.dir-top){display:n
 .dir-pin{margin-top:14px;padding:12px;border-radius:14px;outline:1px solid rgba(128,128,128,.35);outline-offset:-1px}.dir-pin input{flex:1;min-width:0}`; document.head.appendChild(st); })();
 /* директору — «Директор: Имя» вместо «Технолог: Имя» */
 if(typeof shpRoleLine==="function"){ const _drL=shpRoleLine; shpRoleLine=function(){ const s=_drL.apply(this,arguments); return S.shop&&S.shop.tech&&S.shop.dir&&S.shop.hasDir?String(s).replace(/^Технолог/,"Директор"):s; }; }
+/* Кирилл 07.11: «мастер должен видеть свою задачу, и они не должны поставить задачу» — у мастера только «Мне», без «+ Задача» */
+function dirMaster(){ return !!(S.shop&&!S.shop.tech&&(S.shop.role||"master")==="master"); }
+if(typeof shpTasksHtml==="function"){ const _drT=shpTasksHtml; shpTasksHtml=function(){ if(!dirMaster()) return _drT.apply(this,arguments); S.shop.ttab="me";
+  return String(_drT.apply(this,arguments)).replace(/<div class="head-actions"><button type="button" class="btn primary" data-act="shp-tnew">\+ Задача<\/button><\/div>/,"").replace(/<div class="shp-seg shp-seg-w" role="tablist" aria-label="Чьи задачи">[\s\S]*?<\/div>/,"<p class=\"muted\" style=\"margin:0 0 8px\">Ваши задачи</p>").replace(" Нажмите «+ Задача», чтобы поставить.",""); }; }
+(function(){ const st=document.createElement("style"); st.textContent=`body.dir-mst [data-act="shp-tnew"]{display:none!important}`; document.head.appendChild(st); })();
+{ const _drR3=render; render=function(){ const r=_drR3.apply(this,arguments); try{ document.body.classList.toggle("dir-mst",dirMaster()); }catch(_){} return r; }; }
+
+/* ===== Сканер (Кирилл 07.11): «навёл камеру на номер — зафиксировал — сразу без нажатия деталь на 3D»; «сканер внизу не понимает, какой заказ».
+   1) Сканер без открытого заказа: сначала «Какой заказ сканируем?», запоминает последний; в окне сверху «Заказ № … [Сменить]».
+   2) Цифры: камера сама ловит момент, когда не трясётся, и шлёт маленький кадр ИИ (aiDigit на сервере) — читает и написанное от руки.
+      Нашёл позицию — в «Найти деталь» сразу 3D; при отметке этапов — только подсказка (этап ставит человек). Работает и в режиме «QR-код». ===== */
+const SC2={t:0,busy:false,prev:null,sent:null,steady:0,lastT:0,off:false};
+function sc2Oid(){ try{ return localStorage.getItem("w24-scanOid")||""; }catch(_){ return ""; } }
+function sc2Have(){ return !!(S.current&&S.current.orderId&&(S.current.parts||[]).length); }
+function sc2OrderList(){ const O=S.orders||{}; return Object.keys(O).map(k=>O[k]).filter(o=>o&&o.id).sort((a,b)=>String(b.at||b.createdAt||"").localeCompare(String(a.at||a.createdAt||""))); }
+function sc2Pick(after){ document.getElementById("sc2M")?.remove(); const L=sc2OrderList(), last=sc2Oid();
+  if(!L.length){ toast("Заказов пока нет — откройте заказ по QR-коду от технолога"); return; }
+  const m=document.createElement("div"); m.className="modal"; m.id="sc2M";
+  const sorted=L.slice().sort((a,b)=>(b.id===last)-(a.id===last));
+  m.innerHTML=`<div class="modal-card sc2-m"><h2 style="margin:0 0 4px">Какой заказ сканируем?</h2><p class="muted" style="margin:0 0 10px">Запомню — в следующий раз сразу этот.</p>
+    <div class="sc2-l">${sorted.slice(0,30).map(o=>`<button type="button" class="sc2-o${o.id===last?" on":""}" data-o="${esc(o.id)}"><b>${esc(o.name||o.id)}</b><small>${esc(o.id)}${o.count?` · ${o.count} дет.`:""}${o.id===last?" · последний":""}</small></button>`).join("")}</div>
+    <button type="button" class="btn" data-o="" style="margin-top:10px">Закрыть</button></div>`;
+  document.body.appendChild(m);
+  m.addEventListener("click",e=>{ const b=e.target.closest("[data-o]"); if(e.target===m||(b&&!b.dataset.o)){ m.remove(); return; } if(!b) return;
+    const oid=b.dataset.o; try{ localStorage.setItem("w24-scanOid",oid); }catch(_){} m.remove(); sc2Load(oid,after); }); }
+function sc2Load(oid,after){ if(S.current&&S.current.orderId===oid&&(S.current.parts||[]).length){ after&&after(); return; }
+  try{ goOrder(oid); }catch(_){ return; } toast("Открываю заказ…"); let k=0; const t=setInterval(()=>{ k++; if(sc2Have()&&S.current.orderId===oid){ clearInterval(t); after&&after(); } else if(k>60||(S.current&&S.current.orderId===oid&&!S.current.loading&&!(S.current.parts||[]).length&&k>8)){ clearInterval(t); toast("Заказ не открылся — откройте его из «Заказы»"); } },250); }
+if(typeof scanOpen==="function"){ const _sc2O=scanOpen; scanOpen=async function(){
+    if(!sc2Have()){ const last=sc2Oid(), O=S.orders||{}; if(last&&O[last]) return sc2Load(last,()=>scanOpen()); return sc2Pick(()=>scanOpen()); }
+    try{ localStorage.setItem("w24-scanOid",S.current.orderId); }catch(_){}
+    const r=await _sc2O.apply(this,arguments); const w=document.getElementById("scanWin");
+    if(w&&!w.querySelector(".sc2-bar")){ const o=(S.orders||{})[S.current.orderId]||{}; const bar=document.createElement("div"); bar.className="sc2-bar";
+      bar.innerHTML=`<span>Заказ <b>${esc(o.name||S.current.orderId)}</b> <small class="muted">${esc(S.current.orderId)}</small></span><button type="button" class="btn sm" data-sc2="chg">Сменить</button>`;
+      const body=w.querySelector(".fv-wbody"); body&&body.insertBefore(bar,body.firstChild);
+      bar.querySelector("[data-sc2]").addEventListener("click",ev=>{ ev.stopPropagation(); scanClose(); sc2Pick(()=>scanOpen()); }); }
+    sc2Start(); return r; }; }
+/* цифры: ровный кадр → ИИ */
+function sc2Stop(){ if(SC2.t){ clearInterval(SC2.t); SC2.t=0; } SC2.prev=null; SC2.sent=null; SC2.steady=0; SC2.busy=false; }
+function sc2Small(v){ const c=SC2.sc||(SC2.sc=document.createElement("canvas")), W=40, H=30; c.width=W; c.height=H; const x=c.getContext("2d",{willReadFrequently:true}), vw=v.videoWidth, vh=v.videoHeight;
+  x.drawImage(v,vw*0.22,vh*0.2,vw*0.56,vh*0.6,0,0,W,H); const d=x.getImageData(0,0,W,H).data, g=new Float32Array(W*H); let s=0; for(let i=0;i<g.length;i++){ g[i]=d[i*4]*0.3+d[i*4+1]*0.59+d[i*4+2]*0.11; s+=g[i]; }
+  const avg=s/g.length; let q=0; for(let i=0;i<g.length;i++) q+=(g[i]-avg)*(g[i]-avg); return {g,std:Math.sqrt(q/g.length)}; }
+function sc2Diff(a,b){ if(!a||!b) return 999; let s=0; for(let i=0;i<a.length;i++) s+=Math.abs(a[i]-b[i]); return s/a.length; }
+function sc2Shot(v){ const c=document.createElement("canvas"), vw=v.videoWidth, vh=v.videoHeight, sw=vw*0.56, sh=vh*0.6, k=Math.min(1,560/sw); c.width=Math.round(sw*k); c.height=Math.round(sh*k);
+  c.getContext("2d").drawImage(v,vw*0.22,vh*0.2,sw,sh,0,0,c.width,c.height); return c.toDataURL("image/jpeg",0.72); }
+function sc2Start(){ sc2Stop(); if(SC2.off) return; SC2.t=setInterval(sc2Tick,250); }
+async function sc2Tick(){ const w=document.getElementById("scanWin"); if(!w){ sc2Stop(); return; } const v=w.querySelector("video"); if(!v||v.readyState<2||SC2.busy||w.querySelector(".scan-pad")) return;
+  const f=sc2Small(v), d=sc2Diff(f.g,SC2.prev); SC2.prev=f.g; SC2.steady=d<7?SC2.steady+1:0;
+  if(f.std<9||SC2.steady<3||sc2Diff(f.g,SC2.sent)<9||performance.now()-SC2.lastT<1500) return;
+  SC2.busy=true; SC2.sent=f.g; SC2.lastT=performance.now(); const fr=w.querySelector(".scan-frame"); fr&&fr.classList.add("sc2-read");
+  let j=null; try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"aiDigit",pin:shpPin(),who:shpWho(),img:sc2Shot(v)})}); j=await r.json(); }catch(_){}
+  fr&&fr.classList.remove("sc2-read"); SC2.busy=false; if(!document.getElementById("scanWin")) return;
+  if(!j||!j.ok){ if(j&&(j.error==="nokey"||j.error==="limit")){ SC2.off=true; sc2Stop(); scanMsg(esc(j.msg||"ИИ недоступен"),false); } return; }
+  const n=String(j.n||""); if(!n) return;
+  const hit=cutParts().filter(p=>String(p.art||"").trim()===n); if(!hit.length){ scanMsg(`Прочитал <b>${esc(n)}</b> — такой позиции в этом заказе нет`,false); return; }
+  if(scanStages()) return scanSuggest(n);   // этап ставит человек — цифры могут прочитаться неточно
+  try{ haptic("sel"); }catch(_){} sc2Stop(); scanManual(n); }
+if(typeof scanClose==="function"){ const _sc2C=scanClose; scanClose=function(){ sc2Stop(); return _sc2C.apply(this,arguments); }; }
+/* режим «Цифры»: телефонное распознавание (Tesseract) больше не нужно — читает ИИ; если ИИ не подключён — старый способ */
+if(typeof scanNumLoop==="function"){ const _sc2N=scanNumLoop; scanNumLoop=function(video,note){ if(SC2.off) return _sc2N.apply(this,arguments); note.textContent=""; }; }
+(function(){ const st=document.createElement("style"); st.textContent=`.sc2-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;padding:10px 12px;border-radius:12px;outline:1px solid rgba(128,128,128,.3);outline-offset:-1px;font-size:15px}
+.sc2-bar small{font-size:12px}.sc2-m{width:min(460px,100%)}.sc2-l{display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto}
+.sc2-o{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border-radius:14px;border:0;outline:1px solid rgba(128,128,128,.35);outline-offset:-1px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.sc2-o b{font-size:16px}.sc2-o small{color:var(--muted,#888)}.sc2-o.on{outline:2px solid #34c759}
+.scan-frame.sc2-read{border-color:#34c759!important;box-shadow:0 0 0 999px rgba(0,0,0,.25),0 0 0 6px rgba(52,199,89,.45)!important}`; document.head.appendChild(st); })();
 
 /* ---------- Смета: «Не забыли?» и светофор продажи (Кирилл 05.11) ----------
    1) Перед «КП в PDF», «Отправить клиенту», «Клиент согласен» и «Сумму — в сделку» — короткий список того, что часто забывают.
@@ -19585,7 +19649,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="9163104878";
+const CHK_BUILD="d1bd209c9e";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20398,7 +20462,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="9163104878";/*cehqr-build*/
+  const BUILD="d1bd209c9e";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
