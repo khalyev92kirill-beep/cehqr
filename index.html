@@ -18404,6 +18404,26 @@ if(typeof shpTasksHtml==="function"){ const _drT=shpTasksHtml; shpTasksHtml=func
   return String(_drT.apply(this,arguments)).replace(/<div class="head-actions"><button type="button" class="btn primary" data-act="shp-tnew">\+ Задача<\/button><\/div>/,"").replace(/<div class="shp-seg shp-seg-w" role="tablist" aria-label="Чьи задачи">[\s\S]*?<\/div>/,"<p class=\"muted\" style=\"margin:0 0 8px\">Ваши задачи</p>").replace(" Нажмите «+ Задача», чтобы поставить.",""); }; }
 (function(){ const st=document.createElement("style"); st.textContent=`body.dir-mst [data-act="shp-tnew"]{display:none!important}`; document.head.appendChild(st); })();
 { const _drR3=render; render=function(){ const r=_drR3.apply(this,arguments); try{ document.body.classList.toggle("dir-mst",dirMaster()); }catch(_){} return r; }; }
+/* ===== Кабинет мастера (Кирилл 07.11, вариант А): мастер видит своё — Мои замеры, Моя зарплата, Мой календарь, заметки.
+   Не видит: Сделки (все заказы фирмы), общий календарь, «Что нового по заказам», Сотрудники. Его замеры видят директор, технолог, дизайнер (с «замерил: имя»). ===== */
+function dirMe(){ try{ return shpNorm(shpWho()); }catch(_){ return ""; } }
+if(typeof shpCalItems==="function"){ const _drCI=shpCalItems; shpCalItems=function(){ if(!dirMaster()) return _drCI.apply(this,arguments); const me=dirMe(), O=S.shop.orders, T=S.shop.tasks;
+  try{ S.shop.orders=(O||[]).filter(o=>shpNorm(o.master||"")===me); S.shop.tasks=(T||[]).filter(t=>shpNorm(t.to||"")===me); return _drCI.apply(this,arguments); } finally { S.shop.orders=O; S.shop.tasks=T; } }; }
+if(typeof shpCalHtml==="function"){ const _drCH=shpCalHtml; shpCalHtml=function(){ const h=String(_drCH.apply(this,arguments)); return dirMaster()?h.replace("<h1>Календарь</h1>","<h1>Мой календарь</h1>").replace("Замеры, монтажи, сроки заказов и задачи","Ваши монтажи, сроки ваших заказов и ваши задачи"):h; }; }
+if(typeof zmListHtml==="function"){ const _drZ=zmListHtml; zmListHtml=function(){ if(!dirMaster()) return _drZ.apply(this,arguments); const me=dirMe(), L=S.zm.list, R=S.zm.recs, keep={};
+  Object.keys(R||{}).forEach(k=>{ if(shpNorm(R[k].who||"")===me) keep[k]=R[k]; });
+  try{ S.zm.list=L?L.filter(s=>shpNorm(s.who||"")===me):L; S.zm.recs=keep; return String(_drZ.apply(this,arguments)).replace("<h1>Замеры</h1>","<h1>Мои замеры</h1>").replace("Фото с размерами и эскизы по всем сделкам","Замерили — сохранили; замер сразу видят директор, технолог и дизайнер"); }
+  finally { S.zm.list=L; S.zm.recs=R; } }; }
+if(typeof shpMoreHtml==="function"){ const _drM2=shpMoreHtml; shpMoreHtml=function(){ const h=String(_drM2.apply(this,arguments)); return dirMaster()?h.replace(/<b>Замеры<\/b>/,"<b>Мои замеры</b>").replace(/<b>Календарь<\/b>/,"<b>Мой календарь</b>"):h; }; }
+(function(){ const H=v=>`li:has(> [data-act="shp-tab"][data-v="${v}"]),[data-act="shp-tab"][data-v="${v}"]:not(.app-tab):not(nav *),[data-dv="${v}"]`; const st=document.createElement("style");
+  st.textContent=`body.dir-mst :is(${["board","feed","cal"].map(H).join(",")}){display:none!important}`; document.head.appendChild(st); })();
+/* Кирилл 07.11: «в Все разделы мастеру оставить только: Замер, Заметки, Моя зарплата, Сотрудники, Склад» (+ помощь и выход) */
+const DIR_MST_OK=["zamers","zp","notes","staff","stock"], DIR_MST_ACT=["help-open","shp-myname","shp-reload","shp-out","pr-help"];
+function dirMstTrim(){ if(!dirMaster()) return; document.querySelectorAll(".shp-list > li, .pr-dolist > li").forEach(li=>{ const b=li.querySelector("[data-act]"); if(!b) return; const a=b.dataset.act, v=b.dataset.v||b.dataset.dv||"";
+  const ok=(a==="shp-tab"&&DIR_MST_OK.includes(v))||(a==="pr-do"&&(b.dataset.do!=="shp-tab"||DIR_MST_OK.includes(v)))||DIR_MST_ACT.includes(a)||(a==="app-nav"&&v==="help-site");
+  if(!ok){ li.hidden=true; li.style.display="none"; } });
+  document.querySelectorAll(".pr-grp").forEach(g=>{ if(g.dataset.g==="do") return; const vis=[...g.querySelectorAll(".shp-list > li")].some(li=>!li.hidden&&li.style.display!=="none"); g.style.display=vis?"":"none"; }); }
+{ const _drR4=render; render=function(){ const r=_drR4.apply(this,arguments); try{ dirMstTrim(); }catch(_){} return r; }; }
 
 /* ===== Сканер (Кирилл 07.11): «навёл камеру на номер — зафиксировал — сразу без нажатия деталь на 3D»; «сканер внизу не понимает, какой заказ».
    1) Сканер без открытого заказа: сначала «Какой заказ сканируем?», запоминает последний; в окне сверху «Заказ № … [Сменить]».
@@ -19649,7 +19669,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="d1bd209c9e";
+const CHK_BUILD="dd300fc1f2";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20462,7 +20482,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="d1bd209c9e";/*cehqr-build*/
+  const BUILD="dd300fc1f2";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
