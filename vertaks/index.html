@@ -17251,13 +17251,39 @@ function qkMatListHtml(c,q){ const GR=c.GR||[], inG=new Set(GR.flatMap(g=>g.rows
   const mat=[["m:ldsp","ЛДСП",GR.filter(g=>!isM(g.key)&&g.key!=="Кромка (общая)"),rest("ldsp"),"ldsp","+ ЛДСП — из базы (Egger, ExtraVert, Kastamonu…)"],["m:mdf","МДФ и фасады",GR.filter(g=>isM(g.key)),rest("front"),"front","+ МДФ / фасад — из базы"],["m:edge","Кромка",GR.filter(g=>g.key==="Кромка (общая)"),rest("edge"),"edge","+ Кромка — из базы"]];
   const row=(k,n,cnt,sum,body,def)=>{ let op=S.qkSecOpen===k; if(!op){ try{ const o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); op=o["sec:"+k]===1||(o["sec:"+k]!==0&&def); }catch(_){ op=def; } }
     return `<div class="qk-sec${op?" on":""}"><button type="button" class="qk-sech" data-qsec="${esc(k)}" data-op="${op?1:0}"><b>${op?"▾":"▸"} ${esc(n)}</b><span>${cnt?`${cnt} поз. · ${N(sum)}`:"—"}</span></button>${op?`<div class="qk-secb">${body}</div>`:""}</div>`; };
-  let h=`<section class="qk-card qk-secs">`;
-  mat.forEach(([k,n,G,R0,cat,lab])=>{ const cnt=G.reduce((a,g)=>a+g.rows.length,0)+R0.length, sum=G.reduce((a,g)=>a+g.sum,0)+R0.reduce((a,x)=>a+x.sum,0);
-    h+=row(k,n,cnt,sum,qkGroupsHtml(c,q,G)+R0.map(x=>qkRowHtml(x,cat)).join("")+`<button type="button" class="qk-add" data-qk="add" data-c="${cat}">${esc(lab)}</button>`,cnt>0||(empty&&k==="m:ldsp")); });
-  const CUS=(q.secOn||[]).filter(k=>/^c:/.test(k)).map(k=>[k,k.slice(2),"furn"]);
-  QK_SEC.filter(x=>x[0]!=="other").concat(CUS,[QK_SEC.find(x=>x[0]==="other")]).forEach(([k,n])=>{ const L=by[k]||[], sum=L.reduce((a,x)=>a+x.sum,0);
-    h+=row(k,n,L.length,sum,L.map(x=>qkRowHtml(x,x.cat)).join("")+`<button type="button" class="qk-add" data-qsp="${esc(k)}">+ ${esc(n)} — из раздела</button>`,L.length>0); });
-  return h+`<button type="button" class="qk-add qk-secadd2" data-qsecadd="1">+ Свой раздел · двери в профиле · купе · работы</button></section>`; }
+  const E={}, cfg=qkSecCfg();
+  mat.forEach(([k,n,G,R0,cat,lab])=>{ const cnt=G.reduce((a,g)=>a+g.rows.length,0)+R0.length, sum=G.reduce((a,g)=>a+g.sum,0)+R0.reduce((a,x)=>a+x.sum,0); const nm=cfg.names[k]||n;
+    E[k]={cnt,html:()=>row(k,nm,cnt,sum,qkGroupsHtml(c,q,G)+R0.map(x=>qkRowHtml(x,cat)).join("")+`<button type="button" class="qk-add" data-qk="add" data-c="${cat}">${esc(lab)}</button>`,cnt>0||(empty&&k==="m:ldsp"))}; });
+  qkSecAll(q).filter(x=>!/^m:/.test(x[0])).forEach(([k,n])=>{ const L=by[k]||[], sum=L.reduce((a,x)=>a+x.sum,0), nm=cfg.names[k]||n;
+    E[k]={cnt:L.length,html:()=>row(k,nm,L.length,sum,L.map(x=>qkRowHtml(x,x.cat)).join("")+`<button type="button" class="qk-add" data-qsp="${esc(k)}">+ ${esc(nm)} — из раздела</button>`,L.length>0)}; });
+  const order=qkSecOrder(q), hid=order.filter(k=>cfg.hide[k]&&!(E[k]&&E[k].cnt)).length;
+  return `<section class="qk-card qk-secs"><div class="qk-secbar"><button type="button" class="btn sm" data-qsecedit="1">✏️ Порядок разделов</button></div>`+order.filter(k=>E[k]&&(!cfg.hide[k]||E[k].cnt)).map(k=>E[k].html()).join("")
+    +`${hid?`<p class="qk-sub" style="margin:8px 0 0">Скрыто разделов: ${hid} — «✏️ Порядок разделов»</p>`:""}<button type="button" class="qk-add qk-secadd2" data-qsecadd="1">+ Свой раздел · двери в профиле · купе · работы</button></section>`; }
+/* Кирилл 07.11 (вариант А): дизайнер сам упорядочивает разделы — ↑↓, скрыть, переименовать, свои разделы навсегда. Хранится в «Мои цены» (secCfg); главный дизайнер — «для всех». */
+const QK_MATSEC=[["m:ldsp","ЛДСП"],["m:mdf","МДФ и фасады"],["m:edge","Кромка"]];
+function qkSecCfg(){ const s=QK.set||{}, f=(s.firm&&s.firm.secCfg)||{}, m=(s.mine&&s.mine.secCfg)||{}, src=m.order?m:f; return {order:src.order||[],hide:Object.assign({},src.hide||{}),names:Object.assign({},f.names||{},m.names||{}),cus:(m.cus||f.cus||[]).slice()}; }
+function qkSecAll(q){ const cfg=qkSecCfg(), cus=cfg.cus.map(x=>[x.k,x.n,"furn"]).concat(((q&&q.secOn)||[]).filter(k=>/^c:/.test(k)&&!cfg.cus.some(x=>x.k===k)).map(k=>[k,k.slice(2),"furn"]));
+  return QK_MATSEC.concat(QK_SEC.filter(x=>x[0]!=="other").map(x=>[x[0],x[1]]),cus,[["other","Прочее"]]); }
+function qkSecOrder(q){ const all=qkSecAll(q).map(x=>x[0]), o=qkSecCfg().order.filter(k=>all.includes(k)); return o.concat(all.filter(k=>!o.includes(k))); }
+function qkSecEdit(){ const q=S.shop.sm.data.qk, base=qkSecCfg(), st={order:qkSecOrder(q),hide:Object.assign({},base.hide),names:Object.assign({},base.names),cus:base.cus.slice()}, nameOf=k=>{ const x=qkSecAll(q).find(y=>y[0]===k); return st.names[k]||(st.cus.find(y=>y.k===k)||{}).n||(x?x[1]:k); };
+  const m=qkModal("qkSecE","",false), canAll=!!(S.shop&&(S.shop.tech||S.shop.glav));
+  const draw=()=>{ m.querySelector(".qk-m").innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Порядок разделов</h2><button type="button" class="btn sm" data-se="x">Закрыть</button></div>
+    <p class="qk-sub">↑↓ — порядок, ✎ — название, переключатель — показывать. Сохраняется у вас для всех смет.</p>
+    <ul class="qk-sel">${st.order.map((k,i)=>`<li class="${st.hide[k]?"off":""}"><b>${esc(nameOf(k))}</b><button type="button" data-se="up" data-k="${esc(k)}" ${i?"":"disabled"} aria-label="Выше">↑</button><button type="button" data-se="dn" data-k="${esc(k)}" ${i<st.order.length-1?"":"disabled"} aria-label="Ниже">↓</button><button type="button" data-se="nm" data-k="${esc(k)}" aria-label="Переименовать">✎</button>${/^c:/.test(k)?`<button type="button" data-se="del" data-k="${esc(k)}" aria-label="Удалить">🗑</button>`:`<label class="qk-tg"><input type="checkbox" data-se-h="${esc(k)}"${st.hide[k]?"":" checked"}><i></i></label>`}</li>`).join("")}</ul>
+    <button type="button" class="btn" data-se="add" style="width:100%;margin-top:8px">+ Свой раздел (навсегда)</button>
+    <div class="qk-acts" style="margin-top:10px"><button type="button" class="btn primary" data-se="save">Сохранить</button>${canAll?`<button type="button" class="btn" data-se="all">Сохранить для всех дизайнеров</button>`:""}<button type="button" class="btn" data-se="reset">Как было</button></div>`; };
+  draw();
+  m.addEventListener("change",e=>{ const c=e.target.closest("[data-se-h]"); if(!c) return; const k=c.dataset.seH; if(c.checked) delete st.hide[k]; else st.hide[k]=1; draw(); });
+  m.addEventListener("click",async e=>{ const b=e.target.closest("[data-se]"); if(e.target===m){ m.remove(); return; } if(!b) return; const a=b.dataset.se, k=b.dataset.k, i=st.order.indexOf(k);
+    if(a==="x"){ m.remove(); return; }
+    if(a==="up"&&i>0){ st.order.splice(i,1); st.order.splice(i-1,0,k); return draw(); } if(a==="dn"&&i>=0&&i<st.order.length-1){ st.order.splice(i,1); st.order.splice(i+1,0,k); return draw(); }
+    if(a==="nm"){ const v=prompt("Название раздела",nameOf(k)); if(v===null) return; const t=v.trim().slice(0,40); if(t) st.names[k]=t; else delete st.names[k]; const cu=st.cus.find(y=>y.k===k); if(cu&&t) cu.n=t; return draw(); }
+    if(a==="del"){ if(!(await appConfirm("Удалить раздел «"+nameOf(k)+"»? Позиции в сметах останутся в «Прочее».","Удалить",true))) return; st.cus=st.cus.filter(y=>y.k!==k); st.order=st.order.filter(y=>y!==k); q.secOn=(q.secOn||[]).filter(y=>y!==k); return draw(); }
+    if(a==="add"){ const v=prompt("Название нового раздела (например: Газлифты, Мойки)",""); const t=v&&v.trim().slice(0,40); if(!t) return; const nk="c:"+t; if(!st.cus.some(y=>y.k===nk)) st.cus.push({k:nk,n:t}); if(!st.order.includes(nk)) st.order.push(nk); return draw(); }
+    if(a==="reset"){ st.order=qkSecAll(q).map(x=>x[0]); st.hide={}; st.names={}; return draw(); }
+    if(a==="save"||a==="all"){ const sc={order:st.order,hide:st.hide,names:st.names,cus:st.cus}; QK.set=QK.set||{};
+      if(a==="all"){ const W=Object.assign(cp(QK_DEF),cp((QK.set&&QK.set.firm)||{}),{secCfg:sc}); const j=await shpPost({action:"qkSetSave",scope:"firm",set:W}); if(!j) return; QK.set.firm=W; toast("Порядок разделов сохранён для всех"); }
+      const mn=QK.set.mine=QK.set.mine||{}; mn.secCfg=sc; if(await qkSaveMine()) toast("Порядок разделов сохранён"); m.remove(); shpRenderKeep(); } }); }
 function qkSecHtml(c,q){ const by={}; c.items.filter(x=>x.cat==="furn"||x.cat==="other").forEach(x=>{ const k=qkSecOf(x); (by[k]=by[k]||[]).push(x); });
   /* Кирилл 07.11: «гибко — внизу сами добавляют раздел: написал подсветка — выбрал подсветку; свои разделы» — видны разделы с позициями и добавленные */
   const on=new Set((q.secOn||[]).concat(Object.keys(by))), CUS=(q.secOn||[]).filter(k=>/^c:/.test(k)).map(k=>[k,k.slice(2),"furn"]);
@@ -17620,6 +17646,7 @@ document.addEventListener("change",e=>{ const t=e.target.closest&&e.target.close
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qte]"); if(!b) return; e.preventDefault(); e.stopPropagation(); const sm=S.shop.sm; if(!sm||!sm.data||!sm.data.qk) return; if(typeof catLoad==="function") catLoad(); if(qkToneEdge(sm.data.qk,b.dataset.qte,true)){ qkDirty(); shpRenderKeep(); toast("Кромка в тон добавлена"); return; }
   S.qkEdgeFor=b.dataset.qte; toast("В тон не нашёл — выберите кромку, она встанет к этому листу"); const t=document.createElement("button"); t.type="button"; t.dataset.qk="add"; t.dataset.c="edge"; t.dataset.qfor=b.dataset.qte; t.style.display="none"; document.body.appendChild(t); t.click(); t.remove(); },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qfor]"); if(b) S.qkEdgeFor=b.dataset.qfor||""; else if(e.target.closest&&e.target.closest('[data-qk="add"]')) S.qkEdgeFor=""; },true);
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qsecedit]"); if(!b) return; e.preventDefault(); e.stopPropagation(); if(!QK.set) qkLoad(); qkSecEdit(); },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qsecadd]"); if(!b) return; e.preventDefault(); e.stopPropagation(); qkSecAddModal(); },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qsec],[data-qsp]"); if(!b) return; e.preventDefault(); e.stopPropagation();
   if(b.dataset.qsp) return qkSecPick(b.dataset.qsp); const k=b.dataset.qsec, has=b.dataset.op==="1"||b.closest(".qk-sec").classList.contains("on"); let o={}; try{ o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); }catch(_){}
@@ -17683,7 +17710,9 @@ const st=document.createElement("style"); st.textContent=`
 .qk-sec{border-top:1px solid rgba(127,127,127,.18)}.qk-sech{width:100%;display:flex;justify-content:space-between;gap:8px;padding:12px 2px;background:none;border:0;color:inherit;font:inherit;cursor:pointer;text-align:left}.qk-sech span{opacity:.7}
 .qk-spf{width:100%;box-sizing:border-box;margin:10px 0 6px;min-height:44px}.qk-spl{list-style:none;margin:6px 0 0;padding:0;max-height:62vh;overflow:auto}.qk-spl li button{width:100%;display:flex;justify-content:space-between;gap:10px;padding:11px 4px;border:0;border-bottom:1px solid rgba(127,127,127,.18);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.qk-spl li button b{white-space:nowrap}
 .qk-spb{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.qk-spb button{border:1px solid rgba(127,127,127,.4);border-radius:999px;padding:5px 11px;background:none;color:inherit;font:inherit;font-size:13px;cursor:pointer}.qk-spb button.on{background:var(--ink,#fff);color:var(--bg,#000)}
-.qk-secadd{width:100%;min-height:48px;margin-top:10px}.qk-secb{padding:0 0 10px}.qk-secb .qk-card{margin:6px 0;box-shadow:none}.qk-secadd2{margin-top:10px}.qk-gadd{display:flex;gap:8px}.qk-gadd .qk-add{flex:1}.qk-gh{width:100%;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0;text-align:left}.qk-grp:not(.on) .qk-gh{margin:0}.qk-ks{display:flex;flex-wrap:wrap;gap:6px}.qk-k{font:inherit;font-size:14px;padding:6px 12px;border-radius:18px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit;cursor:pointer}.qk-k.on{background:#111;color:#fff;border-color:#111;font-weight:600}.qk-kin{width:74px}
+.qk-secadd{width:100%;min-height:48px;margin-top:10px}.qk-secbar{display:flex;justify-content:flex-end;margin:0 0 4px}.qk-sel{list-style:none;margin:8px 0 0;padding:0;max-height:58vh;overflow:auto}.qk-sel li{display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid rgba(127,127,127,.2)}.qk-sel li.off b{opacity:.45}.qk-sel b{flex:1;font-weight:600}.qk-sel button{min-width:36px;height:36px;border-radius:9px;border:1px solid rgba(127,127,127,.4);background:none;color:inherit;font:inherit;cursor:pointer}.qk-sel button:disabled{opacity:.3}
+.qk-tg{position:relative;display:inline-block;width:44px;height:26px}.qk-tg input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}.qk-tg i{position:absolute;inset:0;border-radius:13px;background:rgba(127,127,127,.4);pointer-events:none}.qk-tg i:after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s}.qk-tg input:checked+i{background:#30a46c}.qk-tg input:checked+i:after{left:21px}
+.qk-secb{padding:0 0 10px}.qk-secb .qk-card{margin:6px 0;box-shadow:none}.qk-secadd2{margin-top:10px}.qk-gadd{display:flex;gap:8px}.qk-gadd .qk-add{flex:1}.qk-gh{width:100%;background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0;text-align:left}.qk-grp:not(.on) .qk-gh{margin:0}.qk-ks{display:flex;flex-wrap:wrap;gap:6px}.qk-k{font:inherit;font-size:14px;padding:6px 12px;border-radius:18px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit;cursor:pointer}.qk-k.on{background:#111;color:#fff;border-color:#111;font-weight:600}.qk-kin{width:74px}
 .qk-tot{display:flex;justify-content:space-between;gap:8px;padding:5px 0;font-size:15px}.qk-tot.big{font-size:22px;font-weight:700;padding-top:10px;border-top:1px solid rgba(127,127,127,.25);margin-top:4px}
 .qk-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.qk-door{flex:none;width:48px;height:48px;display:grid;place-items:center;background:none;border:0;cursor:pointer;padding:0}.qk-door i{display:block;border:3px solid #a9a9a9;border-radius:3px;background:#a9cdd3;box-sizing:border-box}
 .qk-ro{width:64px;text-align:right;flex:none;font-size:15px}.qk-svg{display:block}.qk-svg .pl{fill:rgba(127,127,127,.35)}.qk-svg .dr{fill:rgba(127,127,127,.1);stroke:currentColor;stroke-width:.8}.qk-svg .hd{fill:currentColor}
@@ -20282,7 +20311,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="5bfdf8befb";
+const CHK_BUILD="aea67999e1";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21095,7 +21124,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="5bfdf8befb";/*cehqr-build*/
+  const BUILD="aea67999e1";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
