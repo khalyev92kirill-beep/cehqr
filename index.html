@@ -17929,11 +17929,34 @@ function prjMount3D(){ prj3dDispose(); const cv=document.getElementById("pj3d");
   const floor=new THREE.Mesh(new THREE.PlaneGeometry(W,Dd),new THREE.MeshLambertMaterial({color:0x9b9b9b})); floor.rotation.x=-Math.PI/2; floor.position.set(W/2,0,Dd/2); scene.add(floor);
   ws.forEach(w=>{ const g=new THREE.PlaneGeometry(w.L*K,H), m=new THREE.Mesh(g,new THREE.MeshLambertMaterial({color:0xe9e9e9,side:THREE.FrontSide})); const a=w.P;
     m.position.set((a[0]+w.u[0]*w.L/2)*K,H/2,(a[1]+w.u[1]*w.L/2)*K); m.lookAt(m.position.x+w.nr[0],H/2,m.position.z+w.nr[1]); scene.add(m); });
-  const items=[], body=new THREE.Color(prjCol("body"));
-  P.items.forEach((it,i)=>{ const w=ws[it.wall], fc=new THREE.Color(prjCol(prjFrontK(it))), grp=new THREE.Group(); grp.userData.pi=i;
-    prjBoxes(it).forEach(b=>{ const sx=Math.max(1,b[3]-b[0])*K, sy=Math.max(1,b[4]-b[1])*K, sz=Math.max(1,b[5]-b[2])*K, ge=new THREE.BoxGeometry(sx,sy,sz), me=new THREE.Mesh(ge,new THREE.MeshLambertMaterial({color:b[6]?fc:body}));
-      me.position.set((b[0]+b[3])/2*K,(b[1]+b[4])/2*K,(b[2]+b[5])/2*K); me.add(new THREE.LineSegments(new THREE.EdgesGeometry(ge),new THREE.LineBasicMaterial({color:i===PRJ.sel?0xffb703:0x555555}))); me.userData.pi=i; grp.add(me); items.push(me); });
-    if(!prjUp(it)&&/^(low|corn)$/.test(prjLibOf(it).sec)){ const T=(+prjD().T||40), ge=new THREE.BoxGeometry(it.w*K,T*K,(it.d+20)*K), me=new THREE.Mesh(ge,new THREE.MeshLambertMaterial({color:new THREE.Color(prjCol("top"))})); me.position.set(it.w/2*K,(it.h+T/2)*K,(it.d+20)/2*K); grp.add(me); }
+  const items=[];
+  const dP=prjD(), mats=dP.mat||{}, nmOf=k=>{ const m=k==="fmT"?P.fmT:mats[k]; return m&&m.n||""; };
+  /* материал с текстурой Базиса (если есть), иначе цвет материала; по умолчанию — белый */
+  const matFor=(k,dims)=>{ const n=nmOf(k), tx=n&&typeof texFor==="function"?texFor(n):null; return tx?new THREE.MeshLambertMaterial({map:tx,color:0xffffff}):new THREE.MeshLambertMaterial({color:new THREE.Color(prjCol(k))}); };
+  const box=(grp,x0,y0,z0,x1,y1,z1,mt,edge,pi)=>{ const sx=Math.max(1,x1-x0)*K, sy=Math.max(1,y1-y0)*K, sz=Math.max(1,z1-z0)*K, ge=new THREE.BoxGeometry(sx,sy,sz);
+    if(mt.map&&typeof texUV==="function"){ const dm={x:x1-x0,y:y1-y0,z:z1-z0}; try{ texUV(ge,dm,dm.y>=dm.x&&dm.y>=dm.z?"y":dm.x>=dm.z?"x":"z"); }catch(_){} }
+    const me=new THREE.Mesh(ge,mt); me.position.set((x0+x1)/2*K,(y0+y1)/2*K,(z0+z1)/2*K); if(edge!=null) me.add(new THREE.LineSegments(new THREE.EdgesGeometry(ge),new THREE.LineBasicMaterial({color:edge}))); if(pi!=null) me.userData.pi=pi; grp.add(me); return me; };
+  const hn=nmOf("handle"), hCol=/черн|чёрн|black|графит|антрац/i.test(hn)?0x222222:/золот|латун|gold|бронз/i.test(hn)?0xc8a24a:0xb4b9be, hMat=new THREE.MeshLambertMaterial({color:hCol}), op=P.op||"handle";
+  const steel=new THREE.MeshLambertMaterial({color:0xc4c9ce}), dark=new THREE.MeshLambertMaterial({color:0x1d1f22}), ring=new THREE.MeshLambertMaterial({color:0x55595e});
+  P.items.forEach((it,i)=>{ const w=ws[it.wall], fk=prjFrontK(it), grp=new THREE.Group(); grp.userData.pi=i; const ec=i===PRJ.sel?0xffb703:0x555555, sec=prjLibOf(it).sec, up=prjUp(it), tall=/^(tall|cab)$/.test(sec);
+    const mB=matFor("body"), mF=matFor(fk);
+    prjBoxes(it).forEach(b=>{ const me=box(grp,b[0],b[1],b[2],b[3],b[4],b[5],b[6]?mF:mB,ec,i); items.push(me);
+      /* ручки: ящик — поперёк сверху по центру; дверь — вертикально у края, который открывается; пуш-ап — без ручек; профиль — паз сверху */
+      if(!b[6]||op==="none") return; const fw=b[3]-b[0], fh=b[4]-b[1], zf=b[5]; if(fw<120||fh<100) return;
+      if(op==="gola"){ if(!up) box(grp,b[0],b[4]-2,zf-26,b[3],b[4]+2,zf-2,hMat,null,i); return; } if(op==="push") return;
+      const drw=fh<fw*0.75||fh<350, L=Math.min(fw>500?320:160,fw-60);
+      if(drw){ const cy=b[4]-Math.min(50,fh/4), cx=(b[0]+b[3])/2; box(grp,cx-L/2,cy-6,zf,cx+L/2,cy+6,zf+28,hMat,null,i); return; }
+      const leftDoor=(b[0]+b[3])/2<it.w/2&&fw<it.w*0.7, hx=leftDoor?b[3]-45:b[0]+45, vL=Math.min(160,fh-80), cy=up?b[1]+vL/2+60:tall?Math.min(b[4]-vL/2-60,1000-it.y+0):b[4]-vL/2-60;
+      box(grp,hx-6,cy-vL/2,zf,hx+6,cy+vL/2,zf+28,hMat,null,i); });
+    if(!up&&/^(low|corn)$/.test(sec)){ const T=(+dP.T||40), tm=matFor("top"); box(grp,0,it.h,0,it.w,it.h+T,it.d+20,tm,0x777777,null);
+      const tz=(it.d+20)/2, cx=it.w/2, yt=it.h+T;
+      if(it.top==="sink"){ const sw=Math.min(it.w-150,600), sd=Math.min(it.d-120,440);   /* мойка: чаша в столешнице и смеситель */
+        box(grp,cx-sw/2,yt-2,tz-sd/2,cx+sw/2,yt+1,tz+sd/2,steel,0x8a9096,null); box(grp,cx-sw/2+25,yt-160,tz-sd/2+25,cx+sw/2-25,yt+1.5,tz+sd/2-25,new THREE.MeshLambertMaterial({color:0x8d939a}),null,null);
+        box(grp,cx-15,yt,tz-sd/2-60,cx+15,yt+300,tz-sd/2-30,steel,null,null); box(grp,cx-12,yt+270,tz-sd/2-60,cx+12,yt+300,tz-sd/2+150,steel,null,null); }
+      if(it.top==="hob"){ const hw=Math.min(it.w-80,580), hd=Math.min(it.d-60,510); box(grp,cx-hw/2,yt,tz-hd/2,cx+hw/2,yt+6,tz+hd/2,dark,0x000000,null);   /* варочная: чёрное стекло, 4 конфорки */
+        [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a,c])=>{ const g=new THREE.Mesh(new THREE.TorusGeometry(0.075+(a+c===0?0.015:0),0.006,6,28),ring); g.rotation.x=Math.PI/2; g.position.set((cx+a*hw/4)*K,(yt+7)*K,(tz+c*hd/4)*K); grp.add(g); }); } }
+    /* цоколь под нижними и пеналами, отступ 50 мм от лица */
+    if(!up&&it.y>20) box(grp,0,-it.y,0,it.w,0,it.d-50,matFor("plinth"),0x777777,null);
     /* модуль: x — вдоль стены, z — от стены в комнату */
     grp.rotation.y=-Math.atan2(w.u[1],w.u[0]); grp.position.set((w.P[0]+w.u[0]*it.x)*K,it.y*K,(w.P[1]+w.u[1]*it.x)*K); scene.add(grp); });
   const C=new THREE.Vector3(W/2,H*0.42,Dd/2), st=PRJ.cam; if(!st.r) st.r=Math.max(W,Dd,H)*1.55;
@@ -19265,7 +19288,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="77bd076a85";
+const CHK_BUILD="bf4c23908f";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20078,7 +20101,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="77bd076a85";/*cehqr-build*/
+  const BUILD="bf4c23908f";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
