@@ -13472,7 +13472,7 @@ async function dpLoad(){ if(S.dp.busy) return; S.dp.busy=true; const [y,m]=dpYm(
   const j=await shpGet("action=dealsPay&from="+new Date(y,m-1,1).getTime()+"&to="+new Date(y,m,1).getTime(),true); S.dp.busy=false;
   S.dp.data=j&&j.ok?j:{err:1}; dpRedraw(); }
 function dpRedraw(){ if(S.view==="shop"&&S.shop&&S.shop.mode==="dpay"&&typeof shpRenderKeep==="function") shpRenderKeep(); }
-const K=()=>Object.assign({k:0.38,kb:0.45,min:400000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.35,lTop:0.33},(S.dp.data&&S.dp.data.zk)||{});
+const K=()=>Object.assign({k:0.40,kb:0.45,min:400000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.37,lTop:0.35},(S.dp.data&&S.dp.data.zk)||{});
 /* шкала (Кирилл 05.11): 0,45 минимум · 0,42–0,38 средне · 0,35 успех · 0,33 и лучше круто */
 function dpLv(k,KK){ KK=KK||K(); const e=1e-4; return k>KK.lMin+e?"ниже минимума":k>KK.lMid+e?"минимум":k>KK.k-e?"средне":k>KK.lGood+e?"хорошо":k>KK.lTop+e?"успех":"круто"; }
 const LV_ST={"ниже минимума":"low","минимум":"min","средне":"norm","хорошо":"high","успех":"high","круто":"top"};
@@ -16070,13 +16070,27 @@ async function dgModal(id){ const o=shpById(id); if(!o) return; const x=await dg
     <div class="dg-row"><label class="dg-l">Этаж<input class="dg-in" name="floor" maxlength="10" inputmode="numeric" value="${v(D.floor)}"></label><div class="dg-l"><span>Лифт</span>${seg("lift",D.lift,"Лифт")}</div></div>
     <div class="dg-l"><span>Согласие на фото готовой мебели в портфолио</span>${seg("photo",D.photo,"Согласие на фото")}</div>
     <p class="muted dg-h">Номер, дата, цена прописью, предоплата и Приложение 1 — из согласованного расчёта; сроки и реквизиты — «Настройки компании» → «Общие» → «Договор». Пустые поля печатаются линией.</p>
-    <div class="smn-acts"><button type="submit" class="btn primary">Договор → Печать / PDF</button>${x.hand&&x.hand.done?`<button type="button" class="btn" data-x="act">Акт приёмки</button>`:""}<button type="button" class="btn" data-x="close">Закрыть</button></div></form>`;
+    ${D.edit?`<p class="dg-st">✏️ Текст договора правили: ${v(D.editBy||"")} ${D.editAt?v(dgShort(D.editAt)):""} — печатается правленый</p>`:""}
+    <div class="smn-acts"><button type="submit" class="btn primary">Договор → Печать / PDF</button><button type="button" class="btn" data-x="edit">✏️ Править текст</button>${x.hand&&x.hand.done?`<button type="button" class="btn" data-x="act">Акт приёмки</button>`:""}<button type="button" class="btn" data-x="close">Закрыть</button></div></form>`;
   document.body.appendChild(m); const st={lift:D.lift||"",photo:D.photo||""};
   m.addEventListener("click",e=>{ const b=e.target.closest("[data-lift],[data-photo]"); if(b){ const k=b.dataset.lift!=null?"lift":"photo"; st[k]=b.dataset[k]; m.querySelectorAll(`[data-${k}]`).forEach(z=>z.setAttribute("aria-pressed",String(z===b))); return; }
-    if(e.target.closest('[data-x="act"]')){ dgPrint(dgFill(o,x,"act")); return; } if(e.target===m||e.target.closest('[data-x="close"]')) m.remove(); });
+    if(e.target.closest('[data-x="act"]')){ dgPrint(dgFill(o,x,"act")); return; }
+    if(e.target.closest('[data-x="edit"]')){ const f=m.querySelector("form").elements; x.data=Object.assign({},x.data||{},{passport:f.passport.value.trim(),addr:f.addr.value.trim(),floor:f.floor.value.trim(),lift:st.lift,photo:st.photo}); dgEditor(o,x,id); return; } if(e.target===m||e.target.closest('[data-x="close"]')) m.remove(); });
   m.querySelector("form").addEventListener("submit",async e=>{ e.preventDefault(); const f=e.target.elements, data={passport:f.passport.value.trim(),addr:f.addr.value.trim(),floor:f.floor.value.trim(),lift:st.lift,photo:st.photo};
     const w=window.open(""); const j=await shpPost({action:"dogSave",id,data}); if(!j){ if(w) w.close(); return; } x.data=j.data||data;
-    const html=dgFill(o,x,"full"); if(w){ w.document.open(); w.document.write(html); w.document.close(); } else dgPrint(html); m.remove(); }); }
+    const html=(x.data&&x.data.edit)||dgFill(o,x,"full"); if(w){ w.document.open(); w.document.write(html); w.document.close(); } else dgPrint(html); m.remove(); }); }
+/* Кирилл 07.11 (вариант А): «составили договор, а там ошибка — дизайнеры правят прямо в тексте». Документ открывается как страница: нажал на слово — исправил. */
+function dgEditor(o,x,id){ document.getElementById("dgE")?.remove(); const D=x.data||{}, html=D.edit||dgFill(o,x,"full"), m=document.createElement("div"); m.className="modal"; m.id="dgE";
+  m.innerHTML=`<div class="modal-card dg-ed"><div class="dg-edh"><b>Правка договора № ${esc(o.num||"")}</b><span class="muted">нажмите на текст и исправьте</span></div><iframe class="dg-edf" title="Текст договора"></iframe>
+    <div class="smn-acts"><button type="button" class="btn primary" data-e="save">Сохранить</button><button type="button" class="btn" data-e="print">Сохранить и печать</button>${D.edit?`<button type="button" class="btn" data-e="reset">Сбросить правки</button>`:""}<button type="button" class="btn" data-e="x">Закрыть</button></div></div>`;
+  document.body.appendChild(m); const fr=m.querySelector("iframe"); fr.srcdoc=html; fr.addEventListener("load",()=>{ try{ fr.contentDocument.designMode="on"; }catch(_){} });
+  const save=async()=>{ let h=""; try{ h="<!doctype html>"+fr.contentDocument.documentElement.outerHTML; }catch(_){} if(!h) return null; if(h.length>45000){ toast("Договор слишком большой для правки — сократите текст"); return null; }
+    const j=await shpPost({action:"dogSave",id,data:Object.assign({},x.data||{},{edit:h})}); if(!j) return null; x.data=j.data||Object.assign({},x.data,{edit:h}); toast("Правка договора сохранена"); return h; };
+  m.addEventListener("click",async e=>{ const b=e.target.closest("[data-e]"); if(!b) return; const a=b.dataset.e;
+    if(a==="x"){ m.remove(); return; } if(a==="save"){ if(await save()){ m.remove(); document.getElementById("dgM")?.remove(); dgModal(id); } return; }
+    if(a==="print"){ const h=await save(); if(h){ dgPrint(h); m.remove(); } return; }
+    if(a==="reset"){ if(!(await appConfirm("Сбросить все правки? Договор снова соберётся из расчёта.","Сбросить",true))) return; const j=await shpPost({action:"dogSave",id,data:Object.assign({},x.data||{},{edit:""})}); if(j){ x.data=j.data; delete x.data.edit; m.remove(); document.getElementById("dgM")?.remove(); dgModal(id); toast("Правки сброшены"); } } }); }
+(function(){ const st=document.createElement("style"); st.textContent=`.dg-ed{width:min(900px,96vw);height:92vh;display:flex;flex-direction:column;gap:10px}.dg-edh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.dg-edf{flex:1;width:100%;border:0;border-radius:10px;background:#fff}`; document.head.appendChild(st); })();
 /* карточка сделки: блок «Договор» (видят технолог и офис), когда клиент согласовал расчёт */
 function dgCardHtml(o){ if(!S.shop.full||!o) return ""; S.shop.dg=S.shop.dg||{}; const x=S.shop.dg[o.id];
   if(x===undefined){ if(!S.shop.dgBusy){ S.shop.dgBusy=true; dgLoad(o.id).then(()=>{ S.shop.dgBusy=false; if(S.view==="shop"&&S.shop.mode==="order"&&S.shop.cur===o.id&&!document.querySelector(".modal")) shpRenderKeep(); }); } return ""; }
@@ -17190,7 +17204,7 @@ const _qkCalc0=smCalc; smCalc=function(d){ return d&&d.qk?qkCalc(d):_qkCalc0.app
 const _qkNew0=smNew; smNew=function(o){ const d=_qkNew0.apply(this,arguments); d.qk=Object.assign(qkNew(),{fresh:1}); return d; };   // новая смета — сразу быстрая
 
 /* ---- вид ---- */
-function qkPrice(n,u){ const r=S.sup&&S.sup.price&&S.sup.price[supPKey(n)]; if(r&&r.price>0) return Math.round(r.price); const b=typeof smBase==="function"?smBase(n):null; if(!b) return 0; return Math.round(b[2]&&!/^м²/.test(u||"")?b[0]*b[2]:b[0]); }
+function qkPrice(n,u){ try{ const z=QK.set&&QK.set.mine&&QK.set.mine.pz; if(z&&z[n]>0) return Math.round(z[n]); }catch(_){} const r=S.sup&&S.sup.price&&S.sup.price[supPKey(n)]; if(r&&r.price>0) return Math.round(r.price); const b=typeof smBase==="function"?smBase(n):null; if(!b) return 0; return Math.round(b[2]&&!/^м²/.test(u||"")?b[0]*b[2]:b[0]); }
 function qkCatIt(n){ const D=S.cat&&S.cat.data; if(!D) return null; if(!QK.byN||QK.byD!==D){ QK.byD=D; QK.byN=new Map(D.items.map(it=>[it.n,it])); } return QK.byN.get(n)||null; }
 const inp=(path,val,t,ph,cls,lbl)=>`<input class="qk-in${cls?" "+cls:""}" data-qf="${path}" data-t="${t||"n"}" value="${esc(val==null?"":String(val))}"${t==="t"?"":` inputmode="decimal"`}${ph!=null?` placeholder="${esc(String(ph))}"`:""} aria-label="${esc(lbl||"")}">`;
 /* ===== Кирилл 07.11 (вариант А): материалы по классам — ЛДСП Egger, ExtraVert, МДФ Evogloss, AGT… У класса свой лист, своя кромка, свой распил и кромление.
@@ -17408,11 +17422,12 @@ function qkAddModal(cat){ const s=qkSet(), own=(s.own||[]).map((x,i)=>Object.ass
 function qkEdModal(cat,i){ const q=S.shop.sm.data.qk, x=(q.it[cat]||[])[i]; if(!x) return;
   const m=qkModal("qkEdM",`<h2>${esc(QK_CN[cat])}</h2><div class="form qk-f"><label>Название<input name="n" maxlength="120" value="${esc(x.n||"")}"></label>
     <div class="qk-f3"><label>Цена, ₽<input name="p" inputmode="decimal" value="${esc(String(x.p||""))}"></label><label>За<span>${uSel("u",x.u)}</span></label><label>Сколько<input name="q" inputmode="decimal" value="${esc(x.au?"":String(x.q||""))}" placeholder="${x.au?"авто":""}"></label></div>
-    ${x.au?`<p class="qk-hint">Пусто — посчитаю сама: 12 м на лист ЛДСП</p>`:""}</div>
+    ${x.au?`<p class="qk-hint">Пусто — посчитаю сама: 12 м на лист ЛДСП</p>`:""}<label class="qk-chk"><input type="checkbox" name="pz" checked> Запомнить эту цену — в следующих сметах будет она</label></div>
     <div class="qk-acts"><button type="button" class="btn primary" data-a="ok">Готово</button><button type="button" class="btn" data-a="del">Убрать</button><button type="button" class="btn" data-a="x">Отмена</button></div>`);
   m.addEventListener("click",e=>{ const b=e.target.closest("[data-a]"); if(e.target===m){ m.remove(); return; } if(!b) return; const a=b.dataset.a; if(a==="x"){ m.remove(); return; }
     if(a==="del") q.it[cat].splice(i,1);
-    else { const g=n=>m.querySelector(`[name=${n}]`).value; x.n=g("n").trim()||x.n; x.u=g("u"); x.p=num(g("p")); const qv=g("q").trim(); if(x.au&&qv==="") {} else { x.q=num(qv); delete x.au; } }
+    else { const g=n=>m.querySelector(`[name=${n}]`).value; const p0=num(x.p); x.n=g("n").trim()||x.n; x.u=g("u"); x.p=num(g("p"));
+      if(x.p>0&&x.p!==p0&&m.querySelector("[name=pz]").checked){ QK.set=QK.set||{}; const mn=QK.set.mine=QK.set.mine||{}; mn.pz=Object.assign({},mn.pz||{},{[x.n]:x.p}); qkSaveMine().then(ok=>{ if(ok) toast("Цена запомнена: "+x.n+" — "+N(x.p)+" ₽"); }); } const qv=g("q").trim(); if(x.au&&qv==="") {} else { x.q=num(qv); delete x.au; } }
     m.remove(); qkDirty(); shpRenderKeep(); }); }
 /* «+ Работа»: мои работы с ценой — выбрать; новая — сохранить в мои */
 function qkWorkModal(){ const s=qkSet(), q=S.shop.sm.data.qk, L=(s.wx||[]).map((x,i)=>Object.assign({i},x));
@@ -17545,7 +17560,7 @@ function qkProdModal(i){ const q=S.shop.sm.data.qk, s=qkSet(), K=s.sk; q.pr=q.pr
     if(a==="del"){ q.pr.splice(i,1); m.remove(); qkDirty(); return shpRenderKeep(); }
     if(a==="ok"){ read(); const G=qkWard(P,s); if(!G.ok){ toast(G.warn[0]||"Проверьте размеры"); return; } if(i>=0) q.pr[i]=P; else q.pr.push(P); m.remove(); qkDirty(); shpRenderKeep(); toast("Шкаф в смете: "+qkWardSub(G)); } }); }
 /* ⚙ Мои цены (дизайнер) · Общие (директор) · Монтаж % дизайнерам (директор) */
-function qkSetModal(){ const tech=!!(QK.set&&QK.set.tech), scope=tech?QK.scope:"mine";
+function qkSetModal(){ const tech=!!(QK.set&&QK.set.tech)||!!(S.shop&&S.shop.glav), scope=tech?QK.scope:"mine";   /* главный дизайнер тоже правит общие цены (Кирилл 07.11) */
   const W=scope==="firm"?Object.assign(cp(QK_DEF),cp((QK.set&&QK.set.firm)||{})):qkSet(); if(scope!=="firm") delete W.mp;
   const LST=[["wk","Работы — сразу стоят в каждой новой смете",[["n","Название","t"],["u","Ед.","u"],["p","₽","n"]]],["wx","Мои работы — выбираются кнопкой «+ Работа»",[["n","Название","t"],["u","Ед.","u"],["p","₽","n"]]],
     ["own","Мои позиции — фурнитура и материалы не из библиотеки",[["c","Раздел","c"],["n","Название","t"],["u","Ед.","u"],["p","₽","n"]]],["ex","Расходы — сразу стоят в новой смете",[["n","Название","t"],["s","₽","n"]]],
@@ -18608,10 +18623,12 @@ function dirOfTrim(){ if(!dirOffice()||!(S.view==="shop"&&S.shop.mode==="more"))
 if(typeof dirModal==="function"){ const _drDM=dirModal; dirModal=function(){ _drDM.apply(this,arguments); const m=document.getElementById("dirM"); if(!m) return; const R=Object.assign({},ofRights());
   const add=()=>{ if(m.querySelector(".of-box")) return; const card=m.querySelector(".modal-card"), pin=card&&card.querySelector(".dir-pin"); if(!pin) return; const box=document.createElement("div"); box.className="of-box";
     box.innerHTML=`<h2 style="margin:14px 0 4px;font-size:18px">Что можно дизайнеру / офису</h2><ul class="dir-l">${OF_R.map(([k,t,s])=>`<li><label class="dir-r"><span><b>${t}</b><small>${s}</small></span><input type="checkbox" role="switch" data-of="${k}"${R[k]===true?" checked":""}></label></li>`).join("")}</ul>
+      <h2 style="margin:14px 0 4px;font-size:16px">👑 Главный дизайнер</h2><p class="muted" style="margin:0 0 6px;font-size:13px">Видит все сделки и сметы, «Контроль дизайнеров» (коэффициенты), меняет общие цены.</p>
+      <ul class="dir-l">${((S.shop&&S.shop.staff)||[]).filter(p=>/дизайн|офис|менедж/i.test(p.role||"")).map(p=>`<li><label class="dir-r"><span><b>${esc(p.name)}</b><small>${esc(p.role||"")}</small></span><input type="checkbox" role="switch" data-glav="${esc(p.name)}"${(R.glav||[]).includes(p.name)?" checked":""}></label></li>`).join("")||`<li class="muted">В «Сотрудниках» нет дизайнеров</li>`}</ul>
       <p class="muted" style="margin:6px 0 0;font-size:13px">Удалять, настройки, сотрудники — дизайнеру нельзя. Своя зарплата — видна всегда.</p><button type="button" class="btn" data-ofsave style="margin-top:8px">Сохранить права дизайнера</button>`;
     pin.parentNode.insertBefore(box,pin); };
   add(); new MutationObserver(add).observe(m,{childList:true,subtree:true});
-  m.addEventListener("change",e=>{ const c=e.target.closest("[data-of]"); if(c) R[c.dataset.of]=c.checked; });
+  m.addEventListener("change",e=>{ const c=e.target.closest("[data-of]"); if(c) R[c.dataset.of]=c.checked; const g=e.target.closest("[data-glav]"); if(g){ const L=(R.glav||[]).filter(n=>n!==g.dataset.glav); if(g.checked) L.push(g.dataset.glav); R.glav=L; } });
   m.addEventListener("click",async e=>{ const b=e.target.closest("[data-ofsave]"); if(!b) return; b.disabled=true; const j=await shpPost({action:"cfgSave",key:"officeRights",value:R}); b.disabled=false; if(!j) return; (S.shop.cfgAll||(S.shop.cfgAll={})).officeRights=R; toast("Права дизайнера сохранены"); }); }; }
 /* директор ↔ технолог: запоминаем второй вход на этом телефоне и переключаемся в меню профиля */
 function dirAlt(){ try{ return localStorage.getItem("w24-altpin")||""; }catch(_){ return ""; } }
@@ -19028,6 +19045,28 @@ html.vt[data-vt="dark"].pc #appBar .pc-sw button[aria-pressed="true"],html.vt[da
 /* заставка: «готово», когда сделки загрузились или показан вход (Кирилл 07.11: «после обновления — пусто, нужен логотип, надпись и проценты») */
 { const _rdR=render; render=function(){ const r=_rdR.apply(this,arguments); try{ if(!window.__w24Ready&&S.view==="shop"&&S.shop&&(S.shop.loaded||S.shop.err||!(typeof shpPin==="function"&&shpPin())||document.querySelector(".shp-login,.onb-c,.inv-page"))) window.__w24Ready=1; if(!window.__w24Ready&&S.view!=="shop"&&!window.APP_ONE) window.__w24Ready=1;   /* в Work24link — только когда открылись сделки или вход, не промежуточный экран */ }catch(_){} return r; }; }
 
+/* ===== Главный дизайнер (Кирилл 07.11, вариант А): директор ставит галочку у человека («Директор и права» → «Главный дизайнер»).
+   Ему: все сделки и сметы (сервер), общие цены быстрой сметы, «Контроль дизайнеров» — сметы и коэффициенты каждого дизайнера за месяц. ===== */
+if(typeof shpSetRole==="function"){ const _glR=shpSetRole; shpSetRole=function(j){ const r=_glR.apply(this,arguments); try{ S.shop.glav=!!(j&&j.glav); }catch(_){} return r; }; }
+function glavOn(){ return !!(S.shop&&(S.shop.glav||S.shop.tech)); }
+async function glavCtl(){ document.getElementById("glM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="glM"; const st={ym:shpToday().slice(0,7),L:null};
+  const draw=()=>{ const L=(st.L||[]).filter(x=>String(new Date(x.when).toISOString()).slice(0,7)===st.ym), by={};
+    L.forEach(x=>{ const w=x.who||"—", o=by[w]||(by[w]={n:0,tot:0,mats:0,low:0,deals:0}); o.n++; o.tot+=+x.total||0; o.mats+=+x.mats||0; if(x.total>0&&x.mats>0&&x.mats/x.total>0.45+1e-4) o.low++; if(x.deal) o.deals++; });
+    const lv=k=>k>0.45?["ниже минимума","r"]:k>0.42?["минимум","y"]:k>0.40?["средне",""]:k>0.37?["хорошо","g"]:["успех","g"];
+    const mo=d=>{ const [y,mm]=d.split("-"); return ["январь","февраль","март","апрель","май","июнь","июль","август","сентябрь","октябрь","ноябрь","декабрь"][+mm-1]+" "+y; };
+    const shift=n=>{ const d=new Date(st.ym+"-01T00:00:00"); d.setMonth(d.getMonth()+n); return d.toISOString().slice(0,7); };
+    m.innerHTML=`<div class="modal-card gl-mm"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">👑 Контроль дизайнеров</h2><button type="button" class="btn sm" data-g="x">Закрыть</button></div>
+      <div class="gl-mon"><button type="button" class="btn sm" data-g="m" data-v="-1">‹</button><b>${mo(st.ym)}</b><button type="button" class="btn sm" data-g="m" data-v="1">›</button></div>
+      ${st.L===null?`<p class="muted">Загружаю…</p>`:!Object.keys(by).length?`<p class="muted">За этот месяц смет нет.</p>`:`<ul class="gl-l">${Object.keys(by).sort((a,b)=>by[b].tot-by[a].tot).map(w=>{ const o=by[w], k=o.tot>0&&o.mats>0?o.mats/o.tot:0, L2=lv(k);
+        return `<li><div><b>${esc(w)}</b><small class="muted">${o.n} ${o.n===1?"смета":o.n<5?"сметы":"смет"} · в сделках ${o.deals} · ${shpRub(o.tot)}</small></div><span class="gl-k ${L2[1]}">${k?String(Math.round(k*100)/100).replace(".",",")+" · "+L2[0]:"—"}</span>${o.low?`<small class="gl-low">дешевле минимума: ${o.low}</small>`:""}</li>`; }).join("")}</ul>`}
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Коэффициент = материал + расходы ÷ цена клиенту. Минимум 0,45 · средне 0,40 · успех 0,35.</p></div>`; };
+  draw(); document.body.appendChild(m); const j=await shpGet("action=smetaList",true); st.L=j&&j.ok?(j.items||[]):[]; draw();
+  m.addEventListener("click",e=>{ const b=e.target.closest("[data-g]"); if(e.target===m||(b&&b.dataset.g==="x")){ m.remove(); return; } if(b&&b.dataset.g==="m"){ const d=new Date(st.ym+"-01T00:00:00"); d.setMonth(d.getMonth()+(+b.dataset.v)); st.ym=d.toISOString().slice(0,7); draw(); } }); }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="glav-ctl"]'); if(!t) return; e.stopPropagation(); glavCtl(); },true);
+if(typeof prAllHtml==="function"){ const _glA=prAllHtml; prAllHtml=function(){ let o=String(_glA.apply(this,arguments)); if(!glavOn()||o.indexOf('data-act="glav-ctl"')>=0) return o; return `<div class="firm-top dir-top gl-top"><span>👑 <b>Контроль дизайнеров</b> — сметы и коэффициенты</span><button type="button" class="btn" data-act="glav-ctl">Открыть</button></div>`+o; }; }
+if(typeof shpMoreHtml==="function"){ const _glM=shpMoreHtml; shpMoreHtml=function(){ let h=String(_glM.apply(this,arguments)); if(glavOn()&&h.indexOf('data-act="glav-ctl"')<0) h=`<div class="firm-top dir-top gl-top"><span>👑 <b>Контроль дизайнеров</b> — сметы и коэффициенты</span><button type="button" class="btn" data-act="glav-ctl">Открыть</button></div>`+h; return h; }; }
+(function(){ const st=document.createElement("style"); st.textContent=`.gl-mm{width:min(560px,100%);max-height:90vh;overflow:auto}.gl-mon{display:flex;align-items:center;gap:10px;margin:10px 0}.gl-l{list-style:none;margin:0;padding:0}.gl-l li{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;padding:10px 0;border-bottom:1px solid rgba(127,127,127,.2)}.gl-l li>div{display:grid}.gl-k{font-weight:700}.gl-k.r{color:#e5484d}.gl-k.g{color:#30a46c}.gl-k.y{color:#e0b000}.gl-low{width:100%;color:#e5484d}`; document.head.appendChild(st); })();
+
 /* ---------- Смета: «Не забыли?» и светофор продажи (Кирилл 05.11) ----------
    1) Перед «КП в PDF», «Отправить клиенту», «Клиент согласен» и «Сумму — в сделку» — короткий список того, что часто забывают.
       Что смета нашла сама — отмечено; остальное дизайнер отмечает «есть» или «не нужно» (сохраняется в смете, d.chk). Пока не всё — дальше не пускает.
@@ -19038,8 +19077,8 @@ html.vt[data-vt="dark"].pc #appBar .pc-sw button[aria-pressed="true"],html.vt[da
 if(window.__smkOn||typeof smHtml!=="function") return; window.__smkOn=1;
 const SK={data:null,busy:false,pass:false};
 async function skLoad(){ if(SK.busy||SK.data) return; SK.busy=true; let j=null; try{ j=await shpGet("action=smScale",true); }catch(_){} SK.busy=false;
-  SK.data=j&&j.ok?j:{zk:{k:0.38,kb:0.45,min:400000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.35,lTop:0.33},dpct:3,dfrom:"договор",chk:[],off:!j}; if(S.shop&&S.shop.sm&&S.view==="shop"&&typeof shpRenderKeep==="function") shpRenderKeep(); }
-const K=()=>Object.assign({k:0.38,kb:0.45,min:400000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.35,lTop:0.33},(SK.data&&SK.data.zk)||{});
+  SK.data=j&&j.ok?j:{zk:{k:0.40,kb:0.45,min:400000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.37,lTop:0.35},dpct:3,dfrom:"договор",chk:[],off:!j}; if(S.shop&&S.shop.sm&&S.view==="shop"&&typeof shpRenderKeep==="function") shpRenderKeep(); }
+const K=()=>Object.assign({k:0.40,kb:0.45,min:400000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.37,lTop:0.35},(SK.data&&SK.data.zk)||{});
 const N=v=>Math.round(+v||0).toLocaleString("ru-RU"), nf=v=>String(Math.round(v*100)/100).replace(".",",");
 function skLv(k){ const KK=K(), e=1e-4; return k>KK.lMin+e?"ниже минимума":k>KK.lMid+e?"минимум":k>KK.k-e?"средне":k>KK.lGood+e?"хорошо":k>KK.lTop+e?"успех":"круто"; }
 const LVC={"ниже минимума":"r","минимум":"y","средне":"","хорошо":"g","успех":"g","круто":"g"};
@@ -20235,7 +20274,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="1043e9f405";
+const CHK_BUILD="ba5f417492";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21048,7 +21087,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="1043e9f405";/*cehqr-build*/
+  const BUILD="ba5f417492";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
