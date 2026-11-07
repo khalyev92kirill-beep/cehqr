@@ -10001,11 +10001,11 @@ const INV_ST={wait:"ждёт",used:"принято",expired:"просрочен�
 S.inv={list:null,at:0,busy:false,code:"",peek:null,step:0};
 function invBot(){ const b=String((S.site&&S.site.tgBot)||"timebel_ceh_bot").replace(/^@/,""); return /^[A-Za-z0-9_]{4,40}$/.test(b)?b:"timebel_ceh_bot"; }
 function invBotUrl(code){ return "https://t.me/"+invBot()+"?start=inv_"+code; }
-function invWebUrl(code){ let r; try{ r=new URL((window.SITE_ROOT||"./")+"vertaks/",location.href).href; }catch(_){ r=location.origin+"/vertaks/"; } return r+"#inv="+code; }
+function invWebUrl(code){ let r; try{ r=new URL((window.SITE_ROOT||"./")+"vertaks/",location.href).href; }catch(_){ r=location.origin+"/vertaks/"; } try{ const co=typeof licCo==="function"&&licCo(); if(co&&co.code&&!/[?&]c=/.test(r)) r+="?c="+encodeURIComponent(co.code); }catch(_){} return r+"#inv="+code; }
 function invDay(ms){ if(!ms) return ""; const d=new Date(ms), p=n=>String(n).padStart(2,"0"); return p(d.getDate())+"."+p(d.getMonth()+1); }
 
 /* 1. ссылка #inv=<код> — забираем до запуска приложения (иначе адрес приняли бы за заказ) */
-(function(){ const m=/^#inv=([a-f0-9]{32})$/i.exec(String(location.hash||"")); if(!m) return;
+(function(){ let m=/^#inv=([a-f0-9]{32})$/i.exec(String(location.hash||"")); if(m){ try{ sessionStorage.setItem("w24-inv",m[1]); }catch(_){} } else { let k=""; try{ k=sessionStorage.getItem("w24-inv")||""; }catch(_){} if(/^[a-f0-9]{32}$/i.test(k)) m=[0,k]; } if(!m) return;
   try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){}
   if(VTX||window.APP_ONE){ S.inv.code=m[1].toLowerCase(); S.view="shop"; } else location.replace(invWebUrl(m[1].toLowerCase())); })();
 
@@ -10021,12 +10021,17 @@ function invPageHtml(){
   if(P.status==="none") return box("Приглашение не найдено",`<p class="muted">Его отозвали, или ссылка скопирована не целиком. Попросите технолога прислать новую.</p><div class="inv-b">${close}</div>`);
   if(P.status==="expired") return box("Срок приглашения истёк",`<p class="muted">Ссылка действовала 7 дней. Попросите технолога прислать новую.</p><div class="inv-b">${close}</div>`);
   if(P.status==="used") return box("Приглашение уже принято",`<p class="muted">${esc(P.name)} уже в цехе. Если это вы — откройте Work24link кнопкой в чате с ботом @${esc(invBot())}.</p><div class="inv-b"><a class="btn primary" href="https://t.me/${esc(invBot())}" target="_blank" rel="noopener">Открыть бота</a>${close}</div>`);
-  const role=INV_R[P.role]||"мастер", head=`Вас приглашают в цех как <b>${esc(role)}</b>`;
+  const role=INV_R[P.role]||"мастер", head=`${P.firm?esc(P.name)+", вас пригласили в «"+esc(P.firm)+"»":"Вас приглашают в цех"} как <b>${esc(role)}</b>`;
+  if(S.inv.step===3) return box(head,`<p class="inv-name"><span class="muted">Имя в цехе</span><b>${esc(P.name)}</b></p>
+    <form id="invPinF" class="inv-pf" autocomplete="off"><label>Придумайте свой PIN (4–12 цифр)<input id="invP1" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label>
+    <label>Повторите<input id="invP2" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label>
+    <div class="inv-b"><button type="submit" class="btn primary">Войти</button><button type="button" class="btn" data-act="inv-pstep" data-v="0">Назад</button></div></form>
+    <p class="muted">Дальше входите: имя + этот PIN. Видно только то, что можно вашей роли.</p>`);
   if(S.inv.step===2) return box(head,`<p>Имя в приглашении: <b>${esc(P.name)}</b></p><p class="muted">Чтобы имя исправили, попросите технолога прислать новое приглашение — по этой ссылке войти не получится.</p><div class="inv-b"><button type="button" class="btn" data-act="inv-pstep" data-v="0">Назад</button>${close}</div>`);
   if(S.inv.step===1) return box(head,`<ol class="inv-steps"><li>Нажмите «Открыть бота» — откроется Телеграм.</li><li>В чате с ботом нажмите <b>«Запустить»</b> (Start).</li><li>Бот ответит «Готово» и пришлёт кнопку «${P.role==="guest"?"Открыть Технолог 3D":"Открыть Work24link"}» — PIN не нужен.</li></ol>
     <div class="inv-b"><a class="btn primary" href="${esc(invBotUrl(S.inv.code))}" target="_blank" rel="noopener">Открыть бота в Телеграме</a></div><p class="note">Нет Телеграма? Установите его из магазина приложений и откройте эту ссылку ещё раз. Без Телеграма приглашение не принять: по нему цех узнаёт, что это вы.</p><div class="inv-b"><button type="button" class="btn" data-act="inv-pstep" data-v="0">Назад</button></div>`);
   return box(head,`<p class="inv-name"><span class="muted">Имя в цехе</span><b>${esc(P.name)}</b></p><p class="muted">Ссылка действует до ${esc(invDay(P.exp))}. Это вы?</p>
-    <div class="inv-b"><button type="button" class="btn primary" data-act="inv-pstep" data-v="1">Да, это я</button><button type="button" class="btn" data-act="inv-pstep" data-v="2">Имя другое</button></div>`);
+    <div class="inv-b">${P.role!=="guest"&&P.pinOk!==false?`<button type="button" class="btn primary" data-act="inv-pstep" data-v="3">Да, это я — придумать PIN</button><button type="button" class="btn" data-act="inv-pstep" data-v="1">Войти через Телеграм</button>`:`<button type="button" class="btn primary" data-act="inv-pstep" data-v="1">Да, это я</button>`}<button type="button" class="btn" data-act="inv-pstep" data-v="2">Имя другое</button></div>`);
 }
 const _invViewShop=viewShop; viewShop=function(){ if(S.inv.code&&shpOn()) return invPageHtml(); return _invViewShop.apply(this,arguments); };
 
@@ -10047,8 +10052,9 @@ const _invStaffHtml=shpStaffHtml; shpStaffHtml=function(){ let h=_invStaffHtml.a
 function invNewModal(){
   const m=document.createElement("div"); m.className="modal"; m.id="invModal";
   m.innerHTML=`<form class="modal-card shp-mform" id="invForm" autocomplete="off"><h2>Пригласить работника</h2>
-    <p class="note" style="margin:0">Работник откроет ссылку и нажмёт «Запустить» у бота — и сам появится в «Сотрудниках» со своим Телеграмом. PIN ему не нужен.</p>
+    <p class="note" style="margin:0">Человек откроет ссылку, сам придумает свой PIN и войдёт — и появится в «Сотрудниках». Можно и через Телеграм-бота.</p>
     <label>Имя *<input name="name" maxlength="40" required placeholder="Как его будут видеть в задачах и чатах"></label>
+    <label>Телефон (для WhatsApp)<input name="phone" type="tel" inputmode="tel" maxlength="20" placeholder="+7 914 …"></label>
     <fieldset class="inv-roles"><legend>Роль</legend>${Object.keys(INV_RT).filter(k=>k!=="guest").map((k,i)=>`<label class="inv-role"><input type="radio" name="role" value="${k}"${i?"":" checked"}><span>${INV_RT[k]}</span></label>`).join("")}</fieldset>
     <p class="note inv-rhint" id="invRHint">Мастер видит заказы, задачи и чаты — без денег.</p>
     <div class="shp-mb"><button class="btn primary" type="submit">Сделать ссылку</button><button type="button" class="btn" data-act="inv-close">Отмена</button></div></form>`;
@@ -10056,15 +10062,18 @@ function invNewModal(){
   m.addEventListener("change",ev=>{ if(ev.target.name==="role"){ const H={master:"Мастер видит заказы, задачи и чаты — без денег.",office:"Офис-дизайнер видит всё, включая деньги; удалять заказы не может.",supply:"Снабженец — как мастер, плюс чеки закупки и снабжение.",tech:"Технолог может всё — как вы. Давайте только тому, кому доверяете."}; document.getElementById("invRHint").textContent=H[ev.target.value]||""; } });
   document.body.appendChild(m); setTimeout(()=>{ const i=m.querySelector("input"); i&&i.focus(); },50);
 }
+function invWaNum(ph){ let d=String(ph||"").replace(/\D/g,""); if(d.length===11&&d[0]==="8") d="7"+d.slice(1); if(d.length===10) d="7"+d; return d.length>=10?d:""; }
 function invLinkModal(x){
   document.getElementById("invModal")?.remove();
-  const url=invBotUrl(x.code), web=invWebUrl(x.code), txt=x.role==="guest"?x.name+", вот вход в «Технолог 3D» — там будут ваши заказы: детали, QR, 3D и раскрой. Откройте ссылку и нажмите «Запустить»:":x.name+", вас приглашают в цех (Work24link) как "+(INV_R[x.role]||"мастер")+". Откройте ссылку и нажмите «Запустить»:";
+  const bot=invBotUrl(x.code), web=invWebUrl(x.code), firm=(S.site&&S.site.firmName)||"";
+  const txt=x.role==="guest"?x.name+", вот вход в «Технолог 3D» — там будут ваши заказы. Откройте ссылку и нажмите «Запустить»:":x.name+", вас приглашают"+(firm?" в «"+firm+"»":" в цех")+" (Work24link) как "+(INV_R[x.role]||"мастер")+". Откройте ссылку, придумайте свой PIN и входите:";
+  const url=x.role==="guest"?bot:web, wa=invWaNum(x.phone);
   const m=document.createElement("div"); m.className="modal"; m.id="invModal";
   m.innerHTML=`<div class="modal-card shp-mform" role="dialog" aria-label="Ссылка-приглашение"><h2>Ссылка для: ${esc(x.name)}</h2>
-    <p class="note" style="margin:0">${esc(INV_RT[x.role]||"Мастер")} · действует до ${esc(invDay(x.exp))}. Сработает один раз — для того, кто первым нажмёт «Запустить».</p>
+    <p class="note" style="margin:0">${esc(INV_RT[x.role]||"Мастер")} · действует до ${esc(invDay(x.exp))}. Сработает один раз.</p>
     <input id="invUrl" class="shp-kurl" readonly value="${esc(url)}" aria-label="Ссылка" onfocus="this.select()">
-    <div class="shp-kbtns"><a class="btn primary" href="https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(txt)}" target="_blank" rel="noopener">Отправить в Телеграм</a><button type="button" class="btn" data-act="inv-copy" data-u="${esc(url)}">Скопировать</button></div>
-    <details class="inv-web"><summary>Ссылка на сайт — если шлёте не в Телеграм</summary><p class="note">Откроется страница приглашения, а с неё — бот. Принять приглашение всё равно можно только в Телеграме.</p><div class="shp-kbtns"><button type="button" class="btn" data-act="inv-copy" data-u="${esc(web)}">Скопировать ссылку на сайт</button></div></details>
+    <div class="shp-kbtns"><a class="btn primary" href="https://wa.me/${wa}?text=${encodeURIComponent(txt+" "+url)}" target="_blank" rel="noopener">WhatsApp${wa?"":" (выбрать)"}</a><a class="btn" href="https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(txt)}" target="_blank" rel="noopener">Телеграм</a><button type="button" class="btn" data-act="inv-copy" data-u="${esc(url)}">Скопировать</button></div>
+    ${x.role==="guest"?"":`<details class="inv-web"><summary>Ссылка сразу на бота в Телеграме</summary><p class="note">Человек нажмёт «Запустить» у бота — войдёт без PIN, уведомления будут приходить в Телеграм.</p><div class="shp-kbtns"><button type="button" class="btn" data-act="inv-copy" data-u="${esc(bot)}">Скопировать ссылку на бота</button></div></details>`}
     <div class="shp-mb" style="margin-top:12px"><button type="button" class="btn" data-act="inv-close">Готово</button></div></div>`;
   m.addEventListener("click",ev=>{ if(ev.target===m) m.remove(); }); document.body.appendChild(m);
 }
@@ -10072,12 +10081,17 @@ async function invCopy(u){ let ok=false; try{ if(navigator.clipboard&&window.isS
   if(!ok){ const t=document.createElement("textarea"); t.value=u; t.setAttribute("readonly",""); t.style.cssText="position:fixed;top:0;left:0;opacity:0"; document.body.appendChild(t); t.select(); try{ ok=document.execCommand("copy"); }catch(_){} t.remove(); }
   toast(ok?"Ссылка скопирована":"Не удалось скопировать — выделите ссылку и скопируйте"); }
 
+document.addEventListener("submit",async ev=>{ const f=ev.target; if(!f||f.id!=="invPinF") return; ev.preventDefault(); ev.stopPropagation();
+  const a=f.querySelector("#invP1"), b=f.querySelector("#invP2"), P=a.value.trim(); if(!/^\d{4,12}$/.test(P)){ fieldErr(a,"PIN — от 4 до 12 цифр"); return; } if(P!==b.value.trim()){ fieldErr(b,"Не совпадает"); return; }
+  const sb=f.querySelector("[type=submit]"); sb.disabled=true; let j=null; try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"invPin",code:S.inv.code,ppin:P})}); j=await r.json(); }catch(_){} sb.disabled=false;
+  if(!j){ toast("Нет связи с таблицей"); return; } if(!j.ok||!/^tgs\./.test(j.session||"")){ fieldErr(j.error==="pp_same"||j.error==="pp_format"?a:b,j.msg||"Не получилось"); return; }
+  try{ sessionStorage.removeItem("w24-inv"); }catch(_){} S.inv.code=""; mstSaveSess(j); },true);
 document.addEventListener("submit",async ev=>{ const f=ev.target; if(!f||f.id!=="invForm") return; ev.preventDefault(); ev.stopPropagation();
   const name=f.elements.name.value.trim(), role=(f.querySelector('input[name="role"]:checked')||{}).value||"master"; if(!name){ f.elements.name.focus(); return; }
-  const btn=f.querySelector('[type="submit"]'); btn.disabled=true; const j=await shpPostRaw({action:"invNew",name,role}); btn.disabled=false;
+  const btn=f.querySelector('[type="submit"]'); btn.disabled=true; const phone=(f.elements.phone&&f.elements.phone.value||"").trim(); const j=await shpPostRaw({action:"invNew",name,role,phone}); btn.disabled=false;
   if(!j){ toast("Нет связи с таблицей. Ссылка не создана."); return; }
   if(!j.ok){ if(j.error==="pin"){ shpBadPin(); return; } toast(j.error==="staffname"?"Сотрудник с именем «"+name+"» уже есть — для мастера со стороны нужно другое имя":j.error==="exists"?"«"+name+"» уже в «Сотрудниках» и с Телеграмом — приглашать не нужно":j.error==="tech"?"Приглашать может только технолог":j.error==="empty"?"Впишите имя":"Не получилось. Обновите скрипт таблицы и попробуйте ещё раз."); return; }
-  const x={code:j.code,name:j.name||name,role:j.role||role,exp:j.exp,status:"wait",created:Date.now()};
+  const x={code:j.code,name:j.name||name,role:j.role||role,exp:j.exp,status:"wait",created:Date.now(),phone};
   S.inv.list=[x].concat(S.inv.list||[]); invLinkModal(x); if(S.shop.mode==="staff") shpRenderKeep(); },true);
 
 document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.target.closest("[data-act^='inv-']"); if(!t) return; ev.stopPropagation(); const a=t.dataset.act;
@@ -10090,7 +10104,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
     const j=await shpPost({action:"invDel",code:t.dataset.c}); if(!j) return; S.inv.list=(S.inv.list||[]).filter(y=>y.code!==t.dataset.c); toast(old?"Убрано":"Приглашение отозвано"); shpRenderKeep(); return; }
   if(a==="inv-pstep"){ S.inv.step=+t.dataset.v||0; render(); window.scrollTo(0,0); return; }
   if(a==="inv-pretry"){ S.inv.peek=null; render(); return; }
-  if(a==="inv-pclose"){ S.inv.code=""; S.inv.peek=null; S.inv.step=0; S.shop.mode="board"; render(); window.scrollTo(0,0); return; }
+  if(a==="inv-pclose"){ try{ sessionStorage.removeItem("w24-inv"); }catch(_){} S.inv.code=""; S.inv.peek=null; S.inv.step=0; S.shop.mode="board"; render(); window.scrollTo(0,0); return; }
 });
 
 (function(){ const st=document.createElement("style"); st.textContent=`
@@ -10113,6 +10127,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
 .inv-rhint{margin:0;min-height:2.6em}
 .inv-web{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.inv-web summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600}
 .inv-load{margin:4px 0 10px}
+.inv-pf{display:grid;gap:10px}.inv-pf label{display:grid;gap:4px;font-weight:600}.inv-pf input{min-height:48px;font-size:18px;letter-spacing:.2em}
 #invModal .shp-kbtns .btn{flex:1 1 150px;justify-content:center;text-align:center;min-height:48px}
 @media (min-width:700px){.inv-row{grid-template-columns:auto 1fr auto auto}.inv-act{grid-column:auto;flex-wrap:nowrap}.inv-act .btn{flex:0 0 auto}}`; document.head.appendChild(st); })();
 
@@ -18431,15 +18446,14 @@ async function mstPost(body){ try{ const r=await fetch(S.site.stagesUrl,{method:
 function mstSaveSess(j){ try{ Object.values(MST_KEYS).forEach(k=>{ if(/^tgs\./.test(localStorage.getItem(k)||"")) localStorage.removeItem(k); }); localStorage.setItem(MST_KEYS[j.role],j.session); localStorage.setItem("cehqr-who",String(j.name).slice(0,40)); }catch(_){}
   toast("Вы вошли: "+j.name); setTimeout(()=>{ try{ location.reload(); }catch(_){} },400); }
 function mstLoginModal(){ document.getElementById("mstM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="mstM"; let st={step:1,name:S.who||"",first:false};
-  const draw=()=>{ m.innerHTML=`<form class="modal-card" id="mstF" autocomplete="off"><h2 style="margin:0 0 6px">Вход мастера</h2>
+  const draw=()=>{ m.innerHTML=`<form class="modal-card" id="mstF" autocomplete="off"><h2 style="margin:0 0 6px">Вход по своему PIN</h2>
     ${st.step===1?`<p class="note" style="margin:0 0 12px">Ваше имя — как в «Сотрудниках».</p><div class="form" style="grid-template-columns:1fr;margin:0"><label>Ваше имя<input id="mstN" value="${esc(st.name)}" maxlength="40" required autocomplete="username"></label></div>`
     :st.first?`<p class="note" style="margin:0 0 12px"><b>${esc(st.name)}</b>, вы входите первый раз. Придумайте свой PIN — дальше входите только им.</p><div class="form" style="grid-template-columns:1fr;margin:0">
       <label>1. PIN цеха (общий, один раз)<input id="mstC" type="password" inputmode="numeric" maxlength="20" required></label>
       <label>2. Придумайте свой PIN (4–12 цифр)<input id="mstP" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label>
       <label>3. Повторите<input id="mstP2" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label></div>`
     :`<p class="note" style="margin:0 0 12px"><b>${esc(st.name)}</b></p><div class="form" style="grid-template-columns:1fr;margin:0"><label>Ваш PIN<input id="mstP" type="password" inputmode="numeric" maxlength="12" required autocomplete="current-password"></label></div>`}
-    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" type="submit">${st.step===1?"Дальше":"Войти"}</button>${st.step===2?`<button class="btn" type="button" data-m="back">‹ Другое имя</button>`:""}<button class="btn" type="button" data-act="qr-close">Отмена</button></div>
-    <p style="margin:12px 0 0"><button type="button" class="linkbtn" data-m="old">Войти общим PIN цеха (старый способ)</button></p></form>`;
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" type="submit">${st.step===1?"Дальше":"Войти"}</button>${st.step===2?`<button class="btn" type="button" data-m="back">‹ Другое имя</button>`:""}<button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
     setTimeout(()=>{ const i=m.querySelector(st.step===1?"#mstN":st.first?"#mstC":"#mstP"); i&&i.focus(); },50); };
   draw(); document.body.appendChild(m);
   m.addEventListener("click",e=>{ if(e.target===m){ m.remove(); return; } const b=e.target.closest("[data-m]"); if(!b) return; if(b.dataset.m==="back"){ st.step=1; draw(); } else if(b.dataset.m==="old"){ m.remove(); mstOld(); } });
@@ -18447,7 +18461,7 @@ function mstLoginModal(){ document.getElementById("mstM")?.remove(); const m=doc
     try{
       if(st.step===1){ st.name=m.querySelector("#mstN").value.trim(); const j=await mstPost({action:"ppState",name:st.name}); if(!j){ toast("Нет связи с таблицей"); return; }
         if(!j.ok){ toast(j.error==="action"?"Обновите скрипт таблицы":"Не получилось"); return; } if(!j.staff){ fieldErr(m.querySelector("#mstN"),"Такого имени нет в «Сотрудниках» — скажите директору"); return; }
-        if(j.role&&j.role!=="master"){ fieldErr(m.querySelector("#mstN"),"Вы не мастер — войдите своей кнопкой"); return; } st.name=j.name||st.name; st.first=!j.has; st.step=2; draw(); return; }
+        if(j.role&&j.role!=="master"&&!j.has){ fieldErr(m.querySelector("#mstN"),"У вас ещё нет своего PIN — попросите у директора ссылку-приглашение"); return; } st.name=j.name||st.name; st.first=!j.has; st.step=2; draw(); return; }
       const P=m.querySelector("#mstP").value.trim();
       if(st.first){ const C=m.querySelector("#mstC").value.trim(), P2=m.querySelector("#mstP2").value.trim(); if(!/^\d{4,12}$/.test(P)){ fieldErr(m.querySelector("#mstP"),"PIN — от 4 до 12 цифр"); return; } if(P!==P2){ fieldErr(m.querySelector("#mstP2"),"Не совпадает"); return; }
         const j=await mstPost({action:"ppSelf",name:st.name,pin:C,ppin:P}); if(!j){ toast("Нет связи с таблицей"); return; } if(!j.ok){ fieldErr(m.querySelector(j.error==="pin"?"#mstC":"#mstP"),j.msg||"Не получилось"); return; } }
@@ -18650,12 +18664,20 @@ if(typeof shpCard==="function"){ const _nmC=shpCard; shpCard=function(o){ let h=
 S.shop.tz=S.shop.tz||{};
 async function tzLoad(id){ const j=await shpGet("action=tzGet&deal="+encodeURIComponent(id),true); S.shop.tz[id]=j&&j.ok?(j.tz||{text:"",photos:[],ready:0}):"err"; if(S.view==="shop"&&S.shop.cur===id&&!document.querySelector(".modal")) shpRenderKeep(); }
 function tzSpecSum(id){ const R=(typeof dealSpecRows==="function"&&dealSpecRows(id))||[]; let sum=0, no=0; R.forEach(r=>{ const it=typeof catFind==="function"?catFind(r.name):null, p=it&&typeof catPriceNum==="function"?catPriceNum(it):0; if(p>0) sum+=p*(+r.qty||0); else no++; }); return {sum:Math.round(sum),no,n:R.length}; }
+/* Кирилл 07.11 (вариант А): «дизайнеры в Базисе — модель, листочки, любой файл, чтобы технолог взял данные». Файлы ТЗ — в «Файлах сделки» с началом «ТЗ · ». */
+const TZF="ТЗ · ";
+function tzFiles(id){ const L=S.df&&S.df[id]; if(L===undefined){ S.df=S.df||{}; S.df[id]="busy"; shpGet("action=dfiles&order="+encodeURIComponent(id),true).then(j=>{ S.df[id]=j&&Array.isArray(j.files)?j.files:"err"; if(S.view==="shop"&&S.shop.cur===id) shpRenderKeep(); }); }
+  return Array.isArray(L)?L.filter(f=>String(f.name).indexOf(TZF)===0):[]; }
+function tzFIc(n){ return /\.(b3d|bpr|bdb|dwg|dxf|s3d)$/i.test(n)?"📦":/\.(jpe?g|png|heic|webp)$/i.test(n)?"🖼":"📄"; }
+function tzFKb(n){ return n>=1048576?(n/1048576).toFixed(1).replace(".",",")+" МБ":n>0?Math.max(1,Math.round(n/1024))+" КБ":""; }
+function tzFRow(f){ const n=String(f.name).slice(TZF.length); return `<li class="tz-f"><a href="${esc(f.url)}" target="_blank" rel="noopener">${tzFIc(n)} ${esc(n)}</a><small class="muted">${esc(tzFKb(f.size))}</small></li>`; }
 function tzCardHtml(o){ if(typeof specSee==="function"&&!specSee()) return ""; const T=S.shop.tz[o.id];
   if(T===undefined){ S.shop.tz[o.id]=null; setTimeout(()=>tzLoad(o.id),0); }
   if(!T||T==="err") return `<div class="card tz-card"><h2>📋 ТЗ и спецификация</h2><p class="muted" style="margin:0">${T==="err"?"Не загрузилось — обновите скрипт таблицы или проверьте связь.":"Загружаю…"}</p></div>`;
   const can=!!S.shop.full, sp=tzSpecSum(o.id), rc=+o.receiptsTotal||0, st=T.ready?`<b class="tz-ok">✓ ТЗ готово</b> · ${esc(T.who||"")} · ${esc(shpTime(T.ready))}`:T.text||T.photos.length?`<b class="tz-wt">черновик</b> — не отмечено «готово», снабженцу замер ещё не поставлен`:`<b class="tz-wt">ещё не написано</b> — после договора пишет дизайнер`;
   return `<div class="card tz-card"><div class="shp-rc-h"><h2>📋 ТЗ и спецификация</h2><button type="button" class="btn sm" data-act="tz-open" data-id="${esc(o.id)}">${can&&!T.ready?"Открыть ТЗ":"Посмотреть"}</button></div>
     <p class="tz-st">${st}</p>${T.text?`<p class="tz-tx">${esc(T.text.slice(0,220))}${T.text.length>220?"…":""}</p>`:""}
+    ${(()=>{ const F=tzFiles(o.id); return F.length?`<p class="tz-m"><b>Модель и файлы от дизайнера — скачать:</b></p><ul class="tz-fl">${F.map(tzFRow).join("")}</ul>`:""; })()}
     <p class="muted tz-m">${T.photos.length?`📷 ${T.photos.length} фото · `:""}мелочь по спецификации: ${sp.n?`${sp.n} поз.${sp.sum?` ≈ ${shpRub(sp.sum)}`:""}${sp.no?` (без цены: ${sp.no})`:""}`:"пусто"}${rc?` · чеки снабженца: ${shpRub(rc)}`:""}</p>
     ${T.ready?"":`<p class="muted tz-m">🔒 Контрольный замер снабженца — после «ТЗ готово»</p>`}</div>`; }
 if(typeof specBlockHtml==="function"){ const _tzB=specBlockHtml; specBlockHtml=function(o){ const h=_tzB.apply(this,arguments); try{ return tzCardHtml(o)+h; }catch(_){ return h; } }; }
@@ -18669,23 +18691,85 @@ function tzModal(id){ const o=shpById(id); if(!o) return; const T0=S.shop.tz[id]
       <div class="tz-ph">${D.photos.map((u,i)=>`<span class="tz-pi"><a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Фото ТЗ ${i+1}"></a>${can?`<button type="button" class="tz-px" data-tz="pdel" data-i="${i}" aria-label="Убрать фото">✕</button>`:""}</span>`).join("")}${can?`<label class="tz-padd">📷 Фото / эскиз<input type="file" accept="image/*" multiple hidden id="tzFile"></label>`:""}</div>
       <div class="tz-spec"><b>Спецификация — мелочь по ТЗ</b>${R.length?`<ul>${R.map(r=>{ const it=typeof catFind==="function"?catFind(r.name):null, p=it&&typeof catPriceNum==="function"?catPriceNum(it):0; return `<li><span>${esc(r.name)}</span><span class="mono">${esc(typeof supNum==="function"?supNum(r.qty):r.qty)} ${esc(r.unit)}${p?` · ${shpRub(Math.round(p*(+r.qty||0)))}`:` · <span class="muted">нет цены</span>`}</span></li>`; }).join("")}</ul><p class="muted" style="margin:4px 0 0">Итого по ТЗ: <b>${shpRub(sp.sum)}</b>${sp.no?` · без цены: ${sp.no}`:""}</p>`:`<p class="muted" style="margin:4px 0 0">Пусто. Позиции берутся из «Материалов» — с ценами.</p>`}
         ${can?`<button type="button" class="btn sm" data-tz="spec" style="margin-top:6px">${R.length?"Править спецификацию":"+ Составить спецификацию"}</button>`:""}</div>
+      <div class="tz-spec"><b>Модель и файлы для технолога</b> <span class="muted">(по желанию)</span>${(()=>{ const F=tzFiles(id); return F.length?`<ul class="tz-fl">${F.map(tzFRow).join("")}</ul>`:`<p class="muted" style="margin:4px 0 0">Модель Базиса (.b3d), чертёж, листы, фото — технолог скачает отсюда.</p>`; })()}
+        ${can?`<label class="btn sm tz-fup" style="margin-top:6px">+ Файл: модель Базиса, чертёж, фото<input type="file" multiple hidden id="tzFiles"></label>`:""}</div>
       ${can?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" class="btn" data-tz="save">Сохранить</button>${D.ready?"":`<button type="button" class="btn primary" data-tz="ready">✓ ТЗ готово → снабженцу замер</button>`}</div>`:""}</div>`;
+    const ff=m.querySelector("#tzFiles"); if(ff) ff.addEventListener("change",async()=>{ const fs=[...ff.files].slice(0,10); ff.value=""; if(!fs.length) return; D.text=(m.querySelector("#tzText")||{}).value||D.text;
+      for(const x of fs){ if(x.size>25*1048576){ toast("«"+x.name+"» больше 25 МБ — положите на Google Диск и добавьте ссылкой в «Файлах сделки»"); continue; } toast("Загружаю "+x.name+"…");
+        const data=await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(",")[1]||""); r.onerror=()=>res(""); r.readAsDataURL(x); });
+        const j=data?await shpPost({action:"dfileAdd",order:id,name:TZF+x.name,mime:x.type||"application/octet-stream",data}):null; if(j&&j.file){ if(!Array.isArray(S.df[id])) S.df[id]=[]; S.df[id].push(j.file); } else toast("Файл не загрузился: "+x.name); }
+      draw(); });
     const f=m.querySelector("#tzFile"); if(f) f.addEventListener("change",async()=>{ const fs=[...f.files].slice(0,10); if(!fs.length) return; D.text=(m.querySelector("#tzText")||{}).value||D.text; toast("Загружаю фото…");
       for(const x of fs){ try{ const b=await tzImg(x), j=await shpPost({action:"tzPhoto",deal:id,photo:b}); if(j&&j.url) D.photos.push(j.url); }catch(_){ toast("Фото не загрузилось"); } } draw(); }); };
   draw(); document.body.appendChild(m);
-  const save=async ready=>{ D.text=(m.querySelector("#tzText")||{}).value||""; if(ready&&!D.text.trim()&&!D.photos.length){ toast("Сначала напишите ТЗ или добавьте фото"); return false; }
+  const save=async ready=>{ D.text=(m.querySelector("#tzText")||{}).value||""; if(ready&&!D.text.trim()){ toast("ТЗ обязательно: напишите текст ТЗ"); return false; } if(ready&&!((typeof dealSpecRows==="function"&&dealSpecRows(id))||[]).length){ toast("Спецификация обязательна: составьте её из «Материалов»"); return false; }
     const j=await shpPost({action:"tzSave",deal:id,text:D.text,photos:D.photos,ready:ready||!!D.ready}); if(!j) return false; S.shop.tz[id]={text:D.text,photos:D.photos,ready:j.ready||0,who:shpWho(),when:Date.now()}; return true; };
   m.addEventListener("click",async e=>{ const b=e.target.closest("[data-tz]"); if(e.target===m||(b&&b.dataset.tz==="x")){ m.remove(); shpRenderKeep(); return; } if(!b) return; const a=b.dataset.tz;
     if(a==="pdel"){ D.text=(m.querySelector("#tzText")||{}).value||D.text; D.photos.splice(+b.dataset.i,1); draw(); }
     else if(a==="spec"){ D.text=(m.querySelector("#tzText")||{}).value||D.text; if(D.text!==(T0.text||"")||D.photos.length!==(T0.photos||[]).length) await save(false); m.remove(); const s=document.querySelector('[data-act="shp-specedit"]'); if(s){ s.scrollIntoView({block:"center"}); s.click(); } }
     else if(a==="save"){ b.disabled=true; if(await save(false)){ toast("ТЗ сохранено"); m.remove(); shpRenderKeep(); } b.disabled=false; }
-    else if(a==="ready"){ if(!(await appConfirm("ТЗ готово? Снабженцу сразу уйдёт задача «Контрольный замер по ТЗ».","Да, готово"))) return; b.disabled=true; if(await save(true)){ toast("ТЗ готово — снабженцу контрольный замер"); m.remove(); try{ shpRefresh&&shpRefresh(); }catch(_){} shpRenderKeep(); } b.disabled=false; } }); }
+    else if(a==="ready"){ const tx=((m.querySelector("#tzText")||{}).value||"").trim(); if(!tx){ toast("ТЗ обязательно: напишите текст ТЗ"); return; } if(!((typeof dealSpecRows==="function"&&dealSpecRows(id))||[]).length){ toast("Спецификация обязательна: составьте её из «Материалов»"); return; } if(!(await appConfirm("ТЗ готово? Снабженцу сразу уйдёт задача «Контрольный замер по ТЗ».","Да, готово"))) return; b.disabled=true; if(await save(true)){ toast("ТЗ готово — снабженцу контрольный замер"); m.remove(); try{ shpRefresh&&shpRefresh(); }catch(_){} shpRenderKeep(); } b.disabled=false; } }); }
 document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="tz-open"]'); if(!t) return; e.stopPropagation(); tzModal(t.dataset.id); },true);
 (function(){ const st=document.createElement("style"); st.textContent=`.tz-card .tz-st{margin:4px 0}.tz-ok{color:#30a46c}.tz-wt{color:#ffb020}.tz-tx{margin:4px 0;white-space:pre-wrap;font-size:14px}.tz-m{margin:4px 0 0;font-size:13px}
 .tz-mm{width:min(560px,100%);max-height:92vh;overflow:auto}.tz-l{display:flex;flex-direction:column;gap:4px;font-size:13.5px}.tz-l textarea{width:100%;box-sizing:border-box;font:inherit;font-size:15px}
 .tz-ph{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.tz-pi{position:relative}.tz-pi img{width:84px;height:84px;object-fit:cover;border-radius:10px;display:block}.tz-px{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:0;background:#000;color:#fff}
 .tz-padd{display:grid;place-items:center;width:84px;height:84px;border-radius:10px;outline:1px dashed rgba(128,128,128,.6);font-size:12px;text-align:center;cursor:pointer}
-.tz-spec ul{list-style:none;margin:6px 0 0;padding:0}.tz-spec li{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid rgba(128,128,128,.2);font-size:14px}`; document.head.appendChild(st); })();
+.tz-fl{list-style:none;margin:4px 0 0;padding:0}.tz-f{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid rgba(128,128,128,.2);font-size:14px}.tz-f a{color:inherit;word-break:break-all}.tz-fup{cursor:pointer}
+.tz-spec{margin-top:10px}.tz-spec ul{list-style:none;margin:6px 0 0;padding:0}.tz-spec li{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid rgba(128,128,128,.2);font-size:14px}`; document.head.appendChild(st); })();
+/* ===== Кирилл 07.11 (вариант А): заказ загрузили из Базиса, а к сделке не привязали — это задача технолога.
+   Приложение технолога/директора видит новые заказы без сделки (с 07.11) → сервер ставит технологу задачу + Телеграм (linkNeed_), привязал — задача закрылась.
+   В «Заказах» — красная полоска «N заказов без сделки». Через смету дизайнера заказ привязан сразу — его здесь нет. ===== */
+const LNK_FROM="2026-11-07";
+function lnkList(){ try{ if(!S.shop||!S.shop.loaded||!S.shop.tech) return []; const O=S.orders||{};
+  return Object.keys(O).map(k=>O[k]).filter(o=>o&&o.id&&String(o.exportedAt||"")>=LNK_FROM&&!(typeof vtxLinked==="function"&&vtxLinked(o.id))); }catch(_){ return []; } }
+let lnkSent="";
+function lnkPush(){ const L=lnkList(); if(!L.length) return; const key=L.map(o=>o.id).sort().join(","); if(key===lnkSent) return; lnkSent=key;
+  shpPostRaw({action:"linkNeed",oids:L.slice(0,20).map(o=>({id:o.id,name:o.name||""}))}).catch(()=>{}); }
+function lnkBar(){ const L=lnkList(); if(!L.length) return "";
+  return `<div class="lnk-bar" role="status"><b>${L.length} ${L.length===1?"заказ":L.length<5?"заказа":"заказов"} без сделки</b><span>${L.slice(0,4).map(o=>`<button type="button" class="linkbtn" data-act="lnk-go" data-o="${esc(o.id)}">${esc(o.id)} ${esc(o.name||"")}</button>`).join(" · ")}${L.length>4?" …":""}</span><small>Откройте заказ → «Привязать к сделке». Технологу стоит задача.</small></div>`; }
+if(typeof viewOrders==="function"){ const _lnkVO=viewOrders; viewOrders=function(){ const h=_lnkVO.apply(this,arguments); try{ const b=lnkBar(); if(!b) return h; const i=String(h).indexOf("</div>"); return i>0?h.slice(0,i+6)+b+h.slice(i+6):b+h; }catch(_){ return h; } }; }
+{ const _lnkR=render; render=function(){ const r=_lnkR.apply(this,arguments); try{ lnkPush(); }catch(_){} return r; }; }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="lnk-go"]'); if(!t) return; e.stopPropagation(); try{ goOrder(t.dataset.o); }catch(_){} },true);
+(function(){ const st=document.createElement("style"); st.textContent=`.lnk-bar{display:grid;gap:4px;margin:8px 0 12px;padding:12px 14px;border-radius:14px;border:1px solid #e5484d;background:rgba(229,72,77,.12)}.lnk-bar b{color:#e5484d;font-size:16px}.lnk-bar small{color:var(--muted,#888)}`; document.head.appendChild(st); })();
+
+/* ===== Новая фирма (Кирилл 07.11, вариант А): «новый человек подписался — сначала заводит работников, кто кем работает, потом именно эти люди заходят».
+   1) Таблица только что скопирована (нет PIN технолога и директора) → вместо входа «Добро пожаловать»: фирма, имя, свой PIN → директор (сервер firmSetup_).
+   2) «Ваша команда» — экран «Сотрудники» с полоской «Шаг 2 из 3»: «Пригласить» → имя, роль, телефон → ссылка в WhatsApp / Телеграм.
+   3) Человек открывает ссылку → придумывает свой PIN → входит (site_invite.js, сервер invPin_). Дальше вход «имя + свой PIN». ===== */
+S.onb={st:null,busy:false};
+async function onbState(){ if(S.onb.busy||S.onb.st) return; S.onb.busy=true;
+  try{ const r=await fetch(shpUrl("action=firmState"),{cache:"no-cache"}); const j=await r.json(); S.onb.st=j&&j.ok?j:{fresh:false}; }catch(_){ S.onb.st={fresh:false}; }
+  S.onb.busy=false; if(S.onb.st.name) S.site.firmName=S.onb.st.name; if(S.onb.st.fresh&&S.view==="shop"&&!shpPin()) render(); }
+function onbWizHtml(){ return `<div class="head"><h1>Work24link</h1></div><div class="card onb-c"><span class="onb-step">Шаг 1 из 3</span><h2>Добро пожаловать в Work24link</h2>
+  <p class="muted">Вы — директор. Назовите фирму и придумайте свой PIN. Потом добавите людей — каждый получит ссылку и сам придумает свой PIN.</p>
+  <form id="onbF" class="onb-f" autocomplete="off"><label>Название фирмы<input id="onbFirm" maxlength="60" required placeholder="Мебель Север"></label>
+  <label>Ваше имя<input id="onbName" maxlength="40" required autocomplete="name" placeholder="Иван"></label>
+  <label>Ваш PIN (4–12 цифр)<input id="onbP1" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label>
+  <label>Повторите PIN<input id="onbP2" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label>
+  <button type="submit" class="btn primary onb-go">Дальше — сотрудники</button></form></div>`; }
+if(typeof shpLoginHtml==="function"){ const _onbL=shpLoginHtml; shpLoginHtml=function(){ if(!S.onb.st) setTimeout(onbState,0); else if(S.onb.st.fresh) return onbWizHtml();
+  return String(_onbL.apply(this,arguments)).replace('<div class="shp-login-b">','<div class="shp-login-b"><button type="button" class="btn primary onb-pp" data-act="shp-in-pp">Войти: имя + свой PIN</button>').replace('class="btn primary" data-act="shp-in-master"','class="btn" data-act="shp-in-master"').replace(/<p class="nt-loginp">[\s\S]*?<\/p>/,""); }; }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="shp-in-pp"]'); if(!t) return; e.stopPropagation(); e.preventDefault(); mstLoginModal(); },true);
+document.addEventListener("submit",async e=>{ const f=e.target; if(!f||f.id!=="onbF") return; e.preventDefault(); e.stopPropagation();
+  const g=id=>f.querySelector(id), firm=g("#onbFirm").value.trim(), name=g("#onbName").value.trim(), P=g("#onbP1").value.trim();
+  if(!/^\d{4,12}$/.test(P)){ fieldErr(g("#onbP1"),"PIN — от 4 до 12 цифр"); return; } if(P!==g("#onbP2").value.trim()){ fieldErr(g("#onbP2"),"Не совпадает"); return; }
+  const sb=g("[type=submit]"); sb.disabled=true; const j=await mstPost({action:"firmSetup",firm,name,ppin:P}); sb.disabled=false;
+  if(!j){ toast("Нет связи с таблицей"); return; } if(!j.ok){ toast(j.msg||"Не получилось"); if(j.error==="done"){ S.onb.st={fresh:false}; render(); } return; }
+  try{ localStorage.setItem("cehqr-techpin",P); localStorage.setItem("cehqr-who",name.slice(0,40)); localStorage.setItem("w24-onb","2"); }catch(_){}
+  toast("Фирма «"+firm+"» создана"); setTimeout(()=>{ try{ location.reload(); }catch(_){} },400); },true);
+/* шаг 2: после создания фирмы — сразу «Сотрудники» с подсказкой */
+function onbOn(){ try{ return localStorage.getItem("w24-onb")==="2"; }catch(_){ return false; } }
+if(typeof shpStaffHtml==="function"){ const _onbS=shpStaffHtml; shpStaffHtml=function(){ const h=_onbS.apply(this,arguments); if(!onbOn()||!S.shop.tech) return h;
+  const n=(S.inv&&S.inv.list||[]).length;
+  return `<div class="card onb-c onb-team"><span class="onb-step">Шаг 2 из 3</span><h2>Ваша команда</h2><p class="muted">Кто работает и кем. Нажмите «Пригласить» → имя, роль, телефон → отправьте ссылку в WhatsApp или Телеграм. Человек откроет её и сам придумает свой PIN.</p>
+    <div class="onb-b"><button type="button" class="btn primary" data-act="inv-new">+ Пригласить человека</button>${n?`<button type="button" class="btn" data-act="onb-done">Готово — все приглашены</button>`:""}</div></div>`+h; }; }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="onb-done"]'); if(!t) return; e.stopPropagation(); try{ localStorage.removeItem("w24-onb"); }catch(_){} toast("Готово. Кто ещё не вошёл — виден в «Приглашениях»"); shpRenderKeep(); },true);
+{ const _onbR=render; render=function(){ try{ if(onbOn()&&S.view==="shop"&&S.shop&&S.shop.loaded&&S.shop.tech&&!S.onb.went){ S.onb.went=true; S.shop.mode="staff"; } }catch(_){} return _onbR.apply(this,arguments); }; }
+setTimeout(()=>{ try{ onbState(); }catch(_){} },1500);
+(function(){ const st=document.createElement("style"); st.textContent=`.onb-c{max-width:520px;margin:8px auto 12px;padding:20px;display:grid;gap:10px}.onb-c h2{margin:0;font-size:22px}.onb-c p{margin:0}
+.onb-step{justify-self:start;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--tape);color:var(--tape-ink)}
+.onb-f{display:grid;gap:10px}.onb-f label{display:grid;gap:4px;font-weight:600}.onb-f input{min-height:48px;font-size:17px}.onb-go{min-height:52px;margin-top:4px}
+.onb-b{display:flex;gap:8px;flex-wrap:wrap}.onb-b .btn{min-height:48px;flex:1 1 180px}.onb-pp{grid-column:1/-1}`; document.head.appendChild(st); })();
 
 /* ---------- Смета: «Не забыли?» и светофор продажи (Кирилл 05.11) ----------
    1) Перед «КП в PDF», «Отправить клиенту», «Клиент согласен» и «Сумму — в сделку» — короткий список того, что часто забывают.
@@ -19873,7 +19957,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="f140a0c510";
+const CHK_BUILD="0827035bde";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20686,7 +20770,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="f140a0c510";/*cehqr-build*/
+  const BUILD="0827035bde";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
