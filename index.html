@@ -17866,11 +17866,20 @@ function prjSync(d){ const P=d.proj; if(!P) return; const L=[];
   const pl=lt+(P.items||[]).filter(it=>/^(tall|cab)$/.test(prjLibOf(it).sec)).reduce((a,it)=>a+(+it.w||0),0); d.lin=Object.assign({},d.lin||{},{top:Math.round(lt)/1000,plinth:Math.round(pl)/1000}); }
 { const _pjC=smCalc; smCalc=function(d){ if(d&&d.proj&&!d.qk) prjSync(d); return _pjC.apply(this,arguments); }; }
 /* ---- каталог ---- */
-async function prjLibLoad(){ if(S.shop.lib||PRJ.libBusy) return; PRJ.libBusy=1; const j=await shpGet("action=lib",true); S.shop.lib=j&&j.ok?j.items.filter(x=>x.status==="ok"):[]; PRJ.libBusy=0; if(prjIs(S.shop.sm)) shpRenderKeep(); }
-function prjCatHtml(){ const L=S.shop.lib; if(!L){ prjLibLoad(); return `<p class="muted pj-cat0">Загружаю каталог…</p>`; }
-  if(!L.length) return `<p class="note pj-cat0">Каталог пуст. Технолог: Технолог 3D → «Модули» → «Найти модули в заказах» → «✓ В библиотеку». Модули берутся из блоков выгруженных заказов Базиса.</p>`;
+/* каталог = «Библиотека модулей» + модули, найденные сами в загруженных заказах (блоки Базиса: НМ, ВМ, пеналы…). Одинаковые — один раз. */
+async function prjLibLoad(){ if(S.shop.prjLib||PRJ.libBusy) return; PRJ.libBusy=1; const j=await shpGet("action=lib",true), saved=j&&j.ok?j.items:[];
+  const hide=new Set(saved.filter(x=>x.status==="hide").map(x=>x.id)), L=saved.filter(x=>x.status==="ok"), seen=new Set(L.map(x=>x.id)), key=x=>x.sec+"|"+x.name.replace(/ · .*/,"")+"|"+x.w+"|"+x.h+"|"+x.d, kk=new Set(L.map(key));
+  S.shop.prjLib=L; const O=Object.assign({},S.orders||{},S.probes||{}), ids=Object.keys(O); PRJ.scan={i:0,n:ids.length}; if(prjIs(S.shop.sm)) prjCatPaint();
+  for(const oid of ids){ try{ const t=await (await fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"})).text(); const res=parseJSON(await siteOrderText(oid,t));
+      (typeof libParse==="function"?libParse(oid,res,(O[oid]||{}).name||oid):[]).forEach(x=>{ if(hide.has(x.id)||seen.has(x.id)||kk.has(key(x))) return; seen.add(x.id); kk.add(key(x)); x.auto=1; L.push(x); }); }catch(_){}
+    PRJ.scan.i++; if(prjIs(S.shop.sm)) prjCatPaint(); }
+  PRJ.scan=null; PRJ.libBusy=0; if(prjIs(S.shop.sm)) prjCatPaint(); }
+function prjCatPaint(){ const w=document.querySelector(".pj-shb"); if(w){ const y=w.scrollTop; w.innerHTML=prjCatHtml(); w.scrollTop=y; } }
+function prjCatHtml(){ const L=S.shop.prjLib; if(!L){ prjLibLoad(); return `<p class="muted pj-cat0">Загружаю каталог…</p>`; }
+  const scan=PRJ.scan?`<p class="muted pj-scan">Ищу модули в загруженных заказах… ${PRJ.scan.i} из ${PRJ.scan.n}</p>`:"";
+  if(!L.length) return scan||`<p class="note pj-cat0">В загруженных заказах модулей не нашлось. Модули берутся сами из блоков заказов Базиса (НМ, ВМ, пеналы…) — выгрузите заказ кухни из Базиса, и его модули появятся здесь.</p>`;
   const q=PRJ.q.toLowerCase(), F=L.filter(x=>x.sec===PRJ.sec&&(!q||(x.name+" "+x.w).toLowerCase().includes(q)));
-  return `<div class="pj-chips">${PRJ_SEC.map(([k,n])=>`<button type="button" class="chip${PRJ.sec===k?" on":""}" data-pj="sec" data-v="${k}">${n} <small>${L.filter(x=>x.sec===k).length}</small></button>`).join("")}</div>
+  return scan+`<div class="pj-chips">${PRJ_SEC.map(([k,n])=>`<button type="button" class="chip${PRJ.sec===k?" on":""}" data-pj="sec" data-v="${k}">${n} <small>${L.filter(x=>x.sec===k).length}</small></button>`).join("")}</div>
     <input class="pj-q" type="search" data-pj-q value="${esc(PRJ.q)}" placeholder="🔍 Поиск: название, ширина" aria-label="Поиск модуля">
     <div class="pj-cat">${F.map(x=>`<button type="button" class="pj-ci" data-pj="add" data-id="${esc(x.id)}" title="Поставить на ${esc(prjWalls(prjP().room)[PRJ.wall].n)}"><span class="pj-cp">${typeof libThumb==="function"?libThumb(x,92):""}</span><b>${esc(x.name.replace(/ · .*/,""))}</b><small>${x.w}×${x.h}×${x.d}</small></button>`).join("")||`<p class="muted">В разделе «${esc((PRJ_SEC.find(s=>s[0]===PRJ.sec)||[])[1]||"")}» пусто.</p>`}</div>`; }
 /* ---- поставить модуль на стену: в конец ряда; низ — на цоколь, верх — над фартуком, антресоль — под потолок ---- */
@@ -18013,7 +18022,7 @@ function prjRoomModal(){ const d=prjD(), R=d.proj.room; const m=document.createE
 document.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.closest("[data-pj]"); if(!t||!prjIs(S.shop&&S.shop.sm)) return; const P=prjP(), a=t.dataset.pj, it=P.items[PRJ.sel];
   if(a==="cat"){ PRJ.catOpen=1; shpRenderKeep(); const st=document.querySelector(".pj-stage"); if(st) window.scrollTo(0,Math.max(0,st.getBoundingClientRect().top+window.scrollY-80)); return; } if(a==="catx"){ PRJ.catOpen=0; return shpRenderKeep(); }
   if(a==="view"){ PRJ.view=t.dataset.v; return shpRenderKeep(); } if(a==="wall"){ PRJ.wall=+t.dataset.v; PRJ.sel=-1; return shpRenderKeep(); } if(a==="sec"){ PRJ.sec=t.dataset.v; return shpRenderKeep(); }
-  if(a==="add"){ if(PRJ.noClick){ PRJ.noClick=0; return; } const x=(S.shop.lib||[]).find(z=>z.id===t.dataset.id); if(!x) return; prjAdd(x); if(!prjFit()) return shpRenderKeep(); if(PRJ.view==="top") PRJ.view="wall"; toast("Поставлен: "+x.name.replace(/ · .*/,"")+" — тяните пальцем"); return shpRenderKeep(); }
+  if(a==="add"){ if(PRJ.noClick){ PRJ.noClick=0; return; } const x=(S.shop.prjLib||[]).find(z=>z.id===t.dataset.id); if(!x) return; prjAdd(x); if(!prjFit()) return shpRenderKeep(); if(PRJ.view==="top") PRJ.view="wall"; toast("Поставлен: "+x.name.replace(/ · .*/,"")+" — тяните пальцем"); return shpRenderKeep(); }
   if(a==="room") return prjRoomModal(); if(a==="mat") return prjMatModal(); if(a==="det"){ S.shop.prjDet=1; window.scrollTo(0,0); return shpRenderKeep(); }
   if(!it) return; S.shop.sm.dirty=true;
   if(a==="push") prjPush(PRJ.sel,+t.dataset.v);
@@ -18061,7 +18070,7 @@ function prjDrop(x,cx,cy){ const svg=document.getElementById("pjSvg"), cv=docume
   const te=e=>{ const t=e.changedTouches[0]; end(true,t?t.clientX:st&&st.cx,t?t.clientY:st&&st.cy); };
   const pm=e=>{ if(!st||e.pointerType==="touch") return; if(!st.on&&Math.hypot(e.clientX-st.x0,e.clientY-st.y0)>6) lift(); if(st&&st.on) mv(e.clientX,e.clientY); };
   const pu=e=>{ if(e.pointerType==="touch") return; end(true,e.clientX,e.clientY); };
-  document.addEventListener("pointerdown",e=>{ const c=e.target.closest&&e.target.closest(".pj-sheet .pj-ci"); if(!c||!prjIs(S.shop&&S.shop.sm)) return; const x=(S.shop.lib||[]).find(z=>z.id===c.dataset.id); if(!x) return;
+  document.addEventListener("pointerdown",e=>{ const c=e.target.closest&&e.target.closest(".pj-sheet .pj-ci"); if(!c||!prjIs(S.shop&&S.shop.sm)) return; const x=(S.shop.prjLib||[]).find(z=>z.id===c.dataset.id); if(!x) return;
     st={x,x0:e.clientX,y0:e.clientY,cx:e.clientX,cy:e.clientY,on:0};
     if(e.pointerType==="touch"){ st.tm=setTimeout(lift,300); document.addEventListener("touchmove",tm,{passive:false}); document.addEventListener("touchend",te); }
     else { document.addEventListener("pointermove",pm); document.addEventListener("pointerup",pu); } });
@@ -19288,7 +19297,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="bf4c23908f";
+const CHK_BUILD="8915019080";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20101,7 +20110,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="bf4c23908f";/*cehqr-build*/
+  const BUILD="8915019080";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
