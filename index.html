@@ -18333,8 +18333,27 @@ if(typeof shpSetRole==="function"){ const _drS=shpSetRole; shpSetRole=function(j
 function dirMarks(){ try{ const b=document.body; if(!b) return; DIR_R.forEach(([k])=>b.classList.toggle("tl-"+k,!techCan(k))); }catch(_){} }
 { const _drR=render; render=function(){ const r=_drR.apply(this,arguments); dirMarks(); return r; }; }
 /* вход директора — тот же вход, что у технолога, только свой PIN */
+/* директора ещё нет — придумать свой PIN: подтвердить PIN технолога, придумать и повторить (Кирилл 07.11) */
+async function dirLoginStart(){ let has=true; try{ const r=await fetch(shpUrl("action=dirState"),{cache:"no-cache"}); const j=await r.json(); if(j&&j.ok) has=!!j.hasDir; }catch(_){} if(has) dirLoginModal(); else dirSetupModal(); }
+function dirSetupModal(){ const m=document.createElement("div"); m.className="modal"; m.id="qrModal";
+  m.innerHTML=`<form class="modal-card" id="dirSetF" autocomplete="off"><h2 style="margin:0 0 6px">👑 Директор ещё не назначен</h2><p class="note" style="margin:0 0 12px">Придумайте свой PIN директора. Чтобы чужой не стал директором — сначала PIN технолога.</p>
+    <div class="form" style="grid-template-columns:1fr;margin:0"><label>Ваше имя<input id="dsWho" value="${esc(S.who||"")}" maxlength="40" placeholder="Например, Кирилл"></label>
+    <label>1. PIN технолога<input id="dsTech" type="password" inputmode="numeric" maxlength="20" required></label>
+    <label>2. Придумайте PIN директора (4–20 цифр)<input id="dsNew" type="password" inputmode="numeric" maxlength="20" required></label>
+    <label>3. Повторите<input id="dsNew2" type="password" inputmode="numeric" maxlength="20" required></label></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Стать директором</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  m.addEventListener("click",ev=>{ if(ev.target===m) m.remove(); }); document.body.appendChild(m); setTimeout(()=>{ const i=$("#dsTech"); i&&i.focus(); },50);
+  $("#dirSetF").addEventListener("submit",async ev=>{ ev.preventDefault(); const tp=$("#dsTech").value.trim(), v=$("#dsNew").value.trim(), v2=$("#dsNew2").value.trim();
+    if(!/^\d{4,20}$/.test(v)){ fieldErr($("#dsNew"),"PIN — от 4 до 20 цифр"); return; } if(v!==v2){ fieldErr($("#dsNew2"),"Не совпадает — введите ещё раз"); return; }
+    const btn=m.querySelector('[type=submit]'); btn.disabled=true; let j=null;
+    try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"dirPinSet",pin:tp,value:v,who:($("#dsWho").value||"").trim()})}); j=await r.json(); }catch(_){ btn.disabled=false; toast("Нет связи с таблицей. Проверьте интернет."); return; }
+    btn.disabled=false; if(!j||!j.ok){ if(j&&(j.error==="dir"||j.error==="pin"||j.error==="role")) fieldErr($("#dsTech"),"Неверный PIN технолога"); else fieldErr($("#dsNew"),(j&&j.msg)||"Не получилось — попробуйте ещё раз"); return; }
+    let k=null; try{ const r=await fetch(shpUrl("action=shop&pin="+encodeURIComponent(v)),{cache:"no-cache"}); k=await r.json(); }catch(_){}
+    const tw=($("#dsWho")||{}).value; if(tw&&tw.trim()){ S.who=tw.trim().slice(0,40); try{ localStorage.setItem("cehqr-who",S.who); }catch(_){} }
+    S.shop.techPin=v; try{ localStorage.setItem("cehqr-techpin",v); }catch(_){} if(k&&k.ok){ S.shop.orders=k.orders||[]; shpSetRole(k); S.shop.loaded=true; S.shop.err=false; }
+    m.remove(); toast("Готово: вы директор. Дальше входите этим PIN"); shpGo("board"); }); }
 function dirLoginModal(){ const m=document.createElement("div"); m.className="modal"; m.id="qrModal";
-  m.innerHTML=`<form class="modal-card" id="dirForm" autocomplete="off"><h2 style="margin:0 0 6px">👑 Вход директора</h2><p class="note" style="margin:0 0 12px">PIN директора. Если директор ещё не назначен — войдите PIN технолога.</p>
+  m.innerHTML=`<form class="modal-card" id="dirForm" autocomplete="off"><h2 style="margin:0 0 6px">👑 Вход директора</h2><p class="note" style="margin:0 0 12px">Ваш PIN директора.</p>
     <div class="form" style="grid-template-columns:1fr;margin:0"><label>Ваше имя<input id="dirWho" value="${esc(S.who||"")}" maxlength="40" placeholder="Например, Кирилл"></label><label>PIN директора<input id="dirPin" type="password" inputmode="numeric" maxlength="20" required></label></div>
     <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Войти</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
   m.addEventListener("click",ev=>{ if(ev.target===m) m.remove(); }); document.body.appendChild(m); setTimeout(()=>{ const i=$("#dirPin"); i&&i.focus(); },50);
@@ -18365,7 +18384,7 @@ function dirModal(){ document.getElementById("dirM")?.remove(); const m=document
       if(!(await appConfirm(has?"Поменять PIN директора? Входите дальше новым PIN.":"Назначить PIN директора? После этого технолог будет ограничен галочками выше, а вы на этом телефоне войдёте как директор.","Да"))) return;
       b.disabled=true; const j=await shpPost({action:"dirPinSet",value:v}); b.disabled=false; if(!j) return;
       S.shop.techPin=v; try{ localStorage.setItem("cehqr-techpin",v); }catch(_){} S.shop.hasDir=true; S.shop.dir=true; toast("PIN директора назначен — вы вошли как директор"); m.remove(); render(); } }); }
-document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest("[data-act]"); if(!t) return; if(t.dataset.act==="dir-in"){ e.stopPropagation(); dirLoginModal(); } else if(t.dataset.act==="dir-open"){ e.stopPropagation(); dirModal(); } },true);
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest("[data-act]"); if(!t) return; if(t.dataset.act==="dir-in"){ e.stopPropagation(); dirLoginStart(); } else if(t.dataset.act==="dir-open"){ e.stopPropagation(); dirModal(); } },true);
 /* «Все разделы»: строка директора — под режимом фирмы */
 if(typeof shpMoreHtml==="function"){ const _drM=shpMoreHtml; shpMoreHtml=function(){ let h=String(_drM.apply(this,arguments)); if(dirIs()) h=`<div class="firm-top dir-top"><span>👑 <b>Директор и права технолога</b></span><button type="button" class="btn" data-act="dir-open">Открыть</button></div>`+h; return h; }; }
 if(typeof prAllHtml==="function"){ const _drA=prAllHtml; prAllHtml=function(){ let o=String(_drA.apply(this,arguments)); const m=o.match(/<div class="firm-top dir-top">[\s\S]*?<\/button><\/div>/); if(!m) return o; o=o.replace(m[0],""); const i=o.indexOf('<label class="pr-simple">'); return i<0?m[0]+o:o.slice(0,i)+m[0]+o.slice(i); }; }
@@ -19566,7 +19585,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="a61230dad9";
+const CHK_BUILD="9163104878";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20379,7 +20398,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="a61230dad9";/*cehqr-build*/
+  const BUILD="9163104878";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
