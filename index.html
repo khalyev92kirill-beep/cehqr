@@ -15008,13 +15008,14 @@ function apPinNow(){ try{ return shpPin()||localStorage.getItem("cehqr-pin")||""
 function apIn(){ try{ return typeof prShopIn==="function"?prShopIn():!!shpPin(); }catch(_){ return false; } }
 /* роль: по входу в сделки (PIN/Телеграм/личный PIN), без входа — по ключу из ссылки */
 function apRole(){ try{ if(apIn()||apPinNow()) return vxRole(); }catch(_){} let r=""; try{ r=typeof prRole==="function"?prRole():""; }catch(_){} return r; }
-function apBar(){ return AP_BAR[apRole()]||AP_BAR.master; }
+function apBar(){ const r=apRole(); try{ const f=window.firmBar&&window.firmBar(r); if(f){ if(!AP_TAB.zamers) AP_TAB.zamers=["Замер","ruler"]; return f; } }catch(_){} return AP_BAR[r]||AP_BAR.master; }
 function apStaff(){ try{ if(typeof clientMode==="function"&&clientMode()) return false; return !!(shpPin()||S.pin||(typeof siteIsStaff==="function"&&siteIsStaff())||apRole()); }catch(_){ return false; } }
 /* какая вкладка внизу сейчас горит */
 function apCur(ids){ const v=S.view; let k="more";
   if(v==="shop"){ let t="board"; try{ t=shpTab(); }catch(_){}
     const m=S.shop.mode; if(m==="order"||m==="form"||m==="zamer") t=ids.includes("board")?"board":"orders";
     if(t==="chats"&&ids.includes("inbox")&&(S.shop.chTab==="in"||!ids.includes("chats"))) t="inbox";
+    if(/^zamers?$/.test(m)&&ids.includes("zamers")&&m==="zamers") t="zamers";
     k=ids.includes(t)?t:"more"; }
   else if(v==="orders"||v==="order"||v==="part"){ const d=v==="orders"?null:apDealOf(S.current&&S.current.orderId); k=ids.includes("orders")?"orders":d&&ids.includes("board")?"board":"more"; }
   else if(v==="supply") k=ids.includes("buy")?"buy":"more";
@@ -18262,6 +18263,45 @@ function prjSplitParts(parts){ const G=new Map(), isF=p=>/фасад|дверь|
   return parts; }
 if(typeof libParse==="function"){ const _lpP=libParse; libParse=function(oid,res,title){ try{ prjSplitParts(res&&res.parts); }catch(e){ console.error(e); } return _lpP.call(this,oid,res,title).map(x=>Object.assign(x,{name:String(x.name).replace(/\|\d+/,"")})); }; }
 
+/* ===== Размер фирмы (Кирилл 07.11): «бывает один директор и один мастер».
+   При первом входе технолога/директора — вопрос «Какая у вас фирма?»: «Я один + мастер», «Небольшая команда», «Цех с отделами».
+   «Я один + мастер»: доли офиса 0 %, панель внизу — Сделки, Сметы, Замер, Чаты, Ещё; «Разбор договоров» и офисное — скрыто.
+   Хранится в «Настройках компании» (ключ firm), меняется там же — вкладка «Общие». ===== */
+const FIRM_OPT=[["solo","👤","Я один + мастер","Директор сам замеряет, проектирует, считает и закупает. Мастер делает и ставит."],
+  ["team","👥","Небольшая команда (2–5)","Дизайнер, мастера, может снабженец."],
+  ["big","🏭","Цех с отделами","Технолог, офис, снабжение, бригады."]];
+function firmSize(){ const f=S.shop&&S.shop.cfgAll&&S.shop.cfgAll.firm; return f&&f.size||""; }
+function firmSolo(){ return firmSize()==="solo"; }
+async function firmSet(size){ const j=await shpPost({action:"cfgSave",key:"firm",value:{size,at:Date.now()}}); if(!j||!j.ok){ toast(j&&j.error==="role"?"Менять может директор / технолог":"Не сохранилось — попробуйте ещё раз"); return false; }
+  (S.shop.cfgAll||(S.shop.cfgAll={})).firm={size};
+  /* один человек: нет дизайнеров, снабженца, технолога — доли офиса 0 % */
+  if(size==="solo"){ const c=Object.assign({},S.shop.cfg||{},{office:0}); const j2=await shpPost({action:"cfgSave",key:"smeta",value:c}); if(j2&&j2.ok){ S.shop.cfg=c; S.shop.cfgAll.smeta=c; } }
+  return true; }
+function firmModal(){ if(document.getElementById("firmM")) return; const m=document.createElement("div"); m.className="modal"; m.id="firmM"; let cur=firmSize()||"solo";
+  const draw=()=>{ m.innerHTML=`<div class="modal-card firm-m"><h2 style="margin:0 0 4px">Какая у вас фирма?</h2><p class="muted" style="margin:0 0 12px">Приложение настроится само. Поменять можно в «Настройки компании → Общие».</p>
+    ${FIRM_OPT.map(([k,ic,t,s])=>`<button type="button" class="firm-o${cur===k?" on":""}" data-f="${k}"><b>${ic} ${t}</b><small>${s}</small></button>`).join("")}
+    <div class="firm-what">${cur==="solo"?`<b>Что включится</b><ul><li>Один PIN директора — все права: смета, проект, закупка, цех, деньги</li><li>Доли офиса 0 % — вся разница ваша</li><li>Внизу: Сделки, Сметы, Замер, Чаты, Ещё</li><li>Мастеру — его PIN: видит свои заказы, детали, чертежи, ЗП</li><li>Офисное («Разбор договоров») — скрыто</li></ul>`:cur==="team"?`<b>Как сейчас, без лишнего</b><ul><li>Роли: директор, дизайнер, мастер, снабженец</li><li>Доли офиса — в настройках</li></ul>`:`<b>Всё как сейчас</b><ul><li>Технолог, офис, снабжение, бригады, «Разбор договоров»</li></ul>`}</div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button type="button" class="btn primary" data-f="ok">Готово</button><button type="button" class="btn" data-f="later">Позже</button></div></div>`; };
+  draw(); document.body.appendChild(m);
+  m.addEventListener("click",async e=>{ const b=e.target.closest("[data-f]"); if(!b) return; const v=b.dataset.f;
+    if(v==="later"){ try{ localStorage.setItem("w24-firmAsk",String(Date.now())); }catch(_){} m.remove(); return; }
+    if(v==="ok"){ b.disabled=true; if(await firmSet(cur)){ m.remove(); toast(cur==="solo"?"Готово: режим «Я один + мастер»":"Готово"); render(); } else b.disabled=false; return; }
+    cur=v; draw(); }); }
+/* спросить один раз: директор/технолог, настройки загружены, размер ещё не выбран */
+function firmAsk(){ try{ if(!S.shop||!S.shop.tech) return; if(!S.shop.cfgTried&&typeof cfgLoad==="function"){ cfgLoad().then(()=>setTimeout(firmAsk,300)); return; } if(S.shop.cfgOk!==true||firmSize()) return; const t=+localStorage.getItem("w24-firmAsk")||0; if(Date.now()-t<3*864e5) return; if(document.querySelector(".modal")) return; firmModal(); }catch(_){} }
+{ const _frR=render; render=function(){ const r=_frR.apply(this,arguments); if(S.view==="shop"&&S.shop&&S.shop.tech) setTimeout(firmAsk,800); return r; }; }
+/* панель внизу для «Я один» */
+if(typeof vxBar==="function"){ const _frB=vxBar; vxBar=function(){ return firmSolo()&&vxRole()==="tech"?["board","smetas","zamers","chats","more"]:_frB(); }; }
+window.firmBar=role=>firmSolo()&&role==="tech"?["board","smetas","zamers","chats","more"]:null;
+/* «Ещё»: в одиночку «Разбор договоров» не нужен */
+if(typeof shpMoreHtml==="function"){ const _frM=shpMoreHtml; shpMoreHtml=function(){ const h=_frM.apply(this,arguments); return firmSolo()?String(h).replace(/<li>(?:(?!<\/li>)[\s\S])*?data-v="dpay"[\s\S]*?<\/li>/g,""):h; }; }
+/* «Настройки компании → Общие»: размер фирмы — поменять */
+if(typeof cfgHtml==="function"){ const _frC=cfgHtml; cfgHtml=function(){ const h=_frC.apply(this,arguments); if((S.shop.cfgTab||"wr")!=="gen") return h; const o=FIRM_OPT.find(x=>x[0]===firmSize());
+  return h+`<div class="cfg-box firm-cfg"><b>Размер фирмы</b><p class="muted" style="margin:4px 0 8px">${o?o[1]+" "+o[2]:"не выбран"}</p><button type="button" class="btn" data-act="firm-open">Поменять</button></div>`; }; }
+document.addEventListener("click",e=>{ if(e.target.closest&&e.target.closest('[data-act="firm-open"]')) firmModal(); });
+(function(){ const st=document.createElement("style"); st.textContent=`.firm-m{width:min(460px,100%)}.firm-o{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;margin:0 0 8px;padding:12px 14px;border-radius:14px;outline:1px solid #3a3d42;outline-offset:-1px;border:0;background:var(--surface,#1c1d20);color:inherit;font:inherit;cursor:pointer}.firm-o b{font-size:16.5px}.firm-o small{color:var(--muted,#999);font-size:13.5px;line-height:1.35}.firm-o.on{outline:2px solid #FFD60A;outline-offset:-2px;background:rgba(255,214,10,.1)}
+.firm-what{font-size:13.5px;margin-top:4px}.firm-what ul{margin:6px 0 0;padding-left:18px;color:var(--muted,#aaa)}.firm-what li{margin:3px 0}.firm-cfg{margin-top:10px}`; document.head.appendChild(st); })();
+
 /* ---------- Смета: «Не забыли?» и светофор продажи (Кирилл 05.11) ----------
    1) Перед «КП в PDF», «Отправить клиенту», «Клиент согласен» и «Сумму — в сделку» — короткий список того, что часто забывают.
       Что смета нашла сама — отмечено; остальное дизайнер отмечает «есть» или «не нужно» (сохраняется в смете, d.chk). Пока не всё — дальше не пускает.
@@ -19448,7 +19488,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="bf9bcbae4a";
+const CHK_BUILD="41327b7617";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20261,7 +20301,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="bf9bcbae4a";/*cehqr-build*/
+  const BUILD="41327b7617";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
