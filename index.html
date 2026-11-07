@@ -17986,6 +17986,23 @@ function prjMount3D(){ prj3dDispose(); const cv=document.getElementById("pj3d");
     if(!up&&it.y>20) box(grp,0,-it.y,0,it.w,0,it.d-50,matFor("plinth"),0x777777,null);
     /* модуль: x — вдоль стены, z — от стены в комнату */
     prjGrpPlace(grp,it,ws,K); grps[i]=grp; scene.add(grp); });
+  /* размеры в 3D — как на виде спереди: ширины снизу и сверху (пустое — оранжевым), высоты сбоку: цоколь, низ, столешница, фартук, верх, до потолка */
+  if(PRJ.dims!==false){ const LM=new THREE.LineBasicMaterial({color:0x222222,depthTest:false}), LG=new THREE.LineBasicMaterial({color:0xe8590c,depthTest:false});
+    const lab=(t,v,gap)=>{ const c=document.createElement("canvas"); c.width=256; c.height=96; const g=c.getContext("2d"); g.fillStyle=gap?"rgba(255,244,230,.95)":"rgba(255,255,255,.95)"; g.strokeStyle=gap?"#e8590c":"#333"; g.lineWidth=4; g.beginPath(); g.roundRect?g.roundRect(4,8,248,80,18):g.rect(4,8,248,80); g.fill(); g.stroke();
+      g.fillStyle=gap?"#d9480f":"#111"; g.font="bold 54px system-ui,sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillText(t,128,50); const tx=new THREE.CanvasTexture(c), sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,depthTest:false,transparent:true}));
+      sp.scale.set(0.34,0.128,1); sp.position.copy(v); sp.renderOrder=10; scene.add(sp); };
+    const seg=(a,b,gap)=>{ const g=new THREE.BufferGeometry().setFromPoints([a,b]), l=new THREE.Line(g,gap?LG:LM); l.renderOrder=9; scene.add(l); };
+    ws.forEach((w,k)=>{ const its=P.items.filter(o=>o.wall===k); if(!its.length) return; const pt=(x,y,z)=>new THREE.Vector3((w.P[0]+w.u[0]*x+w.nr[0]*z)*K,y*K,(w.P[1]+w.u[1]*x+w.nr[1]*z)*K);
+      const chain=(arr,y,z)=>{ if(!arr.length) return; const xs=[...new Set([0,w.L].concat(...arr.map(o=>[o.x,o.x+o.w])).map(Math.round))].sort((a,b)=>a-b);
+        for(let i=0;i<xs.length-1;i++){ const a=xs[i],b=xs[i+1]; if(b-a<5) continue; const gap=!arr.some(o=>o.x<=a+1&&o.x+o.w>=b-1); seg(pt(a,y,z),pt(b,y,z),gap); seg(pt(a,y-30,z),pt(a,y+30,z)); seg(pt(b,y-30,z),pt(b,y+30,z)); lab(String(b-a),pt((a+b)/2,y+(y<300?-90:90),z),gap); } };
+      const lo=its.filter(o=>!prjUp(o)), upI=its.filter(o=>prjUp(o)), fr=L=>L.reduce((m,o)=>Math.max(m,(+o.z||0)+o.d),0);
+      chain(lo,-10,fr(lo)+150); if(upI.length) chain(upI,Math.max(...upI.map(o=>o.y+o.h))+90,fr(upI)+40);
+      /* высоты — у левого края ряда */
+      const x0=Math.max(...its.map(o=>o.x+o.w))+120, zz=Math.max(fr(lo),fr(upI))+150, low=lo.filter(o=>!/^(tall|cab)$/.test(prjLibOf(o).sec)), Hh=+R.h||2700, pts=[0,Hh];
+      if(lo.length) pts.push(Math.min(...lo.map(o=>o.y))); if(low.length){ const t=Math.max(...low.map(o=>o.y+o.h)); pts.push(t,t+(+dP.T||40)); } lo.filter(o=>/^(tall|cab)$/.test(prjLibOf(o).sec)).forEach(o=>pts.push(o.y+o.h));
+      if(upI.length){ pts.push(Math.min(...upI.map(o=>o.y)),Math.max(...upI.map(o=>o.y+o.h))); }
+      const ys=[...new Set(pts.map(Math.round))].sort((a,b)=>a-b);
+      for(let i=0;i<ys.length-1;i++){ const a=ys[i],b=ys[i+1]; if(b-a<5) continue; seg(pt(x0,a,zz),pt(x0,b,zz)); seg(pt(x0-30,a,zz),pt(x0+30,a,zz)); seg(pt(x0-30,b,zz),pt(x0+30,b,zz)); lab(String(b-a),pt(x0+190,(a+b)/2,zz),false); } }); }
   const C=new THREE.Vector3(W/2,H*0.42,Dd/2), st=PRJ.cam; if(!st.r) st.r=Math.max(W,Dd,H)*1.55;
   const place=()=>{ cam.position.set(C.x+st.r*Math.cos(st.ph)*Math.sin(st.th),C.y+st.r*Math.sin(st.ph),C.z+st.r*Math.cos(st.ph)*Math.cos(st.th)); cam.lookAt(C); };
   const size=()=>{ const r=cv.getBoundingClientRect(); renderer.setSize(r.width,r.height,false); cam.aspect=r.width/Math.max(1,r.height); cam.updateProjectionMatrix(); };
@@ -18030,19 +18047,26 @@ function prjHtml(){ const sm=S.shop.sm, d=sm.data, P=d.proj, c=smCalc(d), ws=prj
   let h=`<div class="head sm-head pj-head"><div>${back}<h1>${esc([sm.kind||d.kind,sm.client].filter(Boolean).join(" · ")||"Проект")}</h1><p class="muted">Проект · ${prjPl(P.items.length)}${sm.saved?` · сохранён ${esc(shpTime(sm.saved.when))}`:" · новый"}${sm.dirty?" · <b class=\"sm-dirty\">не сохранён</b>":""}</p></div>${sm.dirty?`<button type="button" class="btn primary" data-act="sm-save">Сохранить</button>`:""}</div>`;
   h+=`<div class="pj-bar"><div class="pj-seg" role="group" aria-label="Вид">${[["wall","Стена"],["top","Сверху"],["3d","3D"]].map(([k,n])=>`<button type="button" data-pj="view" data-v="${k}" aria-pressed="${PRJ.view===k}">${n}</button>`).join("")}</div><button type="button" class="btn sm" data-pj="room">⚙ Комната</button></div>`;
   h+=`<div class="pj-walls">${ws.map((w,k)=>`<button type="button" class="chip${k===PRJ.wall?" on":""}" data-pj="wall" data-v="${k}">${w.n} <small>${w.L} · ${P.items.filter(it=>it.wall===k).length}</small></button>`).join("")}</div>`;
-  h+=`<div class="pj-stage${PRJ.catOpen?" cat":""}">${prjTbHtml()}${PRJ.view==="3d"?`<button type="button" class="pj-wire${PRJ.wire?" on":""}" data-pj="wire" aria-pressed="${!!PRJ.wire}">▦ Каркас</button><canvas id="pj3d" class="pj-3d" aria-label="3D проекта: тяните — повернуть, двумя пальцами — приблизить"></canvas>`:PRJ.view==="top"?prjTopSvg():prjWallSvg()}</div>`;
+  h+=`<div class="pj-stage${PRJ.catOpen?" cat":""}">${prjTbHtml()}${PRJ.view==="3d"?`<span class="pj-3bt"><button type="button" class="pj-wire${PRJ.dims!==false?" on":""}" data-pj="dims" aria-pressed="${PRJ.dims!==false}">📏 Размеры</button><button type="button" class="pj-wire${PRJ.wire?" on":""}" data-pj="wire" aria-pressed="${!!PRJ.wire}">▦ Каркас</button></span><canvas id="pj3d" class="pj-3d" aria-label="3D проекта: тяните — повернуть, двумя пальцами — приблизить"></canvas>`:PRJ.view==="top"?prjTopSvg():prjWallSvg()}</div>`;
   h+=`<button type="button" class="pj-addb" data-pj="cat">＋ Модуль из каталога</button>`+prjSelHtml()+`<div class="sm-spacer" style="height:96px"></div>`;
-  if(PRJ.catOpen) h+=`<section class="pj-sheet pj-catw" role="dialog" aria-label="Каталог модулей"><div class="pj-shh"><b>Каталог модулей</b><small>Нажмите — встанет в конец ряда. Держите и тяните на схему — встанет, куда отпустите.</small><button type="button" class="pj-shx" data-pj="catx" aria-label="Закрыть каталог">✕</button></div><div class="pj-shb">${prjCatHtml()}</div></section>`;
+  if(PRJ.catOpen) h+=`<section class="pj-sheet pj-catw${PRJ.catWire!==false?" wire":""}" role="dialog" aria-label="Каталог модулей"><div class="pj-shh"><b>Каталог модулей</b><small>Нажмите — встанет в конец ряда. Держите и тяните на схему — встанет, куда отпустите.</small><button type="button" class="pj-shx" data-pj="catx" aria-label="Закрыть каталог">✕</button><button type="button" class="pj-wire pj-shw${PRJ.catWire!==false?" on":""}" data-pj="catwire">▦ Прозрачные</button></div><div class="pj-shb">${prjCatHtml()}</div></section>`;
   h+=`<div class="sm-dock pj-dock"><span class="pj-pr"><small>Цена${c.noPrice?` · <span class="badc">⚠ ${c.noPrice} без цены</span>`:""}</small><b id="smTot">${esc(shpRub(c.total))}</b></span><button type="button" class="btn" data-pj="mat">🎨 Материалы</button><button type="button" class="btn" data-pj="det">Смета ›</button></div>`;
   if(PRJ.view==="3d") setTimeout(prjMount3D,0); else prj3dDispose();
   return h; }
 /* ---- материалы на всю кухню разом ---- */
 const PRJ_MAT=[["body","Корпус (ЛДСП)"],["front","Фасады низа"],["frontU","Фасады верха"],["fmT","Фасады пеналов"],["back","Задняя стенка"],["top","Столешница"],["plinth","Цоколь"],["handle","Ручки"],["hinge","Петли"],["slide","Направляющие ящиков"],["legs","Опоры"],["edge","Кромка корпуса"],["edgeF","Кромка фасадов"]];
 function prjMatModal(){ const d=prjD(), P=d.proj; document.getElementById("pjMatM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="pjMatM";
-  const nm=k=>{ const v=k==="fmT"?P.fmT:(d.mat||{})[k]; return v&&v.n?esc(v.n):k==="frontU"?"как низ":k==="fmT"?"как низ":/^(handle|hinge|slide|legs)$/.test(k)?"<span class=\"muted\">не выбрано</span>":"<span class=\"muted\">белый · не выбран</span>"; };
-  m.innerHTML=`<div class="modal-card pj-mm"><h2 style="margin:0 0 4px">Материалы всей кухни</h2><p class="muted" style="margin:0 0 10px">Выбрали — поменялось на всех модулях сразу, цена пересчиталась.</p>
+  /* Кирилл 07.11: «что выбрано, что нет — непонятно»: выбранное — зелёная галочка и образец декора; не выбранное — оранжевая рамка и «Нажмите, чтобы выбрать» */
+  const val=k=>{ const v=k==="fmT"?P.fmT:(d.mat||{})[k]; return v&&(v.n||v.p)?v:null; }, opt=k=>/^(frontU|fmT)$/.test(k), CI=n=>{ const D=S.cat&&S.cat.data; return D&&n?D.items.find(it=>it.n===n):null; };
+  const skip=k=>(k==="handle"&&(P.op||"handle")!=="handle");
+  const rows=PRJ_MAT.map(([k,n])=>{ const v=val(k), st=v?"ok":opt(k)?"same":skip(k)?"same":"need", it=v&&CI(v.n), sw=it&&typeof catSw==="function"?catSw(it,"pj-sw"):`<span class="pj-sw" style="background:${v?prjCol(k):"transparent"}">${v?"":st==="need"?"?":"="}</span>`;
+    const sub=v?`${esc(v.n||"вручную")}${v.p?` · ${esc(shpRub(v.p))}`:""}`:k==="frontU"?"Как фасады низа · нажмите, если другие":k==="fmT"?"Как фасады низа · нажмите, если другие":skip(k)?"Не нужны — выбран "+SM_OP[P.op].toLowerCase():"Не выбрано — нажмите, чтобы выбрать";
+    return `<li><button type="button" class="pj-mr ${st}" data-pm="pick" data-k="${k}">${sw}<span><b>${n}</b><small>${sub}</small></span><i aria-hidden="true">${st==="ok"?"✓":st==="need"?"!":"›"}</i></button></li>`; });
+  const nOk=PRJ_MAT.filter(([k])=>val(k)).length, nNeed=PRJ_MAT.filter(([k])=>!val(k)&&!opt(k)&&!skip(k)).length;
+  m.innerHTML=`<div class="modal-card pj-mm"><h2 style="margin:0 0 4px">Материалы всей кухни</h2><p class="muted" style="margin:0 0 8px">Выбрали — поменялось на всех модулях сразу, цена пересчиталась.</p>
+    <div class="pj-mcnt"><span class="ok">✓ Выбрано ${nOk}</span>${nNeed?`<span class="need">! Не выбрано ${nNeed}</span>`:`<span class="ok">Всё выбрано</span>`}</div>
     <div class="pj-seg pj-op" role="group" aria-label="Открывание">${Object.entries(SM_OP).filter(([k])=>k!=="none").map(([k,n])=>`<button type="button" data-pm="op" data-v="${k}" aria-pressed="${(P.op||"handle")===k}">${n}</button>`).join("")}</div>
-    <ul class="pj-ml">${PRJ_MAT.map(([k,n])=>`<li><button type="button" class="pj-mr" data-pm="pick" data-k="${k}"><span class="pj-sw" style="background:${prjCol(k)}"></span><span><b>${n}</b><small>${nm(k)}</small></span><i aria-hidden="true">›</i></button></li>`).join("")}</ul>
+    <ul class="pj-ml">${rows.join("")}</ul>
     <button type="button" class="btn" data-pm="x" style="margin-top:10px">Готово</button></div>`;
   document.body.appendChild(m);
   m.addEventListener("click",e=>{ const b=e.target.closest("[data-pm]"); if(e.target===m||(b&&b.dataset.pm==="x")){ m.remove(); return shpRenderKeep(); } if(!b) return;
@@ -18058,7 +18082,7 @@ function prjRoomModal(){ const d=prjD(), R=d.proj.room; const m=document.createE
 /* ---- события ---- */
 document.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.closest("[data-pj]"); if(!t||!prjIs(S.shop&&S.shop.sm)) return; const P=prjP(), a=t.dataset.pj, it=P.items[PRJ.sel];
   if(a==="cat"){ PRJ.catOpen=1; shpRenderKeep(); const st=document.querySelector(".pj-stage"); if(st) window.scrollTo(0,Math.max(0,st.getBoundingClientRect().top+window.scrollY-80)); return; } if(a==="catx"){ PRJ.catOpen=0; return shpRenderKeep(); }
-  if(a==="wire"){ PRJ.wire=!PRJ.wire; return shpRenderKeep(); }
+  if(a==="wire"){ PRJ.wire=!PRJ.wire; return shpRenderKeep(); } if(a==="catwire"){ PRJ.catWire=PRJ.catWire===false; const sh=document.querySelector(".pj-sheet"); if(sh){ sh.classList.toggle("wire",PRJ.catWire!==false); t.classList.toggle("on",PRJ.catWire!==false); } return; } if(a==="dims"){ PRJ.dims=PRJ.dims===false; return shpRenderKeep(); }
   if(a==="view"){ PRJ.view=t.dataset.v; return shpRenderKeep(); } if(a==="wall"){ PRJ.wall=+t.dataset.v; PRJ.sel=-1; return shpRenderKeep(); } if(a==="sec"){ PRJ.sec=t.dataset.v; return shpRenderKeep(); }
   if(a==="add"){ if(PRJ.noClick){ PRJ.noClick=0; return; } const x=(S.shop.prjLib||[]).find(z=>z.id===t.dataset.id); if(!x) return; prjAdd(x); if(!prjFit()) return shpRenderKeep(); if(PRJ.view==="top") PRJ.view="wall"; toast("Поставлен: "+x.name.replace(/ · .*/,"")+" — тяните пальцем"); return shpRenderKeep(); }
   if(a==="align"){ const n=prjAlign(); S.shop.sm.dirty=true; toast(n?"Фасады выровнены в одну линию":"Фасады уже ровно"); return shpRenderKeep(); } if(a==="unsel"){ PRJ.sel=-1; return shpRenderKeep(); } if(a==="size") return prjSizeModal();
@@ -18134,7 +18158,8 @@ document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closes
 .pj-dl{stroke:#444;stroke-width:3}.pj-dl.gap{stroke:#e8590c;stroke-dasharray:14 10}.pj-dt{font:600 64px system-ui,sans-serif;fill:#333;text-anchor:middle}.pj-dt.gap{fill:#e8590c}.pj-dt.big{font-size:80px}.pj-dt.on{fill:#1c7ed6}.pj-tx{font:600 52px system-ui;fill:#555;text-anchor:middle}
 .pj-room{fill:#fafafa;stroke:none}.pj-wl{stroke:#333;stroke-width:60;cursor:pointer}.pj-wl.on{stroke:#1c7ed6}.pj-tp{fill:#fff;stroke:#333;stroke-width:8;cursor:grab}.pj-tp.up{fill:rgba(200,210,220,.35);stroke-dasharray:30 20}.pj-tp.sel{fill:#fff3c4;stroke:#ffb703;stroke-width:14}.pj-tn{font:600 70px system-ui;fill:#333;text-anchor:middle;pointer-events:none}
 .pj-hint{color:var(--muted,#888);font-size:14px;margin:10px 2px}
-.pj-wire{position:absolute;top:8px;right:8px;z-index:3;border:1px solid #c9ced4;background:rgba(255,255,255,.95);color:#111;font-family:inherit;font-weight:600;font-size:14px;padding:8px 11px;border-radius:10px;cursor:pointer}.pj-wire.on{background:#FFD60A;border-color:#d4b000}
+.pj-sheet.wire .lib-svg polygon{fill-opacity:.28;stroke:#e9ecef;stroke-opacity:.9;stroke-width:.8}.pj-shw{margin:4px 0 0}
+.pj-3bt{position:absolute;top:8px;right:8px;z-index:3;display:flex;gap:6px}.pj-wire{border:1px solid #c9ced4;background:rgba(255,255,255,.95);color:#111;font-family:inherit;font-weight:600;font-size:14px;padding:8px 11px;border-radius:10px;cursor:pointer}.pj-wire.on{background:#FFD60A;border-color:#d4b000}
 .pj-tb{position:absolute;left:0;right:0;bottom:0;z-index:3;display:flex;gap:6px;align-items:center;overflow-x:auto;padding:6px;background:rgba(255,255,255,.94);border-top:1px solid #d0d4d9;scrollbar-width:none}.pj-tb::-webkit-scrollbar{display:none}
 .pj-tb b{flex:none;font-size:12.5px;line-height:1.15;color:#111!important;max-width:110px;white-space:normal}.pj-tb b small{display:block;color:#666;font-weight:500}
 .pj-tb button{flex:none;white-space:nowrap;border:1px solid #c9ced4;background:#fff;color:#111;font-family:inherit;font-weight:600;font-size:13.5px;line-height:1;padding:8px 10px;border-radius:9px;cursor:pointer}.pj-tb button.del{color:#c92a2a;border-color:#ffa8a8}.pj-tb:not(.on){justify-content:flex-end;background:transparent;border:0}
@@ -18144,7 +18169,11 @@ document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closes
 .pj-h2{font-size:18px;margin:14px 0 8px}.pj-q{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line,#444);background:var(--bg,#111);color:inherit;font:inherit;margin-bottom:8px}
 .pj-cat{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}.pj-ci{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px;border-radius:12px;border:1px solid var(--line,#333);background:var(--surface,#1c1d20);color:inherit;font:inherit;cursor:pointer;text-align:center}.pj-ci b{font-size:13px;line-height:1.2}.pj-ci small{font-size:11.5px;color:var(--muted,#999)}.pj-cp{display:grid;place-items:center;width:96px;height:96px;background:linear-gradient(#2a2d33,#1a1b1f);border-radius:9px}
 .pj-dock{display:flex!important;align-items:center;gap:8px;padding:8px 78px 8px 12px!important}.pj-dock .btn{background:#2a2d33!important;color:#fff!important;border-color:#444!important;white-space:nowrap}.pj-pr{display:flex;flex-direction:column;flex:1;min-width:0}.pj-pr small{font-size:12px;color:var(--muted,#999)}.pj-pr b{font-size:22px}
-.pj-mm{width:min(460px,100%)}.pj-op{margin-bottom:10px}.pj-ml{list-style:none;margin:0;padding:0;display:grid;gap:6px}.pj-mr{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 10px;border-radius:12px;border:1px solid var(--line,#333);background:var(--surface,#1c1d20);color:inherit;font:inherit;cursor:pointer}.pj-mr span:nth-child(2){display:flex;flex-direction:column;flex:1;min-width:0}.pj-mr small{color:var(--muted,#999);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pj-sw{width:34px;height:34px;border-radius:8px;border:1px solid #888;flex:none}
+.pj-mm{width:min(460px,100%)}.pj-op{margin-bottom:10px}.pj-ml{list-style:none;margin:0;padding:0;display:grid;gap:6px}.pj-mr{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 10px;border-radius:12px;border:1px solid var(--line,#333);background:var(--surface,#1c1d20);color:inherit;font:inherit;cursor:pointer}.pj-mr span:nth-child(2){display:flex;flex-direction:column;flex:1;min-width:0}.pj-mr small{color:var(--muted,#999);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pj-sw{width:38px;height:38px;border-radius:8px;border:1px solid #888;flex:none;display:grid;place-items:center;background-size:cover;background-position:center;font-weight:800;font-size:18px}
+.pj-mr{border:1px solid #444!important}.pj-mr.ok{outline:2px solid #2f9e44;outline-offset:-2px;background:rgba(47,158,68,.14)!important}.pj-mr.ok i{color:#51cf66;font-style:normal;font-weight:800;font-size:20px}.pj-mr.ok small{color:#d3f9d8!important}
+.pj-mr.need{outline:2px dashed #ff922b;outline-offset:-2px;background:rgba(255,146,43,.08)!important}.pj-mr.need small{color:#ffa94d!important}.pj-mr.need .pj-sw{outline:2px dashed #ff922b;outline-offset:-2px;color:#ff922b}.pj-mr .pj-sw{border:1px solid #777}.pj-mr.need i{color:#ff922b;font-style:normal;font-weight:800;font-size:20px}
+.pj-mr.same{opacity:.85}.pj-mr.same .pj-sw{border-style:dotted;color:#999}
+.pj-mcnt{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}.pj-mcnt span{font-weight:700;font-size:14px;padding:6px 10px;border-radius:9px}.pj-mcnt .ok{background:rgba(47,158,68,.18);color:#8ce99a}.pj-mcnt .need{background:rgba(255,146,43,.18);color:#ffc078}
 .pj-backbar{position:sticky;top:0;z-index:5;padding:6px 0;background:var(--bg,#000)}
 .pj-addb{display:block;width:100%;margin:10px 0 0;padding:14px;border:0;border-radius:14px;background:#FFD60A;color:#000;font:700 18px/1.2 inherit;font-family:inherit;cursor:pointer}
 .pj-stage.cat{height:max(240px,calc(60vh - 150px))}.pj-sheet{position:fixed;left:0;right:0;bottom:0;z-index:60;max-height:40vh;display:flex;flex-direction:column;background:rgba(24,25,28,.72);-webkit-backdrop-filter:blur(10px) saturate(1.2);backdrop-filter:blur(10px) saturate(1.2);border-top:2px solid #FFD60A;border-radius:18px 18px 0 0;box-shadow:0 -10px 30px rgba(0,0,0,.45);transition:opacity .15s}
@@ -19357,7 +19386,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="4ee634898d";
+const CHK_BUILD="e08528c077";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20170,7 +20199,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="4ee634898d";/*cehqr-build*/
+  const BUILD="e08528c077";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
