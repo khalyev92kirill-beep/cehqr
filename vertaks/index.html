@@ -18898,11 +18898,30 @@ function skScaleHtml(c){ const KK=K(), M=c.mats, S0=c.total; if(!(M>0&&S0>0)) re
     <div class="sk-lg"><span style="left:${at(KK.lMin)}%">${nf(KK.lMin)}</span><span style="left:${at(KK.lMid)}%">${nf(KK.lMid)}</span><span style="left:${at(KK.k)}%">${nf(KK.k)}</span><span style="left:${at(KK.lGood)}%">${nf(KK.lGood)}</span><span style="left:${at(KK.lTop)}%">${nf(KK.lTop)}</span></div>
     <div class="sk-des"><span>Дизайнеру по этой цене</span><b>${N(des)}</b></div>
     ${lv==="ниже минимума"?`<p class="sk-warn">Ниже минимума ${nf(KK.lMin)} — нужно хотя бы ${N(M/KK.lMin)}. Директору придёт сообщение.</p>`:""}
-    ${rows?`<p class="sk-sub">Что будет, если продать дороже <small>справа — сколько получит дизайнер</small></p><ul class="sk-up">${rows}</ul>`:""}</div>`; }
-window.__sk={scale:skScaleHtml,setData:x=>{SK.data=x;}};   // для проверки на стенде
+    ${rows?`<p class="sk-sub">Что будет, если продать дороже <small>справа — сколько получит дизайнер</small></p><ul class="sk-up">${rows}</ul>`:""}${skPartsHtml(c,des)}</div>`; }
+/* Кирилл 07.11 (вариант А): «Из чего цена» — материалы по видам, расходы, бригаде, офису, дизайнеру, фирме (быстрая смета) */
+function skPartsHtml(c,des){ if(!c.qk||!(c.total>0)) return ""; const L=[], cat={}; (c.items||[]).forEach(x=>{ if(!(x.sum>0)) return; cat[x.cat]=(cat[x.cat]||0)+x.sum; });
+  const CN={ldsp:"ЛДСП и плиты",edge:"Кромка",front:"Фасады",furn:"Фурнитура",other:"Столешница и прочее"}; Object.keys(CN).forEach(k=>{ if(cat[k]) L.push([CN[k]+(k==="edge"&&c.em?" ("+N(c.em)+" м)":k==="ldsp"&&c.sh?" ("+N(c.sh)+" л.)":""),cat[k]]); });
+  Object.keys(cat).filter(k=>!CN[k]).forEach(k=>L.push(["Из шкафов и дверей",cat[k]])); if(c.matP>0) L.push(["Профиль, стекло, петли дверей",c.matP]); if(c.exS>0) L.push(["Расходы (доставка, крепёж, общие)",c.exS]);
+  const sd=S.shop.sm&&S.shop.sm.data, nm=!!(sd&&sd.noMont), base=c.M/0.45, brP=nm?((typeof dueCfg==="function"&&dueCfg().nm)||13):21, br=Math.round(base*brP/100), of=Math.round(base*0.16), firm=Math.round(c.total-c.M-br-of-des);
+  return `<p class="sk-sub" style="margin-top:12px">Из чего цена</p><ul class="sk-pt">${L.map(([n,v])=>`<li><span>${esc(n)}</span><b>${N(v)}</b></li>`).join("")}
+    <li class="sk-pm"><span>Материал + расходы (М)</span><b>${N(c.M)}</b></li>
+    <li><span>Бригаде · ${brP}% ${nm?"(без монтажа)":"(распил, кромка, сборка, монтаж)"}</span><b>${N(br)}</b></li>
+    <li><span>Офис · 16% (технолог, снабженец, руководители)</span><b>${N(of)}</b></li><li><span>Дизайнеру</span><b>${N(des)}</b></li>
+    <li class="sk-pf"><span>Фирме остаётся</span><b class="${firm>0?"sk-g":"sk-r"}">${N(firm)}</b></li></ul><p class="muted" style="font-size:12px;margin:4px 0 0">Бригаде и офису — от М ÷ 0,45, как в зарплате.</p>`; }
+window.__sk={scale:skScaleHtml,setData:x=>{SK.data=x;}};
+/* тянуть пальцем (быстрая смета): позиция на шкале → коэффициент → цена клиенту = М ÷ коэффициент */
+let skDrag=false, skT=0;
+function skSetFrom(x){ const bar=document.querySelector(".sk-bar.sk-drag"), sm=S.shop.sm; if(!bar||!sm||!sm.data||!sm.data.qk) return; const r=bar.getBoundingClientRect(), KK=K(), p0=KK.lMin+0.03, p6=KK.lTop-0.03;
+  const pos=Math.max(0,Math.min(1,(x-r.left)/r.width)); let k=Math.round((p0-pos*(p0-p6))*100)/100; k=Math.max(0.2,Math.min(0.6,k)); if(Math.abs((+sm.data.k||0)-k)<1e-6) return;
+  sm.data.k=k; if(typeof qkDirty==="function") qkDirty(); else sm.dirty=true; const now=Date.now(); if(now-skT<50) return; skT=now; shpRenderKeep(); }
+document.addEventListener("pointerdown",e=>{ const b=e.target.closest&&e.target.closest(".sk-bar.sk-drag"); if(!b) return; skDrag=true; e.preventDefault(); skSetFrom(e.clientX); },true);
+window.addEventListener("pointermove",e=>{ if(!skDrag) return; e.preventDefault(); skSetFrom(e.clientX); },{passive:false});
+window.addEventListener("pointerup",()=>{ if(!skDrag) return; skDrag=false; shpRenderKeep(); });   // для проверки на стенде
 const _skH=smHtml; smHtml=function(){ let h=_skH.apply(this,arguments); try{ const sm=S.shop.sm; if(!sm||!sm.data||S.shop.smClient||!S.shop.full) return h; if(!SK.data) setTimeout(skLoad,0);
     const c=smCalc(sm.data), sc=skScaleHtml(c), k=c.mats>0&&c.total>0?c.mats/c.total:0;
-    if(sc){ const i=h.lastIndexOf('<div class="sm-spacer">'); if(i>=0) h=h.slice(0,i)+sc+h.slice(i); }
+    const stp=sm.data.qk?sm.data.qk.stp:S.shop.smStp, show=sm.data.qk?stp==="price":(!S.shop.smStp||stp==="price"||stp==="send");   /* Кирилл 07.11: шкала — только на шаге «Цена», не в материалах */
+    if(sc&&show){ const i=h.lastIndexOf('<div class="sm-spacer">'); const sc2=sm.data.qk?sc.replace('<div class="sk-bar"','<div class="sk-bar sk-drag" title="Тяните — цена меняется"'):sc; if(i>=0) h=h.slice(0,i)+sc2+h.slice(i); }
     if(k){ const lv=skLv(k); h=h.replace('<span class="smn-dkr">',`<span class="smn-dkr"><small class="sk-pill sk-${LVC[lv]||"w"}">${nf(k)} · ${lv}</small>`); }
   }catch(e){ console.error(e); } return h; };
 /* ---- директор: свой список «не забыли?» в «Разборе договоров» ---- */
@@ -18928,6 +18947,8 @@ const st=document.createElement("style"); st.textContent=`
 .sk-des{display:flex;justify-content:space-between;margin-top:8px;font-size:14px}.sk-sub{margin:10px 0 4px;font-size:13px;font-weight:600}.sk-sub small{font-weight:400;opacity:.6}
 .sk-up{list-style:none;margin:0;padding:0}.sk-up li{display:grid;grid-template-columns:1fr auto 70px;gap:8px;padding:5px 0;border-top:1px solid rgba(127,127,127,.15);font-size:13.5px}.sk-up i{font-style:normal}.sk-up em{font-style:normal;text-align:right;color:#1f9d55}
 .sk-warn{margin:8px 0 0;color:#d93025;font-size:13px}
+.sk-drag{cursor:grab;touch-action:none;height:14px;margin:16px 0 6px}.sk-drag i{height:14px}.sk-drag b{top:-9px;width:30px;height:32px;margin-left:-15px;border-radius:10px;background:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.25),0 2px 8px rgba(0,0,0,.5)}
+.sk-pt{list-style:none;margin:0;padding:0}.sk-pt li{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid rgba(127,127,127,.15);font-size:13.5px}.sk-pm{font-weight:600}.sk-pf{font-weight:700;font-size:15px!important}
 .sk-r{color:#d93025}.sk-y{color:#b58500}.sk-g{color:#1f9d55}.sk-pill{display:inline-block;margin-right:6px;font-weight:700}
 .sk-own textarea{width:100%;box-sizing:border-box;font:inherit;padding:8px;border-radius:10px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit;margin:4px 0 6px}
 html.vt.sk[data-vt="dark"] .sk-sc{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
@@ -20026,7 +20047,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="af5253299b";
+const CHK_BUILD="e21b6efce9";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20839,7 +20860,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="af5253299b";/*cehqr-build*/
+  const BUILD="e21b6efce9";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
