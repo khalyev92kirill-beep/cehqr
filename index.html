@@ -18473,6 +18473,34 @@ function dirCardsFix(){ document.querySelectorAll(".ocard[data-id]").forEach(c=>
 /* меню профиля: роль — как вход в Work24link; старый вход технолога по ссылке назван понятно */
 if(typeof accOpen==="function"){ const _drAO=accOpen; accOpen=function(){ const r=_drAO.apply(this,arguments); try{ const m=document.getElementById("accM"); if(m&&S.shop&&S.shop.loaded&&(S.shop.role||S.shop.tech)){ const lab=accLabel().split(":")[0], p=m.querySelector("p.muted"); if(p) p.textContent=lab+" · на этом телефоне";
     m.querySelectorAll('[data-acc-out="adm-out"]').forEach(b=>{ if(!S.shop.tech) b.textContent="Убрать старый вход технолога (по ссылке)"; }); } }catch(_){} return r; }; }
+/* ===== Права ролей (Кирилл 07.11, вариант А): дизайнер/офис — только свои сделки и сметы, «Все разделы» урезаны; директор меняет галочками ===== */
+if(typeof shpUrl==="function"){ const _drU=shpUrl; shpUrl=function(q){ q=String(q||""); try{ if(!/(^|&)who=/.test(q)&&S.who) q+="&who="+encodeURIComponent(S.who); }catch(_){} return _drU.call(this,q); }; }
+const OF_R=[["deals","Видеть все сделки","иначе — только свои (где он дизайнер)"],["smetas","Видеть все сметы","иначе — только свои"],["money","Деньги фирмы","Деньги по заказам, Итог месяца"],["buy","Закупка и склад",""]];
+function ofRights(){ return (S.shop&&S.shop.cfgAll&&S.shop.cfgAll.officeRights)||{}; }
+function dirOffice(){ return !!(S.shop&&!S.shop.tech&&S.shop.role==="office"); }
+const DIR_OF_OK=["zamers","zp","notes","clients","inbset","tasks","cal","staff","ofn","smetas","board","inbox"];
+function dirOfTrim(){ if(!dirOffice()||!(S.view==="shop"&&S.shop.mode==="more")) return; if(S.shop&&!S.shop.cfgTried&&typeof cfgLoad==="function") cfgLoad();
+  const R=ofRights(), ok=DIR_OF_OK.concat(R.money?["money","pnl"]:[]).concat(R.buy?["stock","buy"]:[]);
+  document.querySelectorAll(".shp-list > li, .pr-dolist > li").forEach(li=>{ const b=li.querySelector("[data-act]"); if(!b) return; const a=b.dataset.act, v=b.dataset.v||b.dataset.dv||"";
+    const good=(a==="shp-tab"&&ok.includes(v))||(a==="pr-do"&&(b.dataset.do!=="shp-tab"||ok.includes(v)))||DIR_MST_ACT.includes(a)||(a==="app-nav"&&(v==="help-site"||v==="catalog"));
+    if(!good){ li.hidden=true; li.style.display="none"; } });
+  document.querySelectorAll(".pr-grp").forEach(g=>{ if(g.dataset.g==="do") return; const vis=[...g.querySelectorAll(".shp-list > li")].some(li=>!li.hidden&&li.style.display!=="none"); g.style.display=vis?"":"none"; }); }
+{ const _drR7=render; render=function(){ const r=_drR7.apply(this,arguments); try{ dirOfTrim(); }catch(_){} return r; }; }
+/* в «Директор и права технолога» — ещё раздел «Что можно дизайнеру / офису» */
+if(typeof dirModal==="function"){ const _drDM=dirModal; dirModal=function(){ _drDM.apply(this,arguments); const m=document.getElementById("dirM"); if(!m) return; const R=Object.assign({},ofRights());
+  const add=()=>{ if(m.querySelector(".of-box")) return; const card=m.querySelector(".modal-card"), pin=card&&card.querySelector(".dir-pin"); if(!pin) return; const box=document.createElement("div"); box.className="of-box";
+    box.innerHTML=`<h2 style="margin:14px 0 4px;font-size:18px">Что можно дизайнеру / офису</h2><ul class="dir-l">${OF_R.map(([k,t,s])=>`<li><label class="dir-r"><span><b>${t}</b><small>${s}</small></span><input type="checkbox" role="switch" data-of="${k}"${R[k]===true?" checked":""}></label></li>`).join("")}</ul>
+      <p class="muted" style="margin:6px 0 0;font-size:13px">Удалять, настройки, сотрудники — дизайнеру нельзя. Своя зарплата — видна всегда.</p><button type="button" class="btn" data-ofsave style="margin-top:8px">Сохранить права дизайнера</button>`;
+    pin.parentNode.insertBefore(box,pin); };
+  add(); new MutationObserver(add).observe(m,{childList:true,subtree:true});
+  m.addEventListener("change",e=>{ const c=e.target.closest("[data-of]"); if(c) R[c.dataset.of]=c.checked; });
+  m.addEventListener("click",async e=>{ const b=e.target.closest("[data-ofsave]"); if(!b) return; b.disabled=true; const j=await shpPost({action:"cfgSave",key:"officeRights",value:R}); b.disabled=false; if(!j) return; (S.shop.cfgAll||(S.shop.cfgAll={})).officeRights=R; toast("Права дизайнера сохранены"); }); }; }
+/* директор ↔ технолог: запоминаем второй вход на этом телефоне и переключаемся в меню профиля */
+function dirAlt(){ try{ return localStorage.getItem("w24-altpin")||""; }catch(_){ return ""; } }
+{ const _drSR=shpSetRole; shpSetRole=function(j){ const was=S.shop&&S.shop.techPin; _drSR.apply(this,arguments); try{ if(j&&j.tech){ const k="w24-pin-"+(j.dir&&j.hasDir?"dir":"tech"); localStorage.setItem(k,S.shop.techPin||was||""); } }catch(_){} }; }
+function dirSwitchTo(kind){ let p=""; try{ p=localStorage.getItem("w24-pin-"+kind)||""; }catch(_){} if(!p){ toast(kind==="tech"?"Сначала войдите один раз как технолог на этом телефоне":"Сначала войдите один раз как директор"); return; }
+  S.shop.techPin=p; try{ localStorage.setItem("cehqr-techpin",p); }catch(_){} toast(kind==="tech"?"Переключаюсь на технолога…":"Переключаюсь на директора…"); setTimeout(()=>{ try{ location.reload(); }catch(_){} },300); }
+if(typeof accOpen==="function"){ const _drAO2=accOpen; accOpen=function(){ const r=_drAO2.apply(this,arguments); try{ const m=document.getElementById("accM"); if(m&&S.shop&&S.shop.tech&&S.shop.hasDir){ const isDir=!!S.shop.dir, grid=m.querySelector('div[style*="display:grid"]'); if(grid&&!grid.querySelector("[data-dsw]")){ const b=document.createElement("button"); b.type="button"; b.className="btn"; b.dataset.dsw=isDir?"tech":"dir"; b.textContent=isDir?"🔁 Переключиться на технолога":"👑 Переключиться на директора"; b.addEventListener("click",()=>dirSwitchTo(b.dataset.dsw)); grid.insertBefore(b,grid.firstChild); } } }catch(_){} return r; }; }
 
 /* ===== Сканер (Кирилл 07.11): «навёл камеру на номер — зафиксировал — сразу без нажатия деталь на 3D»; «сканер внизу не понимает, какой заказ».
    1) Сканер без открытого заказа: сначала «Какой заказ сканируем?», запоминает последний; в окне сверху «Заказ № … [Сменить]».
@@ -19844,7 +19872,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="046f92503b";
+const CHK_BUILD="f140a0c510";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20657,7 +20685,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="046f92503b";/*cehqr-build*/
+  const BUILD="f140a0c510";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
