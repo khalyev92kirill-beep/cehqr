@@ -18564,6 +18564,40 @@ if(typeof shpTaskRow==="function"){ const _duT=shpTaskRow; shpTaskRow=function(t
   if(o&&o.deadline&&!shpClosed(o)){ const dl=shpDays(today,o.deadline), x=duePen(o,Math.max(1,dl)); if(dl>0) parts.push(`<b class="due-bad">заказ просрочен на ${dl} дн. — фирма платит клиенту ≈ ${shpRub(x)}</b>`); else if(o.penDay) parts.push(`срок заказа ${shpDM(o.deadline)} — каждый день просрочки фирме −${shpRub(o.penDay)}`); }
   if(parts.length) h=h.replace(/<\/button><\/li>$/,`<span class="due-tm">${parts.join(" · ")}</span></button></li>`); }catch(_){} return h; }; }
 (function(){ const st=document.createElement("style"); st.textContent=`.due-tm{display:block;font-size:12.5px;color:var(--muted,#888);margin-top:3px}.due-bad{color:#e5484d;font-weight:600}`; document.head.appendChild(st); })();
+/* ===== «Сроки и опоздания» для директора (Кирилл 07.11, вариант А): Люди · Этапы · Сделки, за месяц. Считается по задачам этапов ===== */
+const DUE_N={zamer:"Замер",proekt:"Проект",proekt_ok:"Договор",zakup:"Закупка",cex:"Производство",montazh:"Монтаж"};
+function dueDay(ms){ const d=new Date(ms); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function dueRows(ym){ const C=dueCfg(), today=shpToday(); return (S.shop.tasks||[]).map(t=>{ const k=String(t.kind||""), st=k.indexOf("due:")===0?k.slice(4):(k==="zamer"||k==="proekt")?k:""; if(!st||!t.due) return null;
+  const done=t.status==="done"&&t.doneAt, end=done?dueDay(t.doneAt):today, late=Math.max(0,shpDays(end,t.due)), start=t.created?dueDay(t.created):t.due;
+  const r={t,st,to:t.to||"—",done,late,cur:!done&&late>0,fact:t.created?Math.max(0,shpDays(end,start)):null,fine:late*((C[st]&&C[st].f)||0),ym:(done?end:t.due).slice(0,7)}; return r; }).filter(r=>r&&(!ym||r.ym===ym||r.cur)); }
+function dueDash(){ document.getElementById("dueD")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="dueD"; const st={tab:"people",ym:shpToday().slice(0,7)};
+  const mon=ym=>{ const [y,mm]=ym.split("-").map(Number); return ["январь","февраль","март","апрель","май","июнь","июль","август","сентябрь","октябрь","ноябрь","декабрь"][mm-1]+" "+y; };
+  const shift=(ym,d)=>{ let [y,mm]=ym.split("-").map(Number); mm+=d; if(mm<1){ mm=12; y--; } if(mm>12){ mm=1; y++; } return y+"-"+String(mm).padStart(2,"0"); };
+  const draw=()=>{ const R=dueRows(st.ym), C=dueCfg(), ok=R.filter(r=>r.done&&!r.late).length, fin=R.filter(r=>r.done).length, cur=R.filter(r=>r.cur).length, fines=R.reduce((a,r)=>a+r.fine,0);
+    let body="";
+    if(st.tab==="people"){ const G={}; R.forEach(r=>{ (G[r.to]=G[r.to]||[]).push(r); });
+      body=Object.keys(G).sort((a,b)=>G[b].reduce((s,r)=>s+r.late,0)-G[a].reduce((s,r)=>s+r.late,0)).map(n=>{ const L=G[n], d=L.filter(r=>r.done), okn=d.filter(r=>!r.late).length, pc=d.length?Math.round(okn/d.length*100):100, cr=L.filter(r=>r.cur), fn=L.reduce((s,r)=>s+r.fine,0);
+        const lateTxt=L.filter(r=>r.late).map(r=>`${DUE_N[r.st]} ${r.t.order&&shpById(r.t.order)?"№"+(shpById(r.t.order).num||""):""} ${r.cur?"(сейчас +":"(+"}${r.late} дн.)`).slice(0,3).join(", ");
+        return `<div class="dd-row"><b>${esc(n)}</b><small>этапов ${L.length} · в срок ${okn}${lateTxt?" · просрочки: "+esc(lateTxt):" · всё в срок"}${fn?` · штраф −${shpRub(fn)}`:""}</small><div class="dd-bar"><i style="width:${pc}%;background:${cr.length?"#ffb020":pc<80?"#ff453a":"#34c759"}"></i></div></div>`; }).join("")||`<p class="muted">В этом месяце задач по этапам ещё нет. Они появляются сами, когда сделки переходят по этапам.</p>`; }
+    else if(st.tab==="stages"){ body=DUE_ST.map(([k,n])=>{ const L=R.filter(r=>r.st===k&&r.done&&r.fact!=null), f=L.length?L.reduce((s,r)=>s+r.fact,0)/L.length:null, pl=C[k].d, dv=f==null?null:f-pl;
+        return `<div class="dd-st"><span>${n}</span><span>план ${pl} · факт ${f==null?"—":f.toFixed(1).replace(".",",")} ${dv==null?"":dv>0.05?`<b class="dd-r">+${dv.toFixed(1).replace(".",",")}</b>`:`<b class="dd-g">✓</b>`}</span></div>`; }).join("")+`<p class="muted" style="font-size:12.5px;margin-top:8px">Факт — сколько дней этап занял в среднем (по выполненным задачам этапов за месяц).</p>`; }
+    else { const today=shpToday(); body=(S.shop.orders||[]).filter(o=>!shpClosed(o)).map(o=>{ const dl=o.deadline?shpDays(today,o.deadline):null, pen=dl>0?duePen(o,dl):0, open=R.find(r=>r.t.order===o.id&&!r.done);
+        return {o,dl,pen,open}; }).sort((a,b)=>(b.dl==null?-999:b.dl)-(a.dl==null?-999:a.dl)).map(({o,dl,pen,open})=>`<div class="dd-row" data-act="shp-open" data-id="${esc(o.id)}"><b>№ ${esc(o.num||"")} · ${esc(o.client||"")}</b><small>${esc(typeof shpStName==="function"?shpStName(o.stage):o.stage)}${open?` · ${esc(open.to)} до ${shpDM(open.t.due)}${open.cur?` <b class="dd-r">(+${open.late} дн.)</b>`:""}`:""}${o.deadline?` · срок заказа ${shpDM(o.deadline)}${dl>0?` <b class="dd-r">просрочен ${dl} дн. · неустойка ≈ ${shpRub(pen)}</b>`:` · осталось ${-dl} дн.`}`:" · срок заказа не указан"}</small></div>`).join(""); }
+    m.innerHTML=`<div class="modal-card dd-m"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Сроки и опоздания</h2><button type="button" class="btn sm" data-dd="x">Закрыть</button></div>
+      <div class="dd-mon"><button type="button" class="btn sm" data-dd="prev">‹</button><b>${mon(st.ym)}</b><button type="button" class="btn sm" data-dd="next">›</button></div>
+      <div class="shp-seg dd-seg">${[["people","Люди"],["stages","Этапы"],["deals","Сделки"]].map(([k,n])=>`<button type="button" data-dd="tab" data-v="${k}" aria-pressed="${st.tab===k}">${n}</button>`).join("")}</div>
+      <div class="dd-k"><div><b class="dd-g">${fin?Math.round(ok/fin*100):100} %</b><small>этапов в срок</small></div><div><b class="${cur?"dd-r":""}">${cur}</b><small>просрочено сейчас</small></div><div><b class="${fines?"dd-r":""}">${fines?"−"+shpRub(fines):"0 ₽"}</b><small>штрафы</small></div></div>
+      <div class="dd-body">${body}</div></div>`; };
+  draw(); document.body.appendChild(m);
+  m.addEventListener("click",e=>{ const b=e.target.closest("[data-dd]"); if(e.target===m||(b&&b.dataset.dd==="x")){ m.remove(); return; } if(e.target.closest('[data-act="shp-open"]')){ m.remove(); return; } if(!b) return;
+    if(b.dataset.dd==="tab") st.tab=b.dataset.v; else if(b.dataset.dd==="prev") st.ym=shift(st.ym,-1); else if(b.dataset.dd==="next") st.ym=shift(st.ym,1); draw(); }); }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="due-dash"]'); if(!t) return; e.stopPropagation(); if(S.shop&&!S.shop.cfgTried&&typeof cfgLoad==="function") cfgLoad(); dueDash(); },true);
+if(typeof shpMoreHtml==="function"){ const _duM=shpMoreHtml; shpMoreHtml=function(){ let h=String(_duM.apply(this,arguments)); if(S.shop&&S.shop.tech) h=`<div class="firm-top dir-top due-top"><span>📊 <b>Сроки и опоздания</b></span><button type="button" class="btn" data-act="due-dash">Открыть</button></div>`+h; return h; }; }
+if(typeof prAllHtml==="function"){ const _duA=prAllHtml; prAllHtml=function(){ let o=String(_duA.apply(this,arguments)); const m=o.match(/<div class="firm-top dir-top due-top">[\s\S]*?<\/button><\/div>/); if(!m) return o; o=o.replace(m[0],""); const i=o.indexOf('<label class="pr-simple">'); return i<0?m[0]+o:o.slice(0,i)+m[0]+o.slice(i); }; }
+(function(){ const st=document.createElement("style"); st.textContent=`.dd-m{width:min(560px,100%);max-height:92vh;overflow:auto}.dd-mon{display:flex;align-items:center;justify-content:space-between;margin:10px 0}.dd-seg{margin-bottom:10px}
+.dd-k{display:flex;gap:8px;margin-bottom:10px}.dd-k div{flex:1;border-radius:12px;padding:8px 10px;outline:1px solid rgba(128,128,128,.3);outline-offset:-1px}.dd-k b{display:block;font-size:18px}.dd-k small{color:var(--muted,#888);font-size:11.5px}
+.dd-g{color:#34c759}.dd-r{color:#ff453a}.dd-row{padding:10px 12px;border-radius:12px;outline:1px solid rgba(128,128,128,.25);outline-offset:-1px;margin-bottom:8px;cursor:pointer}.dd-row b{font-size:15px}.dd-row small{display:block;color:var(--muted,#888);font-size:12.5px;margin-top:2px;line-height:1.35}
+.dd-bar{height:6px;border-radius:3px;background:rgba(128,128,128,.3);margin-top:6px;overflow:hidden}.dd-bar i{display:block;height:100%}.dd-st{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(128,128,128,.25);font-size:14.5px}`; document.head.appendChild(st); })();
 
 /* ---------- Смета: «Не забыли?» и светофор продажи (Кирилл 05.11) ----------
    1) Перед «КП в PDF», «Отправить клиенту», «Клиент согласен» и «Сумму — в сделку» — короткий список того, что часто забывают.
@@ -19751,7 +19785,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="3ab4d412eb";
+const CHK_BUILD="e72a0206a0";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20564,7 +20598,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="3ab4d412eb";/*cehqr-build*/
+  const BUILD="e72a0206a0";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
