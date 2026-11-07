@@ -18013,6 +18013,20 @@ function prjPlaceAt(i,px,py){ const P=prjP(), it=P.items[i], ws=prjWalls(P.room)
   const ow=it.wall, ox=it.x, oz=it.z, w=ws[best]; it.wall=best; const al=(px-w.P[0])*w.u[0]+(py-w.P[1])*w.u[1]-it.w/2; it.x=Math.max(0,Math.min(w.L-it.w,Math.round(al)));
   prjMove(i,al,null); if(ow!==best) prjAlignOne(i); if(prjOver(i)){ it.wall=ow; it.x=ox; it.z=oz; return false; } return true; }
 function prj3dDispose(){ const r=PRJ.r3; if(!r) return; try{ cancelAnimationFrame(r.raf); r.ro&&r.ro.disconnect(); r.renderer.dispose(); r.scene.traverse(o=>{ o.geometry&&o.geometry.dispose(); o.material&&o.material.dispose&&o.material.dispose(); }); }catch(_){} PRJ.r3=null; }
+/* Кирилл 07.11: «на 3D белый — надо текстурные показывать»: декор из справочника (образец картинкой) — текстурой на 3D */
+const PRJ_TEX={};
+function prjCatTex(n,col){ if(!n||typeof THREE==="undefined") return null; if(PRJ_TEX[n]!==undefined) return PRJ_TEX[n];
+  const D=S.cat&&S.cat.data; if(!D){ if(typeof catLoad==="function") catLoad(); prjTexWait(); return null; }
+  const it=(typeof catFind==="function"&&catFind(n))||D.items.find(x=>x.n===n); let url="",c=1,j=0;
+  if(it&&it.t!=null&&it.t!==""){ if(typeof it.t==="string") url="catalog/t/"+it.t+".jpg"; else { c=(D.sp&&D.sp.c)||10; const per=c*c; url="catalog/s/"+String(Math.floor(it.t/per)).padStart(3,"0")+".jpg"; j=it.t%per; } }
+  else if(it&&it.d!=null){ const E=S.cat.dec; if(!E){ if(typeof decLoad==="function") decLoad(); prjTexWait(); return null; } c=E.cols; url="decor/s"+Math.floor(it.d/E.per)+".jpg"; j=it.d%E.per; }
+  if(!url) return PRJ_TEX[n]=null;
+  const cv=document.createElement("canvas"); cv.width=cv.height=256; const g=cv.getContext("2d"); g.fillStyle=col||"#f6f5f1"; g.fillRect(0,0,256,256);
+  const tx=new THREE.CanvasTexture(cv); tx.wrapS=tx.wrapT=THREE.RepeatWrapping; tx.anisotropy=4;
+  const img=new Image(); img.onload=()=>{ const s=img.width/c; g.drawImage(img,(j%c)*s+1,Math.floor(j/c)*s+1,s-2,s-2,0,0,256,256); tx.needsUpdate=true; }; img.src=url;
+  return PRJ_TEX[n]=tx; }
+/* справочник ещё грузится — перерисовать 3D, когда загрузится */
+function prjTexWait(){ if(PRJ.texT) return; let k=0; PRJ.texT=setInterval(()=>{ k++; const ok=S.cat&&S.cat.data&&(S.cat.dec||!S.cat.decL); if(ok||k>40){ clearInterval(PRJ.texT); PRJ.texT=0; if(ok&&document.getElementById("pj3d")) prjMount3D(); } },250); }
 function prjMount3D(){ prj3dDispose(); const cv=document.getElementById("pj3d"); if(!cv||typeof THREE==="undefined") return; const P=prjP(), R=P.room, K=0.001, W=+R.w*K, Dd=+R.dp*K, H=+R.h*K, ws=prjWalls(R);
   const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true}); renderer.setPixelRatio(typeof perfPR==="function"?perfPR():Math.min(2,devicePixelRatio||1));
   const scene=new THREE.Scene(), cam=new THREE.PerspectiveCamera(45,1,0.05,100); scene.add(new THREE.HemisphereLight(0xffffff,0x9a9488,0.85)); const sun=new THREE.DirectionalLight(0xffffff,0.45); sun.position.set(W*1.5,H*2.2,Dd*2); scene.add(sun);
@@ -18022,7 +18036,7 @@ function prjMount3D(){ prj3dDispose(); const cv=document.getElementById("pj3d");
   const items=[], grps=[], WIRE=!!PRJ.wire;
   const dP=prjD(), mats=dP.mat||{}, nmOf=k=>{ const m=k==="fmT"?P.fmT:mats[k]; return m&&m.n||""; };
   /* материал с текстурой Базиса (если есть), иначе цвет материала; по умолчанию — белый */
-  const matFor=(k,dims)=>{ const n=nmOf(k), tx=n&&typeof texFor==="function"?texFor(n):null; return tx?new THREE.MeshLambertMaterial({map:tx,color:0xffffff}):new THREE.MeshLambertMaterial({color:new THREE.Color(prjCol(k))}); };
+  const matFor=(k,dims)=>{ const n=nmOf(k), tx=n?((typeof texFor==="function"&&texFor(n))||prjCatTex(n,prjCol(k))):null; return tx?new THREE.MeshLambertMaterial({map:tx,color:0xffffff}):new THREE.MeshLambertMaterial({color:new THREE.Color(prjCol(k))}); };
   const box=(grp,x0,y0,z0,x1,y1,z1,mt,edge,pi)=>{ const sx=Math.max(1,x1-x0)*K, sy=Math.max(1,y1-y0)*K, sz=Math.max(1,z1-z0)*K, ge=new THREE.BoxGeometry(sx,sy,sz);
     if(mt.map&&typeof texUV==="function"){ const dm={x:x1-x0,y:y1-y0,z:z1-z0}; try{ texUV(ge,dm,dm.y>=dm.x&&dm.y>=dm.z?"y":dm.x>=dm.z?"x":"z"); }catch(_){} }
     if(WIRE){ mt=mt.clone(); mt.transparent=true; mt.opacity=0.12; mt.depthWrite=false; if(edge==null) edge=0x666666; else edge=edge===0xffb703?0xffb703:0x222222; } const me=new THREE.Mesh(ge,mt); me.position.set((x0+x1)/2*K,(y0+y1)/2*K,(z0+z1)/2*K); if(edge!=null) me.add(new THREE.LineSegments(new THREE.EdgesGeometry(ge),new THREE.LineBasicMaterial({color:edge}))); if(pi!=null) me.userData.pi=pi; grp.add(me); return me; };
@@ -19488,7 +19502,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="d7e2700c75";
+const CHK_BUILD="e4133c28f4";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20301,7 +20315,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="d7e2700c75";/*cehqr-build*/
+  const BUILD="e4133c28f4";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
