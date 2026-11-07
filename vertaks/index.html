@@ -18425,6 +18425,38 @@ function dirMstTrim(){ if(!dirMaster()) return; document.querySelectorAll(".shp-
   if(!ok){ li.hidden=true; li.style.display="none"; } });
   document.querySelectorAll(".pr-grp").forEach(g=>{ if(g.dataset.g==="do") return; const vis=[...g.querySelectorAll(".shp-list > li")].some(li=>!li.hidden&&li.style.display!=="none"); g.style.display=vis?"":"none"; }); }
 { const _drR4=render; render=function(){ const r=_drR4.apply(this,arguments); try{ dirMstTrim(); }catch(_){} return r; }; }
+/* ===== Вход мастера своим PIN (Кирилл 07.11, вариант А): «Я мастер» → имя → свой PIN; первый раз — PIN цеха и придумать свой (2 раза) ===== */
+const MST_KEYS={tech:"cehqr-techpin",tester:"cehqr-techpin",office:"cehqr-officepin",supply:"cehqr-suppin",master:"cehqr-pin"};
+async function mstPost(body){ try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify(body)}); return await r.json(); }catch(_){ return null; } }
+function mstSaveSess(j){ try{ Object.values(MST_KEYS).forEach(k=>{ if(/^tgs\./.test(localStorage.getItem(k)||"")) localStorage.removeItem(k); }); localStorage.setItem(MST_KEYS[j.role],j.session); localStorage.setItem("cehqr-who",String(j.name).slice(0,40)); }catch(_){}
+  toast("Вы вошли: "+j.name); setTimeout(()=>{ try{ location.reload(); }catch(_){} },400); }
+function mstLoginModal(){ document.getElementById("mstM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="mstM"; let st={step:1,name:S.who||"",first:false};
+  const draw=()=>{ m.innerHTML=`<form class="modal-card" id="mstF" autocomplete="off"><h2 style="margin:0 0 6px">Вход мастера</h2>
+    ${st.step===1?`<p class="note" style="margin:0 0 12px">Ваше имя — как в «Сотрудниках».</p><div class="form" style="grid-template-columns:1fr;margin:0"><label>Ваше имя<input id="mstN" value="${esc(st.name)}" maxlength="40" required autocomplete="username"></label></div>`
+    :st.first?`<p class="note" style="margin:0 0 12px"><b>${esc(st.name)}</b>, вы входите первый раз. Придумайте свой PIN — дальше входите только им.</p><div class="form" style="grid-template-columns:1fr;margin:0">
+      <label>1. PIN цеха (общий, один раз)<input id="mstC" type="password" inputmode="numeric" maxlength="20" required></label>
+      <label>2. Придумайте свой PIN (4–12 цифр)<input id="mstP" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label>
+      <label>3. Повторите<input id="mstP2" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label></div>`
+    :`<p class="note" style="margin:0 0 12px"><b>${esc(st.name)}</b></p><div class="form" style="grid-template-columns:1fr;margin:0"><label>Ваш PIN<input id="mstP" type="password" inputmode="numeric" maxlength="12" required autocomplete="current-password"></label></div>`}
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" type="submit">${st.step===1?"Дальше":"Войти"}</button>${st.step===2?`<button class="btn" type="button" data-m="back">‹ Другое имя</button>`:""}<button class="btn" type="button" data-act="qr-close">Отмена</button></div>
+    <p style="margin:12px 0 0"><button type="button" class="linkbtn" data-m="old">Войти общим PIN цеха (старый способ)</button></p></form>`;
+    setTimeout(()=>{ const i=m.querySelector(st.step===1?"#mstN":st.first?"#mstC":"#mstP"); i&&i.focus(); },50); };
+  draw(); document.body.appendChild(m);
+  m.addEventListener("click",e=>{ if(e.target===m){ m.remove(); return; } const b=e.target.closest("[data-m]"); if(!b) return; if(b.dataset.m==="back"){ st.step=1; draw(); } else if(b.dataset.m==="old"){ m.remove(); mstOld(); } });
+  m.addEventListener("submit",async e=>{ e.preventDefault(); const sb=m.querySelector("[type=submit]"); sb.disabled=true;
+    try{
+      if(st.step===1){ st.name=m.querySelector("#mstN").value.trim(); const j=await mstPost({action:"ppState",name:st.name}); if(!j){ toast("Нет связи с таблицей"); return; }
+        if(!j.ok){ toast(j.error==="action"?"Обновите скрипт таблицы":"Не получилось"); return; } if(!j.staff){ fieldErr(m.querySelector("#mstN"),"Такого имени нет в «Сотрудниках» — скажите директору"); return; }
+        if(j.role&&j.role!=="master"){ fieldErr(m.querySelector("#mstN"),"Вы не мастер — войдите своей кнопкой"); return; } st.name=j.name||st.name; st.first=!j.has; st.step=2; draw(); return; }
+      const P=m.querySelector("#mstP").value.trim();
+      if(st.first){ const C=m.querySelector("#mstC").value.trim(), P2=m.querySelector("#mstP2").value.trim(); if(!/^\d{4,12}$/.test(P)){ fieldErr(m.querySelector("#mstP"),"PIN — от 4 до 12 цифр"); return; } if(P!==P2){ fieldErr(m.querySelector("#mstP2"),"Не совпадает"); return; }
+        const j=await mstPost({action:"ppSelf",name:st.name,pin:C,ppin:P}); if(!j){ toast("Нет связи с таблицей"); return; } if(!j.ok){ fieldErr(m.querySelector(j.error==="pin"?"#mstC":"#mstP"),j.msg||"Не получилось"); return; } }
+      const k=await mstPost({action:"ppLogin",name:st.name,ppin:P}); if(!k){ toast("Нет связи с таблицей"); return; }
+      if(!k.ok||!/^tgs\./.test(k.session||"")||!MST_KEYS[k.role]){ fieldErr(m.querySelector("#mstP"),k.error==="pp_wait"?"Много неверных попыток — подождите 15 минут":"Неверный PIN"); return; }
+      m.remove(); mstSaveSess(k);
+    } finally { sb.disabled=false; } }); }
+function mstOld(){ siteLoginModal(()=>{ S.shop.loaded=false; S.shop.err=false; const f=S.shop.afterLogin; S.shop.afterLogin=null; if(f&&shpPin()) f(); else render(); }); }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="shp-in-master"]'); if(!t) return; e.stopPropagation(); e.preventDefault(); mstLoginModal(); },true);
 
 /* ===== Сканер (Кирилл 07.11): «навёл камеру на номер — зафиксировал — сразу без нажатия деталь на 3D»; «сканер внизу не понимает, какой заказ».
    1) Сканер без открытого заказа: сначала «Какой заказ сканируем?», запоминает последний; в окне сверху «Заказ № … [Сменить]».
@@ -19670,7 +19702,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="dd300fc1f2";
+const CHK_BUILD="50f70482eb";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20483,7 +20515,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="dd300fc1f2";/*cehqr-build*/
+  const BUILD="50f70482eb";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
