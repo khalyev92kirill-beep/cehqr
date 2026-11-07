@@ -17890,7 +17890,12 @@ function prjAdd(x){ const d=prjD(), P=d.proj; P.lib=P.lib||{}; if(!P.lib[x.id]) 
   const up=x.sec==="up"||x.sec==="up2"||(x.sec==="corn"&&(x.h<1000&&(x.data||{}).hang>0)); const y=up?prjBaseY(x.sec==="corn"?"up":x.sec,x.h,d):prjBaseY(x.sec,x.h,d);
   const wl=prjWalls(P.room)[PRJ.wall], same=P.items.filter(it=>it.wall===PRJ.wall&&!(y+x.h<=it.y||it.y+it.h<=y));
   let px=same.reduce((a,it)=>Math.max(a,it.x+it.w),0); if(px+x.w>wl.L) px=Math.max(0,wl.L-x.w);
-  P.items.push({lid:x.id,wall:PRJ.wall,x:Math.round(px),y:Math.round(y),w:x.w,h:x.h,d:x.d}); PRJ.sel=P.items.length-1; S.shop.sm.dirty=true; }
+  P.items.push({lid:x.id,wall:PRJ.wall,x:Math.round(px),y:Math.round(y),w:x.w,h:x.h,d:x.d,z:0}); PRJ.sel=P.items.length-1; prjAlignOne(PRJ.sel); S.shop.sm.dirty=true; }
+/* «Выровнять фасады»: на каждой стене нижние (с пеналами) и верхние — по одной линии лица; мелкий модуль отодвигается от стены */
+function prjGrp(o){ const s=prjLibOf(o).sec; return s==="corn"?"":prjUp(o)?"up":/^(tall|cab)$/.test(s)?"tall":"low"; }
+function prjFront(i){ const P=prjP(), it=P.items[i], g=prjGrp(it); if(!g) return 0; return P.items.reduce((a,o,j)=>j!==i&&o.wall===it.wall&&prjGrp(o)===g?Math.max(a,(+o.z||0)+(+o.d||0)):a,0); }
+function prjAlignOne(i){ const it=prjP().items[i]; if(!it||!prjGrp(it)) return; const f=prjFront(i); it.z=f>0?Math.max(0,Math.round(f-it.d)):0; }
+function prjAlign(){ const P=prjP(); let n=0; [0,1,2,3].forEach(w=>["low","up","tall"].forEach(g=>{ const L=P.items.filter(o=>o.wall===w&&prjGrp(o)===g); if(!L.length) return; const f=Math.max(...L.map(o=>+o.d||0)); L.forEach(o=>{ const z=Math.max(0,Math.round(f-o.d)); if(z!==(+o.z||0)) n++; o.z=z; }); })); return n; }
 /* «до упора» влево / вправо: до соседа в том же ряду или до стены */
 function prjPush(i,dir){ const P=prjP(), it=P.items[i], L=prjWalls(P.room)[it.wall].L, nb=P.items.filter((o,j)=>j!==i&&o.wall===it.wall&&!(it.y+it.h<=o.y||o.y+o.h<=it.y));
   if(dir<0) it.x=nb.filter(o=>o.x+o.w<=it.x+1).reduce((a,o)=>Math.max(a,o.x+o.w),0); else it.x=nb.filter(o=>o.x>=it.x+it.w-1).reduce((a,o)=>Math.min(a,o.x),L)-it.w; it.x=Math.round(Math.max(0,it.x)); }
@@ -17926,9 +17931,9 @@ function prjTopSvg(){ const P=prjP(), R=P.room, W=+R.w, D=+R.dp, pad=320, ws=prj
   ws.forEach((w,k)=>{ const a=w.P, b=[a[0]+w.u[0]*w.L,a[1]+w.u[1]*w.L], mx=(a[0]+b[0])/2+w.nr[0]*(w.nr[0]?700:-0)-w.nr[1]*150*0, my=(a[1]+b[1])/2+(w.nr[1]?-w.nr[1]*150:0);
     s+=`<line x1="${pad+a[0]}" y1="${pad+a[1]}" x2="${pad+b[0]}" y2="${pad+b[1]}" class="pj-wl${k===PRJ.wall?" on":""}" data-pj="wall" data-v="${k}"/><text x="${pad+mx}" y="${pad+my+30}" class="pj-dt${k===PRJ.wall?" on":""}" data-pj="wall" data-v="${k}">${w.n} · ${w.L}</text>`; });
   const order=P.items.map((it,i)=>[it,i]).sort((a,b)=>(prjUp(a[0])?1:0)-(prjUp(b[0])?1:0));
-  order.forEach(([it,i])=>{ const w=ws[it.wall], p=(x,z)=>[pad+w.P[0]+w.u[0]*x+w.nr[0]*z,pad+w.P[1]+w.u[1]*x+w.nr[1]*z], c=[p(it.x,0),p(it.x+it.w,0),p(it.x+it.w,it.d),p(it.x,it.d)];
+  order.forEach(([it,i])=>{ const w=ws[it.wall], p=(x,z)=>[pad+w.P[0]+w.u[0]*x+w.nr[0]*z,pad+w.P[1]+w.u[1]*x+w.nr[1]*z], z0=+it.z||0, c=[p(it.x,z0),p(it.x+it.w,z0),p(it.x+it.w,z0+it.d),p(it.x,z0+it.d)];
     s+=`<polygon points="${c.map(q=>q.map(v=>v.toFixed(1)).join(",")).join(" ")}" class="pj-tp${prjUp(it)?" up":""}${i===PRJ.sel?" sel":""}" data-pi="${i}"/>`;
-    const m=p(it.x+it.w/2,it.d/2); if(!prjUp(it)||!P.items.some(o=>o!==it&&o.wall===it.wall&&!prjUp(o)&&o.x<it.x+it.w&&o.x+o.w>it.x)) s+=`<text x="${m[0]}" y="${m[1]+28}" class="pj-tn" data-pi="${i}">${it.w}</text>`; });
+    const m=p(it.x+it.w/2,(+it.z||0)+it.d/2); if(!prjUp(it)||!P.items.some(o=>o!==it&&o.wall===it.wall&&!prjUp(o)&&o.x<it.x+it.w&&o.x+o.w>it.x)) s+=`<text x="${m[0]}" y="${m[1]+28}" class="pj-tn" data-pi="${i}">${it.w}</text>`; });
   return `<svg class="pj-svg" id="pjSvg" viewBox="0 0 ${W+pad*2} ${D+pad*2}" preserveAspectRatio="xMidYMid meet">${s}</svg>`; }
 /* ---- 3D ---- */
 function prj3dDispose(){ const r=PRJ.r3; if(!r) return; try{ cancelAnimationFrame(r.raf); r.ro&&r.ro.disconnect(); r.renderer.dispose(); r.scene.traverse(o=>{ o.geometry&&o.geometry.dispose(); o.material&&o.material.dispose&&o.material.dispose(); }); }catch(_){} PRJ.r3=null; }
@@ -17957,7 +17962,7 @@ function prjMount3D(){ prj3dDispose(); const cv=document.getElementById("pj3d");
       if(drw){ const cy=b[4]-Math.min(50,fh/4), cx=(b[0]+b[3])/2; box(grp,cx-L/2,cy-6,zf,cx+L/2,cy+6,zf+28,hMat,null,i); return; }
       const leftDoor=(b[0]+b[3])/2<it.w/2&&fw<it.w*0.7, hx=leftDoor?b[3]-45:b[0]+45, vL=Math.min(160,fh-80), cy=up?b[1]+vL/2+60:tall?Math.min(b[4]-vL/2-60,1000-it.y+0):b[4]-vL/2-60;
       box(grp,hx-6,cy-vL/2,zf,hx+6,cy+vL/2,zf+28,hMat,null,i); });
-    if(!up&&/^(low|corn)$/.test(sec)){ const T=(+dP.T||40), tm=matFor("top"); box(grp,0,it.h,0,it.w,it.h+T,it.d+20,tm,0x777777,null);
+    if(!up&&/^(low|corn)$/.test(sec)){ const T=(+dP.T||40), tm=matFor("top"); box(grp,0,it.h,-(+it.z||0),it.w,it.h+T,it.d+20,tm,0x777777,null);
       const tz=(it.d+20)/2, cx=it.w/2, yt=it.h+T;
       if(it.top==="sink"){ const sw=Math.min(it.w-150,600), sd=Math.min(it.d-120,440);   /* мойка: чаша в столешнице и смеситель */
         box(grp,cx-sw/2,yt-2,tz-sd/2,cx+sw/2,yt+1,tz+sd/2,steel,0x8a9096,null); box(grp,cx-sw/2+25,yt-160,tz-sd/2+25,cx+sw/2-25,yt+1.5,tz+sd/2-25,new THREE.MeshLambertMaterial({color:0x8d939a}),null,null);
@@ -17967,7 +17972,7 @@ function prjMount3D(){ prj3dDispose(); const cv=document.getElementById("pj3d");
     /* цоколь под нижними и пеналами, отступ 50 мм от лица */
     if(!up&&it.y>20) box(grp,0,-it.y,0,it.w,0,it.d-50,matFor("plinth"),0x777777,null);
     /* модуль: x — вдоль стены, z — от стены в комнату */
-    grp.rotation.y=-Math.atan2(w.u[1],w.u[0]); grp.position.set((w.P[0]+w.u[0]*it.x)*K,it.y*K,(w.P[1]+w.u[1]*it.x)*K); scene.add(grp); });
+    grp.rotation.y=-Math.atan2(w.u[1],w.u[0]); grp.position.set((w.P[0]+w.u[0]*it.x+w.nr[0]*(+it.z||0))*K,it.y*K,(w.P[1]+w.u[1]*it.x+w.nr[1]*(+it.z||0))*K); scene.add(grp); });
   const C=new THREE.Vector3(W/2,H*0.42,Dd/2), st=PRJ.cam; if(!st.r) st.r=Math.max(W,Dd,H)*1.55;
   const place=()=>{ cam.position.set(C.x+st.r*Math.cos(st.ph)*Math.sin(st.th),C.y+st.r*Math.sin(st.ph),C.z+st.r*Math.cos(st.ph)*Math.cos(st.th)); cam.lookAt(C); };
   const size=()=>{ const r=cv.getBoundingClientRect(); renderer.setSize(r.width,r.height,false); cam.aspect=r.width/Math.max(1,r.height); cam.updateProjectionMatrix(); };
@@ -17981,11 +17986,26 @@ function prjMount3D(){ prj3dDispose(); const cv=document.getElementById("pj3d");
     const h=ray.intersectObjects(items,false)[0]; PRJ.sel=h?h.object.userData.pi:-1; shpRenderKeep(); };
   cv.addEventListener("pointerup",up); cv.addEventListener("pointercancel",e=>pts.delete(e.pointerId));
   cv.addEventListener("wheel",e=>{ e.preventDefault(); st.r=Math.max(1,Math.min(20,st.r*(e.deltaY>0?1.1:0.9))); },{passive:false}); }
+/* ---- панель на схеме: видна всегда, и когда открыт каталог ---- */
+function prjTbHtml(){ const P=prjP(), it=P.items[PRJ.sel];
+  if(!it) return P.items.length?`<div class="pj-tb"><button type="button" data-pj="align" title="Все фасады — в одну линию">⇳ Выровнять фасады</button></div>`:"";
+  return `<div class="pj-tb on"><b>${esc(prjLibOf(it).name.replace(/ · .*/,""))} <small>${it.w}×${it.h}×${it.d}</small></b><button type="button" class="del" data-pj="del" aria-label="Удалить модуль">🗑 Удалить</button><button type="button" data-pj="size">✎ Размеры</button><button type="button" data-pj="align">⇳ Выровнять</button><button type="button" data-pj="push" data-v="-1" aria-label="До упора влево">⇤</button><button type="button" data-pj="push" data-v="1" aria-label="До упора вправо">⇥</button><button type="button" data-pj="copy" aria-label="Копия">⧉ Копия</button><button type="button" data-pj="unsel" aria-label="Снять выбор">✕</button></div>`; }
+function prjSizeModal(){ const P=prjP(), it=P.items[PRJ.sel]; if(!it) return; const x=prjLibOf(it), m=document.createElement("div"); m.className="modal"; m.style.zIndex=220;
+  const f=(k,n,v,h)=>`<label>${n}<input inputmode="numeric" name="${k}" value="${Math.round(v)}">${h?`<small class="muted">${h}</small>`:""}</label>`;
+  m.innerHTML=`<form class="modal-card" style="width:min(440px,100%)"><h2 style="margin:0 0 4px">Размеры модуля</h2><p class="muted" style="margin:0 0 10px">${esc(x.name.replace(/ · .*/,""))} · в Базисе ${x.w}×${x.h}×${x.d}. Боковины не меняются, всё между ними тянется. Можно писать 600+150.</p>
+    <div class="form" style="grid-template-columns:1fr 1fr 1fr">${f("w","Ширина",it.w)}${f("h","Высота",it.h)}${f("d","Глубина",it.d)}</div><div class="form" style="grid-template-columns:1fr 1fr 1fr;margin-top:8px">${f("y","От пола",it.y)}${f("x","От угла",it.x)}${f("z","От стены",+it.z||0)}</div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" type="submit">Готово</button><button class="btn" type="button" data-x>Отмена</button></div></form>`;
+  document.body.appendChild(m); const i0=m.querySelector("[name=w]"); i0.focus(); i0.select(); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-x]")) m.remove(); });
+  m.addEventListener("submit",e=>{ e.preventDefault(); const F=e.target.elements, v=(k,lo,hi,def)=>{ let t=String(F[k].value).replace(/,/g,".").replace(/[^0-9.+\-*/ ]/g,""), r=def; try{ if(/^[0-9.+\-*/ ]+$/.test(t)) r=Function("return ("+t+")")(); }catch(_){} r=Math.round(+r); return isFinite(r)?Math.max(lo,Math.min(hi,r)):def; };
+    const H=+P.room.h||2700, wasF=prjFront(PRJ.sel), algn=wasF>0&&Math.abs(((+it.z||0)+it.d)-wasF)<2;
+    it.w=v("w",150,2400,it.w); it.h=v("h",100,H,it.h); it.d=v("d",100,1200,it.d); it.y=v("y",0,H-it.h,it.y); it.x=v("x",0,prjWalls(P.room)[it.wall].L-it.w,it.x); it.z=v("z",0,2000,+it.z||0);
+    if(algn&&+F.z.value===(+it.z||0)) prjAlignOne(PRJ.sel); if(prjOver(PRJ.sel)) toast("Модуль налез на соседа — сдвиньте его или «⇤ ⇥ до упора»");
+    S.shop.sm.dirty=true; m.remove(); shpRenderKeep(); }); }
 /* ---- выбранный модуль: поля и действия ---- */
 function prjSelHtml(){ const P=prjP(), it=P.items[PRJ.sel]; if(!it) return `<p class="pj-hint">Нажмите «＋ Модуль» — откроется каталог. Модуль из него тяните на схему или просто нажмите — встанет на «${esc(prjWalls(P.room)[PRJ.wall].n)}». Нажмите модуль на схеме — появятся размеры.</p>`;
   const x=prjLibOf(it), low=!prjUp(it)&&x.sec==="low", f=(k,n,v)=>`<label class="pj-f"><span>${n}</span><input inputmode="numeric" data-pf="${k}" value="${Math.round(v)}" aria-label="${n}"></label>`;
   return `<div class="pj-sel"><div class="pj-sh"><b>${esc(x.name.replace(/ · .*/,""))}</b><small class="muted">${esc(prjWalls(P.room)[it.wall].n)} · от левого края ${Math.round(it.x)}</small></div>
-    <div class="pj-fs">${f("w","Ширина",it.w)}${f("h","Высота",it.h)}${f("d","Глубина",it.d)}${f("y","От пола",it.y)}${f("x","От угла",it.x)}</div>
+    <div class="pj-fs">${f("w","Ширина",it.w)}${f("h","Высота",it.h)}${f("d","Глубина",it.d)}${f("y","От пола",it.y)}${f("x","От угла",it.x)}${f("z","От стены",+it.z||0)}</div>
     <div class="pj-acts"><button type="button" class="btn sm" data-pj="push" data-v="-1" title="Сдвиг до упора влево">⇤ До упора</button><button type="button" class="btn sm" data-pj="push" data-v="1" title="Сдвиг до упора вправо">До упора ⇥</button><button type="button" class="btn sm" data-pj="copy">⧉ Копия</button>${low?`<button type="button" class="btn sm${it.top==="sink"?" on":""}" data-pj="top" data-v="sink">◡ Мойка</button><button type="button" class="btn sm${it.top==="hob"?" on":""}" data-pj="top" data-v="hob">🔥 Варочная</button>`:""}<button type="button" class="btn sm" data-pj="wallto">↪ На другую стену</button><button type="button" class="btn sm danger" data-pj="del">🗑 Удалить</button></div></div>`; }
 /* ---- экран ---- */
 function prjHtml(){ const sm=S.shop.sm, d=sm.data, P=d.proj, c=smCalc(d), ws=prjWalls(P.room); if(PRJ.sel>=P.items.length) PRJ.sel=-1;
@@ -17993,7 +18013,7 @@ function prjHtml(){ const sm=S.shop.sm, d=sm.data, P=d.proj, c=smCalc(d), ws=prj
   let h=`<div class="head sm-head pj-head"><div>${back}<h1>${esc([sm.kind||d.kind,sm.client].filter(Boolean).join(" · ")||"Проект")}</h1><p class="muted">Проект · ${prjPl(P.items.length)}${sm.saved?` · сохранён ${esc(shpTime(sm.saved.when))}`:" · новый"}${sm.dirty?" · <b class=\"sm-dirty\">не сохранён</b>":""}</p></div>${sm.dirty?`<button type="button" class="btn primary" data-act="sm-save">Сохранить</button>`:""}</div>`;
   h+=`<div class="pj-bar"><div class="pj-seg" role="group" aria-label="Вид">${[["wall","Стена"],["top","Сверху"],["3d","3D"]].map(([k,n])=>`<button type="button" data-pj="view" data-v="${k}" aria-pressed="${PRJ.view===k}">${n}</button>`).join("")}</div><button type="button" class="btn sm" data-pj="room">⚙ Комната</button></div>`;
   h+=`<div class="pj-walls">${ws.map((w,k)=>`<button type="button" class="chip${k===PRJ.wall?" on":""}" data-pj="wall" data-v="${k}">${w.n} <small>${w.L} · ${P.items.filter(it=>it.wall===k).length}</small></button>`).join("")}</div>`;
-  h+=`<div class="pj-stage${PRJ.catOpen?" cat":""}">${PRJ.view==="3d"?`<canvas id="pj3d" class="pj-3d" aria-label="3D проекта: тяните — повернуть, двумя пальцами — приблизить"></canvas>`:PRJ.view==="top"?prjTopSvg():prjWallSvg()}</div>`;
+  h+=`<div class="pj-stage${PRJ.catOpen?" cat":""}">${prjTbHtml()}${PRJ.view==="3d"?`<canvas id="pj3d" class="pj-3d" aria-label="3D проекта: тяните — повернуть, двумя пальцами — приблизить"></canvas>`:PRJ.view==="top"?prjTopSvg():prjWallSvg()}</div>`;
   h+=`<button type="button" class="pj-addb" data-pj="cat">＋ Модуль из каталога</button>`+prjSelHtml()+`<div class="sm-spacer" style="height:96px"></div>`;
   if(PRJ.catOpen) h+=`<section class="pj-sheet pj-catw" role="dialog" aria-label="Каталог модулей"><div class="pj-shh"><b>Каталог модулей</b><small>Нажмите — встанет в конец ряда. Держите и тяните на схему — встанет, куда отпустите.</small><button type="button" class="pj-shx" data-pj="catx" aria-label="Закрыть каталог">✕</button></div><div class="pj-shb">${prjCatHtml()}</div></section>`;
   h+=`<div class="sm-dock pj-dock"><span class="pj-pr"><small>Цена${c.noPrice?` · <span class="badc">⚠ ${c.noPrice} без цены</span>`:""}</small><b id="smTot">${esc(shpRub(c.total))}</b></span><button type="button" class="btn" data-pj="mat">🎨 Материалы</button><button type="button" class="btn" data-pj="det">Смета ›</button></div>`;
@@ -18023,6 +18043,7 @@ document.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.
   if(a==="cat"){ PRJ.catOpen=1; shpRenderKeep(); const st=document.querySelector(".pj-stage"); if(st) window.scrollTo(0,Math.max(0,st.getBoundingClientRect().top+window.scrollY-80)); return; } if(a==="catx"){ PRJ.catOpen=0; return shpRenderKeep(); }
   if(a==="view"){ PRJ.view=t.dataset.v; return shpRenderKeep(); } if(a==="wall"){ PRJ.wall=+t.dataset.v; PRJ.sel=-1; return shpRenderKeep(); } if(a==="sec"){ PRJ.sec=t.dataset.v; return shpRenderKeep(); }
   if(a==="add"){ if(PRJ.noClick){ PRJ.noClick=0; return; } const x=(S.shop.prjLib||[]).find(z=>z.id===t.dataset.id); if(!x) return; prjAdd(x); if(!prjFit()) return shpRenderKeep(); if(PRJ.view==="top") PRJ.view="wall"; toast("Поставлен: "+x.name.replace(/ · .*/,"")+" — тяните пальцем"); return shpRenderKeep(); }
+  if(a==="align"){ const n=prjAlign(); S.shop.sm.dirty=true; toast(n?"Фасады выровнены в одну линию":"Фасады уже ровно"); return shpRenderKeep(); } if(a==="unsel"){ PRJ.sel=-1; return shpRenderKeep(); } if(a==="size") return prjSizeModal();
   if(a==="room") return prjRoomModal(); if(a==="mat") return prjMatModal(); if(a==="det"){ S.shop.prjDet=1; window.scrollTo(0,0); return shpRenderKeep(); }
   if(!it) return; S.shop.sm.dirty=true;
   if(a==="push") prjPush(PRJ.sel,+t.dataset.v);
@@ -18036,7 +18057,7 @@ document.addEventListener("change",e=>{ const f=e.target.closest&&e.target.close
   const k=f.dataset.pf, v=Math.round(parseFloat(String(f.value).replace(",","."))); if(!isFinite(v)) return shpRenderKeep(); const x=prjLibOf(it);
   if(k==="w"){ it.w=Math.max(150,Math.min(2400,v)); if(Math.abs(it.w-x.w)>x.w*0.6) toast("Сильно растянули — проверьте модуль"); }
   if(k==="h") it.h=Math.max(100,Math.min(+P.room.h||2700,v)); if(k==="d") it.d=Math.max(100,Math.min(1200,v)); if(k==="y") it.y=Math.max(0,Math.min((+P.room.h||2700)-it.h,v));
-  if(k==="x") it.x=Math.max(0,Math.min(prjWalls(P.room)[it.wall].L-it.w,v));
+  if(k==="x") it.x=Math.max(0,Math.min(prjWalls(P.room)[it.wall].L-it.w,v)); if(k==="z") it.z=Math.max(0,Math.min(2000,v));
   S.shop.sm.dirty=true; shpRenderKeep(); });
 /* тянуть модуль пальцем: «Стена» — влево-вправо (верхние — и вверх-вниз), «Сверху» — вдоль своей стены */
 document.addEventListener("pointerdown",e=>{ const g=e.target.closest&&e.target.closest("#pjSvg [data-pi]"); const svg=e.target.closest&&e.target.closest("#pjSvg"); if(!svg||!prjIs(S.shop&&S.shop.sm)) return;
@@ -18045,7 +18066,7 @@ document.addEventListener("pointerdown",e=>{ const g=e.target.closest&&e.target.
   const k=1/m.a, x0=it.x, y0=it.y, sx=e.clientX, sy=e.clientY, w=prjWalls(P.room)[it.wall], top=PRJ.view==="top", vert=!top&&prjUp(it); let moved=false;
   if(PRJ.sel!==i){ PRJ.sel=i; shpRenderKeep(); }
   const mv=ev=>{ const dx=(ev.clientX-sx)*k, dy=(ev.clientY-sy)*k; if(!moved&&Math.hypot(dx,dy)<6/m.a*1) return; moved=true;
-    const along=top?dx*w.u[0]+dy*w.u[1]:dx; prjMove(i,x0+along,vert?y0-dy:null); S.shop.sm.dirty=true; const st=document.querySelector(".pj-stage"); if(st) st.innerHTML=top?prjTopSvg():prjWallSvg(); };
+    const along=top?dx*w.u[0]+dy*w.u[1]:dx; prjMove(i,x0+along,vert?y0-dy:null); S.shop.sm.dirty=true; const sv=document.getElementById("pjSvg"); if(sv) sv.outerHTML=top?prjTopSvg():prjWallSvg(); };
   const upf=()=>{ document.removeEventListener("pointermove",mv); document.removeEventListener("pointerup",upf); document.removeEventListener("pointercancel",upf); if(moved) shpRenderKeep(); };
   document.addEventListener("pointermove",mv); document.addEventListener("pointerup",upf); document.addEventListener("pointercancel",upf); },{passive:false});
 function prjOver(i){ const P=prjP(), it=P.items[i]; return !!it&&P.items.some((o,j)=>j!==i&&o.wall===it.wall&&!(it.y+it.h<=o.y||o.y+o.h<=it.y)&&!(it.x+it.w<=o.x||o.x+o.w<=it.x)); }
@@ -18095,8 +18116,11 @@ document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closes
 .pj-dl{stroke:#444;stroke-width:3}.pj-dl.gap{stroke:#e8590c;stroke-dasharray:14 10}.pj-dt{font:600 64px system-ui,sans-serif;fill:#333;text-anchor:middle}.pj-dt.gap{fill:#e8590c}.pj-dt.big{font-size:80px}.pj-dt.on{fill:#1c7ed6}.pj-tx{font:600 52px system-ui;fill:#555;text-anchor:middle}
 .pj-room{fill:#fafafa;stroke:none}.pj-wl{stroke:#333;stroke-width:60;cursor:pointer}.pj-wl.on{stroke:#1c7ed6}.pj-tp{fill:#fff;stroke:#333;stroke-width:8;cursor:grab}.pj-tp.up{fill:rgba(200,210,220,.35);stroke-dasharray:30 20}.pj-tp.sel{fill:#fff3c4;stroke:#ffb703;stroke-width:14}.pj-tn{font:600 70px system-ui;fill:#333;text-anchor:middle;pointer-events:none}
 .pj-hint{color:var(--muted,#888);font-size:14px;margin:10px 2px}
+.pj-tb{position:absolute;left:0;right:0;bottom:0;z-index:3;display:flex;gap:6px;align-items:center;overflow-x:auto;padding:6px;background:rgba(255,255,255,.94);border-top:1px solid #d0d4d9;scrollbar-width:none}.pj-tb::-webkit-scrollbar{display:none}
+.pj-tb b{flex:none;font-size:12.5px;line-height:1.15;color:#111!important;max-width:110px;white-space:normal}.pj-tb b small{display:block;color:#666;font-weight:500}
+.pj-tb button{flex:none;white-space:nowrap;border:1px solid #c9ced4;background:#fff;color:#111;font-family:inherit;font-weight:600;font-size:13.5px;line-height:1;padding:8px 10px;border-radius:9px;cursor:pointer}.pj-tb button.del{color:#c92a2a;border-color:#ffa8a8}.pj-tb:not(.on){justify-content:flex-end;background:transparent;border:0}
 .pj-sel{background:var(--surface,#1c1d20);border:2px solid #1c7ed6;border-radius:14px;padding:10px;margin:10px 0}.pj-sh{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
-.pj-fs{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.pj-f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#999)}.pj-f input{width:100%;min-width:0;font:600 17px/1 inherit;font-family:inherit;padding:9px 6px;border-radius:9px;border:1px solid var(--line,#444);background:var(--bg,#111);color:inherit;text-align:center}
+.pj-fs{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}.pj-f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#999)}.pj-f input{width:100%;min-width:0;font:600 17px/1 inherit;font-family:inherit;padding:9px 6px;border-radius:9px;border:1px solid var(--line,#444);background:var(--bg,#111);color:inherit;text-align:center}
 .pj-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.pj-acts .on{background:#FFD60A;color:#000}
 .pj-h2{font-size:18px;margin:14px 0 8px}.pj-q{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line,#444);background:var(--bg,#111);color:inherit;font:inherit;margin-bottom:8px}
 .pj-cat{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}.pj-ci{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px;border-radius:12px;border:1px solid var(--line,#333);background:var(--surface,#1c1d20);color:inherit;font:inherit;cursor:pointer;text-align:center}.pj-ci b{font-size:13px;line-height:1.2}.pj-ci small{font-size:11.5px;color:var(--muted,#999)}.pj-cp{display:grid;place-items:center;width:96px;height:96px;background:linear-gradient(#2a2d33,#1a1b1f);border-radius:9px}
@@ -19297,7 +19321,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="8915019080";
+const CHK_BUILD="b0bcf5a50b";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -20110,7 +20134,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="8915019080";/*cehqr-build*/
+  const BUILD="b0bcf5a50b";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
