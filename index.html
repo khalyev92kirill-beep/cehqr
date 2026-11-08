@@ -19106,6 +19106,22 @@ document.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.
   const nx=t.dataset.v; if(nx==="closed"&&!confirm("Закрыть заказ? Акт сдачи вложен.")) return; t.disabled=true;
   const ok=await shpMoveStage(d,nx); t.disabled=false; if(ok){ toast(nx==="montazh"?"Перенесено на «Монтаж»":"Заказ закрыт"); try{ render(); }catch(_){} } },true);
 { const st=document.createElement("style"); st.textContent=".doc-nx{margin:0 0 12px;width:100%}"; document.head.appendChild(st); }
+/* ===== Срок согласован с мастером (Кирилл 08.11, вариант Б): дизайнер ставит срок → мастер «Согласен» / «Не успеваю» ===== */
+function dlState(d){ if(!d||!d.deadline||!d.master||/^(closed|lost)$/.test(d.stage||"")) return null; const ok=d.dlOk&&d.dlOk.d===d.deadline&&shpNorm(d.dlOk.m||"")===shpNorm(d.master); return {ok,mine:shpNorm(d.master)===shpMe()}; }
+function dlCard(d){ const s=dlState(d); if(!s) return ""; const dd=shpDM(d.deadline);
+  if(s.ok) return `<p class="dl-ok">🗓 Срок до <b>${esc(dd)}</b> — ✓ согласован с мастером${s.mine?"":" ("+esc(d.master)+")"}</p>`;
+  if(!s.mine) return `<p class="dl-wait">🗓 Срок до <b>${esc(dd)}</b> — мастер ${esc(d.master)} ещё не подтвердил</p>`;
+  return `<div class="card dl-card"><h2>🗓 Подтвердите срок: до ${esc(dd)}</h2><p class="muted" style="margin:2px 0 10px">Дизайнер поставил срок заказа. Успеваете сделать цех и монтаж к этой дате?</p>
+    <div class="dl-b"><button type="button" class="btn primary" data-act="dl-yes" data-id="${esc(d.id)}">✓ Согласен</button><button type="button" class="btn" data-act="dl-no" data-id="${esc(d.id)}">Не успеваю</button></div></div>`; }
+if(typeof shpOrderHtml==="function"){ const _dlO=shpOrderHtml; shpOrderHtml=function(){ const h=String(_dlO.apply(this,arguments)); try{ const d=shpById(S.shop.cur), c=dlCard(d); if(!c) return h; const i=h.indexOf('<div class="card'); return i>0?h.slice(0,i)+c+h.slice(i):h+c; }catch(_){ return h; } }; }
+if(typeof viewOrder==="function"){ const _dlV=viewOrder; viewOrder=function(){ const h=String(_dlV.apply(this,arguments)); try{ if(typeof clientMode==="function"&&clientMode()) return h; if(!(typeof shpPin==="function"&&shpPin())||!S.current||S.current.loading) return h;
+    const k=String(S.current.orderId||"").toUpperCase(), d=(typeof opDeal==="function"&&opDeal(S.current.orderId))||(S.shop&&S.shop.orders||[]).find(o=>String(o.t3d||"").toUpperCase()===k); const c=dlCard(d); if(!c) return h;
+    let i=h.indexOf('<button type="button" class="btn primary doc-big doc-nx'); if(i<0) i=h.indexOf('<div class="card doc-act'); if(i<0) i=h.indexOf('<div class="op-pic'); if(i<0) i=h.indexOf('<div class="op-tiles'); return i>0?h.slice(0,i)+c+h.slice(i):c+h; }catch(_){ return h; } }; }
+document.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.closest('[data-act="dl-yes"],[data-act="dl-no"]'); if(!t) return; e.stopPropagation(); const d=shpById(t.dataset.id); if(!d) return; const yes=t.dataset.act==="dl-yes";
+  let text=""; if(!yes){ const r=prompt("Почему не успеваете? К какому сроку реально? (напишем дизайнеру)",""); if(r===null) return; text=r; }
+  t.disabled=true; const j=await shpPost({action:"dlAgree",id:d.id,ok:yes,text}); t.disabled=false; if(!j||j.ok===false){ if(j&&j.msg) toast(j.msg); return; }
+  d.dlOk=j.dlOk||null; toast(yes?"Срок согласован — дизайнеру сообщили":"Дизайнеру сообщили, что не успеваете"); try{ render(); }catch(_){} },true);
+{ const st=document.createElement("style"); st.textContent=".dl-ok,.dl-wait{margin:0 0 10px;font-size:14px}.dl-ok{color:#30a46c}.dl-wait{color:#ffb020}.dl-card{border-color:#ffb020}.dl-card h2{margin:0;font-size:18px}.dl-b{display:flex;gap:8px;flex-wrap:wrap}.dl-b .btn{flex:1 1 130px;min-height:48px}"; document.head.appendChild(st); }
 
 /* ===== Кирилл 07.11 (вариант А): «в Материалах — предупреждения: запас ЛДСП сделал? — а то дизайнеры забывают».
    Быстрая смета, шаг «Материалы»: смета сама смотрит цифры. Красное — с кнопками «Добавить» / «Не нужно» (запоминается в смете, q.chk2).
@@ -20885,7 +20901,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="9ac1b28dfe";
+const CHK_BUILD="50e5ea0d69";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21703,7 +21719,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="9ac1b28dfe";/*cehqr-build*/
+  const BUILD="50e5ea0d69";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
