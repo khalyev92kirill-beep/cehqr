@@ -19307,8 +19307,15 @@ const staff=[{name:'Иван',role:'Технолог'},{name:'Айна',role:'Д
     window.__fetchHook=async function(u,o){ try{ const us=typeof u==="string"?u:(u&&u.url)||"", su=S.site&&S.site.stagesUrl;
         { const m=/(?:^|\/)orders\/([A-Za-z0-9_%-]{1,60}\.json)(?:[?#].*)?$/.exec(us); if(m&&!/script\.google/.test(us)&&String(o&&o.method||"GET").toUpperCase()==="GET"){   // заказы фирмы — с её сервера (их шлёт скрипт Базиса фирмы)
           const su0=S.site&&S.site.stagesUrl; if(!su0) return J(/^index/.test(m[1])?{orders:[]}:{}); let nm; try{ nm=decodeURIComponent(m[1]); }catch(_){ nm=m[1]; }
-          try{ const t=await (await _f(su0+"?action=ofile&firm="+F+"&f="+encodeURIComponent(nm),{cache:"no-cache"})).text();
-            if(/^\s*\{"ok":false/.test(t)) return nm==="index.json"?J({orders:[]}):new Response("",{status:404});
+          const pin=(()=>{ try{ return typeof shpPin==="function"&&S.shop?shpPin():""; }catch(_){ return ""; } })(), skq=f=>_f(su0+"?action=skGet&firm="+F+"&pin="+encodeURIComponent(pin)+"&f="+encodeURIComponent(f),{cache:"no-cache"}).then(r=>r.json()).catch(()=>null);
+          if(/^SK\d+\.json$/.test(nm)){   // заказ из SketchUp: панели → детали, присадка (site_sketchup.js)
+            const raw=await skq(nm); if(!raw||raw.ok===false||!Array.isArray(raw.panels)) return new Response("",{status:404});
+            try{ return J(skToOrder(raw)); }catch(e){ console.error(e); return new Response("",{status:404}); } }
+          try{ const t=await (await _f(su0+"?action=ofile&firm="+F+"&f="+encodeURIComponent(nm),{cache:"no-cache"})).text(), bad=/^\s*\{"ok":false/.test(t);
+            if(nm==="index.json"){ let bz=null; if(!bad){ try{ bz=JSON.parse(t); }catch(_){ bz=null; } }
+              if(bz&&bz.ct) return new Response(t,{status:200,headers:{"Content-Type":"application/json"}});   // заказы из Базиса (зашифрованы) — как есть
+              const sk=await skq("index.json"), L=((bz&&bz.orders)||[]).concat((sk&&sk.ok&&sk.orders)||[]); return J({orders:L}); }
+            if(bad) return new Response("",{status:404});
             return new Response(t,{status:200,headers:{"Content-Type":"application/json"}}); }catch(_){ return nm==="index.json"?J({orders:[]}):new Response("",{status:404}); } } }
         if(!(su&&us.indexOf(su)===0)) return _f(u,o);
         if(o&&o.method==="POST"&&typeof o.body==="string"){ let b=null; try{ b=JSON.parse(o.body); }catch(_){} if(b&&typeof b==="object"){ b.firm=F; o=Object.assign({},o,{body:JSON.stringify(b)}); } return _f(u,o); }
@@ -19353,6 +19360,113 @@ const staff=[{name:'Иван',role:'Технолог'},{name:'Айна',role:'Д
   if(window.APP_FIRM){ let fr=null; try{ fr=localStorage.getItem("w24-fresh"); }catch(_){} if(fr){ try{ localStorage.removeItem("w24-fresh"); }catch(_){} setTimeout(()=>{ if(typeof toast==="function") toast("Фирма создана! Теперь позовите сотрудников — «Все разделы» → «Сотрудники»"); },2500); } }
   const st=document.createElement("style"); st.textContent=`.frm-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;margin:0 0 12px;border-radius:14px;background:var(--card,#f3f2f8);border:1px solid var(--line,#ddd);font-size:14px}.frm-bar span{flex:1 1 200px}.frm-bar.bad{background:#fff1f0;border-color:#f3b8b2;color:#5a1a14}.frm-bar .btn{text-decoration:none}
 .frm-out{text-align:center;margin:14px 0 0;font-size:14px}.frm-card{max-width:520px}.frm-card label{display:flex;flex-direction:column;gap:6px;margin:0 0 12px;font-weight:600}.frm-card input{min-height:46px}.frm-l{margin:4px 0 6px;font-weight:600}.frm-ind{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 6px}.frm-ind button{flex:1 1 140px;min-height:46px;border-radius:12px;border:1px solid var(--line,#ccc);background:transparent;color:inherit;font:inherit}.frm-ind button[aria-pressed=true]{border-color:var(--accent,#5b3fd9);box-shadow:inset 0 0 0 1px var(--accent,#5b3fd9);font-weight:700}.frm-ih{font-size:13px;margin:0 0 10px;min-height:0}.frm-go{width:100%;min-height:50px;margin-top:4px}.frm-err{color:#c0392b;min-height:1.2em;margin:8px 0 0}`;
+  (document.head||document.documentElement).appendChild(st);
+})();
+
+/* ===== ЗАКАЗЫ ИЗ SKETCHUP (Кирилл 08.11, вариант А). Расширение «Work24link» присылает панели модели как есть
+   (имя, материал, угол коробки «o», три ребра «ax» в мм, материалы граней по сторонам «s»), оси SketchUp: Z — вверх, Y — назад.
+   Здесь из этого делаем заказ как из Базиса: детали (L, W, T, материал, кромка L1/L2/W1/W2, коробка box, оси frame),
+   3D, раскрой, QR — как обычно; присадка — сама по стыкам панелей (конфирматы), фасады — петли, полки — полкодержатели.
+   Отверстия помечены «авто — проверьте». Наши оси: X — вправо, Y — вверх, Z — к нам. ===== */
+function skToOrder(raw){
+  const P=(raw&&raw.panels)||[], R=v=>Math.round(v*10)/10;
+  const cv=a=>[+a[0]||0,+a[2]||0,-(+a[1]||0)];                       // SketchUp → наши оси
+  const len=a=>Math.hypot(a[0],a[1],a[2]), unit=a=>{ const l=len(a)||1; return [a[0]/l,a[1]/l,a[2]/l]; };
+  const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2], cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  const AX="xyz", parts=[], fas=[];
+  P.forEach((q,qi)=>{
+    if(!q||!Array.isArray(q.o)||!Array.isArray(q.ax)||q.ax.length!==3) return;
+    const o=cv(q.o), ax=q.ax.map(cv), d=ax.map(len), ord=[0,1,2].sort((a,b)=>d[a]-d[b]), iT=ord[0];
+    const T=d[iT], big=[ord[2],ord[1]], nm=String(q.n||q.d||"Деталь").slice(0,80);
+    const isPanel=T>=2&&T<=60&&d[big[1]]>=20&&(q.fc||6)<=40;
+    if(!isPanel){ if(d[ord[2]]>=5) fas.push({n:nm}); return; }
+    // длина — вдоль большего ребра; у фасадов и боковин обычно вдоль высоты — как в Базисе
+    const iL=big[0], iW=big[1], L=d[iL], W=d[iW];
+    const X=unit(ax[iL]), Y=unit(ax[iW]), N=cross(X,Y);
+    const cs=[]; for(let a=0;a<2;a++) for(let b=0;b<2;b++) for(let c=0;c<2;c++){ cs.push([0,1,2].map(k=>o[k]+a*ax[0][k]+b*ax[1][k]+c*ax[2][k])); }
+    const box=[0,1,2].map(k=>Math.min(...cs.map(p=>p[k]))).concat([0,1,2].map(k=>Math.max(...cs.map(p=>p[k])))).map(R);
+    // начало осей детали: угол, от которого x идёт вдоль L, y — вдоль W
+    const O=o.slice();
+    const main=String(q.m||"").trim(), s=q.s||{}, ed={}, side=(i,e)=>String(s[AX[i]+e]||"").trim();
+    [["W1",iL,0],["W2",iL,1],["L1",iW,0],["L2",iW,1]].forEach(([k,i,e])=>{ const m=side(i,e); if(m&&m!==main) ed[k]=m; });
+    parts.push({name:nm,art:String(parts.length+1),L:R(L),W:R(W),T:R(T),material:main||"Без материала",edges:ed,holes:[],box,
+      frame:[O[0],O[1],O[2],X[0],X[1],X[2],Y[0],Y[1],Y[2]].map(v=>Math.round(v*1e4)/1e4),_N:N,_X:X,_Y:Y,_O:O,_tag:String(q.tag||""),_path:(q.p||[]).join(" / ")});
+  });
+  skAutoHoles(parts,fas);
+  parts.forEach(p=>{ delete p._N; delete p._X; delete p._Y; delete p._O; delete p._tag; delete p._path; });
+  return {order:String(raw.name||raw.model||"Заказ из SketchUp"),parts,fasteners:fas,src:"sketchup",auto:true};
+}
+/* присадка по стыкам: торец панели A упирается в пласть панели B → конфирматы (в B Ø7 насквозь, в торец A Ø5×50);
+   фасады — петли (чашка Ø35×12,5); полки не у края боковины — полкодержатели Ø5×12 */
+function skAutoHoles(parts,fas){
+  const tol=1.6, dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2], sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+  const thinAx=p=>{ const d=[0,1,2].map(k=>p.box[k+3]-p.box[k]); return d.indexOf(Math.min(...d)); };
+  const loc=(p,P)=>{ const v=sub(P,p._O); return [dot(v,p._X),dot(v,p._Y)]; };
+  const R=v=>Math.round(v*10)/10, spots=(a,b)=>{ const l=b-a; if(l<60) return [(a+b)/2]; const r=[a+Math.min(50,l/4),b-Math.min(50,l/4)]; if(l>600){ const n=Math.max(1,Math.floor((l-100)/450)); for(let i=1;i<=n;i++) r.push(a+50+(l-100)*i/(n+1)); } return r.sort((x,y)=>x-y); };
+  const lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9]; parts.forEach(p=>{ for(let k=0;k<3;k++){ lo[k]=Math.min(lo[k],p.box[k]); hi[k]=Math.max(hi[k],p.box[k+3]); } });
+  const isBack=p=>p.T<=6, isFront=p=>thinAx(p)===2&&p.box[5]>=hi[2]-25&&!isBack(p)&&!/полк|дно|крыш|бок|стойк|перегор/i.test(p.name);
+  let nConf=0, nShelf=0, nHinge=0;
+  const shelfOf=(A,B)=>{ /* горизонтальная панель между стоек, не у края стойки */ if(thinAx(A)!==1) return false; if(/дно|крыш|перемыч|цокол/i.test(A.name)) return false; if(/полк/i.test(A.name)) return true; return A.box[1]-B.box[1]>60&&B.box[4]-A.box[4]>60; };
+  parts.forEach(A=>{ if(isBack(A)||isFront(A)) return; const tA=thinAx(A);
+    parts.forEach(B=>{ if(A===B||isBack(B)||isFront(B)) return; const k=thinAx(B); if(k===tA) return;
+      let at=null; if(Math.abs(A.box[k]-B.box[k+3])<tol) at=B.box[k+3]; else if(Math.abs(A.box[k+3]-B.box[k])<tol) at=B.box[k]; if(at===null) return;
+      const oth=[0,1,2].filter(i=>i!==k), ov=oth.map(i=>[Math.max(A.box[i],B.box[i]),Math.min(A.box[i+3],B.box[i+3])]);
+      if(ov.some(([a,b])=>b-a<8)) return;
+      const j=oth.find(i=>i!==tA), mid=(A.box[tA]+A.box[tA+3])/2, rj=ov[oth.indexOf(j)];
+      const cB=[0,1,2].map(i=>(B.box[i]+B.box[i+3])/2), faceB=dot(sub([0,1,2].map(i=>i===k?at:cB[i]),B._O),B._N)>dot(sub(cB,B._O),B._N)?"A":"B";
+      const endA=(()=>{ const c=[0,1,2].map(i=>i===k?at:(A.box[i]+A.box[i+3])/2), [x,y]=loc(A,c); if(Math.abs(Math.abs(A._X[k])-1)<0.01) return x<A.L/2?"W1":"W2"; return y<A.W/2?"L1":"L2"; })();
+      if(shelfOf(A,B)&&!/дно|крыш/i.test(A.name)){   // полка: полкодержатели в стойке, у полки ничего
+        const zs=[(A.box[2]+37),(A.box[5]-37)]; zs.forEach(z=>{ const P=[0,1,2].map(i=>i===k?at:i===1?A.box[1]:i===2?z:(A.box[i]+A.box[i+3])/2); const [x,y]=loc(B,P); B.holes.push({face:faceB,x:R(x),y:R(y),d:5,depth:12,auto:1,name:"Полкодержатель"}); nShelf++; });
+        return; }
+      spots(rj[0],rj[1]).forEach(v=>{ const P=[0,1,2].map(i=>i===k?at:i===j?v:mid);
+        const [bx,by]=loc(B,P); B.holes.push({face:faceB,x:R(bx),y:R(by),d:7,depth:B.T,auto:1,name:"Конфирмат"});
+        const [ax_,ay]=loc(A,P); A.holes.push({face:endA,x:R(endA==="W1"?0:endA==="W2"?A.L:ax_),y:R(endA==="L1"?0:endA==="L2"?A.W:ay),d:5,depth:50,auto:1,name:"Конфирмат"}); nConf++; });
+    }); });
+  // фасады: петли со стороны, где у соседа нет фасада (одиночная дверь — слева), чашки с внутренней стороны
+  const fr=parts.filter(isFront);
+  fr.forEach(D=>{ const w=D.box[3]-D.box[0], h=D.box[4]-D.box[1]; if(h<w*0.9||h<250) return;   // ящики и откидные — без петель
+    const leftN=fr.some(o=>o!==D&&Math.abs(o.box[3]-D.box[0])<8&&Math.min(o.box[4],D.box[4])-Math.max(o.box[1],D.box[1])>h*0.5);
+    const hingeX=leftN?D.box[3]-22.5:D.box[0]+22.5, cnt=h>2000?5:h>1600?4:h>900?3:2, ys=[]; for(let i=0;i<cnt;i++) ys.push(D.box[1]+100+(h-200)*i/(cnt-1));
+    const inner=dot([0,0,-1],D._N)>0?"A":"B";
+    ys.forEach(y=>{ const [x,yy]=loc(D,[hingeX,y,D.box[2]]); D.holes.push({face:inner,x:R(x),y:R(yy),d:35,depth:12.5,auto:1,name:"Петля"}); nHinge++; }); });
+  for(let i=0;i<nConf;i++) fas.push({n:"Конфирмат 7×50"});
+  for(let i=0;i<nShelf;i++) fas.push({n:"Полкодержатель"});
+  for(let i=0;i<nHinge;i++) fas.push({n:"Петля накладная с доводчиком"});
+}
+if(typeof module!=="undefined"&&module.exports) module.exports={skToOrder};
+/* кнопка «Из SketchUp» в «Заказах» фирмы: скачать расширение, как поставить, загрузить файл .w24.json вручную */
+(function(){
+  if(typeof window==="undefined"||!window.APP_FIRM) return;
+  const RBZ="sketchup/Work24link.rbz";
+  function skUpModal(){ document.getElementById("skUpM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="skUpM";
+    m.innerHTML=`<div class="modal-card sku"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">Заказы из SketchUp</h2><button type="button" class="btn sm" data-sk="x">Закрыть</button></div>
+      <ol class="sku-steps"><li><a class="btn primary" href="${RBZ}" download>⬇ Скачать расширение Work24link</a></li>
+      <li>SketchUp → «Расширения» → «Менеджер расширений» → «Установить расширение» → выберите скачанный файл.</li>
+      <li>Нарисуйте мебель: каждая панель — группа или компонент. Кромку можно покрасить материалом на торце (как в OpenCutList).</li>
+      <li>Нажмите кнопку <b>W24</b> → впишите код фирмы <b>${esc(window.APP_FIRM)}</b> и свой PIN (один раз) → название заказа → «Отправить».</li></ol>
+      <p class="muted">В приложении появятся 3D, раскрой, QR на деталях и присадка — она ставится сама по стыкам панелей (конфирматы, петли, полкодержатели), проверьте её.</p>
+      <label class="sku-drop" id="skDrop"><input type="file" accept=".json,application/json" id="skFile" hidden><b>Нет интернета в SketchUp?</b><span>Перетащите сюда файл «….w24.json» из папки «Документы\\Work24link» или нажмите, чтобы выбрать</span></label>
+      <p class="sku-st" id="skSt"></p></div>`;
+    document.body.appendChild(m);
+    m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-sk=x]")) m.remove(); });
+    const dz=m.querySelector("#skDrop"), inp=m.querySelector("#skFile"), st=m.querySelector("#skSt");
+    const send=async f=>{ if(!f) return; st.textContent="Загружаю…"; let raw=null; try{ raw=JSON.parse(await f.text()); }catch(_){ st.textContent="Это не файл Work24link (.w24.json)"; return; }
+      if(!raw||!Array.isArray(raw.panels)){ st.textContent="В файле нет деталей"; return; }
+      let j=null; try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"skPut",raw,pin:typeof shpPin==="function"?shpPin():"",who:S.who||""})}); j=await r.json(); }catch(_){ j=null; }
+      if(!j){ st.textContent="Нет связи — проверьте интернет"; return; } if(!j.ok){ st.textContent=j.msg||"Не получилось"; return; }
+      st.textContent=`Готово: «${j.name}» — ${j.n} дет.${j.upd?" (заказ обновлён)":""}`; toast("Заказ из SketchUp загружен");
+      try{ if(typeof siteLoadIndex==="function"){ await siteLoadIndex(); render(); } }catch(_){} };
+    inp.addEventListener("change",()=>send(inp.files&&inp.files[0]));
+    ["dragover","dragenter"].forEach(t=>dz.addEventListener(t,e=>{ e.preventDefault(); dz.classList.add("on"); }));
+    ["dragleave","drop"].forEach(t=>dz.addEventListener(t,e=>{ e.preventDefault(); dz.classList.remove("on"); if(t==="drop") send(e.dataTransfer.files&&e.dataTransfer.files[0]); }));
+  }
+  window.skUpModal=skUpModal;
+  if(typeof viewOrders==="function"){ const _v=viewOrders; viewOrders=function(){ const h=_v.apply(this,arguments); return `<div class="sku-bar"><span>Заказы из SketchUp — одной кнопкой</span><button type="button" class="btn sm" data-skup="1">⬆ Из SketchUp</button></div>`+h; }; }
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-skup]"); if(!b) return; e.preventDefault(); e.stopPropagation(); skUpModal(); },true);
+  if(/#skup/.test(location.hash)) setTimeout(()=>{ try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){} skUpModal(); },1500);
+  const st=document.createElement("style"); st.textContent=`.sku-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:10px 12px;margin:0 0 12px;border:1px dashed var(--line,#ccc);border-radius:14px;font-size:14px}
+.sku{max-width:560px}.sku-steps{margin:12px 0;padding-left:20px;display:flex;flex-direction:column;gap:10px;line-height:1.4}.sku-steps .btn{text-decoration:none;display:inline-flex}
+.sku-drop{display:flex;flex-direction:column;gap:4px;padding:16px;border:2px dashed var(--line,#ccc);border-radius:14px;cursor:pointer;margin-top:10px}.sku-drop.on{border-color:var(--accent,#5b3fd9)}.sku-drop span{font-size:13px;color:var(--muted,#777)}.sku-st{min-height:1.2em;margin:8px 0 0;font-weight:600}`;
   (document.head||document.documentElement).appendChild(st);
 })();
 
@@ -20563,7 +20677,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="98d9e9ebd4";
+const CHK_BUILD="adf93938ab";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21376,7 +21490,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="98d9e9ebd4";/*cehqr-build*/
+  const BUILD="adf93938ab";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
