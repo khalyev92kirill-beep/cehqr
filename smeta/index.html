@@ -19095,6 +19095,18 @@ function docDealOf(oid){ try{ const k=String(oid||"").toUpperCase(); return k?(S
 if(typeof viewOrder==="function"){ const _dcV=viewOrder; viewOrder=function(){ const h=String(_dcV.apply(this,arguments)); try{ if(typeof clientMode==="function"&&clientMode()) return h; if(!(typeof shpPin==="function"&&shpPin())) return h;
     const d=S.current&&!S.current.loading?docDealOf(S.current.orderId):null; if(!d) return h; const c=docActCard(d).replace('<div class="card doc-act">','<div class="card doc-act doc-act-o">').replace("<h2>📄 Акт сдачи</h2>",`<h2>📄 Акт сдачи <small class="muted" style="font-weight:400">· ${esc(d.client||"")}</small></h2>`);
     let i=h.indexOf('<div class="op-pic'); if(i<0) i=h.indexOf('<div class="op-tiles'); return i>0?h.slice(0,i)+c+h.slice(i):c+h; }catch(_){ return h; } }; }
+/* этап из заказа (Кирилл 08.11: «мастерам не видно — после производства перенести на монтаж»): в заказе из Базиса кнопка следующего этапа */
+function docNextBtn(d){ try{ if(!d||typeof shpCanStage!=="function") return "";
+    if(d.stage==="cex"&&shpCanStage(d,"montazh")) return `<button type="button" class="btn primary doc-big doc-nx" data-act="doc-nx" data-id="${esc(d.id)}" data-v="montazh">🚚 Готово в цеху — перенести на «Монтаж»</button>`;
+    if(d.stage==="montazh"&&shpCanStage(d,"closed")){ const L=S.df&&S.df[d.id], A=Array.isArray(L)&&L.some(f=>String(f.name).indexOf(DOC_ACT)===0); if(A) return `<button type="button" class="btn doc-big doc-nx" data-act="doc-nx" data-id="${esc(d.id)}" data-v="closed">✓ Акт есть — закрыть заказ</button>`; }
+  }catch(_){} return ""; }
+if(typeof viewOrder==="function"){ const _dcV2=viewOrder; viewOrder=function(){ const h=String(_dcV2.apply(this,arguments)); try{ if(typeof clientMode==="function"&&clientMode()) return h; if(!(typeof shpPin==="function"&&shpPin())||!S.current||S.current.loading) return h;
+    const k=String(S.current.orderId||"").toUpperCase(), d=(typeof opDeal==="function"&&opDeal(S.current.orderId))||(S.shop&&S.shop.orders||[]).find(o=>String(o.t3d||"").toUpperCase()===k); const b=docNextBtn(d); if(!b) return h;
+    const at=h.indexOf('<div class="card doc-act'); if(at>=0) return h.slice(0,at)+b+h.slice(at); let i=h.indexOf('<div class="op-pic'); if(i<0) i=h.indexOf('<div class="op-tiles'); return i>0?h.slice(0,i)+b+h.slice(i):b+h; }catch(_){ return h; } }; }
+document.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.closest('[data-act="doc-nx"]'); if(!t) return; e.stopPropagation(); const d=shpById(t.dataset.id); if(!d) return;
+  const nx=t.dataset.v; if(nx==="closed"&&!confirm("Закрыть заказ? Акт сдачи вложен.")) return; t.disabled=true;
+  const ok=await shpMoveStage(d,nx); t.disabled=false; if(ok){ toast(nx==="montazh"?"Перенесено на «Монтаж»":"Заказ закрыт"); try{ render(); }catch(_){} } },true);
+{ const st=document.createElement("style"); st.textContent=".doc-nx{margin:0 0 12px;width:100%}"; document.head.appendChild(st); }
 
 /* ===== Кирилл 07.11 (вариант А): «в Материалах — предупреждения: запас ЛДСП сделал? — а то дизайнеры забывают».
    Быстрая смета, шаг «Материалы»: смета сама смотрит цифры. Красное — с кнопками «Добавить» / «Не нужно» (запоминается в смете, q.chk2).
@@ -20874,7 +20886,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="a52e707f39";
+const CHK_BUILD="9ac1b28dfe";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21692,7 +21704,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="a52e707f39";/*cehqr-build*/
+  const BUILD="9ac1b28dfe";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
