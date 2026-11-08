@@ -955,7 +955,8 @@ function partUrl(code){ const base=(S.config.url||"").split("#")[0], k=keyFor(co
 function qrMatrix(text){ const q=qrcode(0,"M"); q.addData(unescape(encodeURIComponent(text))); q.make(); return q; }
 // этапы показываем тем, кто может их отмечать: технолог, мастер с PIN цеха, демо. Клиенту по QR — нет.
 // клиент по QR-ссылке: только красивое изделие и статус, без технических кнопок. Мастер включает «Режим мастера» внизу страницы.
-function clientMode(){ if(!S.site||S.canEdit||S.pin||(typeof siteIsAdmin==="function"&&siteIsAdmin())) return false;
+function clientMode(){ if(S.site&&!S.cliOff&&(window.__cli1=window.__cli1||/[?&]c=1(&|$)/.test(location.search))) return true;   /* ссылка из страницы клиента — всегда вид клиента, даже если на этом телефоне вошёл сотрудник (Кирилл 08.11) */
+  if(!S.site||S.canEdit||S.pin||(typeof siteIsAdmin==="function"&&siteIsAdmin())) return false;
   // мастера, дизайнеры, снабженец и все, кто вошёл в Work24link по PIN, — сотрудники: им видны чертежи
   if((typeof siteIsMasters==="function"&&siteIsMasters())||(typeof siteIsDesigners==="function"&&siteIsDesigners())||(typeof siteIsSupply==="function"&&siteIsSupply())) return false;
   try{ if(["cehqr-pin","cehqr-techpin","cehqr-officepin","cehqr-suppin"].some(k=>localStorage.getItem(k))) return false; }catch(_){} try{ return localStorage.getItem("cehqr-full")!=="1"; }catch(_){ return true; } }
@@ -6226,7 +6227,7 @@ function shpMoneyHtml(){
 /* ---- ссылка клиенту: страница k/#ключ — этап, даты, 3D, сумма и остаток, чат с цехом ---- */
 function shpSiteRoot(){ try{ return new URL(window.SITE_ROOT||"./",location.href).href; }catch(_){ return location.origin+"/"; } }
 function shpKUrl(tok){ return shpSiteRoot()+"k/#"+tok; }
-function shpK3d(o){ const t=String(o.t3d||"").toUpperCase(); try{ const k=t&&typeof keyFor==="function"?keyFor(t):""; if(k) return shpSiteRoot()+"#"+t+"~"+k; }catch(_){} return ""; }
+function shpK3d(o){ const t=String(o.t3d||"").toUpperCase(); try{ const k=t&&typeof keyFor==="function"?keyFor(t):""; if(k) return shpSiteRoot()+"?c=1#"+t+"~"+k; }catch(_){} return ""; }
 function shpKModal(o,url){
   const tel=String(o.phone||"").replace(/\D/g,"").replace(/^8(?=\d{10}$)/,"7"), txt="Здравствуйте! Здесь ваш заказ: этап, даты, проект и чат с нами. "+url;
   const m=document.createElement("div"); m.className="modal"; m.id="shpKModal";
@@ -8548,7 +8549,8 @@ if(typeof smNeed==="function"){ const _smNeedL=smNeed; smNeed=function(d){ const
 /* ---- КЛИЕНТ ПО ССЫЛКЕ: только свой проект. Никаких «Режим мастера», Work24link, входов — ни в меню, ни внизу страницы ---- */
 function siteIsStaff(){ try{ if(["cehqr-pin","cehqr-techpin","cehqr-officepin","cehqr-suppin"].some(k=>localStorage.getItem(k))) return true; }catch(_){}
   return !!(S.canEdit||S.pin||siteIsAdmin()||siteIsMasters()||siteIsDesigners()||siteIsSupply()); }
-if(typeof clientMode==="function"){ clientMode=function(){ if(!S.site) return false; return !siteIsStaff(); }; }   // «cehqr-full» больше не открывает чертежи посторонним
+window.__cli1=window.__cli1||/[?&]c=1(&|$)/.test(location.search);
+if(typeof clientMode==="function"){ clientMode=function(){ if(!S.site) return false; if(!S.cliOff&&window.__cli1) return true; return !siteIsStaff(); }; }   // «cehqr-full» больше не открывает чертежи посторонним
 const _stripFull=h=>String(h).replace(/<p class="home-foot">(?:(?!<\/p>)[\s\S])*?data-act="full-mode"[\s\S]*?<\/p>/g,"").replace(/<button[^>]*data-act="full-mode"[^>]*>[\s\S]*?<\/button>/g,"");
 if(typeof dqMenu==="function"){ const _dqM=dqMenu; dqMenu=function(){ const h=_dqM(); return siteIsStaff()?h:_stripFull(h); }; }
 { const _voC=viewOrders; viewOrders=function(){ const h=_voC(); if(siteIsStaff()) return h;
@@ -20806,7 +20808,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="534ba050a4";
+const CHK_BUILD="96ff3acf4b";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21285,7 +21287,7 @@ document.addEventListener("click", async ev=>{
         const L=buildSteps(S.current.parts); if(!L.length){ toast("Нет деталей с положением в 3D"); return; }
         st._furn0=st.furn; st._krep0=st.krep; st.steps=L; st.stepI=0; st.multiMode=false; document.querySelectorAll('[data-act="asm-steps"]').forEach(b=>{ if(b.closest(".asm-tools")) b.setAttribute("aria-pressed","true"); }); stepsApply(); } } }
   else if(a==="asm-step"){ if(asm&&asm.st.steps){ asm.st.stepI+=+t.dataset.d; stepsApply(); } }
-  else if(a==="full-mode"||a==="client-mode"){ try{ localStorage.setItem("cehqr-full",a==="full-mode"?"1":"0"); }catch(_){} render(); }
+  else if(a==="full-mode"||a==="client-mode"){ S.cliOff=a==="full-mode"; try{ localStorage.setItem("cehqr-full",a==="full-mode"?"1":"0"); }catch(_){} render(); }
   else if(a==="spec-xls"){ dlBlob(`Спецификация ${S.current.orderId}.csv`, new Blob([specCsv()],{type:"text/csv;charset=utf-8"})); }
   else if(a==="spec-print"){ specPrint(); }
   else if(a==="fac-print"){ facadePrint(); }
@@ -21624,7 +21626,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="534ba050a4";/*cehqr-build*/
+  const BUILD="96ff3acf4b";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
