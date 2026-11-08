@@ -70,7 +70,7 @@ form.send textarea{flex:1;min-width:0;min-height:48px;max-height:160px;padding:1
 .att input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .fhint{font-size:14px;color:var(--muted);margin:6px 0 0}
 .ph{list-style:none;margin:0 0 12px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}.ph img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px}
-.hb{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.okk{margin:0;font-weight:600;color:var(--done)}
+.hb{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.akb{display:flex;gap:8px;flex-wrap:wrap}.akb .btn{flex:1 1 140px}.okk{margin:0;font-weight:600;color:var(--done)}
 .rem{border-left:3px solid var(--bad);padding:2px 0 2px 12px;margin:0}.rem p{margin:6px 0}
 .remf{margin-top:12px}.remf label[for]{display:block;margin-bottom:6px}.remf textarea{width:100%;min-height:90px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:16px/1.35 var(--f)}
 .muted{color:var(--muted)}
@@ -150,6 +150,10 @@ function d3Html(o){
   if(!safe(o.link3d)) return "";
   return '<section class="card d3" aria-labelledby="h-3"><h2 id="h-3">Проект в 3D</h2><p>Покрутите мебель пальцем, посмотрите со всех сторон.</p><a class="btn primary" href="'+esc(o.link3d)+'" target="_blank" rel="noopener">Открыть 3D</a></section>';
 }
+var AKT=null;
+function aktHtml(){ var A=AKT; if(!A||!safe(A.url)) return "";
+  var st=A.st==="ok"?'<p class="okk">✓ Вы подтвердили акт. Спасибо!</p>':A.st==="no"?'<div class="rem"><b>Вы сообщили, что не подписывали акт</b><p class="muted">Мы уже разбираемся и позвоним вам.</p></div>':'<p class="muted" style="margin:6px 0 10px">Это ваша копия. Проверьте, что подписывали именно вы.</p><div class="akb"><button type="button" class="btn primary" id="akok">✓ Всё верно</button><button type="button" class="btn" id="akno">Я не подписывал</button></div>';
+  return '<section class="card" aria-labelledby="h-akt"><h2 id="h-akt">📄 Акт сдачи</h2><p>Подписан '+esc(tm(A.when))+' · <a href="'+esc(A.url)+'" target="_blank" rel="noopener">Открыть акт</a></p>'+st+'</section>'; }
 function handHtml(o){
   var H=HAND||{photos:[],accepted:0,remarks:[]}; if(o.stage==="lost") return "";
   if(!H.photos.length&&o.stage!=="montazh"&&o.stage!=="closed") return "";
@@ -212,7 +216,7 @@ function render(){
   document.getElementById("ttl").textContent=o.stage==="lost"?"Заказ закрыт":(o.stage==="closed"?"Заказ готов":"Сейчас: "+(ROUTE[IDX[o.stage]==null?0:IDX[o.stage]][1]));
   var k=document.getElementById("kind"); k.hidden=!o.kind; k.textContent=o.kind||"";
   var ta=document.getElementById("ta"), draft=ta?ta.value:"";
-  main.innerHTML=offerHtml()+'<section class="card" aria-labelledby="h-r"><h2 id="h-r">Как идёт заказ</h2>'+routeHtml(o)+'</section>'+handHtml(o)+factsHtml(o)+(OFFER&&OFFER.vars&&OFFER.vars.length&&!(+o.sum>0)?"":estHtml(o))+d3Html(o)+chatHtml()+'<p class="foot">Это личная ссылка на ваш заказ — не пересылайте её посторонним.</p>';
+  main.innerHTML=aktHtml()+offerHtml()+'<section class="card" aria-labelledby="h-r"><h2 id="h-r">Как идёт заказ</h2>'+routeHtml(o)+'</section>'+handHtml(o)+factsHtml(o)+(OFFER&&OFFER.vars&&OFFER.vars.length&&!(+o.sum>0)?"":estHtml(o))+d3Html(o)+chatHtml()+'<p class="foot">Это личная ссылка на ваш заказ — не пересылайте её посторонним.</p>';
   if(draft) document.getElementById("ta").value=draft;
   bind(); drawMsgs(true);
 }
@@ -222,10 +226,10 @@ function load(first){
   fetch(api("action=client&t="+encodeURIComponent(TOK)+"&since="+(first?0:LAST)),{cache:"no-cache"}).then(function(r){return r.json();}).then(function(j){
     BUSY=false;
     if(!j||!j.ok){ if(first) fail("Ссылка не работает","Возможно, мы выдали вам новую ссылку. Попросите её у мастерской."); return; }
-    var stageWas=ORD&&ORD.stage, handWas=JSON.stringify(HAND), ofWas=JSON.stringify(OFFER); ORD=j.order; if(j.hand) HAND=j.hand; OFFER=j.offer||null; var ofNew=ofWas!==JSON.stringify(OFFER); if(ofNew&&!OFEDIT) OFS=null;
+    var aktWas=JSON.stringify(AKT); if(j.akt!==undefined) AKT=j.akt; var aktNew=aktWas!==JSON.stringify(AKT); var stageWas=ORD&&ORD.stage, handWas=JSON.stringify(HAND), ofWas=JSON.stringify(OFFER); ORD=j.order; if(j.hand) HAND=j.hand; OFFER=j.offer||null; var ofNew=ofWas!==JSON.stringify(OFFER); if(ofNew&&!OFEDIT) OFS=null;
     var have={}; MSGS.forEach(function(m){have[m.when+"|"+m.text]=1;});
     (j.messages||[]).forEach(function(m){ if(!have[m.when+"|"+m.text]){ MSGS.push(m); LAST=Math.max(LAST,m.when);} });
-    if(first||stageWas!==ORD.stage||(handWas!==JSON.stringify(HAND)&&!REM)||(ofNew&&!OFEDIT)) render(); else drawMsgs(false);
+    if(first||aktNew||stageWas!==ORD.stage||(handWas!==JSON.stringify(HAND)&&!REM)||(ofNew&&!OFEDIT)) render(); else drawMsgs(false);
   }).catch(function(){ BUSY=false; if(first) fail("Нет связи","Проверьте интернет и обновите страницу."); });
 }
 function shrink(file){return new Promise(function(ok,bad){var im=new Image(),u=URL.createObjectURL(file);im.onload=function(){var k=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext("2d").drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);ok(c.toDataURL("image/jpeg",0.8).split(",")[1]);};im.onerror=bad;im.src=u;});}
@@ -245,6 +249,10 @@ function send(){
 function post(body){ body.t=TOK; return fetch(URLS,{method:"POST",body:JSON.stringify(body)}).then(function(r){return r.json();}); }
 function errText(j){ return j&&j.error==="often"?"Слишком много сообщений подряд. Подождите несколько минут.":j&&j.error==="big"?"Фото слишком большое. Выберите другое.":"Не отправилось. Проверьте интернет и попробуйте ещё раз."; }
 function bindHand(){
+  var ko=document.getElementById("akok"), kn=document.getElementById("akno");
+  var akGo=function(btn,no){ btn.disabled=true; post({action:no?"clientAktNo":"clientAktOk"}).then(function(j){ btn.disabled=false; if(!j||!j.ok){ btn.textContent=errText(j); return; } AKT=j.akt; render(); load(false); }).catch(function(){ btn.disabled=false; btn.textContent="Нет связи — нажмите ещё раз"; }); };
+  if(ko) ko.addEventListener("click",function(){ akGo(ko,false); });
+  if(kn) kn.addEventListener("click",function(){ if(!kn.dataset.sure){ kn.dataset.sure="1"; kn.textContent="Точно не подписывали? Нажмите ещё раз"; return; } akGo(kn,true); });
   var a=document.getElementById("acc"), rb=document.getElementById("remb"), rf=document.getElementById("remf"), rx=document.getElementById("remx");
   if(a) a.addEventListener("click",function(){ if(!a.dataset.sure){ a.dataset.sure="1"; a.textContent="Подтвердить: работа принята, акт приёмки подписан"; return; }
     a.disabled=true; post({action:"clientAccept"}).then(function(j){ a.disabled=false; if(!j||!j.ok){ a.textContent=errText(j); return; } HAND=HAND||{photos:[],remarks:[]}; HAND.accepted=j.when; HAND.remarks=[]; render(); load(false); }).catch(function(){ a.disabled=false; a.textContent="Нет связи — нажмите ещё раз"; }); });
