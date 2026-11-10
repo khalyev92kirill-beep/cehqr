@@ -4217,7 +4217,7 @@ function staffModal(){ const m=document.createElement("div"); m.className="modal
     <div style="display:grid;gap:8px"><button type="button" class="btn primary" data-staff="mst">Мастер</button><button type="button" class="btn" data-staff="dsg">Дизайнер</button><button type="button" class="btn" data-staff="adm">Технолог</button><button type="button" class="btn" data-staff="sup">Снабженец</button><button type="button" class="btn sm" data-staff="no">Отмена</button></div></div>`;
   document.body.appendChild(m); m.addEventListener("click",e=>{ const b=e.target.closest("[data-staff]"); if(e.target!==m&&!b) return; m.remove();
     if(b&&b.dataset.staff==="mst") roleLinkModal("masters"); else if(b&&b.dataset.staff==="dsg") roleLinkModal("designers"); else if(b&&b.dataset.staff==="adm") adminLoginModal(); else if(b&&b.dataset.staff==="sup") supLoginModal(); }); }
-document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="staff-in"]'); if(!t) return; ev.stopPropagation(); staffModal(); },true);
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="staff-in"]'); if(!t) return; ev.stopPropagation(); if(window.APP_ONE){ location.href=(typeof shpSiteRoot==="function"?shpSiteRoot():"./")+"vertaks/"; return; } staffModal(); },true);   /* 11.11: «Я сотрудник» → вход по роли и PIN */
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="dsg-out"]'); if(!t) return; ev.stopPropagation(); if(!confirm("Выйти из режима дизайнеров на этом телефоне?")) return; delete _ks.designers; keySave(); siteLoadIndex().then(()=>setView("orders")); },true);
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="mst-out"]'); if(!t) return; ev.stopPropagation(); if(!confirm("Выйти из режима мастеров на этом телефоне?")) return; delete _ks.masters; keySave(); siteLoadIndex().then(()=>setView("orders")); },true);
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="adm-in"],[data-act="adm-out"]'); if(!t) return; ev.stopPropagation(); t.dataset.act==="adm-in"?adminLoginModal():adminLogout(); },true);
@@ -18711,6 +18711,34 @@ if(typeof viewShop==="function"){ const _drVS=viewShop; viewShop=function(){ con
     return `<div class="pw-bar"><span>🔒 <b>Короткий PIN</b> ${esc(W.join(", "))} — меньше 6 цифр, его легко подобрать. Поставьте 6 цифр и больше: Google-таблица → лист «Настройки».</span><button type="button" class="btn sm" data-pwx="1">Позже</button></div>`+h; }catch(_){ return h; } }; }
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-pwx]"); if(!b) return; try{ sessionStorage.setItem("w24-pinweak-x","1"); }catch(_){} b.closest(".pw-bar")?.remove(); });
 { const st=document.createElement("style"); st.textContent=".pw-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;margin:0 0 12px;border-radius:14px;border:1px solid #ffb020;background:rgba(255,176,32,.1);font-size:14px}.pw-bar span{flex:1 1 220px}"; document.head.appendChild(st); }
+/* ===== Один вход (Кирилл 11.11, вариант А): роль → PIN → всё открыто. Ключи заказов из Базиса сервер выдаёт по роли (keysGet),
+   ссылку из файла вставлять не нужно. Директор/технолог один раз: «Подключить ключи заказов» (вставить 4 ссылки из «Технолог 3D — ссылки.txt»). ===== */
+const KEYMAP={admin:"master",designers:"designers",masters:"masters",supply:"supply"};
+let keysBusy=false, keysTried="";
+async function keysPull(force){ try{ if(keysBusy||typeof shpPin!=="function"||!shpPin()||!S.site||!S.site.stagesUrl) return; const me=shpPin(); if(!force&&keysTried===me) return; keysTried=me; keysBusy=true;
+    const r=await fetch(shpUrl("action=keysGet&pin="+encodeURIComponent(me)+"&_="+Date.now()),{cache:"no-store"}); const j=await r.json(); keysBusy=false; if(!j||!j.ok) return;
+    S.keysHas=j.has||null; let ch=false; Object.keys(j.keys||{}).forEach(n=>{ const f=KEYMAP[n]; if(f&&_ks[f]!==j.keys[n]){ _ks[f]=j.keys[n]; ch=true; } }); if(ch){ keySave(); if(typeof siteLoadIndex==="function") await siteLoadIndex(); }
+    if(ch||S.keysHas) try{ render(); }catch(_){} }catch(_){ keysBusy=false; } }
+{ const _drSR4=shpSetRole; shpSetRole=function(j){ const r=_drSR4.apply(this,arguments); try{ if(j&&j.role) setTimeout(()=>keysPull(false),50); }catch(_){} return r; }; }
+function keysMissing(){ const H=S.keysHas; return H?Object.keys(KEYMAP).filter(n=>!H[n]):[]; }
+function keysModal(){ document.getElementById("keysM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="keysM";
+  m.innerHTML=`<div class="modal-card keys-c"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">Подключить ключи заказов</h2><button type="button" class="btn sm" data-ky="x">Закрыть</button></div>
+    <p class="muted" style="margin:6px 0 10px">Один раз — и сотрудники входят только по PIN, без ссылок: директор и технолог видят все заказы, дизайнеры, мастера и снабженец — свои.</p>
+    <ol class="keys-ol"><li>На компьютере откройте файл <b>«Технолог 3D — ссылки.txt»</b>.</li><li>Выделите всё (Ctrl+A) и скопируйте (Ctrl+C).</li><li>Вставьте сюда и нажмите «Подключить».</li></ol>
+    <textarea id="keysT" rows="5" placeholder="Вставьте сюда текст файла со ссылками" autocomplete="off" spellcheck="false"></textarea>
+    <p class="keys-st" id="keysSt"></p><button type="button" class="btn primary keys-go" data-ky="go">Подключить</button></div>`;
+  document.body.appendChild(m);
+  m.addEventListener("click",async e=>{ const b=e.target.closest("[data-ky]"); if(e.target===m||(b&&b.dataset.ky==="x")){ m.remove(); return; } if(!b||b.dataset.ky!=="go") return;
+    const t=m.querySelector("#keysT").value, st=m.querySelector("#keysSt"); if(!/#(admin|designers|masters|supply)~/i.test(t)){ st.textContent="Не вижу ссылок с ключами — скопируйте весь текст файла"; return; }
+    b.disabled=true; b.textContent="Подключаю…"; const only=(t.match(/#(admin|designers|masters|supply)~[A-Za-z0-9_-]{20,200}/gi)||[]).join("\n"); const j=await shpPost({action:"keysPut",text:only});   /* на сервер — только ключи, остальной текст файла не уходит */ b.disabled=false; b.textContent="Подключить"; m.querySelector("#keysT").value="";
+    if(!j||j.ok===false){ st.textContent=(j&&j.msg)||"Не получилось — попробуйте ещё раз"; return; }
+    const N={admin:"директор и технолог",designers:"дизайнеры",masters:"мастера",supply:"снабженец"}; toast("Подключено: "+(j.saved||[]).map(x=>N[x]||x).join(", ")); m.remove(); keysPull(true); }); }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="keys-open"]'); if(!t) return; e.stopPropagation(); keysModal(); },true);
+if(typeof viewShop==="function"){ const _drVS2=viewShop; viewShop=function(){ const h=String(_drVS2.apply(this,arguments)); try{ if(!(S.shop&&S.shop.tech)) return h; const L=keysMissing(); if(!L.length||!/^(board|feed)?$/.test(S.shop.mode||"")) return h;
+    let off=""; try{ off=sessionStorage.getItem("w24-keys-x")||""; }catch(_){} if(off) return h; const N={admin:"директор и технолог",designers:"дизайнеры",masters:"мастера",supply:"снабженец"};
+    return `<div class="pw-bar"><span>🔑 <b>Один вход по PIN</b> — подключите ключи заказов, и сотрудникам не придётся вставлять ссылки. Не подключено: ${esc(L.map(x=>N[x]).join(", "))}.</span><button type="button" class="btn sm primary" data-act="keys-open">Подключить</button><button type="button" class="btn sm" data-kyx="1">Позже</button></div>`+h; }catch(_){ return h; } }; }
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-kyx]"); if(!b) return; try{ sessionStorage.setItem("w24-keys-x","1"); }catch(_){} b.closest(".pw-bar")?.remove(); });
+{ const st=document.createElement("style"); st.textContent=".keys-c{width:min(520px,100%)}.keys-ol{margin:0 0 10px;padding-left:20px;line-height:1.6}.keys-c textarea{width:100%;box-sizing:border-box;font:inherit;min-height:110px}.keys-st{color:#e5484d;min-height:1.2em;margin:6px 0}.keys-go{width:100%;min-height:50px}"; document.head.appendChild(st); }
 
 /* ===== Сканер (Кирилл 07.11): «навёл камеру на номер — зафиксировал — сразу без нажатия деталь на 3D»; «сканер внизу не понимает, какой заказ».
    1) Сканер без открытого заказа: сначала «Какой заказ сканируем?», запоминает последний; в окне сверху «Заказ № … [Сменить]».
@@ -19212,7 +19240,7 @@ html.pc #appBar .pc-sw button[aria-pressed="true"],html.pc #appBar>button[aria-c
 html.pc #appBar>button[aria-current="page"] .lb{color:var(--bg,#fff)!important}
 html.vt[data-vt="dark"].pc #appBar .pc-sw button[aria-pressed="true"],html.vt[data-vt="dark"].pc #appBar>button[aria-current="page"]{background:#fff!important;color:#000!important}html.vt[data-vt="dark"].pc #appBar>button[aria-current="page"] .lb{color:#000!important}`; document.head.appendChild(st); })();
 /* заставка: «готово», когда сделки загрузились или показан вход (Кирилл 07.11: «после обновления — пусто, нужен логотип, надпись и проценты») */
-{ const _rdR=render; render=function(){ const r=_rdR.apply(this,arguments); try{ if(!window.__w24Ready&&S.view==="shop"&&S.shop&&(S.shop.loaded||S.shop.err||!(typeof shpPin==="function"&&shpPin())||document.querySelector(".shp-login,.onb-c,.inv-page"))) window.__w24Ready=1; if(!window.__w24Ready&&S.view!=="shop"&&(!window.APP_ONE||(S.view!=="orders"&&!(S.view==="order"&&S.current&&S.current.loading)))) window.__w24Ready=1;   /* 08.11: ссылка/QR на заказ — заставка не ждёт 15 с */   /* в Work24link — только когда открылись сделки или вход, не промежуточный экран */ }catch(_){} return r; }; }
+{ const _rdR=render; render=function(){ const r=_rdR.apply(this,arguments); try{ if(!window.__w24Ready&&S.view==="shop"&&S.shop&&(S.shop.loaded||S.shop.err||!(typeof shpPin==="function"&&shpPin())||document.querySelector(".shp-login,.onb-c,.inv-page"))) window.__w24Ready=1; if(!window.__w24Ready&&S.view!=="shop"&&(!window.APP_ONE||(S.view!=="orders"&&!(S.view==="order"&&S.current&&S.current.loading))||(S.view==="orders"&&!(typeof shpPin==="function"&&shpPin())&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())))) window.__w24Ready=1;   /* 08.11: ссылка/QR на заказ — заставка не ждёт 15 с */   /* в Work24link — только когда открылись сделки или вход, не промежуточный экран */ }catch(_){} return r; }; }
 /* Кирилл 08.11: «на компьютере чертёж больше» — окно чертежа справа от меню (не под ним), чертёж на всю оставшуюся высоту */
 (function(){ const st=document.createElement("style"); st.textContent=`html.pc .fv-win{left:var(--pcbar,220px)}
 html.pc .fv-win .fv-wbody{display:flex;flex-direction:column;min-height:0}
@@ -20907,7 +20935,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="66325961f7";
+const CHK_BUILD="2632c9fd69";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21725,7 +21753,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="66325961f7";/*cehqr-build*/
+  const BUILD="2632c9fd69";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
