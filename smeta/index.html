@@ -14633,7 +14633,7 @@ function prDel(h){
 /* ---- 1) «Все разделы» ---- */
 const PR_GR=[["client","Работа с клиентом",["clients","client","inbset","inb","inbox","smetas","zamers","kp","notes"]],["work","Цех и задачи",["cal","tasks","chats","chess","staff","feed","board"]],
   ["money","Деньги",["money","zp","dpay","pnl","gifts","ofn"]],["stock","Склад и закупка",["stock","ctr","sup","supply","dp-car"]],["set","Настройки и помощь",["help","help-open","cfg","morning","lic","shp-myname","shp-reload","shp-out"]]];
-const PR_MINE={master:["zamers","zp","notes"],supply:["ctr","dp-car","zp","zamers"],office:["clients","smetas","zamers","inbset"],tech:["help","money","dpay","pnl","zp"]};
+const PR_MINE={master:["zamers","zp","notes"],supply:["ctr","dp-car","zp","zamers"],office:["clients","smetas","zamers","inbset"],tech:["help","tasks","cal","zamers","feed"]};
 /* «Что вы хотите сделать?» — действия (ищутся вместе с разделами) */
 const PR_DO=[{t:"Создать сделку",s:"Новый клиент или заказ",k:"создать новая новый сделка заказ клиент добавить",act:"shp-new"},
   {t:"Поставить задачу",s:"Поручить дело человеку на дату",k:"задача задачу поручить поставить напомнить дело",act:"shp-tnew"},
@@ -14755,6 +14755,27 @@ document.addEventListener("change",ev=>{ const t=ev.target; if(!t) return;
 /* после перерисовки: фильтр поиска, «Помощь» в шапке, крупный шрифт; подтверждение удаления — показать */
 if(typeof render==="function"){ const _prR=render; render=function(){ const r=_prR.apply(this,arguments); try{ prFontPaint(); prHelpInject(); prFilter(); if(S.shop&&S.shop.delAsk){ const d=document.querySelector(".pr-danger"); d&&d.scrollIntoView({block:"center"}); } }catch(_){} return r; }; }
 try{ new MutationObserver(()=>{ try{ prFilter(); }catch(_){} }).observe(document.getElementById("view")||document.body,{childList:true}); }catch(_){}
+/* ===== «Все разделы» вкладками (Кирилл 11.11, вариант А): Главное · Деньги · Цех · Клиенты · Настройки; поиск — по всем ===== */
+const PR_TABS=[["main","Главное"],["money","Деньги"],["ceh","Цех"],["cli","Клиенты"],["set","Настройки"]];
+const PR_TG={mine:"main",other:"main",money:"money",work:"ceh",stock:"ceh",client:"cli",set:"set"};
+function prTabs(){ const v=document.getElementById("view"); if(!v) return; const head=v.querySelector(":scope > .pr-allh"); if(!head) return;
+  const find=v.querySelector(":scope > .pr-find"); if(!find) return; let bar=v.querySelector(":scope > .pr-tabs");
+  if(!bar){ bar=document.createElement("div"); bar.className="pr-tabs"; bar.setAttribute("role","tablist"); bar.setAttribute("aria-label","Группы разделов"); find.after(bar); }
+  const q=String(S.prQ||"").trim(), tab=S.prTab||"main", has={};
+  const tabOf=el=>{ if(el.classList.contains("pr-grp")) return el.dataset.g==="do"?"":(PR_TG[el.dataset.g]||"main"); if(el.classList.contains("due-top")) return "main"; if(el.classList.contains("gl-top")) return "money"; if(el.classList.contains("doc-top")) return "cli"; return "set"; };
+  const items=[]; [...v.children].forEach(el=>{ if(el===bar||el===head||el===find||el.tagName==="NAV"||/(^| )(pr-hint|pr-none|vx-nav|vtab|pr-groups)( |$)/.test(el.className)) return; if(el.querySelector&&el.querySelector(".pr-allh")) return; items.push(el); });
+  const grps=[...v.querySelectorAll(".pr-groups > .pr-grp")];
+  grps.concat(items).forEach(el=>{ const t=tabOf(el); if(!t) return; el.dataset.prt=t; const vis=el.classList.contains("pr-grp")?[...el.querySelectorAll("li")].some(li=>li.style.display!=="none"&&!li.hidden):el.style.display!=="none"; if(vis) has[t]=1; });
+  const cur=has[tab]?tab:(PR_TABS.find(x=>has[x[0]])||["main"])[0];
+  const html=PR_TABS.filter(x=>has[x[0]]).map(([k,n])=>`<button type="button" role="tab" data-prtab="${k}" aria-selected="${!q&&k===cur}">${n}</button>`).join("");
+  if(bar.innerHTML!==html) bar.innerHTML=html; bar.hidden=!!q;
+  grps.concat(items).forEach(el=>{ const t=el.dataset.prt; if(t) el.classList.toggle("pr-off",!q&&t!==cur); }); }
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-prtab]"); if(!b) return; e.preventDefault(); S.prTab=b.dataset.prtab; try{ sessionStorage.setItem("w24-prtab",S.prTab); }catch(_){} prTabs(); window.scrollTo({top:0}); },true);
+try{ S.prTab=sessionStorage.getItem("w24-prtab")||"main"; }catch(_){}
+{ const _prF=prFilter; prFilter=function(){ const r=_prF.apply(this,arguments); try{ prTabs(); }catch(_){} return r; }; }
+{ const st=document.createElement("style"); st.textContent=`.pr-tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:10px -16px 0;padding:2px 16px 4px;position:sticky;top:var(--toph,0px);z-index:4;background:var(--bg,#f3f3f6)}.pr-tabs::-webkit-scrollbar{display:none}
+.pr-tabs button{flex:none;min-height:42px;padding:0 16px;border:1px solid var(--line);border-radius:999px;background:var(--surface,#fff);color:inherit;font:inherit;font-size:15px;white-space:nowrap}.pr-tabs button[aria-selected="true"]{background:#2b2f33;color:#fff;border-color:#2b2f33}
+.pr-off{display:none!important}.pr-tabs+*{margin-top:8px}.pr-groups>.pr-grp:not(.pr-off):first-child,.pr-groups>.pr-grp.pr-g-do+.pr-grp{margin-top:8px}`; document.head.appendChild(st); }
 setTimeout(()=>{ prFontPaint(); prHelpInject(); },0); window.addEventListener("load",()=>{ prFontPaint(); prHelpInject(); });
 /* окно профиля (Технолог 3D): «Крупный шрифт» */
 if(typeof accOpen==="function"){ const _prAO=accOpen; accOpen=function(){ const r=_prAO.apply(this,arguments); try{ const c=document.querySelector("#accM .modal-card > div"); if(c&&!document.getElementById("prFontAcc")){ const l=document.createElement("label"); l.className="pr-simple pr-fontsw"; l.innerHTML=`<span><b>Крупный шрифт</b><span class="muted">Буквы и кнопки крупнее</span></span><input type="checkbox" role="switch" id="prFontAcc"${prBig()?" checked":""}>`; c.insertBefore(l,c.firstChild); } }catch(_){} return r; }; }
@@ -17410,7 +17431,7 @@ function qkStepsHtml(c,q,d,sm){ const cur=QK_STEPS.some(x=>x[0]===q.stp)?q.stp:"
   let h=`<nav class="smn-stp qk-stp" aria-label="Шаги сметы">${QK_STEPS.map(([k,n],i)=>`<button type="button" data-qk="stp" data-v="${k}" class="${k===cur?"cur ":""}${st[k]}" aria-current="${k===cur?"step":"false"}"><i aria-hidden="true">${st[k]==="ok"?"✓":st[k]==="warn"?"!":i+1}</i><span>${n}</span></button>`).join("")}</nav>
     <div class="qk-sth"><h2 class="smn-sth">${ix+1}. ${QK_STEPS[ix][1]}</h2>${cur==="mat"?`<button type="button" class="btn sm primary qkv-go" data-qkv="1">🎤 Надиктовать</button>`:""}<button type="button" class="btn sm" data-qk="set">⚙ Мои цены</button></div><p class="smn-hint2">${esc(QK_HINT[cur])}</p><div class="qk">`;
   if(cur==="what"){ const card=(attr,ic,t,sub,on)=>`<button type="button" class="qk-big${on?" on":""}" ${attr}><span class="qk-bi" aria-hidden="true">${ic}</span><span><b>${t}</b><small>${sub}</small></span></button>`;
-    h+=card('data-qk="kupe" data-i="-1"',"🚪","Двери-купе (раздвижные)","ширина и высота проёма, сколько дверей → профиль, зеркало, стекло, ЛДСП",!has)+card('data-qk="door" data-i="-1"',"▥","Распашные двери в алюминиевом профиле","рамка из профиля, стекло, петли")+card('data-qk="stp" data-v="mat"',"✚","Только материалы","ЛДСП, кромка, фурнитура — списком");
+    h+=card('data-qk="kupe" data-i="-1"',"🚪","Двери-купе (раздвижные)","ширина и высота проёма, сколько дверей → профиль, зеркало, стекло, ЛДСП",!has)+card('data-qk="stp" data-v="mat"',"✚","Только материалы","ЛДСП, кромка, фурнитура — списком");
     if((q.pr||[]).length) h+=qkWardListHtml(c,q); if((q.kp||[]).length) h+=kpqListHtml(c,q); if((q.dr||[]).length) h+=qkProfHtml(c,q); }
   if(cur==="mat") h+=qkMatListHtml(c,q);   /* Кирилл 07.11: всё списком по порядку */
   if(cur==="price") h+=qkExHtml(c,q)+qkKHtml(c,d)+qkInHtml()+qkSumHtml(c,sm).replace(/<div class="qk-acts">[\s\S]*?<\/div><\/section>$/,"</section>");
@@ -17432,7 +17453,7 @@ function qkHtml(){ const sm=S.shop.sm, d=sm.data; if(!QK.set) setTimeout(qkLoad,
 /* Кирилл 07.11: «быструю и подробную смету — крупно, сейчас непонятно»: новая смета начинается с выбора из двух больших карточек */
 function qkPickHtml(){ const sm=S.shop.sm, back=`<button type="button" class="btn sm smn-crumb" data-act="sm-back">‹ Сметы</button>`;
   return `<div class="head sm-head"><div>${back}<h1>${esc([sm.kind,sm.client].filter(Boolean).join(" · ")||"Новая смета")}</h1><p class="muted" style="margin:4px 0 0">Как будем считать?</p></div></div>
-  <div class="qk-pick"><button type="button" class="qk-pc" data-qk="pickq"><span class="qk-pi" aria-hidden="true">⚡</span><b>Быстрая смета</b><small>Двери в алюминиевом профиле и материалы списком. 2–3 минуты.</small></button>
+  <div class="qk-pick"><button type="button" class="qk-pc" data-qk="pickq"><span class="qk-pi" aria-hidden="true">⚡</span><b>Быстрая смета</b><small>Двери-купе и материалы списком. 2–3 минуты.</small></button>
   <button type="button" class="qk-pc" data-qk="proj"><span class="qk-pi" aria-hidden="true">🏠</span><b>Проект — как в Базис-Салоне</b><small>Комната, модули из каталога на стену, 3D, замена материалов на всю кухню, цена сразу.</small></button></div>`; }
 function qkPickNeed(sm){ const d=sm&&sm.data; return !!(d&&d.qk&&!d.picked&&!sm.saved&&qkEmpty(d.qk)&&!(d.mods||[]).length); }
 const _qkH=smHtml; smHtml=function(){ const sm=S.shop.sm; if(sm&&!sm.busy&&qkPickNeed(sm)&&S.shop.full&&!S.shop.smClient&&!(S.shop.smPane==="var")) return qkPickHtml(); if(sm&&!sm.busy&&sm.data&&sm.data.qk&&S.shop.full&&!(S.shop.smPane==="var")) return qkHtml();
@@ -18579,7 +18600,7 @@ function dirModal(){ document.getElementById("dirM")?.remove(); const m=document
       S.shop.techPin=v; try{ localStorage.setItem("cehqr-techpin",v); }catch(_){} S.shop.hasDir=true; S.shop.dir=true; toast("PIN директора назначен — вы вошли как директор"); m.remove(); render(); } }); }
 document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest("[data-act]"); if(!t) return; if(t.dataset.act==="dir-in"){ e.stopPropagation(); dirLoginStart(); } else if(t.dataset.act==="dir-open"){ e.stopPropagation(); dirModal(); } },true);
 /* «Все разделы»: строка директора — под режимом фирмы */
-if(typeof shpMoreHtml==="function"){ const _drM=shpMoreHtml; shpMoreHtml=function(){ let h=String(_drM.apply(this,arguments)); if(dirIs()) h=`<div class="firm-top dir-top"><span>👑 <b>Директор и права технолога</b></span><button type="button" class="btn" data-act="dir-open">Открыть</button></div>`+h; return h; }; }
+if(typeof shpMoreHtml==="function"){ const _drM=shpMoreHtml; shpMoreHtml=function(){ let h=String(_drM.apply(this,arguments)); if(dirIs()) h=`<div class="firm-top dir-top"><span>🔐 <b>Права сотрудников</b><small style="display:block;color:var(--muted);font-size:13px;font-weight:400">кто что может · PIN директора</small></span><button type="button" class="btn" data-act="dir-open">Открыть</button></div>`+h; return h; }; }
 if(typeof prAllHtml==="function"){ const _drA=prAllHtml; prAllHtml=function(){ let o=String(_drA.apply(this,arguments)); const m=o.match(/<div class="firm-top dir-top">[\s\S]*?<\/button><\/div>/); if(!m) return o; o=o.replace(m[0],""); const i=o.indexOf('<label class="pr-simple">'); return i<0?m[0]+o:o.slice(0,i)+m[0]+o.slice(i); }; }
 (function(){ const H=v=>`li:has(> [data-act="shp-tab"][data-v="${v}"]),[data-act="shp-tab"][data-v="${v}"],[data-dv="${v}"]`; const st=document.createElement("style");
   st.textContent=`body.tl-del [data-act="shp-del"],body.tl-del [data-act="df-del"],body.tl-del [data-act="ct-del"],body.tl-del [data-act="ctm-del"]{display:none!important}
@@ -18890,7 +18911,7 @@ async function tzLoad(id){ const j=await shpGet("action=tzGet&deal="+encodeURICo
 function tzSpecSum(id){ const R=(typeof dealSpecRows==="function"&&dealSpecRows(id))||[]; let sum=0, no=0; R.forEach(r=>{ const it=typeof catFind==="function"?catFind(r.name):null, p=it&&typeof catPriceNum==="function"?catPriceNum(it):0; if(p>0) sum+=p*(+r.qty||0); else no++; }); return {sum:Math.round(sum),no,n:R.length}; }
 /* Кирилл 07.11 (вариант А): «дизайнеры в Базисе — модель, листочки, любой файл, чтобы технолог взял данные». Файлы ТЗ — в «Файлах сделки» с началом «ТЗ · ». */
 const TZF="ТЗ · ";
-function tzFiles(id){ const L=S.df&&S.df[id]; if(L===undefined){ S.df=S.df||{}; S.df[id]="busy"; shpGet("action=dfiles&order="+encodeURIComponent(id),true).then(j=>{ S.df[id]=j&&Array.isArray(j.files)?j.files:"err"; if(S.view==="shop"&&S.shop.cur===id) shpRenderKeep(); }); }
+function tzFiles(id){ const L=S.df&&S.df[id]; if(L===undefined){ S.df=S.df||{}; S.df[id]="busy"; shpGet("action=dfiles&order="+encodeURIComponent(id),true).then(j=>{ S.df[id]=j&&Array.isArray(j.files)?j.files:"err"; if(S.view==="shop"&&S.shop.cur===id) shpRenderKeep(); else if(S.view==="order"&&!document.querySelector(".modal")) try{ render(); }catch(_){} }); }   /* 11.11: в заказе из Базиса «Акт сдачи» обновляется, когда файлы пришли */
   return Array.isArray(L)?L.filter(f=>String(f.name).indexOf(TZF)===0):[]; }
 function tzFIc(n){ return /\.(b3d|bpr|bdb|dwg|dxf|s3d)$/i.test(n)?"📦":/\.(jpe?g|png|heic|webp)$/i.test(n)?"🖼":"📄"; }
 function tzFKb(n){ return n>=1048576?(n/1048576).toFixed(1).replace(".",",")+" МБ":n>0?Math.max(1,Math.round(n/1024))+" КБ":""; }
@@ -20936,7 +20957,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="2632c9fd69";
+const CHK_BUILD="5c2e779f37";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21055,7 +21076,7 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
     if(FAB){ if(FAB.parentNode!==document.body&&!FAB.classList.contains("drag")&&!FAB.classList.contains("rec")) document.body.appendChild(FAB); return; }
     const b=document.createElement("button"); FAB=b; b.type="button"; b.className="ai-fab"; b.setAttribute("aria-label","Спросить ИИ-помощника"); b.title="ИИ-помощник: спросить голосом или текстом"; b.textContent="🎤"; aiDrag(b); document.body.appendChild(b); aiPlace(b); };
   /* Кирилл 05.11: кнопку можно перетащить пальцем куда угодно (место запоминается); нажатие без сдвига — открыть помощника */
-  function aiPlace(b){ let p=null; try{ p=JSON.parse(localStorage.getItem("cehqr-ai-pos")||"null"); }catch(_){} if(!p) return; const x=Math.min(Math.max(4,p.x*innerWidth),innerWidth-58), y=Math.min(Math.max(4,p.y*innerHeight),innerHeight-58); b.style.left=x+"px"; b.style.top=y+"px"; b.style.right="auto"; b.style.bottom="auto"; b.dataset.moved="1"; }
+  function aiPlace(b){ let p=null; try{ p=JSON.parse(localStorage.getItem("cehqr-ai-pos")||"null"); }catch(_){} if(!p) return; const x=Math.min(Math.max(4,p.x*innerWidth),innerWidth-58), y=Math.min(Math.max(120,p.y*innerHeight),innerHeight-58); b.style.left=x+"px"; b.style.top=y+"px"; b.style.right="auto"; b.style.bottom="auto"; b.dataset.moved="1"; }
   /* Кирилл 05.11: нажал — помощник; потащил — переставить; ДЕРЖИШЬ (0,45 с) и говоришь — отпустил, и сказанное уходит в «Мои заметки» */
   function aiDrag(b){ let sx,sy,ox,oy,mv=false,on=false,ht=0,hold=null;
     const holdStart=()=>{ const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR){ toast("Голос на этом телефоне не работает"); return; }
@@ -21072,7 +21093,7 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
     b.addEventListener("pointerdown",e=>{ on=true; mv=false; sx=e.clientX; sy=e.clientY; const r=b.getBoundingClientRect(); ox=r.left; oy=r.top; try{ b.setPointerCapture(e.pointerId); }catch(_){}
       clearTimeout(ht); ht=setTimeout(()=>{ if(on&&!mv) holdStart(); },450); });
     b.addEventListener("pointermove",e=>{ if(!on||hold) return; const dx=e.clientX-sx, dy=e.clientY-sy; if(!mv&&Math.hypot(dx,dy)<8) return; mv=true; clearTimeout(ht); b.classList.add("drag");
-      const x=Math.min(Math.max(4,ox+dx),innerWidth-58), y=Math.min(Math.max(4,oy+dy),innerHeight-58); b.style.left=x+"px"; b.style.top=y+"px"; b.style.right="auto"; b.style.bottom="auto"; b.dataset.moved="1"; });
+      const x=Math.min(Math.max(4,ox+dx),innerWidth-58), y=Math.min(Math.max(120,oy+dy),innerHeight-58); b.style.left=x+"px"; b.style.top=y+"px"; b.style.right="auto"; b.style.bottom="auto"; b.dataset.moved="1"; });
     b.addEventListener("pointerup",()=>{ if(!on) return; on=false; clearTimeout(ht); b.classList.remove("drag");
       if(hold){ holdStop(); return; }
       if(mv){ const r=b.getBoundingClientRect(); try{ localStorage.setItem("cehqr-ai-pos",JSON.stringify({x:r.left/innerWidth,y:r.top/innerHeight})); }catch(_){} } else aiOpen(); });
@@ -21086,7 +21107,7 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
   if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",fab); else fab(); setInterval(fab,1000);
   /* Кирилл 05.11: «кнопка иногда исчезает» — держим её всегда на экране: поверх полноэкранных окон, внутри экрана после поворота и смены размера */
   const keep=()=>{ fab(); const b=FAB; if(!b) return; b.hidden=false; if(getComputedStyle(b).display==="none") b.style.setProperty("display","block","important");
-    if(b.dataset.moved){ const r=b.getBoundingClientRect(); if(r.right>innerWidth||r.bottom>innerHeight||r.left<0||r.top<0){ b.style.left=Math.min(Math.max(4,r.left),innerWidth-58)+"px"; b.style.top=Math.min(Math.max(4,r.top),innerHeight-58)+"px"; } } };
+    if(b.dataset.moved){ const r=b.getBoundingClientRect(); if(r.right>innerWidth||r.bottom>innerHeight||r.left<0||r.top<0){ b.style.left=Math.min(Math.max(4,r.left),innerWidth-58)+"px"; b.style.top=Math.min(Math.max(120,r.top),innerHeight-58)+"px"; } } };
   window.addEventListener("resize",keep); window.addEventListener("orientationchange",()=>setTimeout(keep,300)); setInterval(keep,1500);
   /* баннер «Не хватает фурнитуры» внизу — кнопку поднимаем над ним, чтобы не пряталась */
   setInterval(()=>{ const f=document.querySelector(".ai-fab"); if(!f||f.dataset.moved) return; const b=document.getElementById("fmBan"); const r=b&&!b.hidden&&b.offsetParent!==null?b.getBoundingClientRect():null;
@@ -21265,6 +21286,30 @@ html.pc .ai-wrap{justify-content:flex-end;padding:0 16px}html.pc .ai-wrap .ai-ca
 .kb-st button b{margin-left:6px;font-weight:700}.kb-st button.on{background:#2b2f33;color:#fff;border-color:#2b2f33}
 .kb-arw{display:flex;align-items:center;gap:6px;margin-left:auto}.kb-ar{width:40px;height:40px;border:1px solid var(--line);border-radius:10px;background:var(--surface,#fff);color:inherit;font-size:22px;line-height:1}.kb-ar:disabled{opacity:.3}.kb-pos{font-size:12.5px;color:var(--muted);white-space:nowrap}
 @media (min-width:900px){.kb-nav,.kb-arw{display:none}}`; document.head.appendChild(st5);
+  /* ===== Кирилл 11.11 (вариант А+А): на телефоне один этап — весь экран; закрытые — вкладка «✓ Сдано» по месяцам, отказы — «✕ Отказ»; кнопка «Показать закрытые» не нужна ===== */
+  const KB_MON=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+  const kbPh=()=>innerWidth<900;
+  function kbMonths(kb){ const col=kb.querySelector('.shp-col[data-st="closed"]'), b=col&&col.querySelector(".shp-colb"); if(!b||b.dataset.mon) return; b.dataset.mon="1";
+    const O={}; ((S.shop&&S.shop.orders)||[]).forEach(o=>{ O[o.id]=o; }); let last="", grp=null; const G=[];
+    b.querySelectorAll(":scope > .shp-card").forEach(c=>{ const o=O[c.dataset.id], t=o&&(o.stageAt||o.created), d=t?new Date(t):null, k=d?d.getFullYear()*12+d.getMonth():-1;
+      if(String(k)!==last){ last=String(k); const h=document.createElement("p"); h.className="kb-mon"; h.dataset.y=d?d.getFullYear():""; h.textContent=d?KB_MON[d.getMonth()]+(d.getFullYear()!==new Date().getFullYear()?" "+d.getFullYear():""):"Без даты"; c.before(h); grp={h,cards:[]}; G.push(grp); }
+      grp.cards.push(c); });
+    b._mon=G; kbMonSync(kb); }
+  function kbMonSync(kb){ const b=kb.querySelector('.shp-col[data-st="closed"] .shp-colb'); if(!b||!b._mon) return;
+    b._mon.forEach(g=>{ const vis=g.cards.filter(c=>!c.hidden), sum=vis.reduce((a,c)=>a+(+c.dataset.sum||0),0); g.h.hidden=!vis.length;
+      const base=g.h.textContent.split(" · ")[0]; g.h.textContent=base+" · "+vis.length+(sum?" · "+shpKbSum(sum):""); }); }
+  function kbPhoneCols(){ if(!kbPh()) return; const kb=document.getElementById("shpKb"); if(!kb) return; const q=String(S.shop.q||"").trim();
+    kb.querySelectorAll(':scope > .shp-col[data-st="closed"],:scope > .shp-col[data-st="lost"]').forEach(col=>{ const n=col.querySelectorAll(".shp-card:not([hidden])").length, cl=col.dataset.st==="closed";
+      const h=col.querySelector(".shp-colh h2"); if(h&&!h.dataset.kbn){ h.dataset.kbn="1"; h.textContent=cl?"Сдано":"Отказ"; }
+      col.hidden=cl?(!!(q||S.shop.mine)&&n===0):n===0; });
+    kbMonths(kb); kbMonSync(kb);
+    const sig=kbCols(kb).map(c=>c.dataset.st).join(","); if(kb.dataset.kbn&&kb._sig!==undefined&&kb._sig!==sig){ const nav=kb.previousElementSibling; if(nav&&nav.classList.contains("kb-nav")) nav.remove(); kb.querySelectorAll(".kb-arw").forEach(x=>x.remove()); delete kb.dataset.kbn; }
+    kb._sig=sig; }
+  if(typeof shpApplyFilter==="function"){ const _kbF=shpApplyFilter; shpApplyFilter=function(){ const r=_kbF.apply(this,arguments); try{ kbPhoneCols(); }catch(_){} return r; }; }
+  { const _kbE=kbEnhance; kbEnhance=function(){ try{ kbPhoneCols(); }catch(_){} return _kbE.apply(this,arguments); }; }
+  const st6=document.createElement("style"); st6.textContent=`@media (max-width:899px){.shp-kb{gap:16px}.shp-kb .shp-col{flex:0 0 calc(100vw - 32px);max-width:none}.kb-arw{display:none!important}.shp-cltog{display:none!important}
+.shp-kb .shp-colh{flex-wrap:wrap}.kb-mon{margin:10px 4px 2px;font-size:14px;font-weight:700;color:var(--muted)}.kb-mon:first-child{margin-top:0}.kb-mon[hidden]{display:none}
+.shp-col[data-st="closed"] .shp-colh h2{color:#1f8a4c}}`; document.head.appendChild(st6);
 })();
 
 /* ===== Оформление «чёрный фон, белый текст, без рамок» (Кирилл 05.11, по образцу банковского приложения) =====
@@ -21754,7 +21799,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="2632c9fd69";/*cehqr-build*/
+  const BUILD="5c2e779f37";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
