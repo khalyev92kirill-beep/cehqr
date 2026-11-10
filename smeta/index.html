@@ -7058,7 +7058,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
     t.disabled=true; const j=await shpPost({action:"receiptDel",order:oid,id}); S.shop.rcDel=null; if(j){ S.shop.rc[oid]=(S.shop.rc[oid]||[]).filter(r=>r.id!==id); const o=shpById(oid); if(o) o.receiptsTotal=S.shop.rc[oid].reduce((x,r)=>x+(+r.sum||0),0); toast("Чек удалён"); } shpRenderKeep(); return; }
   if(a==="shp-out"){ if(!(await appConfirm("Выйти из приложения на этом телефоне?","Выйти"))) return;
     const wasT=!!S.shop.techPin, wasO=!!S.shop.officePin, wasS=!!S.shop.supPin;
-    if(wasT){ S.shop.techPin=""; try{ localStorage.removeItem("cehqr-techpin"); }catch(_){} }
+    if(wasT){ S.shop.techPin=""; try{ ["cehqr-techpin","w24-pin-dir","w24-pin-tech"].forEach(k=>localStorage.removeItem(k)); }catch(_){} }
     if(wasO){ S.shop.officePin=""; try{ localStorage.removeItem("cehqr-officepin"); }catch(_){} }
     if(wasS) shpSupOut();
     if(!wasT&&!wasO&&!wasS){ S.pin=""; try{ localStorage.removeItem("cehqr-pin"); }catch(_){} }
@@ -11284,8 +11284,8 @@ function accOpen(){ document.getElementById("accM")?.remove(); const R=accRoles(
     if(o){ m.remove(); const x=document.createElement("button"); x.dataset.act=o; x.hidden=true; document.body.appendChild(x); x.click(); x.remove(); return; }
     if(a==="pin"){ m.remove(); S.pin=""; try{ localStorage.removeItem("cehqr-pin"); }catch(_){} toast("Вы вышли из отметки этапов"); render(); return; }
     if(a==="all"){ if(typeof appConfirm==="function"&&!(await appConfirm("Выйти из всех режимов на этом телефоне?","Выйти"))) return; m.remove();
-      try{ ["cehqr-pin","cehqr-techpin","cehqr-officepin","cehqr-suppin"].forEach(k=>localStorage.removeItem(k)); }catch(_){} S.pin="";
-      try{ delete _ks.master; delete _ks.masters; delete _ks.designers; delete _ks.supply; keySave(); }catch(_){}
+      try{ ["cehqr-pin","cehqr-techpin","cehqr-officepin","cehqr-suppin","w24-pin-dir","w24-pin-tech","w24-altpin","w24-des"].forEach(k=>localStorage.removeItem(k)); sessionStorage.removeItem("w24-newfirm");   /* 11.11: выход стирает всё */ }catch(_){} S.pin="";
+      try{ delete _ks.master; delete _ks.masters; delete _ks.designers; delete _ks.supply; delete _ks.orders; keySave(); }catch(_){}
       toast("Вы вышли"); if(typeof siteLoadIndex==="function") siteLoadIndex().then(()=>setView("orders")); else location.reload(); } });
   document.body.appendChild(m); }
 document.addEventListener("click",ev=>{ const r=ev.target.closest&&ev.target.closest("#role.acc-btn"); if(!r) return; ev.stopPropagation(); ev.preventDefault(); accOpen(); },true);
@@ -18706,6 +18706,12 @@ document.addEventListener("change",async e=>{ const c=e.target.closest&&e.target
   if(!j||j.ok===false){ c.checked=!want; toast("Не сохранилось — попробуйте ещё раз"); return; }
   (S.shop.cfgAll||(S.shop.cfgAll={})).officeRights=R; toast(want?nm+" — главный дизайнер":nm+" — больше не главный дизайнер"); });
 { const st=document.createElement("style"); st.textContent=".glv-sw{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;margin:0 0 12px}.glv-sw span{display:flex;flex-direction:column;gap:2px}.glv-sw small{color:var(--muted,#777);font-size:13px}.glv-sw input{width:46px;height:26px;flex:none}"; (document.head||document.documentElement).appendChild(st); }
+/* 11.11: короткие PIN (меньше 6 цифр) — напоминание директору/технологу на «Сделках» (защита от подбора) */
+{ const _drSR3=shpSetRole; shpSetRole=function(j){ const r=_drSR3.apply(this,arguments); try{ S.shop.pinWeak=j&&j.pinWeak||null; }catch(_){} return r; }; }
+if(typeof viewShop==="function"){ const _drVS=viewShop; viewShop=function(){ const h=String(_drVS.apply(this,arguments)); try{ const W=S.shop&&S.shop.tech&&S.shop.pinWeak; if(!W||!W.length||!/^(board|feed)?$/.test(S.shop.mode||"")) return h; let off=""; try{ off=sessionStorage.getItem("w24-pinweak-x")||""; }catch(_){} if(off) return h;
+    return `<div class="pw-bar"><span>🔒 <b>Короткий PIN</b> ${esc(W.join(", "))} — меньше 6 цифр, его легко подобрать. Поставьте 6 цифр и больше: Google-таблица → лист «Настройки».</span><button type="button" class="btn sm" data-pwx="1">Позже</button></div>`+h; }catch(_){ return h; } }; }
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-pwx]"); if(!b) return; try{ sessionStorage.setItem("w24-pinweak-x","1"); }catch(_){} b.closest(".pw-bar")?.remove(); });
+{ const st=document.createElement("style"); st.textContent=".pw-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;margin:0 0 12px;border-radius:14px;border:1px solid #ffb020;background:rgba(255,176,32,.1);font-size:14px}.pw-bar span{flex:1 1 220px}"; document.head.appendChild(st); }
 
 /* ===== Сканер (Кирилл 07.11): «навёл камеру на номер — зафиксировал — сразу без нажатия деталь на 3D»; «сканер внизу не понимает, какой заказ».
    1) Сканер без открытого заказа: сначала «Какой заказ сканируем?», запоминает последний; в окне сверху «Заказ № … [Сменить]».
@@ -19402,7 +19408,7 @@ const staff=[{name:'Иван',role:'Технолог'},{name:'Айна',role:'Д
   if(a==='firmSetup'){ void('LOG firmSetup',PD.slice(0,120)); j={ok:true}; }
   if(a==='invPeek') j={ok:true,status:'wait',name:'Милена',role:'office',exp:Date.now()+5e8,firm:'Мебель Север',pinOk:true};
   if(a==='invPin'){ void('LOG invPin'); j={ok:true,session:'tgs.AAAAAAAAAAAA.BBBBBBBBBBBBBBBBBBBBBBBB',name:'Милена',role:'office',exp:Date.now()+1e9}; }
-  if(a==='invList') j={ok:true,items:ENV.INVL?[{code:'a'.repeat(32),name:'Айтал',role:'master',status:'used',at:Date.now()-3e6,exp:Date.now()+5e8},{code:'b'.repeat(32),name:'Милена',role:'office',status:'wait',exp:Date.now()+5e8},{code:'c'.repeat(32),name:'Коля',role:'supply',status:'wait',exp:Date.now()+5e8,phone:'89141234567'}]:[],days:7};
+  if(a==='invList') j={ok:true,items:ENV.INVL?[{code:'a'.repeat(32),name:'Айтал',role:'master',status:'used',at:Date.now()-3e6,exp:Date.now()+5e8},{code:'b'.repeat(32),name:'Милена',role:'office',status:'wait',exp:Date.now()+5e8},{code:'c'.repeat(32),name:'Коля',role:'supply',status:'wait',exp:Date.now()+5e8,phone:'89140000003'}]:[],days:7};
   if(a==='invNew') j={ok:true,code:'d'.repeat(32),exp:Date.now()+6e8,name:'Коля',role:'supply'};
   if(a==='linkNeed'){ void('LOG linkNeed',PD.slice(0,200)); j={ok:true,made:1}; }
     return j; }
@@ -20902,7 +20908,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="50e5ea0d69";
+const CHK_BUILD="66325961f7";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21720,7 +21726,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="50e5ea0d69";/*cehqr-build*/
+  const BUILD="66325961f7";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
