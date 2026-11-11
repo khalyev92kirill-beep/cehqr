@@ -13445,6 +13445,94 @@ document.head.appendChild(st);
 /* вход в «Заметки офиса» из меню — всегда со списка тем (Кирилл 11.11: «не зависало, как в Разборе договоров») */
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-v="ofn"],[data-dv="ofn"]'); if(b&&S.of){ S.of.topic=null; S.of.edit=null; } },true);
 
+/* ===== «Касса» — наличные и у кого они на руках (Кирилл 11.11, вариант А) =====
+   Сервер: GET kassa, POST kassaAdd / kassaDel (лист «Касса»). Директор (и технолог с правом «Деньги») видит всех,
+   остальные (офис, снабженец, технолог без права) — только свои деньги и свои записи.
+   Принял — у человека прибавилось (по сделке можно сразу засчитать в оплату); Выдал / потратил — убавилось; Передал — от одного к другому.
+   Зарплата и авансы наличными сами идут расходом (из «Выплат»). ===== */
+(function(){
+const KS={data:null,loading:false,err:false,_last:""};
+const ke=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const rub=v=>(Math.round(+v||0)).toLocaleString("ru-RU")+" ₽";
+const kOk=()=>typeof shpPin==="function"&&!!shpPin()&&!!(S.shop&&(S.shop.techPin||S.shop.officePin||S.shop.supPin));
+SHP_I.cash='<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 10v4M18 10v4"/>';
+async function ksLoad(){ if(KS.loading) return; KS.loading=true; const j=await shpGet("action=kassa&who="+encodeURIComponent(shpWho()),!!KS.data); KS.loading=false;
+  if(j){ KS.data=j; KS.err=false; } else if(!KS.data) KS.err=true; ksRedraw(); }
+function ksRedraw(){ if(S.view==="shop"&&S.shop&&S.shop.mode==="kassa"&&!document.querySelector(".modal")&&typeof shpRenderKeep==="function") shpRenderKeep(); }
+function ksWhen(ms){ const d=new Date(ms), t=new Date(), y=new Date(Date.now()-864e5), hm=d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
+  return d.toDateString()===t.toDateString()?"сегодня "+hm:d.toDateString()===y.toDateString()?"вчера "+hm:d.toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"})+" "+hm; }
+function ksDeal(id){ const o=id&&typeof shpById==="function"?shpById(id):null; return o?shpTitle(o):""; }
+function ksHtml(){ const D=KS.data;
+  let h=`<div class="ks-wrap"><div class="ks-head"><h2>Касса</h2><button type="button" class="btn sm" data-ks="reload" aria-label="Обновить">↻</button></div>`;
+  if(!D) return h+(KS.err?`<p class="note">Не получилось загрузить кассу. <button type="button" class="linkbtn" data-ks="reload">Ещё раз</button></p>`:`<p class="muted">Загружаю…</p>`)+`</div>`;
+  const me=shpNorm(shpWho());
+  h+=`<section class="ks-card">${D.all?`<p class="muted ks-l">Наличных всего</p><p class="ks-big">${rub(D.total)}</p>`
+    :`<p class="muted ks-l">У вас на руках</p><p class="ks-big">${rub((D.hold.find(x=>shpNorm(x.name)===me)||{sum:0}).sum)}</p>`}
+    ${D.all&&D.hold.length?D.hold.map(x=>`<div class="ks-pp"><span>${ke(x.name)}</span><b class="${x.sum<0?"ks-neg":""}">${rub(x.sum)}</b></div>`).join(""):""}</section>`;
+  h+=`<div class="ks-bt"><button type="button" class="ks-in" data-ks="add" data-t="in">+ Принял</button><button type="button" class="ks-out" data-ks="add" data-t="out">− Выдал</button><button type="button" class="ks-mv" data-ks="add" data-t="move">⇄ Передал</button></div>`;
+  if(!D.ops.length) return h+`<p class="note">Записей пока нет. Начните с остатка: «+ Принял» → сумма, что сейчас в кассе, комментарий «остаток на начало».</p></div>`;
+  h+=`<section class="ks-card ks-ops">${D.ops.map(o=>{ const dl=ksDeal(o.deal), sg=o.t==="in"?"+":o.t==="out"?"−":"", cls=o.t==="in"?"ks-p":o.t==="out"?"ks-m":"ks-v";
+      const who=o.t==="move"?`${ke(o.holder)} → ${ke(o.to)}`:(o.t==="in"?"принял ":"выдал ")+ke(o.holder);
+      const can=!o.zp&&(D.all||(shpNorm(o.by)===me&&new Date(o.when).toDateString()===new Date().toDateString()));
+      return `<div class="ks-op"><div class="ks-ot"><b>${ke(o.note||dl||(o.t==="in"?"Приход":o.t==="out"?"Расход":"Передача"))}</b><small>${ksWhen(o.when)} · ${who}${dl&&o.note?" · "+ke(dl):""}${o.zp?" · из выплат":""}${o.photo?` · <a href="${ke(o.photo)}" target="_blank" rel="noopener">📷 чек</a>`:""}</small></div><b class="${cls}">${sg}${(Math.round(o.sum)).toLocaleString("ru-RU")}</b>${can?`<button type="button" class="ks-x" data-ks="del" data-id="${ke(o.id)}" aria-label="Удалить запись">✕</button>`:""}</div>`; }).join("")}</section>`;
+  return h+`</div>`; }
+function ksForm(t){ const D=KS.data||{people:[],hold:[]}, me=shpWho();
+  const names=[...new Set([me].concat(D.people||[],(D.hold||[]).map(x=>x.name)).filter(Boolean))];
+  const opt=(sel)=>names.map(n=>`<option${shpNorm(n)===shpNorm(sel)?" selected":""}>${ke(n)}</option>`).join("");
+  const deals=(S.shop.orders||[]).filter(o=>o.stage!=="lost").slice(0,300);
+  const T={in:"Принял наличные",out:"Выдал / потратил",move:"Передал другому"};
+  const x=document.createElement("div"); x.className="modal"; x.id="ksM";
+  x.innerHTML=`<form class="modal-card ks-f" data-ksform="${t}"><h2 style="margin:0 0 10px">${T[t]}</h2>
+    <div class="ks-seg" role="radiogroup">${["in","out","move"].map(k=>`<button type="button" data-ks="seg" data-t="${k}" aria-pressed="${k===t}">${k==="in"?"Принял":k==="out"?"Выдал":"Передал"}</button>`).join("")}</div>
+    <label>Сумма, ₽<input name="sum" inputmode="decimal" required maxlength="12" autocomplete="off"></label>
+    ${D.all?`<label>${t==="move"?"От кого":"У кого деньги"}<select name="holder">${opt(me)}</select></label>`:""}
+    ${t==="move"?`<label>Кому<select name="to"><option value="">— выберите —</option>${names.filter(n=>shpNorm(n)!==shpNorm(me)||D.all).map(n=>`<option>${ke(n)}</option>`).join("")}</select></label>`:""}
+    ${t!=="move"?`<label>Сделка <span class="muted">(если по заказу)</span><select name="deal"><option value="">— без сделки —</option>${deals.map(o=>`<option value="${ke(o.id)}">${ke(shpTitle(o))}</option>`).join("")}</select></label>`:""}
+    ${t==="in"?`<label class="ks-chk" hidden><input type="checkbox" name="pay" checked> Засчитать в оплату сделки</label>`:""}
+    <label>Комментарий<input name="note" maxlength="200" placeholder="${t==="in"?"предоплата, остаток, из банка…":t==="out"?"на что: фурнитура, бензин…":"под отчёт на закупку…"}"></label>
+    ${t!=="in"?`<label>Фото чека <span class="muted">(можно не прикладывать)</span><input name="f" type="file" accept="image/*"></label>`:""}
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" type="submit">Записать</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
+  document.body.appendChild(x); setTimeout(()=>{ const i=x.querySelector("[name=sum]"); i&&i.focus(); },50);
+  const dsel=x.querySelector("[name=deal]"), chk=x.querySelector(".ks-chk"); if(dsel&&chk) dsel.addEventListener("change",()=>{ chk.hidden=!dsel.value; });
+  x.addEventListener("click",e=>{ const s=e.target.closest('[data-ks="seg"]'); if(s){ e.preventDefault(); x.remove(); return ksForm(s.dataset.t); } if(e.target===x||e.target.closest('[data-act="qr-close"]')) x.remove(); }); }
+async function ksSave(f){ const t=f.dataset.ksform, g=n=>f.elements[n]?String(f.elements[n].value||"").trim():"";
+  const sum=g("sum").replace(/\s/g,"").replace(",","."); if(!(+sum>0)){ toast("Впишите сумму"); f.elements.sum.focus(); return; }
+  if(t==="move"&&!g("to")){ toast("Кому передали?"); return; }
+  const btn=f.querySelector('[type="submit"]'); btn.disabled=true; btn.textContent="Записываю…";
+  let photo=""; const fi=f.elements.f&&f.elements.f.files[0]; if(fi&&typeof siteShrink==="function"){ try{ photo=await siteShrink(fi); }catch(_){ toast("Не получилось открыть фото"); } }
+  const b={action:"kassaAdd",t,sum,note:g("note"),deal:g("deal"),holder:g("holder"),to:g("to")}; if(t==="in"&&g("deal")&&f.elements.pay&&f.elements.pay.checked) b.pay=1; if(photo) b.photo=photo;
+  const j=await shpPost(b); if(!j){ btn.disabled=false; btn.textContent="Записать"; return; }
+  document.getElementById("ksM")?.remove(); toast(b.pay?"Записано и засчитано в оплату сделки":"Записано"); await ksLoad(); if(b.pay&&typeof shpLoad==="function") try{ shpLoad(); }catch(_){} }
+document.addEventListener("submit",ev=>{ const f=ev.target.closest&&ev.target.closest("[data-ksform]"); if(!f) return; ev.preventDefault(); ksSave(f); });
+document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.target.closest("[data-ks]"); if(!b||b.dataset.ks==="seg") return; if(!(S.shop&&S.shop.mode==="kassa")) return; ev.preventDefault();
+  const a=b.dataset.ks; if(a==="reload"){ KS.data=null; ksRedraw(); return ksLoad(); } if(a==="add") return ksForm(b.dataset.t);
+  if(a==="del"){ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Удалить?"; b.classList.add("sure"); setTimeout(()=>{ if(b.isConnected){ b.dataset.sure=""; b.textContent="✕"; b.classList.remove("sure"); } },3000); return; }
+    const j=await shpPost({action:"kassaDel",id:b.dataset.id}); if(j){ toast("Удалено"); ksLoad(); } } });
+/* пункт в «Все разделы», экран, вкладка */
+if(typeof shpMoreHtml==="function"){ const _ksMore=shpMoreHtml; shpMoreHtml=function(){ const h=_ksMore.apply(this,arguments); if(!kOk()) return h;
+  const it=`<li><button type="button" class="shp-row" data-act="shp-tab" data-v="kassa"><span class="shp-av" aria-hidden="true">${shpIco("cash",20)}</span><span class="shp-rb"><b>Касса</b><span class="muted">Наличные: кто принял, выдал, у кого на руках</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
+  return h.indexOf('<ul class="shp-list">')>=0?h.replace('<ul class="shp-list">','<ul class="shp-list">'+it):h+`<ul class="shp-list">${it}</ul>`; }; }
+if(typeof shpTab==="function"){ const _ksTab=shpTab; shpTab=function(){ return S.shop&&S.shop.mode==="kassa"?"more":_ksTab.apply(this,arguments); }; }
+if(typeof viewShop==="function"){ const _ksView=viewShop; viewShop=function(){
+  if(S.shop.mode==="kassa"&&KS._last!=="kassa") setTimeout(ksLoad,0);   /* зашли — свежие данные */
+  KS._last=S.shop.mode;
+  if(S.shop.mode==="kassa"){ if(!kOk()){ S.shop.mode="more"; return _ksView.apply(this,arguments); } return shpNavHtml()+ksHtml(); }
+  return _ksView.apply(this,arguments); }; }
+const st=document.createElement("style"); st.textContent=`
+.ks-wrap{max-width:760px;margin:0 auto;padding:4px 14px 90px}.ks-head{display:flex;align-items:center;gap:10px;margin:6px 0 10px}.ks-head h2{margin:0;font-size:22px;flex:1}
+.ks-card{background:var(--surface,#fff);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin:0 0 10px}
+.ks-l{margin:0;font-size:13px}.ks-big{margin:2px 0 6px;font-size:32px;font-weight:800;letter-spacing:-.5px}
+.ks-pp{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:15px}.ks-neg{color:#e0533f}
+.ks-bt{display:flex;gap:8px;margin:0 0 10px}.ks-bt button{flex:1;min-height:50px;border-radius:14px;border:1px solid var(--line);font:inherit;font-weight:700;font-size:15.5px;cursor:pointer;color:inherit;background:var(--surface,#fff)}
+.ks-in{background:#e3f5e8!important;color:#16723a!important;border-color:#bfe6cb!important}.ks-out{background:#fde6e6!important;color:#b42323!important;border-color:#f4c4c4!important}
+.ks-op{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}.ks-op:last-child{border:0}.ks-ot{flex:1;min-width:0}.ks-ot b{display:block;font-size:15px}.ks-ot small{display:block;color:var(--muted,#777);font-size:12.5px;margin-top:2px}
+.ks-p{color:#1f9d4c}.ks-m{color:#e0533f}.ks-v{color:var(--muted,#777)}.ks-op>b{white-space:nowrap;font-size:15.5px}
+.ks-x{border:0;background:none;color:var(--muted,#999);font:inherit;cursor:pointer;padding:6px;border-radius:8px}.ks-x.sure{color:#fff;background:#e0533f;font-size:12.5px}
+.ks-f{width:min(460px,100%);display:flex;flex-direction:column;gap:10px}.ks-f label{display:flex;flex-direction:column;gap:4px;font-size:14px}.ks-f input:not([type=checkbox]),.ks-f select{min-height:44px;font:inherit;font-size:16px}
+.ks-f .ks-chk{flex-direction:row;align-items:center;gap:8px}.ks-seg{display:flex;gap:6px}.ks-seg button{flex:1;min-height:40px;border-radius:10px;border:1px solid var(--line);background:none;color:inherit;font:inherit;cursor:pointer}.ks-seg button[aria-pressed=true]{background:var(--ink,#2b2f33);color:var(--bg,#fff)}
+`; document.head.appendChild(st);
+})();
+
 /* ---------- Зарплата галочками «взял» (Кирилл 05.11) ----------
    В листке человека каждое начисление (оклад за месяц, процент или сдельно с заказа, премия, долг прошлых месяцев) — строка с галочкой.
    Нажал — выдано целиком: пишется выплата с пометкой «За что» (ключ строки), человеку уходит сообщение в Телеграм.
@@ -14795,7 +14883,7 @@ function prDel(h){
 
 /* ---- 1) «Все разделы» ---- */
 const PR_GR=[["client","Работа с клиентом",["clients","client","inbset","inb","inbox","smetas","zamers","kp","notes"]],["work","Цех и задачи",["cal","tasks","chats","chess","staff","feed","board"]],
-  ["money","Деньги",["money","zp","dpay","pnl","gifts","ofn"]],["stock","Склад и закупка",["stock","ctr","sup","supply","dp-car"]],["set","Настройки и помощь",["help","help-open","cfg","morning","lic","shp-myname","shp-reload","shp-out"]]];
+  ["money","Деньги",["money","kassa","zp","dpay","pnl","gifts","ofn"]],["stock","Склад и закупка",["stock","ctr","sup","supply","dp-car"]],["set","Настройки и помощь",["help","help-open","cfg","morning","lic","shp-myname","shp-reload","shp-out"]]];
 const PR_MINE={master:["zamers","zp","notes"],supply:["ctr","dp-car","zp","zamers"],office:["clients","smetas","zamers","inbset"],tech:["help","tasks","cal","zamers","feed"]};
 /* «Что вы хотите сделать?» — действия (ищутся вместе с разделами) */
 const PR_DO=[{t:"Создать сделку",s:"Новый клиент или заказ",k:"создать новая новый сделка заказ клиент добавить",act:"shp-new"},
@@ -19666,7 +19754,7 @@ const staff=[{name:'Иван',role:'Технолог'},{name:'Айна',role:'Д
   if(a==='linkNeed'){ void('LOG linkNeed',PD.slice(0,200)); j={ok:true,made:1}; }
     return j; }
   const _f=window.__fetch0||window.fetch.bind(window); let lastT=0;
-  const W=/^(receiptAdd|chatSend|chatDel|receiptDel|dfile|zpPay|zpPayDel|zpAdj|carExp|expDel|dealPct|qkSetSave|smetaSave|shopSave|cfgSave|zpAccSet|of[A-Z]|lic[A-Z]|tzSave|linkNeed|invNew|dirPinSet|firmSetup|dogSave|docAdd|docDel|taskAdd|taskDone|taskDel|stage|dealSave|dealNew|dealDel|smetaDel|calAdd|calDel)/;
+  const W=/^(kassaAdd|kassaDel|receiptAdd|chatSend|chatDel|receiptDel|dfile|zpPay|zpPayDel|zpAdj|carExp|expDel|dealPct|qkSetSave|smetaSave|shopSave|cfgSave|zpAccSet|of[A-Z]|lic[A-Z]|tzSave|linkNeed|invNew|dirPinSet|firmSetup|dogSave|docAdd|docDel|taskAdd|taskDone|taskDel|stage|dealSave|dealNew|dealDel|smetaDel|calAdd|calDel)/;
   window.__fetchHook=async function(u,o){ try{ const us=typeof u==="string"?u:(u&&u.url)||"", su=S.site&&S.site.stagesUrl;
       if(/(^|\/)orders\/index\.json/.test(us)) return new Response(JSON.stringify({orders:[]}),{headers:{"Content-Type":"application/json"}});
       if(!(su&&us.indexOf(su)===0)&&!/script\.google(usercontent)?\.com/.test(us)) return _f(u,o);
@@ -21198,7 +21286,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="1c5283cf28";
+const CHK_BUILD="410641901c";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -22063,7 +22151,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="1c5283cf28";/*cehqr-build*/
+  const BUILD="410641901c";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
