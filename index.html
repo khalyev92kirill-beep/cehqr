@@ -4159,7 +4159,7 @@ hashHook=h=>{ h=String(h||""); const m=/^(.*?)~([A-Za-z0-9_-]{20,})$/.exec(h); i
   if(id==="DESIGNERS"){ _ks.designers=k; keySave(); history.replaceState(null,"",location.pathname+location.search); setTimeout(()=>{ siteLoadIndex().then(()=>{ toast("Вы вошли в режим дизайнеров: видны все заказы"); setView("orders"); }); },0); return ""; }
   if(id==="MASTERS"){ _ks.masters=k; keySave(); history.replaceState(null,"",location.pathname+location.search); setTimeout(()=>{ siteLoadIndex().then(()=>{ toast("Вы вошли в режим мастеров: видны все заказы"); setView("orders"); }); },0); return ""; }
   if(id==="SUPPLY"){ _ks.supply=k; keySave(); history.replaceState(null,"",location.pathname+location.search); setTimeout(()=>{ siteLoadIndex().then(()=>setView("supply")); },0); return ""; }
-  const oid=/-\d+$/.test(id)?orderIdOf(id):id; _ks.orders[oid]=Object.assign(_ks.orders[oid]||{},{k}); keySave();
+  const oid=/-\d+$/.test(id)?orderIdOf(id):id; _ks.orders[oid]=Object.assign(_ks.orders[oid]||{},{k,q:1}); keySave();   /* q — ключ получен по QR этого заказа */
   history.replaceState(null,"","#"+m[1]); return m[1]; };
 const b64u=s=>{ s=String(s).replace(/-/g,"+").replace(/_/g,"/"); s+="=".repeat((4-s.length%4)%4); return Uint8Array.from(atob(s),c=>c.charCodeAt(0)); };
 async function decryptText(obj,key){
@@ -4169,6 +4169,9 @@ async function decryptText(obj,key){
 }
 // список заказов: технолог видит все, мастер или клиент — только те, что открывал по QR
 async function siteLoadIndex(){
+  /* 11.11 Кирилл: «вышел — а заказы всё равно видно». Ключи всех заказов приходят вместе с режимом (директор, технолог, мастера, дизайнеры, снабженец).
+     Режима на этом телефоне больше нет — стираем эти ключи. Остаются только заказы, открытые по своему QR (q), и выданные арендатору цеха (g). */
+  if(!_ks.master&&!_ks.supply&&!_ks.designers&&!_ks.masters){ let ch=false; Object.keys(_ks.orders).forEach(id=>{ const o=_ks.orders[id]; if(!o||(!o.q&&!o.g)){ delete _ks.orders[id]; ch=true; } }); if(ch) keySave(); }
   let j=null;
   try{ const r=await fetch("orders/index.json",{cache:"no-cache"}); if(r.ok) j=await r.json(); }catch(_){}
   if(j&&j.ct){
@@ -22012,7 +22015,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="e4ad0e55ab";
+const CHK_BUILD="8dc5d68b71";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -22921,7 +22924,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="e4ad0e55ab";/*cehqr-build*/
+  const BUILD="8dc5d68b71";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
