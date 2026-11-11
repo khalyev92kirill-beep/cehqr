@@ -728,9 +728,18 @@ html.pwa body.vtx .top{top:0}
 </main>
 <div class="toast" id="toast" hidden></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<script>/* библиотеки — только когда нужны (11.11): раньше three.js ~600 КБ, jspdf ~360 КБ и qrcode грузились здесь и держали старт страницы.
+   needLib("three"|"jspdf"|"qr"|адрес) → Promise; один раз на адрес; при ошибке сети можно повторить. */
+window.W24LIB={three:"https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",jspdf:"https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",qr:"https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"};
+window.needLib=function(u){var L=window.W24LIB,M=needLib.m||(needLib.m={});u=L[u]||u;if(M[u])return M[u];
+  if((u===L.three&&window.THREE)||(u===L.jspdf&&window.jspdf&&window.jspdf.jsPDF)||(u===L.qr&&typeof window.qrcode==="function"))return M[u]=Promise.resolve();
+  return M[u]=new Promise(function(ok,no){var s=document.createElement("script");s.src=u;s.async=true;s.onload=function(){ok();};s.onerror=function(){delete M[u];if(s.parentNode)s.parentNode.removeChild(s);no(new Error("Не загрузилась библиотека: "+u));};document.head.appendChild(s);});};
+/* открыли заказ или деталь по ссылке/QR — 3D понадобится сразу, начинаем качать параллельно с остальным */
+(function(){try{var h=location.hash.slice(1);if(!window.APP_ENTRY&&/\d/.test(h)&&/^[A-Za-z0-9]{2,12}(-\d+)?(~|$)/.test(h))needLib("three").catch(function(){});}catch(e){}})();
+/* в цеху бывает плохая связь: через 10 с после старта тихо кладём библиотеки в кэш телефона (sw.js), не запуская их */
+addEventListener("load",function(){setTimeout(function(){try{var c=navigator.connection;if(c&&c.saveData)return;if(!navigator.serviceWorker||!navigator.serviceWorker.controller)return;var L=window.W24LIB;var F=window.__fetch0||window.fetch;[L.qr,L.jspdf,L.three].forEach(function(u){F(u,{mode:"no-cors"}).catch(function(){});});}catch(e){}},10000);});
+</script>
 <script>
 (function(){
 "use strict";
@@ -978,7 +987,9 @@ function stageRow(codes,label){ if(STAGES_OFF) return ""; const cur=codes.length
   return `<span class="tg-stg" role="group" aria-label="Этап">${label?`<span class="lbl">${label}</span>`:""}${STAGES.map((s,i)=>`<button type="button" data-act="stage-to" data-n="${i}" data-codes="${esc(codes.join(","))}" aria-pressed="${i===cur}" title="${esc(s.name)}"><i style="background:${s.color}"></i>${STG_SHORT[i]}</button>`).join("")}</span>`; }
 async function setStagesMany(codes,n){ return siteSetStagesMany(codes,n); toast(codes.length>1?`${codes.length} дет.: ${STAGES[n].name}`:`${STAGES[n].name}`); }
 function qrSvg(text){
-  if(typeof qrcode!=="function") return "";
+  if(typeof qrcode!=="function"){   // библиотека ещё качается — ставим место, QR дорисуется сам
+    needLib("qr").then(()=>document.querySelectorAll("i.qr-wait").forEach(el=>{ el.outerHTML=qrSvg(el.getAttribute("data-t")||""); }),()=>{});
+    return `<i class="qr-wait" data-t="${esc(text)}" style="display:block;aspect-ratio:1;background:#fff"></i>`; }
   const q=qrMatrix(text), n=q.getModuleCount(); let p="";
   for(let r=0;r<n;r++) for(let c=0;c<n;c++) if(q.isDark(r,c)) p+=`M${c+2} ${r+2}h1v1h-1z`;
   return `<svg viewBox="0 0 ${n+4} ${n+4}" shape-rendering="crispEdges" role="img" aria-label="QR-код детали"><rect width="${n+4}" height="${n+4}" fill="#fff"/><path d="${p}" fill="#000"/></svg>`;
@@ -1232,7 +1243,8 @@ function perfHook(){ if(perfHooked) return; perfHooked=true; const P=e=>perfPoke
   try{ const M=THREE.DefaultLoadingManager, a=M.onProgress, b=M.onLoad; M.onProgress=function(){ perfPokeAll(800); return a&&a.apply(this,arguments); }; M.onLoad=function(){ perfPokeAll(800); return b&&b.apply(this,arguments); }; }catch(_){} }
 function mount3D(p, z0){
   disposeThree();
-  const canvas=$("#three"); if(!canvas||typeof THREE==="undefined") return;
+  const canvas=$("#three"); if(!canvas) return;
+  if(typeof THREE==="undefined"){ needLib("three").then(()=>{ if(canvas.isConnected&&$("#three")===canvas) mount3D(p,z0); },()=>toast("3D не загрузилось — нужен интернет")); return; }
   const L=p.L||1, W=p.W||1, T=Math.max(p.T||16,1), k=10/Math.max(L,W);
   const renderer=new THREE.WebGLRenderer({canvas, antialias:!perfWeak(), alpha:true});
   renderer.setPixelRatio(perfPR());
@@ -1351,7 +1363,9 @@ function furnShape(name, b, K, parts){
 }
 function mountAssembly(canvas, parts, opt){
   disposeAsm();
-  if(!canvas||typeof THREE==="undefined") return;
+  if(!canvas) return;
+  if(typeof THREE==="undefined"){ needLib("three").then(()=>{ if(!canvas.isConnected||asm) return; mountAssembly(canvas,parts,opt);
+      if(asm&&!opt.focus&&S.view==="order"&&typeof asmKey==="function") asm.key=asmKey(); try{ if(!opt.focus&&S.view==="order"&&S.asmOrder) showPick(S.asmOrder.selected); syncShowAll(); }catch(_){} },()=>toast("3D не загрузилось — нужен интернет")); return; }
   const withBox=parts.filter(p=>p.box);
   if(!withBox.length) return;
   const renderer=new THREE.WebGLRenderer({canvas,antialias:!perfWeak(),alpha:true});
@@ -2126,6 +2140,7 @@ function orderQrModal(oid){
   document.body.appendChild(m);
 }
 async function orderSheetPdf(oid){
+  try{ await Promise.all([needLib("jspdf"),needLib("qr")]); }catch(_){}
   if(!window.jspdf||typeof qrcode!=="function"){ toast("Не загрузились модули для PDF. Обновите страницу."); return; }
   try{ await document.fonts.ready; }catch(_){}
   const o=S.orders[oid]||{}, PX=8, W=210, H=297;
@@ -3535,6 +3550,7 @@ function fitFont(c, text, weight, family, maxPx, maxW){
   return sz;
 }
 async function labelsPdf(parts, title, size){
+  try{ await Promise.all([needLib("jspdf"),needLib("qr")]); }catch(_){}
   if(!window.jspdf || typeof qrcode!=="function"){ toast("Не загрузились модули для PDF. Обновите страницу."); return; }
   try{ await document.fonts.ready; }catch(_){}
   const [Wmm,Hmm]=size||labelSize(), PX=12, m=1.6*PX;
@@ -3769,7 +3785,7 @@ function thumbLineSvg(parts){
   return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#000"/>${g}</svg>`); }
 function thumbRender(parts,tex){
   if(thumbDark()) return Promise.resolve(thumbLineSvg(parts));
-  if(typeof THREE==="undefined") return Promise.resolve("");
+  if(typeof THREE==="undefined") return needLib("three").then(()=>thumbRender(parts,tex),()=>"");
   const wk=perfWeak(), W=wk?360:480, H=wk?225:300, ps=parts.filter(p=>p.box); if(!ps.length) return Promise.resolve("");   // сразу размер карточки — без лишнего пережатия
   const R=TH.r||(TH.r=new THREE.WebGLRenderer({antialias:!wk,alpha:false,preserveDrawingBuffer:true})); R.setPixelRatio(1); R.setSize(W,H,false);
   const sc=new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff,0xb3ab9c,0.8)); const sun=new THREE.DirectionalLight(0xffffff,0.55); sc.add(sun);
@@ -4009,8 +4025,11 @@ function viewHelp(){
 /* ---------- этапы через Google Таблицу (только на сайте) ---------- */
 function siteRoleText(){ if(typeof siteIsGuest==="function"&&siteIsGuest()) return "Арендатор цеха"+(S.who?": "+S.who:"");   // вход по Телеграму, без PIN
   return S.site&&S.site.stagesUrl&&S.pin ? ("Мастер: "+S.who) : ""; }   // «Вход мастера» не показываем: PIN спросим при отметке этапа
+/* 11.11: в Work24link (vertaks/) этапы всех заказов (action=all) — только когда открыты «Заказы» / заказ / деталь; на старте не спрашиваем */
+function ordLazy(){ return window.APP_ENTRY==="vertaks"&&!/^(orders|order|part)$/.test(S.view||""); }
 async function siteLoadProgress(oid){
   if(!S.site||!S.site.stagesUrl) return;
+  if(!oid&&ordLazy()) return;
   try{
     const u=S.site.stagesUrl+(S.site.stagesUrl.includes("?")?"&":"?")+(oid?"action=get&order="+encodeURIComponent(oid):"action=all");
     const r=await fetch(u); const j=await r.json();
@@ -5455,6 +5474,35 @@ async function shpGet(q,quiet){   // GET к таблице; null — ошибк�
     if(j&&j.ok) return j; if(j&&j.error==="pin"){ shpBadPin(); return null; } if(!quiet) toast("Таблица ответила ошибкой. Обновите скрипт или попробуйте позже."); return null;
   }catch(_){ if(!quiet) toast("Нет связи с таблицей. Проверьте интернет."); return null; }
 }
+/* 11.11: открытие сделки одним запросом (dealAll вместо chat, dogGet, specGet, tzGet, receipts, hand, dfiles).
+   Стоит ПОД запоминателем site_cache.js: каждая часть по-прежнему запоминается и показывается сразу, перечитывается тихо,
+   а в сеть вместо семи запросов уходит один. Части раздаются тем же загрузчикам — они кладут их в те же места S.
+   Только для открытой сделки и только первый раз за открытие; после записи (POST) — снова по одному.
+   Старый сервер (ответ без parts) — дальше по одному, как раньше. */
+const shpDA=(function(){
+  const _f=window.fetch, PART={chat:"chat",dogGet:"id",specGet:"deal",tzGet:"deal",receipts:"order",hand:"order",dfiles:"order"}, L=new Map(), st={old:false,net:0,served:0,postAt:0,openAt:0};
+  const api=()=>S&&S.site&&S.site.stagesUrl||"";
+  function get(pin,id,act){ const k=pin+"|"+id; let e=L.get(k); if(e&&!e.used[act]&&Date.now()-e.at<6000) return e;   // эта часть уже выдана (сделку открыли снова) — новый общий запрос
+    if(Date.now()-st.openAt>2500) return null;   // общий запрос — только сразу после открытия сделки; позже (после записи и т. п.) — по одному, как раньше
+    e={at:Date.now(),used:{}}; L.set(k,e); if(L.size>8) L.delete(L.keys().next().value); st.net++;
+    e.p=_f.call(window,shpUrl("action=dealAll&pin="+encodeURIComponent(pin)+"&id="+encodeURIComponent(id)),{cache:"no-cache"})
+      .then(r=>r.ok?r.json():null).then(j=>{ if(j&&j.ok&&j.parts&&typeof j.parts==="object") return j.parts; if(j&&j.ok) st.old=true; return null; }).catch(()=>null);
+    return e; }
+  window.fetch=function(u,o){
+    try{ const a=api();
+      if(a&&typeof u==="string"&&u.indexOf(a)===0){
+        if(String(o&&o.method||"GET").toUpperCase()!=="GET"){ L.clear(); st.openAt=0; const self=this, pr=_f.apply(self,arguments), d=()=>{ st.postAt=Date.now(); }; pr.then(d,d); return pr; }
+        if(!st.old&&S.view==="shop"&&S.shop&&S.shop.cur){
+          const p=new URL(u).searchParams, act=p.get("action")||"", f=PART[act], pin=p.get("pin")||"", id=f?String(p.get(f)||""):"";
+          if(f&&pin&&id&&id===String(S.shop.cur)&&!(act==="chat"&&+(p.get("since")||0)>0)){
+            const e=get(pin,id,act);
+            if(e&&!e.used[act]){ e.used[act]=1; const self=this, args=arguments;
+              return e.p.then(P=>{ const x=P&&P[act]; if(!x||typeof x!=="object") return _f.apply(self,args); st.served++;
+                return new Response(JSON.stringify(x),{status:200,headers:{"content-type":"application/json; charset=utf-8"}}); }); } } } }
+    }catch(_){}
+    return _f.apply(this,arguments); };
+  return st;
+})();
 /* чат: подгружаем только новые сообщения, раз в 15 секунд, пока чат на экране */
 let shpTimer=null;
 function shpChatOn(){ return S.view==="shop"&&(S.shop.mode==="order"||S.shop.mode==="general")&&S.shop.chat; }
@@ -5706,13 +5754,24 @@ function viewShop(){
   if(m==="zpp") return nav+shpZpPersonHtml();
   return nav+shpBoardHtml();
 }
-function shpRenderKeep(){ const y=window.scrollY;
+/* 11.11: частые перерисовки склеиваем. Ответы таблицы приходят пачкой — рисуем один раз (через ~120 мс, в начале кадра).
+   После действия человека (нажал, ввёл) и сразу после записи в таблицу — рисуем сразу, как раньше. */
+const shpRK={t:0,n:0,now:0,lazy:0};
+function shpRKUser(){ const e=window.event; if(e&&e.isTrusted!==false&&/^(click|submit|input|change|keydown|keyup|pointerup|pointerdown|touchend|mouseup|focusout|blur|popstate|hashchange)$/.test(e.type||"")) return true;
+  return Date.now()-(shpDA.postAt||0)<500||Date.now()-(shpRK.gest||0)<700; }
+["pointerdown","keydown","click","submit","input","change"].forEach(t=>document.addEventListener(t,ev=>{ if(ev.isTrusted) shpRK.gest=Date.now(); },true));
+function shpRenderKeep(){
+  if(shpRK.fire||shpRKUser()){ if(shpRK.t){ clearTimeout(shpRK.t); shpRK.t=0; } shpRK.now++; return shpRenderKeep0(); }
+  shpRK.lazy++; if(shpRK.t) return;
+  shpRK.t=setTimeout(()=>requestAnimationFrame(()=>{ if(!shpRK.t) return; try{ if(typeof CCH!=="undefined"&&CCH.userBusy&&CCH.userBusy()){ shpRK.t=0; return setTimeout(shpRenderKeep,400); } }catch(_){} shpRK.t=0; shpRK.n++; shpRK.fire=1; try{ shpRenderKeep(); }finally{ shpRK.fire=0; } }),120); }   // через все обёртки: их проверки (печатает ли человек) — на момент рисования
+function shpRenderKeep0(){ const y=window.scrollY;
   /* открытая форма «+ Добавить чек» переживает перерисовку: сумма, комментарий, выбранное фото и курсор остаются (раньше форма сбрасывалась, когда страница обновлялась после камеры или раз в минуту) */
   const oldF=S.shop.rcOpen&&document.getElementById("shpRcForm"), oldD=oldF&&oldF.closest("details.shp-rc-add"), ae=document.activeElement, foc=oldD&&ae&&oldD.contains(ae)?ae:null;
   render();
   if(oldD){ const nf=document.getElementById("shpRcForm"), nd=nf&&nf.closest("details.shp-rc-add"); if(nd&&nf.dataset.id===oldF.dataset.id){ nd.replaceWith(oldD); oldD.open=true; if(foc) try{ foc.focus({preventScroll:true}); }catch(_){ } } }
   window.scrollTo(0,y); }
-function shpGo(mode,id){ if(mode==="order"&&S.shop.mode!=="order"&&S.shop.mode!=="form") S.shop.back=S.shop.mode; if(mode==="order"&&id!==S.shop.cur) S.shop.otab="chat"; S.shop.mode=mode; S.shop.delAsk=false; S.shop.rcDel=null; S.shop.rcOpen=false; if(mode==="order"&&id!==undefined) delete S.shop.rc[id]; if(mode==="order"&&id!==undefined&&S.shop.spec) S.shop.spec[id]=undefined; if(id!==undefined) S.shop.cur=id;
+function shpGo(mode,id){ if(mode==="order") shpDA.openAt=Date.now();   /* 11.11: открытие сделки — части одним запросом (shpDA) */
+  if(mode==="order"&&S.shop.mode!=="order"&&S.shop.mode!=="form") S.shop.back=S.shop.mode; if(mode==="order"&&id!==S.shop.cur) S.shop.otab="chat"; S.shop.mode=mode; S.shop.delAsk=false; S.shop.rcDel=null; S.shop.rcOpen=false; if(mode==="order"&&id!==undefined) delete S.shop.rc[id]; if(mode==="order"&&id!==undefined&&S.shop.spec) S.shop.spec[id]=undefined; if(id!==undefined) S.shop.cur=id;
   if(mode!=="order"&&mode!=="general") S.shop.chat=null;
   if(S.view!=="shop") setView("shop"); else { render(); window.scrollTo(0,0); } }
 
@@ -7241,7 +7300,7 @@ const CCH=(function(){
   const LSP="cehqr-c:", IDX="cehqr-c-idx", LIM=3e6, ONE=1e6, FRESH=700, AFTERPOST=8000, OLIM=6e7;
   const PK=/^cehqr-(techpin|officepin|suppin|pin)$/;
   // что можно запоминать: только чтение для работников (с PIN); «client», «check», «ping», «invPeek», «helpMine» — никогда
-  const ACT=/^(shop|tasks|staff|help|inbox|feed|chat|receipts|stock|supply|zamerList|specGet|hand|zp|zpStmts|pnl|gift|contr|smeta|smetaList|lib|cfg|morning|iphoto|vend|price|invList|dealsPay|zpAcc|komplGet|dfiles|docs|tzGet|dmList|smScale|qkSet|dogGet|noteList)$/;   /* 11.11: и эти показываем сразу из памяти, свежее — тихо */
+  const ACT=/^(shop|tasks|staff|help|inbox|feed|chat|receipts|stock|supply|zamerList|specGet|hand|zp|zpStmts|pnl|gift|contr|smeta|smetaList|lib|cfg|morning|iphoto|vend|price|invList|dealsPay|zpAcc|komplGet|dfiles|docs|tzGet|dmList|smScale|qkSet|dogGet|noteList|dealAll)$/;   /* 11.11: и эти показываем сразу из памяти, свежее — тихо */
   const mem=new Map(), omem=new Map(), infl={}, once={}, R={}, queue=new Map();
   let idx={}, postAt=0, posts=0, busyN=0, dot=null, dotT=0, saveT=0, oSize=0;
   const LS=(()=>{ try{ return window.localStorage; }catch(_){ return null; } })();
@@ -7552,7 +7611,7 @@ function sm3dFronts(T,sc,b,m,k,MF,MB,MH,edgeM,AN){
     AN.push({kind:"door",o:hinge,ang:-sgn*Math.PI*0.52,delay:(r*dn+i)*0.08}); } }
 /* ---- настоящий 3D (three.js r128 с cdnjs, грузится один раз при открытии сметы); крутить — тянуть, приближать — колёсико/щипок ---- */
 let SM3D_LIB=null;
-function sm3dLib(){ if(window.THREE) return Promise.resolve(window.THREE); if(SM3D_LIB) return SM3D_LIB;
+function sm3dLib(){ if(window.THREE) return Promise.resolve(window.THREE); if(typeof needLib==="function") return needLib("three").then(()=>window.THREE); if(SM3D_LIB) return SM3D_LIB;   /* needLib — общий загрузчик из шапки (один раз на адрес) */
   SM3D_LIB=new Promise((ok,no)=>{ const sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"; sc.onload=()=>ok(window.THREE); sc.onerror=()=>{ SM3D_LIB=null; no(); }; document.head.appendChild(sc); }); return SM3D_LIB; }
 function sm3dColN(name){ if(!name||!S.cat||!S.cat.data) return null; S.shop.smIdx=S.shop.smIdx||new Map(S.cat.data.items.map(it=>[supPKey(it.n),it])); const it=S.shop.smIdx.get(supPKey(name)); return it&&it.c?"#"+it.c:null; }
 function sm3dCol(slot){ const d=S.shop.sm&&S.shop.sm.data, m=d&&(d.mat||{})[slot]; if(!m||!m.n||!S.cat||!S.cat.data) return null;
@@ -10932,7 +10991,7 @@ function zmRoomModel(rm,photos){ const n=v=>{ const x=zmPrN(v); return x>0?x:0; 
     points:(rm.pts||[]).map(q=>({wall:+q.wall||0,type:q.k||"roz",x:n(q.x),y:n(q.y),note:q.s||""})),
     photos:(photos||[]).filter(p=>p.room===rm.id&&p.wall!==undefined&&p.wall!=="").map(p=>({wall:+p.wall,id:p.id,url:p.url||""})),notes:rm.notes||""}; }
 function zmPlan(M){ let x=0,y=0,h=0; const P=[[0,0]]; M.walls.forEach(w=>{ x+=Math.cos(h)*w.len; y+=Math.sin(h)*w.len; P.push([x,y]); h+=(180-w.angle)*Math.PI/180; }); return {P,gap:Math.round(Math.hypot(x,y))}; }
-function zm3dLib(){ if(window.THREE) return Promise.resolve(window.THREE); return new Promise((ok,no)=>{ const sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"; sc.onload=()=>ok(window.THREE); sc.onerror=no; document.head.appendChild(sc); }); }
+function zm3dLib(){ if(window.THREE) return Promise.resolve(window.THREE); if(typeof needLib==="function") return needLib("three").then(()=>window.THREE); return new Promise((ok,no)=>{ const sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"; sc.onload=()=>ok(window.THREE); sc.onerror=no; document.head.appendChild(sc); }); }
 let ZM3=null;
 function zm3dClose(){ if(window.vtFs&&vtFs.cur&&vtFs.cur.el&&vtFs.cur.el.id==="zm3d") vtFs.set(null,false); if(ZM3){ try{ ZM3.ren.dispose(); }catch(_){} window.removeEventListener("resize",ZM3.rs); } ZM3=null; const m=document.getElementById("zm3d"); if(m) m.remove(); if(!S.zm.ed) document.documentElement.classList.remove("zm-lock"); }
 async function zm3dOpen(rec,rm){ const M=zmRoomModel(rm,rec.data.photos);
@@ -11771,14 +11830,26 @@ setTimeout(()=>{ if(typeof sp3Card==="function"){ const _fokSC=sp3Card; sp3Card=
     siteOrderText=async function(oid,txt){ const k=typeof keyFor==="function"?keyFor(oid):"", m=memo.get(oid);
       if(k&&m&&m.src===txt&&m.k===k) return m.out;
       const out=await _sot(oid,txt); if(k&&out!==txt){ memo.delete(oid); memo.set(oid,{src:txt,k,out}); if(memo.size>12) memo.delete(memo.keys().next().value); } return out; }; }
-  /* прогрев после входа: задачи, сотрудники, обращения и приглашения (технолог), склад — по очереди, не мешая показу */
-  let warmed="";
-  function warmAll(){ if(!S.shop||!S.shop.loaded||!shpOn()) return; const pin=shpPin(); if(!pin||warmed===pin) return; warmed=pin;
+  /* после входа (11.11): задачи и сотрудники — сразу, вместе со сделками (главный экран: «Мои задачи», «Сейчас в сети»);
+     обращения и приглашения (технолог), склад — заранее в память, по очереди, не мешая показу */
+  let warmed="", early="";
+  // сразу после ответа «shop»: задачи — только если сервер не прислал их вместе со сделками (старый скрипт таблицы);
+  // сотрудники — тем, кто видит «Сейчас в сети» (там нужно «когда заходил»); остальным список уже пришёл со сделками
+  function warmNow(pin,j){ if(early===pin) return; early=pin;
+    const P=[];
+    if(!(j&&Array.isArray(j.tasks))) P.push(then(shpTasksLoad(true),ok=>ok&&ok.ok));
+    if(!S.shop.staffLoaded&&!S.shop.staffBusy&&(typeof onlCan!=="function"||onlCan())){ S.shop.staffBusy=true; P.push(then(shpStaffLoad(true),()=>true).finally(()=>{ S.shop.staffBusy=false; })); }
+    if(P.length) Promise.all(P).then(r=>{ if(r.some(Boolean)&&S.view==="shop"&&S.shop.mode!=="form") paint(); }).catch(()=>{}); }
+  function warmAll(j){ if(!S.shop||!S.shop.loaded||!shpOn()) return; const pin=shpPin(); if(!pin) return;
     if(document.visibilityState==="hidden"||(navigator.connection&&navigator.connection.saveData)) return;
+    if(j) warmNow(pin,j);
+    if(warmed===pin) return; warmed=pin;
     const u=q=>shpUrl(q+"&pin="+encodeURIComponent(pin)), st=typeof stPin==="function"?stPin():pin, base=S.site.stagesUrl+(S.site.stagesUrl.includes("?")?"&":"?");
-    const L=[S.shop.v2&&u("action=tasks"), u("action=staff"), S.shop.tech&&u("action=help"), S.shop.tech&&S.shop.v2&&u("action=invList"), typeof stSee==="function"&&stSee()&&st&&base+"action=stock&pin="+encodeURIComponent(st)].filter(Boolean);
+    const L=[S.shop.tech&&u("action=help"), S.shop.tech&&S.shop.v2&&u("action=invList"), typeof stSee==="function"&&stSee()&&st&&base+"action=stock&pin="+encodeURIComponent(st)].filter(Boolean);
     L.forEach((x,i)=>setTimeout(()=>{ if(shpPin()===pin) CCH.warm(x); },1200+i*900)); }
-  if(F(shpLoad)){ const _l=shpLoad; shpLoad=async function(q){ const r=await _l.apply(this,arguments); try{ warmAll(); }catch(_){} return r; }; }
+  let shopJ=null;   // последний ответ «shop» (пришли ли с ним задачи)
+  if(F(shpSetRole)){ const _sr=shpSetRole; shpSetRole=function(j){ shopJ=j; return _sr.apply(this,arguments); }; }
+  if(F(shpLoad)){ const _l=shpLoad; shpLoad=async function(q){ shopJ=null; const r=await _l.apply(this,arguments); try{ warmAll(shopJ); }catch(_){} return r; }; }
 })();
 
 /* ---------- быстродействие на слабых телефонах (Технолог 3D и Work24link) ----------
@@ -15641,6 +15712,7 @@ function apHeadHtml(o,cur,inOrder){ const tabs=apTabs(), seen=shpSeen(), un=shpU
 const AP_TL=[["3d","3D-вид","cube"],["fv","Вид спереди","fv"],["drw","Чертежи","drw"],["list","Детали","list"],["cut","Раскрой","cut"],["furn","Фурнитура","furn"]];
 function apCehHtml(o){ const t=String(o.t3d||"").toUpperCase(), od=t&&S.orders?S.orders[t]:null, chips=[];
   if(o.master) chips.push(`<span class="ap-chip">Мастер: ${esc(o.master)}</span>`);
+  try{ if(od&&od.count&&!(S.progress&&S.progress[t])&&typeof siteLoadProgress==="function"){ window.__apPA=window.__apPA||{}; if(!window.__apPA[t]){ window.__apPA[t]=1; setTimeout(()=>{ try{ siteLoadProgress(t); }catch(_){} },0); } } }catch(_){}   /* 11.11: в Work24link этапы всех заказов на старте не грузим — этот спросим сами */
   try{ if(od&&od.count&&S.progress&&S.progress[t]&&typeof stageBar==="function"){ const sb=stageBar(t,od.count); chips.push(`<span class="ap-chip warn">упаковано ${sb.done} / ${od.count}</span>`); } }catch(_){}
   if(o.prodFrom||o.prodTo) try{ chips.push(`<span class="ap-chip">цех ${esc(shpRange(o.prodFrom,o.prodTo))}</span>`); }catch(_){}
   if(o.montazhDate) chips.push(`<span class="ap-chip">монтаж ${esc(shpDM(o.montazhDate))}</span>`);
@@ -16668,8 +16740,19 @@ async function dloRefresh(){
   try{ const r=await fetch(S.site.stagesUrl+(S.site.stagesUrl.includes("?")?"&":"?")+"action=delIds",{cache:"no-cache"}); const j=await r.json(); if(!j||!j.ok) return;
     const v=JSON.stringify(j.items||[]); if(v===dloLs()) return; dloLs(v); dloHide(); if(S.view==="orders"&&!document.querySelector(".modal")) render(); }catch(_){} }
 if(typeof stoHideOutside==="function"){ const _dloH=stoHideOutside; stoHideOutside=function(){ const r=_dloH.apply(this,arguments); dloHide(); return r; }; }
-setTimeout(dloRefresh,0);
-document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") dloRefresh(); });
+/* 11.11: в Work24link (vertaks/) удалённые заказы и этапы всех заказов спрашиваем не на старте, а когда открыли «Заказы» (заказ, деталь);
+   в Технологе 3D (/) — как раньше, сразу. ordLazy — site_stages.js */
+const dloLazy=()=>typeof ordLazy==="function"&&ordLazy();
+setTimeout(()=>{ if(!dloLazy()) dloRefresh(); },0);
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"&&!dloLazy()) dloRefresh(); });
+if(window.APP_ENTRY==="vertaks"&&typeof render==="function"){ let was="", dAt=0, pAt=0; const _dloR=render;
+  /* любой путь в «Заказы» (нижняя панель, «Все разделы», ссылка #ЗАКАЗ, «Назад») кончается перерисовкой — ловим переход здесь */
+  render=function(){ const r=_dloR.apply(this,arguments);
+    try{ const v=S.view||"", on=/^(orders|order|part)$/.test(v), now=Date.now();
+      if(on&&!/^(orders|order|part)$/.test(was)&&now-dAt>30e3){ dAt=now; setTimeout(dloRefresh,0); }
+      if(v==="orders"&&was!=="orders"&&now-pAt>30e3){ pAt=now; setTimeout(()=>siteLoadProgress(null),0); }   /* дальше — раз в 30 с (site_boot.js), пока открыты «Заказы» */
+      was=v; }catch(_){}
+    return r; }; }
 
 /* список заказов: «Выбрать» → галочки → «Удалить выбранные (N)» */
 S.dlo={on:false,sel:{}};
@@ -18716,7 +18799,7 @@ function prjCatTex(n,col){ if(!n||typeof THREE==="undefined") return null; if(PR
   return PRJ_TEX[n]=tx; }
 /* справочник ещё грузится — перерисовать 3D, когда загрузится */
 function prjTexWait(){ if(PRJ.texT) return; let k=0; PRJ.texT=setInterval(()=>{ k++; const ok=S.cat&&S.cat.data&&(S.cat.dec||!S.cat.decL); if(ok||k>40){ clearInterval(PRJ.texT); PRJ.texT=0; if(ok&&document.getElementById("pj3d")) prjMount3D(); } },250); }
-function prjMount3D(){ prj3dDispose(); const cv=document.getElementById("pj3d"); if(!cv||typeof THREE==="undefined") return; const P=prjP(), R=P.room, K=0.001, W=+R.w*K, Dd=+R.dp*K, H=+R.h*K, ws=prjWalls(R);
+function prjMount3D(){ prj3dDispose(); const cv=document.getElementById("pj3d"); if(!cv) return; if(typeof THREE==="undefined"){ if(typeof needLib==="function") needLib("three").then(()=>{ if(cv.isConnected&&document.getElementById("pj3d")===cv) prjMount3D(); },()=>{ if(typeof toast==="function") toast("3D не загрузилось — нужен интернет"); }); return; } const P=prjP(), R=P.room, K=0.001, W=+R.w*K, Dd=+R.dp*K, H=+R.h*K, ws=prjWalls(R);
   const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true}); renderer.setPixelRatio(typeof perfPR==="function"?perfPR():Math.min(2,devicePixelRatio||1));
   const scene=new THREE.Scene(), cam=new THREE.PerspectiveCamera(45,1,0.05,100); scene.add(new THREE.HemisphereLight(0xffffff,0x9a9488,0.85)); const sun=new THREE.DirectionalLight(0xffffff,0.45); sun.position.set(W*1.5,H*2.2,Dd*2); scene.add(sun);
   const floor=new THREE.Mesh(new THREE.PlaneGeometry(W,Dd),new THREE.MeshLambertMaterial({color:0x9b9b9b})); floor.rotation.x=-Math.PI/2; floor.position.set(W/2,0,Dd/2); scene.add(floor);
@@ -19453,7 +19536,7 @@ document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closes
    В «Заказах» — красная полоска «N заказов без сделки». Через смету дизайнера заказ привязан сразу — его здесь нет. ===== */
 const LNK_FROM="2026-11-07";
 function lnkList(){ try{ if(!S.shop||!S.shop.loaded||!S.shop.tech) return []; const O=S.orders||{};
-  return Object.keys(O).map(k=>O[k]).filter(o=>o&&o.id&&String(o.exportedAt||"")>=LNK_FROM&&!(typeof vtxLinked==="function"&&vtxLinked(o.id))); }catch(_){ return []; } }
+  return Object.keys(O).map(k=>O[k]).filter(o=>o&&o.id&&!o.local&&!/^B3D/.test(String(o.id))&&String(o.exportedAt||"")>=LNK_FROM&&!(typeof vtxLinked==="function"&&vtxLinked(o.id))); }catch(_){ return []; } }
 let lnkSent="";
 function lnkPush(){ const L=lnkList(); if(!L.length) return; const key=L.map(o=>o.id).sort().join(","); if(key===lnkSent) return; lnkSent=key;
   shpPostRaw({action:"linkNeed",oids:L.slice(0,20).map(o=>({id:o.id,name:o.name||""}))}).catch(()=>{}); }
@@ -20874,7 +20957,7 @@ function prRot(mm){ if(!prIOS()) return ""; mm=mm||6;
    +`<script>(function(){ function go(){ document.querySelectorAll(".pg").forEach(function(p){ if(p.parentNode.className==="prw") return; var r=p.getBoundingClientRect(), w=document.createElement("div"); w.className="prw"; var K=0.86; w.style.width=Math.floor(r.height*K)+"px"; w.style.height=Math.floor(r.width*K)+"px"; p.parentNode.insertBefore(w,p); w.appendChild(p); p.style.width=r.width+"px"; p.style.height=r.height+"px"; p.style.transform="translateX("+(r.height*K)+"px) rotate(90deg) scale("+K+")"; }); } if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",go); else go(); })();<\/script>`; }
 /* Кирилл 06.11 (второй раз): на iPhone всё равно 20 страниц вместо 10 и карта мелкая боком. Safari печатает HTML как хочет —
    поэтому на iPhone/iPad делаем настоящий PDF: А4 альбом, одна карта = одна страница, карта на весь лист. Его и печатаем. */
-async function bzPdf(maps,w){ const J=window.jspdf&&window.jspdf.jsPDF; if(!J) throw new Error("nojspdf");
+async function bzPdf(maps,w){ if(typeof needLib==="function") await needLib("jspdf"); const J=window.jspdf&&window.jspdf.jsPDF; if(!J) throw new Error("nojspdf");
   const doc=new J({orientation:"landscape",unit:"mm",format:"a4"}), PW=297, PH=210, M=6; let first=true;
   for(const m of maps) for(const sh of m.sheets){ const svg=cutSvg(m,sh), d=document.createElement("div"); d.innerHTML=svg; const el=d.querySelector("svg"); if(!el) continue;
     const vb=(el.getAttribute("viewBox")||"0 0 1100 800").split(/[\s,]+/).map(Number), vw=vb[2]||1100, vh=vb[3]||800, k=2400/Math.max(vw,vh);
@@ -20886,7 +20969,7 @@ async function bzPdf(maps,w){ const J=window.jspdf&&window.jspdf.jsPDF; if(!J) t
   const url=doc.output("bloburl"); if(w&&!w.closed) w.location.href=url; else window.open(url,"_blank"); }
 function bzPrint(){ const parts=S.current.parts; if(!parts||!parts.length) return; const maps=cutMaps(parts);
   const w=window.open("","_blank"); if(!w){ toast("Разрешите всплывающие окна для печати"); return; }
-  if(prIOS()&&window.jspdf){ try{ w.document.write('<meta charset="utf-8"><p style="font:16px sans-serif;padding:20px">Готовлю PDF карт раскроя…</p>'); }catch(_){}
+  if(prIOS()&&(window.jspdf||typeof needLib==="function")){ try{ w.document.write('<meta charset="utf-8"><p style="font:16px sans-serif;padding:20px">Готовлю PDF карт раскроя…</p>'); }catch(_){}
     bzPdf(maps,w).catch(()=>{ toast("PDF не получился — печатаю как раньше"); bzPrintHtml(maps,w); }); return; }
   bzPrintHtml(maps,w); }
 function bzPrintHtml(maps,w){ try{ w.document.open(); }catch(_){}
@@ -21513,7 +21596,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="69aed17363";
+const CHK_BUILD="57c5e541cd";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -22402,7 +22485,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="69aed17363";/*cehqr-build*/
+  const BUILD="57c5e541cd";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -22429,8 +22512,11 @@ render();
     b.style.cssText="position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:2147483000;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 14px;border-radius:16px;background:#111;color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 6px 24px rgba(0,0,0,.5);font:600 15px var(--f-body,system-ui)";
     b.innerHTML='<span style="flex:1 1 160px">Пришло обновление приложения</span><button type="button" data-u="go" style="min-height:44px;padding:0 16px;border-radius:12px;border:0;background:#fff;color:#000;font:inherit">Обновить</button><button type="button" data-u="later" style="min-height:44px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,255,255,.3);background:none;color:#fff;font:inherit">Позже</button>';
     document.body.appendChild(b); b.addEventListener("click",e=>{ const t=e.target.closest("[data-u]"); if(!t) return; b.remove(); if(t.dataset.u==="go"){ forced=true; try{ sessionStorage.removeItem(TRY); }catch(_){} go(); } else askOff=Date.now()+30*60000; }); }
+  /* Кирилл 11.11: обновление нашлось в первые секунды после открытия и человек ещё ничего не трогал — обновляем сами, без «Обновить / Позже» */
+  const OPEN0=Date.now(); let touched0=false; ["pointerdown","keydown","touchstart","wheel"].forEach(t=>document.addEventListener(t,()=>{ touched0=true; },{capture:true,passive:true,once:true}));
   function go(){
     busyTimer=0; if(!want) return;
+    let auto=false; if(!forced&&!touched0&&Date.now()-OPEN0<10000&&!inSm()&&!document.querySelector(".modal")){ forced=true; auto=true; }
     if(isDes()&&!forced){ ask(); busyTimer=setTimeout(go,3000); return; }
     document.getElementById("updAsk")?.remove();
     if(busy()&&!forced){ busyTimer=setTimeout(go,5000); return; }
@@ -22441,6 +22527,7 @@ render();
     busyTimer=-1;
     Promise.race([reg,new Promise(r=>setTimeout(r,2500))]).then(()=>setTimeout(()=>{
       busyTimer=0;
+      if(auto&&touched0){ forced=false; ask(); busyTimer=setTimeout(go,3000); return; }   /* пока ждали — человек начал работать: спрашиваем */
       if(busy()&&!forced){ busyTimer=setTimeout(go,5000); return; }
       try{ sessionStorage.setItem(TRY,JSON.stringify({v:want,at:Date.now()})); }catch(_){}
       const u=new URL(location.href); u.searchParams.set("v",want); location.replace(u.href);

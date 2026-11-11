@@ -1,23 +1,33 @@
-// Технолог 3D — работа как приложение и без интернета (для уже открытых заказов). Сборка: 69aed17363
-const BUILD="69aed17363", SHELL_C="cehqr-shell", DATA="cehqr-data", LIBC="cehqr-libs";   // имена постоянные: при обновлении сайта сохранённое не стирается
-const SHELL=["./","index.html","manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"];
+// Технолог 3D — работа как приложение и без интернета (для уже открытых заказов). Сборка: 57c5e541cd
+const BUILD="57c5e541cd", SHELL_C="cehqr-shell", DATA="cehqr-data", LIBC="cehqr-libs";   // имена постоянные: при обновлении сайта сохранённое не стирается
+const SHELL=["./","manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"];
 const LIBS=/cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com/;
 // установка: страницы берём прямо с сервера (cache:"reload"), а не из кэша браузера — иначе можно сохранить старую
 self.addEventListener("install",e=>{ e.waitUntil(caches.open(SHELL_C).then(c=>Promise.all(SHELL.map(u=>c.add(new Request(u,{cache:"reload"})).catch(()=>{})))
-  .then(()=>c.match("vertaks/").then(m=>m&&c.add(new Request("vertaks/",{cache:"reload"})).catch(()=>{}))))
+  .then(()=>c.match("./").then(m=>m&&c.put("index.html",m)).catch(()=>{}))   // index.html — та же страница, что "./": не качаем второй раз
+  .then(()=>Promise.all(["vertaks/","smeta/"].map(p=>c.match(p).then(m=>m&&c.add(new Request(p,{cache:"reload"})).catch(()=>{}))))))
   .then(()=>self.skipWaiting())); });
 self.addEventListener("activate",e=>{
   // старые сайты (до номера сборки) хранили страницу в кэше "cehqr-<дата>" и сами не проверяют обновления —
   // такие открытые окна один раз перезагружаем, дальше страница следит за версией сама
   const done=caches.keys().then(ks=>{ const legacy=ks.some(k=>/^cehqr-\d{12}$/.test(k));
     return Promise.all(ks.filter(k=>k!==SHELL_C&&k!==DATA&&k!==LIBC).map(k=>caches.delete(k))).then(()=>self.clients.claim()).then(()=>legacy); });
+  // первый заход: открытая сейчас страница ещё не сохранена — сохраняем (обычно берётся из кэша браузера, без новой закачки), чтобы следующее открытие было мгновенным
+  // (cache:"no-cache" — браузер спросит сервер «не изменилась?»; не изменилась — короткий ответ, без новой закачки; старую из кэша браузера не сохраним)
+  const keep=w=>{ const u=new URL(w.url); if(u.origin!==location.origin||!isApp(u)) return null; const key=u.origin+u.pathname;
+    return caches.open(SHELL_C).then(c=>c.match(key).then(m=>m||fetch(key,{credentials:"same-origin",cache:"no-cache"}).then(res=>{ if(res.ok&&res.type==="basic"&&!res.redirected) return c.put(key,res); }))).catch(()=>{}); };
   e.waitUntil(done);
+  done.then(()=>self.clients.matchAll({type:"window"})).then(cl=>Promise.all(cl.map(keep))).catch(()=>{});   // не внутри waitUntil: пока sw включается, заходы на страницы ждут
   // перезагрузка — уже после включения (внутри waitUntil она бы ждала сама себя)
   done.then(legacy=>setTimeout(()=>self.clients.matchAll({type:"window"}).then(cl=>cl.forEach(c=>{
     if(legacy&&c.navigate) c.navigate(c.url).catch(()=>{}); else try{ c.postMessage({type:"cehqr-sw",build:BUILD}); }catch(_){}
   })),0));
 });
 const isPage=(r,u)=>r.mode==="navigate"||/\/$|\.html$/.test(u.pathname);
+// страницы самого приложения: Технолог 3D (/), Work24link (vertaks/), Смета (smeta/) — они сами проверяют version.json.
+// Остальные (страница клиента k/, sketchup/, dizain…) так не умеют — им «сразу из сохранённых» нельзя, берём с сервера.
+const ROOT=new URL(self.registration.scope).pathname;
+const isApp=u=>u.pathname.startsWith(ROOT)&&/^(?:(?:vertaks|smeta)\/)?(?:index\.html)?$/.test(u.pathname.slice(ROOT.length));
 self.addEventListener("fetch",e=>{
   const r=e.request; if(r.method!=="GET") return;
   const u=new URL(r.url);
@@ -26,12 +36,23 @@ self.addEventListener("fetch",e=>{
   if(u.origin!==location.origin) return;
   // номер сборки — только с сервера, мимо всех кэшей; без интернета — ошибка (страница просто проверит позже)
   if(/\/version\.json$/.test(u.pathname)){ e.respondWith(fetch(r.url,{cache:"no-store"})); return; }
-  // страницы сайта — всегда с сервера (с проверкой свежести, мимо 10-минутного кэша браузера), без интернета — сохранённые
+  // страницы сайта (Кирилл 11.11: «открывается мгновенно») — сразу из сохранённых, свежую докачиваем в фоне и кладём в кэш.
+  // О новой версии страница узнаёт сама (version.json) и перезагружается с ?v=… — такой заход идёт с сервера.
+  // Сохранённой ещё нет (первый заход) — с сервера; без интернета — сохранённые.
   if(isPage(r,u)){
     const key=u.origin+u.pathname;   // без ?v=… и #… — одна запись на страницу
-    e.respondWith(fetch(r.url,{cache:"no-cache",credentials:"same-origin",redirect:r.mode==="navigate"?"manual":"follow"}).then(res=>{ if(res.ok&&res.type==="basic"){ const cp=res.clone(); caches.open(SHELL_C).then(c=>c.put(key,cp)); } return res; })
-      .catch(()=>caches.open(SHELL_C).then(c=>c.match(key).then(m=>m||c.match(key,{ignoreSearch:true}))).then(m=>m||(r.mode!=="navigate"?Response.error():
-        /\/vertaks\//.test(u.pathname)?caches.match("vertaks/").then(v=>v||caches.match("index.html")):caches.match("./").then(v=>v||caches.match("index.html"))))));
+    const nav=r.mode==="navigate";
+    const net=()=>fetch(r.url,{cache:"no-cache",credentials:"same-origin",redirect:nav?"manual":"follow"}).then(res=>{ if(res.ok&&res.type==="basic"){ const cp=res.clone(); return caches.open(SHELL_C).then(c=>c.put(key,cp)).catch(()=>{}).then(()=>res); } return res; });
+    const saved=()=>caches.open(SHELL_C).then(c=>c.match(key).then(m=>m||c.match(key,{ignoreSearch:true})));
+    // ответ из кэша с пометкой «переадресован» браузер для перехода не примет — отдаём копию без пометки
+    const clean=m=>m&&m.redirected&&nav?m.blob().then(b=>new Response(b,{status:m.status,statusText:m.statusText,headers:m.headers})):m;
+    const fallback=()=>saved().then(m=>m||(!nav?Response.error():
+        /\/vertaks\//.test(u.pathname)?caches.match("vertaks/").then(v=>v||caches.match("index.html")):/\/smeta\//.test(u.pathname)?caches.match("smeta/").then(v=>v||caches.match("vertaks/")):caches.match("./").then(v=>v||caches.match("index.html")))).then(clean);
+    // перезагрузка ради новой версии (?v=…) и страницы не из приложения — с сервера (без интернета — сохранённые)
+    if(u.searchParams.has("v")||!isApp(u)){ e.respondWith(net().catch(fallback)); return; }
+    const got=saved().catch(()=>null);
+    e.respondWith(got.then(m=>m?clean(m):net().catch(fallback)));
+    e.waitUntil(got.then(m=>m&&net().catch(()=>{})));   // фоновая подкачка свежей страницы
     return;
   }
   // картинки (значки, заставки, образцы декоров и текстур) — сразу из сохранённых, свежие докачиваем в фоне (повторное открытие без ожидания сети)
