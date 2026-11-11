@@ -11608,11 +11608,22 @@ document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.
 /* после сохранения спецификации — утверждение пересчитать */
 document.addEventListener("submit",e=>{ if(e.target&&e.target.id==="shpSpecForm"){ const id=e.target.dataset.id; setTimeout(()=>{ S.fok[id]=undefined; },1500); } },true);
 /* этап: без утверждения нельзя на «Материалы закуплены» и дальше (технолог/директор — можно) */
-function fokStageOk(o,to){ try{ if(!o||S.shop.tech||to==="lost") return true; if(shpRank(to)>=shpRank("zakup")&&shpRank(o.stage)<shpRank("zakup")){ const f=S.fok[o.id]; if(f===undefined) fokOf(o.id); if(f&&!f.valid&&!f.err){ S.fokHint=true; return false; } } }catch(_){} return true; }
+function fokStageOk(o,to){ try{ if(!o||S.shop.tech||to==="lost"||to==="closed") return true; const f=S.fok[o.id];
+    if(shpRank(to)>=shpRank("zakup")&&shpRank(o.stage)<shpRank("zakup")){ if(f===undefined) fokOf(o.id); if(f&&!f.valid&&!f.err){ S.fokHint="Сначала утвердите фурнитуру заказа (снабженец или дизайнер)"; return false; } }
+    if(shpRank(to)>=shpRank("cex")&&shpRank(o.stage)<shpRank("cex")){ const R=dealSpecRows(o.id); if(f&&f.valid&&R&&R.length){ const St=fokSteps(o,R); if(St.n&&!St.bought){ S.fokHint="Фурнитура ещё не вся пришла ("+St.part+" из "+St.n+") — «В производство» после «Пришло»"; return false; } } } }catch(_){} return true; }
 if(typeof shpCanStage==="function"){ const _fokCS=shpCanStage; shpCanStage=function(o,to){ const r=_fokCS.apply(this,arguments); try{ if(!r||!o||S.shop.tech) return r; const R=typeof shpRank==="function"?shpRank:null; if(!R||to==="lost") return r;
-    if(R(to)>=R("zakup")&&R(o.stage)<R("zakup")){ const f=S.fok[o.id]; if(f===undefined) fokOf(o.id); if(f&&!f.valid&&!f.err){ S.fokHint=true; return false; } } }catch(_){} return r; }; }
-if(typeof shpStageHint==="function"){ const _fokSH=shpStageHint; shpStageHint=function(o,to){ if(S.fokHint){ S.fokHint=false; return "Сначала утвердите фурнитуру заказа (снабженец или дизайнер)"; } return _fokSH.apply(this,arguments); }; }
+    return fokStageOk(o,to); }catch(_){} return r; }; }
+if(typeof shpStageHint==="function"){ const _fokSH=shpStageHint; shpStageHint=function(o,to){ if(S.fokHint){ const m=typeof S.fokHint==="string"?S.fokHint:"Сначала утвердите фурнитуру заказа (снабженец или дизайнер)"; S.fokHint=false; return m; } return _fokSH.apply(this,arguments); }; }
 { const st=document.createElement("style"); st.textContent=".fok-st{display:flex;gap:4px;margin:6px 0 8px}.fok-st span{flex:1;text-align:center;font-size:12px;padding:6px 2px;border-radius:9px;background:rgba(127,127,127,.14);font-weight:600;opacity:.75}.fok-st .d{background:rgba(48,164,108,.18);color:#1f8a4c;opacity:1}.fok-st .c{background:#2b2f33;color:#fff;opacity:1}.fok-ok{margin:0 0 8px;color:#1f8a4c;font-size:13.5px}.fok-warn{margin:0 0 8px;color:#b8860b;font-size:13.5px}.fok-h{font-size:13px;margin:0 0 8px}.fok-b{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}"; document.head.appendChild(st); }
+
+/* 2-й заход: на странице заказа (Технолог 3D) мастер видит не список из модели, а утверждённую «Фурнитуру заказа» */
+function fokOrderHtml(oid){ const d=typeof fcDeal==="function"?fcDeal(oid):null; if(!d) return null; const f=fokOf(d.id), R=dealSpecRows(d.id);
+  if(f===null) return `<div class="card"><h2>Фурнитура заказа</h2><p class="muted" style="margin:0">Загружаю…</p></div>`;
+  if(!(f&&f.valid)) return `<div class="card"><h2>Фурнитура заказа</h2><p class="muted" style="margin:0">Снабженец ещё не утвердил список фурнитуры. Как утвердит — он появится здесь.</p></div>`;
+  const FR=(R||[]).filter(r=>r.type==="F"||r.type==="O");
+  return `<div class="card"><h2>Фурнитура заказа</h2>${fokSteps(d,R).html}<p class="fok-ok">✓ Утверждено: ${esc(f.by||"—")}</p><ul class="spec-view">${FR.map(r=>`<li><span class="spec-vn"><b>${esc(r.name)}</b>${r.comment?`<small>${esc(r.comment)}</small>`:""}</span><span class="spec-vq mono">${esc(String(r.qty).replace(".",","))} ${esc(r.unit)}</span></li>`).join("")}</ul><p class="muted" style="margin:6px 0 0;font-size:13px">Проверить комплект — в сделке № ${esc(d.num)}, вкладка «Цех».</p></div>`; }
+setTimeout(()=>{ if(typeof furnBlock==="function"){ const _fokFB=furnBlock; furnBlock=function(fl,open){ try{ if(S.shop&&S.shop.role==="master"&&!S.shop.full){ const C=typeof fmCur==="function"?fmCur():null, h=C&&fokOrderHtml(C.oid); if(h) return h; } }catch(_){} return _fokFB.apply(this,arguments); }; } },0);
+setTimeout(()=>{ if(typeof sp3Card==="function"){ const _fokSC=sp3Card; sp3Card=function(oid){ try{ const d=typeof fcDeal==="function"?fcDeal(oid):null; if(d&&S.shop&&S.shop.role==="master"&&!S.shop.full) return ""; let h=String(_fokSC.apply(this,arguments)); return h.replace("<h2>📋 Спецификация от дизайнера</h2>","<h2>📋 Фурнитура заказа</h2>"); }catch(_){ return _fokSC.apply(this,arguments); } }; } },0);
 
 /* ---------- быстрый показ (2): что перечитать, когда пришло свежее, прогрев после входа, расшифрованные заказы в памяти ----------
    Подключается последним: здесь видны все загрузчики разделов. Сам запоминатель — site_cache.js. */
@@ -21150,7 +21161,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="cfc6b3a85f";
+const CHK_BUILD="89647dfd75";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -22015,7 +22026,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="cfc6b3a85f";/*cehqr-build*/
+  const BUILD="89647dfd75";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
