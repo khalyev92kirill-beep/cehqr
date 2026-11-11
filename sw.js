@@ -1,6 +1,6 @@
-// Технолог 3D — работа как приложение и без интернета (для уже открытых заказов). Сборка: 5c0ef254ca
-const BUILD="5c0ef254ca", SHELL_C="cehqr-shell", DATA="cehqr-data", LIBC="cehqr-libs";   // имена постоянные: при обновлении сайта сохранённое не стирается
-const SHELL=["./","manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"];
+// Технолог 3D — работа как приложение и без интернета (для уже открытых заказов). Сборка: cdd776a807
+const BUILD="cdd776a807", SHELL_C="cehqr-shell", DATA="cehqr-data", LIBC="cehqr-libs";   // имена постоянные: при обновлении сайта сохранённое не стирается
+const SHELL=["./","3d/","manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"];   // 3d/ («Технолог 3D») — сразу: QR на детали должен открыться и без интернета
 const LIBS=/cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com/;
 // установка: страницы берём прямо с сервера (cache:"reload"), а не из кэша браузера — иначе можно сохранить старую
 self.addEventListener("install",e=>{ e.waitUntil(caches.open(SHELL_C).then(c=>Promise.all(SHELL.map(u=>c.add(new Request(u,{cache:"reload"})).catch(()=>{})))
@@ -24,10 +24,10 @@ self.addEventListener("activate",e=>{
   })),0));
 });
 const isPage=(r,u)=>r.mode==="navigate"||/\/$|\.html$/.test(u.pathname);
-// страницы самого приложения: Технолог 3D (/), Work24link (vertaks/), Смета (smeta/) — они сами проверяют version.json.
+// страницы самого приложения: Work24link (/), Технолог 3D (3d/), Смета (smeta/) — они сами проверяют version.json; vertaks/ — короткий переходник в корень.
 // Остальные (страница клиента k/, sketchup/, dizain…) так не умеют — им «сразу из сохранённых» нельзя, берём с сервера.
 const ROOT=new URL(self.registration.scope).pathname;
-const isApp=u=>u.pathname.startsWith(ROOT)&&/^(?:(?:vertaks|smeta)\/)?(?:index\.html)?$/.test(u.pathname.slice(ROOT.length));
+const isApp=u=>u.pathname.startsWith(ROOT)&&/^(?:(?:3d|vertaks|smeta)\/)?(?:index\.html)?$/.test(u.pathname.slice(ROOT.length));
 self.addEventListener("fetch",e=>{
   const r=e.request; if(r.method!=="GET") return;
   const u=new URL(r.url);
@@ -47,7 +47,7 @@ self.addEventListener("fetch",e=>{
     // ответ из кэша с пометкой «переадресован» браузер для перехода не примет — отдаём копию без пометки
     const clean=m=>m&&m.redirected&&nav?m.blob().then(b=>new Response(b,{status:m.status,statusText:m.statusText,headers:m.headers})):m;
     const fallback=()=>saved().then(m=>m||(!nav?Response.error():
-        /\/vertaks\//.test(u.pathname)?caches.match("vertaks/").then(v=>v||caches.match("index.html")):/\/smeta\//.test(u.pathname)?caches.match("smeta/").then(v=>v||caches.match("vertaks/")):caches.match("./").then(v=>v||caches.match("index.html")))).then(clean);
+        /\/3d\//.test(u.pathname)?caches.match("3d/").then(v=>v||Response.error()):/\/smeta\//.test(u.pathname)?caches.match("smeta/").then(v=>v||Response.error()):/\/vertaks\//.test(u.pathname)?caches.match("vertaks/").then(v=>v||Response.redirect(ROOT+u.search)):caches.match("./").then(v=>v||caches.match("index.html")))).then(clean);
     // перезагрузка ради новой версии (?v=…) и страницы не из приложения — с сервера (без интернета — сохранённые)
     if(u.searchParams.has("v")||!isApp(u)){ e.respondWith(net().catch(fallback)); return; }
     const got=saved().catch(()=>null);
