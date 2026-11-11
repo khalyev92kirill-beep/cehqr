@@ -5878,7 +5878,7 @@ async function shpMoveStage(o,nx){
   o.stage=nx; o.stageAt=Date.now(); o.reason=reason; if(S.view==="shop"&&S.shop.mode==="board") shpRenderKeep();
   let j=await shpPostRaw(Object.assign({action:"shopStage",id:o.id,stage:nx},nx==="lost"?{reason}:{}));
   if(j&&!j.ok&&j.error==="code") j=await shpPostRaw({action:"shopSave",order:Object.assign({},o,{stage:nx})});   // скрипт таблицы ещё старый
-  if(!j||!j.ok){ o.stage=prev; o.stageAt=prevAt; o.reason=prevR; if(j&&j.error==="pin") shpBadPin(); else toast(!j?"Нет связи с таблицей. Этап не сохранился.":j.error==="stage_role"?shpStageHint(o,nx):"Этап не сохранился. Попробуйте ещё раз."); if(S.view==="shop") shpRenderKeep(); return false; }
+  if(!j||!j.ok){ o.stage=prev; o.stageAt=prevAt; o.reason=prevR; if(j&&j.error==="pin") shpBadPin(); else toast(!j?"Нет связи с таблицей. Этап не сохранился.":j.error==="stage_role"?shpStageHint(o,nx):j.msg?j.msg:"Этап не сохранился. Попробуйте ещё раз."); if(S.view==="shop") shpRenderKeep(); return false; }
   toast("Этап: "+shpStName(nx)); S.shop.hist[o.id]=null; if(S.shop.chat&&S.shop.chat.id===o.id) shpChatPoll(); return true;
 }
 
@@ -6545,7 +6545,7 @@ function specBlockHtml(o){
   const R=S.shop.spec[o.id];
   if(R===undefined||R===null){ S.shop.spec[o.id]=null; if(!S.shop.specBusy){ S.shop.specBusy=true; setTimeout(()=>specLoad(o.id).finally(()=>{ S.shop.specBusy=false; }),0); } return `<div class="card shp-spec"><h2>Спецификация закупки</h2><p class="muted" style="margin:0">Загружаю…</p></div>`; }
   if(R==="err") return `<div class="card shp-spec"><h2>Спецификация закупки</h2><p class="muted" style="margin:0">Нет связи — не загрузилась. <button type="button" class="linkbtn" data-act="shp-specre">Повторить</button></p></div>`;
-  const E=S.shop.specEdit&&S.shop.specEdit.deal===o.id?S.shop.specEdit:null, can=S.shop.full, t=String(o.t3d||"").toUpperCase();
+  const E=S.shop.specEdit&&S.shop.specEdit.deal===o.id?S.shop.specEdit:null, can=S.shop.full||S.shop.role==="supply", t=String(o.t3d||"").toUpperCase();   /* 11.11: снабженец тоже правит (сверка) */
   let h=`<div class="card shp-spec"><div class="shp-rc-h"><h2>Спецификация закупки</h2>${can&&!E?`<button type="button" class="btn sm" data-act="shp-specedit">${R.length?"Изменить":"+ Составить"}</button>`:""}</div>
     <p class="shp-specl"><span class="sup-tag spec">Примерная — от дизайнера</span>${R.length?" <span class=\"muted\">"+specMeta(R)+"</span>":""}</p>`;
   if(E){ if(typeof catLoad==="function") catLoad();
@@ -11534,6 +11534,55 @@ if(typeof supItems==="function"&&typeof supItemsRaw==="function"){ const _komSI=
   document.head.appendChild(st); })();
 try{ window.vtxKom={open:komOpen,state:S.kom,load:komLoad}; }catch(_){}   // для проверок
 
+/* ===== 11.11 «Фурнитура заказа» (Кирилл, вариант А): Сверка → Утверждено → Закупка → В цеху.
+   Список — спецификация сделки (лист «Спецификация»): дизайнер составил, снабженец сверил с моделью и утвердил (furnOk).
+   Правка списка снимает утверждение (сервер сравнивает отпечаток). Мастер видит список и «Проверить комплект» только после утверждения.
+   Без утверждения — нельзя на «Материалы закуплены» и дальше (сервер fokNeed_, технолог/директор — можно). ===== */
+S.fok=S.fok||{};
+async function fokLoad(deal){ try{ const j=await shpGet("action=specGet&deal="+encodeURIComponent(deal),true); if(j&&j.ok){ S.fok[deal]=j.fok||{none:1}; if(Array.isArray(j.rows)&&S.shop.spec) S.shop.spec[deal]=j.rows.filter(r=>r.deal===deal); } else if(!S.fok[deal]) S.fok[deal]={err:1}; }catch(_){ S.fok[deal]={err:1}; }
+  if(S.view==="shop"&&S.shop.mode==="order"&&S.shop.cur===deal&&!document.querySelector(".modal")) shpRenderKeep(); }
+function fokOf(deal){ const f=S.fok[deal]; if(f===undefined){ S.fok[deal]=null; setTimeout(()=>fokLoad(deal),0); return null; } return f; }
+function fokValid(deal){ const f=S.fok[deal]; return !!(f&&f.valid); }
+function fokSteps(o,R){ const f=S.fok[o.id], ok=!!(f&&f.valid), FR=(R||[]).filter(r=>r.type==="F"||r.type==="O"), st=FR.map(r=>typeof specSt==="function"?specSt(o.id,r.key):0);
+  const bought=ok&&FR.length>0&&st.every(x=>x>=2), inCeh=ok&&FR.length>0&&st.every(x=>x>=3), part=st.filter(x=>x>=2).length;
+  const S4=[["Сверка",ok],["Утверждено",ok],["Закупка",bought],["В цеху",inCeh]], cur=S4.findIndex(x=>!x[1]);
+  return {ok,bought,inCeh,part,n:FR.length,html:`<div class="fok-st">${S4.map(([n,d],i)=>`<span class="${d?"d":i===cur?"c":""}">${d?"✓ ":(i+1)+" "}${n}</span>`).join("")}</div>`}; }
+if(typeof specBlockHtml==="function"){ const _fokB=specBlockHtml; specBlockHtml=function(o){ let h=String(_fokB.apply(this,arguments)||""); try{ if(!h||!o||(S.shop.role==="master"&&!S.shop.full)) return h; const R=dealSpecRows(o.id); if(!Array.isArray(R)) return h;
+    fokOf(o.id); const f=S.fok[o.id], St=fokSteps(o,R), can=S.shop.full||S.shop.role==="supply", E=S.shop.specEdit&&S.shop.specEdit.deal===o.id, t=String(o.t3d||"").toUpperCase();
+    h=h.replace(/<h2>Спецификация закупки<\/h2>/,"<h2>Фурнитура заказа</h2>").replace('<span class="sup-tag spec">Примерная — от дизайнера</span>','');
+    let bar=St.html;
+    if(f&&f.valid) bar+=`<p class="fok-ok">✓ Утверждено: ${esc(f.by||"—")} · ${esc(typeof shpTime==="function"?shpTime(f.at):"")}${St.n?` · пришло ${St.part} из ${St.n}`:""}${can&&!E?` <button type="button" class="linkbtn" data-fok="off">снять</button>`:""}</p>`;
+    else if(f&&f.sig&&!f.valid) bar+=`<p class="fok-warn">Список изменили после утверждения — проверьте и утвердите снова.</p>`;
+    else bar+=`<p class="muted fok-h">${t?"Сверьте список с моделью из Базиса (ниже) и утвердите.":"Модели из Базиса нет — сверьте со сметой и утвердите."} Пока не утверждено — мастер список не видит, сделку нельзя перевести на «Материалы закуплены».</p>`;
+    if(can&&!E&&!(f&&f.valid)) bar+=`<div class="fok-b">${t&&S.sup&&S.sup.needs&&S.sup.needs[t]&&!S.sup.needs[t].err?`<button type="button" class="btn" data-fok="fromb">⇄ Взять количества из модели</button>`:""}<button type="button" class="btn primary" data-fok="ok">✓ Утвердить список · ${R.length} поз.</button></div>`;
+    const i=h.indexOf("</p>",h.indexOf('class="shp-specl"')); h=i>0?h.slice(0,i+4)+bar+h.slice(i+4):h;
+    if(!(f&&f.valid)) h=h.replace('<details class="spec-cmp">','<details class="spec-cmp" open>');
+    return h; }catch(_){ return h; } }; }
+/* мастер — только утверждённый список */
+if(typeof specBlockHtml==="function"){ const _fokM=specBlockHtml; specBlockHtml=function(o){ const h=_fokM.apply(this,arguments); try{ if(!o||S.shop.role!=="master"||S.shop.full||!h) return h; const f=fokOf(o.id);
+    if(f===null) return `<div class="card shp-spec kom-mspec"><h2>Фурнитура заказа</h2><p class="muted" style="margin:0">Загружаю…</p></div>`;
+    if(!(f&&f.valid)) return `<div class="card shp-spec kom-mspec"><h2>Фурнитура заказа</h2><p class="muted" style="margin:0">Снабженец ещё не утвердил список фурнитуры. Как утвердит — список появится здесь, и можно будет проверить комплект.</p></div>`;
+    return String(h).replace("<h2>Спецификация закупки</h2>",`<h2>Фурнитура заказа</h2>${fokSteps(o,dealSpecRows(o.id)).html}<p class="fok-ok">✓ Утверждено: ${esc(f.by||"—")}</p>`); }catch(_){ return h; } }; }
+document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.closest("[data-fok]"); if(!b) return; e.preventDefault(); e.stopPropagation(); const id=S.shop.cur, o=shpById(id), a=b.dataset.fok; if(!o) return;
+  if(a==="ok"){ const R=dealSpecRows(id)||[]; if(!R.length&&!(await appConfirm("Список пустой. Утвердить без фурнитуры?","Утвердить"))) return;
+    b.disabled=true; const j=await shpPost({action:"furnOk",deal:id,n:R.length}); b.disabled=false; if(!j) return; S.fok[id]=j.fok||{valid:true,by:S.who}; toast("Фурнитура утверждена — мастер видит список"); shpRenderKeep(); return; }
+  if(a==="off"){ if(!(await appConfirm("Снять утверждение? Мастер перестанет видеть список, пока не утвердите снова.","Снять"))) return; const j=await shpPost({action:"furnOk",deal:id,off:1}); if(!j) return; S.fok[id]={none:1}; shpRenderKeep(); return; }
+  if(a==="fromb"){ const t=String(o.t3d||"").toUpperCase(), R=(dealSpecRows(id)||[]).map(r=>Object.assign({},r)), key=(n,u)=>typeof specKey==="function"?specKey(n,u):String(n).toLowerCase()+"|"+u;
+    const B=new Map(); supItemsRaw(t).filter(i=>!i.del&&!i.added&&!i.small&&/^F:/.test(String(i.key||""))).forEach(i=>{ const k=key(i.name,i.unit), x=B.get(k)||{name:i.name,unit:i.unit,qty:0}; x.qty+=Number(i.qty)||0; B.set(k,x); });
+    let ch=0, add=0; R.forEach(r=>{ const x=B.get(key(r.name,r.unit)); if(x){ if(Math.abs((+r.qty||0)-x.qty)>0.004){ r.qty=x.qty; ch++; } B.delete(key(r.name,r.unit)); } });
+    B.forEach(x=>{ R.push({name:x.name,type:"F",qty:x.qty,unit:x.unit,comment:"из модели"}); add++; });
+    if(!ch&&!add){ toast("Всё уже совпадает с моделью"); return; }
+    if(!(await appConfirm(`Из модели: поменять количество у ${ch}, добавить ${add} поз. Сохранить список?`,"Сохранить"))) return;
+    const j=await shpPost({action:"specSave",deal:id,rows:R.map(r=>({key:r.key,name:r.name,type:r.type,qty:r.qty,unit:r.unit,comment:r.comment||""}))}); if(!j) return; if(Array.isArray(j.rows)) S.shop.spec[id]=j.rows; S.fok[id]=undefined; toast("Список обновлён из модели"); shpRenderKeep(); } },true);
+/* после сохранения спецификации — утверждение пересчитать */
+document.addEventListener("submit",e=>{ if(e.target&&e.target.id==="shpSpecForm"){ const id=e.target.dataset.id; setTimeout(()=>{ S.fok[id]=undefined; },1500); } },true);
+/* этап: без утверждения нельзя на «Материалы закуплены» и дальше (технолог/директор — можно) */
+function fokStageOk(o,to){ try{ if(!o||S.shop.tech||to==="lost") return true; if(shpRank(to)>=shpRank("zakup")&&shpRank(o.stage)<shpRank("zakup")){ const f=S.fok[o.id]; if(f===undefined) fokOf(o.id); if(f&&!f.valid&&!f.err){ S.fokHint=true; return false; } } }catch(_){} return true; }
+if(typeof shpCanStage==="function"){ const _fokCS=shpCanStage; shpCanStage=function(o,to){ const r=_fokCS.apply(this,arguments); try{ if(!r||!o||S.shop.tech) return r; const R=typeof shpRank==="function"?shpRank:null; if(!R||to==="lost") return r;
+    if(R(to)>=R("zakup")&&R(o.stage)<R("zakup")){ const f=S.fok[o.id]; if(f===undefined) fokOf(o.id); if(f&&!f.valid&&!f.err){ S.fokHint=true; return false; } } }catch(_){} return r; }; }
+if(typeof shpStageHint==="function"){ const _fokSH=shpStageHint; shpStageHint=function(o,to){ if(S.fokHint){ S.fokHint=false; return "Сначала утвердите фурнитуру заказа (снабженец или дизайнер)"; } return _fokSH.apply(this,arguments); }; }
+{ const st=document.createElement("style"); st.textContent=".fok-st{display:flex;gap:4px;margin:6px 0 8px}.fok-st span{flex:1;text-align:center;font-size:12px;padding:6px 2px;border-radius:9px;background:rgba(127,127,127,.14);font-weight:600;opacity:.75}.fok-st .d{background:rgba(48,164,108,.18);color:#1f8a4c;opacity:1}.fok-st .c{background:#2b2f33;color:#fff;opacity:1}.fok-ok{margin:0 0 8px;color:#1f8a4c;font-size:13.5px}.fok-warn{margin:0 0 8px;color:#b8860b;font-size:13.5px}.fok-h{font-size:13px;margin:0 0 8px}.fok-b{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}"; document.head.appendChild(st); }
+
 /* ---------- быстрый показ (2): что перечитать, когда пришло свежее, прогрев после входа, расшифрованные заказы в памяти ----------
    Подключается последним: здесь видны все загрузчики разделов. Сам запоминатель — site_cache.js. */
 (function(){
@@ -16231,6 +16280,14 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
 .dg-zks{margin-top:10px}.dg-zk{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;border:1px solid var(--line);border-radius:12px;padding:4px 10px;margin-bottom:6px}.dg-zk .smn-chk{flex:1 1 220px}.dg-zd{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}.dg-zdi{width:64px;min-height:44px;border:1px solid var(--line);border-radius:9px;text-align:center;font:inherit;color:var(--ink);background:var(--surface)}
 .dgc-w{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.dgc-in{min-height:44px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font:inherit;font-size:15px;color:var(--ink);background:var(--surface)}.dgc .kpc-sb{margin-top:10px}.dgc-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px 12px}
 `; document.head.appendChild(st); })();
+/* 11.11 (Кирилл): утверждённая фурнитура с ценами — в Приложение № 1 договора (цены для клиента: закупка ÷ коэффициент сделки; входит в итог) */
+if(typeof dgFill==="function"){ const _dgF=dgFill; dgFill=function(o,x,mode){ let h=_dgF.apply(this,arguments); try{ if(!h||!o||typeof fokValid!=="function"||!fokValid(o.id)) return h;
+    const R=(typeof dealSpecRows==="function"?dealSpecRows(o.id):null)||[], FR=R.filter(r=>r.type==="F"||r.type==="O"); if(!FR.length) return h;
+    const k=(+o.matx>0&&+o.sum>0)?Math.min(0.6,Math.max(0.25,o.matx/o.sum)):0.40, pr=n=>{ const c=typeof catFind==="function"?catFind(n):null, p=c&&typeof catPriceNum==="function"?catPriceNum(c):0; return p>0?p/k:0; };
+    const N=v=>Math.round(+v||0).toLocaleString("ru-RU"); let tot=0;
+    const rows=FR.map((r,i)=>{ const p=pr(r.name), s=p*(+r.qty||0); tot+=s; return `<tr><td>${i+1}</td><td>${esc(r.name)}</td><td class="r">${esc(String(r.qty).replace(".",","))} ${esc(r.unit||"шт")}</td><td class="r">${p?N(p):"—"}</td><td class="r">${s?N(s):"—"}</td></tr>`; }).join("");
+    const t=`<div class="sub" style="margin-top:12px">Фурнитура (список утверждён${S.fok&&S.fok[o.id]&&S.fok[o.id].by?" · "+esc(S.fok[o.id].by):""})</div><table><tr><th>№</th><th>Наименование</th><th class="r">Кол-во</th><th class="r">Цена, руб.</th><th class="r">Сумма, руб.</th></tr>${rows}<tr><td colspan="4"><b>Фурнитура — входит в итог договора</b></td><td class="r"><b>${tot?N(tot):"—"}</b></td></tr></table>`;
+    const i=h.indexOf('<p class="note">Цены — для Заказчика'); return i>=0?h.slice(0,i)+t+h.slice(i):h; }catch(_){ return h; } }; }
 
 /* ===== Удаление заказов в приложении: директор и технолог (PIN технолога) — галочками, несколько сразу =====
    Сервер: POST delOrdAdd {ids} (только роль tech), GET delIds (без PIN, только номера и время).
@@ -18817,7 +18874,7 @@ document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closes
 { const st=document.createElement("style"); st.textContent=".keys-c{width:min(520px,100%)}.keys-ol{margin:0 0 10px;padding-left:20px;line-height:1.6}.keys-c textarea{width:100%;box-sizing:border-box;font:inherit;min-height:110px}.keys-st{color:#e5484d;min-height:1.2em;margin:6px 0}.keys-go{width:100%;min-height:50px}"; document.head.appendChild(st); }
 
 /* Кирилл 11.11: дизайнер/офис переносит сделки по этапам (по умолчанию можно; выключается в «Права сотрудников») */
-if(typeof shpCanStage==="function"){ const _drCS=shpCanStage; shpCanStage=function(o,to){ try{ if(dirOffice()&&ofRights().stage!==false) return true; }catch(_){} return _drCS.apply(this,arguments); }; }
+if(typeof shpCanStage==="function"){ const _drCS=shpCanStage; shpCanStage=function(o,to){ try{ if(dirOffice()&&ofRights().stage!==false) return typeof fokStageOk==="function"?fokStageOk(o,to):true; }catch(_){} return _drCS.apply(this,arguments); }; }
 
 /* ===== Сканер (Кирилл 07.11): «навёл камеру на номер — зафиксировал — сразу без нажатия деталь на 3D»; «сканер внизу не понимает, какой заказ».
    1) Сканер без открытого заказа: сначала «Какой заказ сканируем?», запоминает последний; в окне сверху «Заказ № … [Сменить]».
@@ -21051,7 +21108,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="276bbd0b63";
+const CHK_BUILD="56bfd2baed";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21915,7 +21972,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="276bbd0b63";/*cehqr-build*/
+  const BUILD="56bfd2baed";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
