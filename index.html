@@ -7749,11 +7749,11 @@ async function smLoad(id,meta){ S.shop.smTab="mods";   // id — смета «S�
   if(!id){ meta=meta||{}; S.shop.sm={id:"",deal:"",client:meta.client||"",phone:meta.phone||"",kind:meta.kind||"",status:"trial",data:smNew({kind:meta.kind}),saved:null,dirty:true}; shpRenderKeep(); return pre(); }
   S.shop.sm={id,busy:true,data:null}; const j=await shpGet("action=smeta&id="+encodeURIComponent(id),true), has=j&&j.ok&&j.smeta, o=shpById(has?j.deal:id)||shpById(id);
   S.shop.sm={id:has?j.id:(o?o.id:id),deal:(has?j.deal:"")||(o?o.id:""),client:(has&&j.client)||(o&&o.client)||"",phone:(has&&j.phone)||(o&&o.phone)||"",kind:(has&&j.kind)||(o&&o.kind)||"",status:has?j.status||"":"trial",
-    data:has?j.smeta:smNew(o),saved:has?{who:j.who,when:j.when,total:j.total}:null,err:!(j&&j.ok),offer:(j&&j.offer)||null};
+    data:has?j.smeta:smNew(o),saved:has?{who:j.who,when:j.when,total:j.total}:null,err:!(j&&j.ok),offer:(j&&j.offer)||null,okK:(j&&j.okK)||null,askK:(j&&j.askK)||null};
   return pre(); }
 function smCfgNow(){ const c=(S.shop&&S.shop.cfg)||{}; return {wr:c.wr,mk:c.mk,office:c.office,deliv:c.deliv,plK:c.plK,plC:c.plC,cur:c.cur}; }
 async function smSave(setSum,quiet){ const sm=S.shop.sm; if(!sm||!sm.data) return; if(setSum&&sm.status==="trial") sm.status=sm.deal?"deal":""; if(!sm.data.cfg&&S.shop.cfgOk) sm.data.cfg=JSON.parse(JSON.stringify(smCfgNow())); const c=smCalc(sm.data);
-  const j=await shpPost({action:"smetaSave",id:sm.id,deal:sm.deal,client:sm.client,phone:sm.phone,kind:sm.kind,status:sm.status,data:sm.data,total:c.total,mats:c.mats,k:"",br:c.br,mg:c.furnD>0?c.mgP:"",setSum:!!setSum}); if(!j) return false;
+  const j=await shpPost({action:"smetaSave",id:sm.id,deal:sm.deal,client:sm.client,phone:sm.phone,kind:sm.kind,status:sm.status,data:sm.data,total:c.total,mats:c.mats,k:"",br:c.br,fzP:c.fzP||0,mg:c.furnD>0?c.mgP:"",setSum:!!setSum}); if(!j) return false;
   if(j.id) sm.id=j.id; if(c.furnD>0) (S.shop.smMg||(S.shop.smMg={}))[sm.id]=c.mgP; sm.saved={who:shpWho(),when:Date.now(),total:c.total}; sm.dirty=false;
   if(setSum){ const o=shpById(sm.deal); if(o){ o.sum=c.total; o.zpBr=c.br; } toast("Сумма заказа "+shpRub(c.total)+", бригаде "+shpRub(c.br)); } else if(!quiet) toast("Смета сохранена"); shpRenderKeep(); return true; }
 /* Кирилл 07.11: новая смета — «пробная»: учиться и настраивать, в договоры и «Разбор договоров» не идёт, сообщений нет.
@@ -13514,7 +13514,7 @@ async function dpLoad(){ if(S.dp.busy) return; S.dp.busy=true; const [y,m]=dpYm(
   const j=await shpGet("action=dealsPay&from="+new Date(y,m-1,1).getTime()+"&to="+new Date(y,m,1).getTime(),true); S.dp.busy=false;
   S.dp.data=j&&j.ok?j:{err:1}; dpRedraw(); }
 function dpRedraw(){ if(S.view==="shop"&&S.shop&&S.shop.mode==="dpay"&&typeof shpRenderKeep==="function") shpRenderKeep(); }
-const K=()=>Object.assign({k:0.40,kb:0.45,min:300000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.37,lTop:0.35},(S.dp.data&&S.dp.data.zk)||{});
+const K=()=>Object.assign({k:0.40,kb:0.45,min:300000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.37,lTop:0.35,kAsk:0.42,kLow:0.40,dLow:2,ofLow:70,kF:0.70},(S.dp.data&&S.dp.data.zk)||{});
 /* шкала (Кирилл 05.11): 0,45 минимум · 0,42–0,38 средне · 0,35 успех · 0,33 и лучше круто */
 function dpLv(k,KK){ KK=KK||K(); const e=1e-4; return k>KK.lMin+e?"ниже минимума":k>KK.lMid+e?"минимум":k>KK.k-e?"средне":k>KK.lGood+e?"хорошо":k>KK.lTop+e?"успех":"круто"; }
 const LV_ST={"ниже минимума":"low","минимум":"min","средне":"norm","хорошо":"high","успех":"high","круто":"top"};
@@ -13561,7 +13561,7 @@ function dpSetVals(f){ const D=S.dp.data||{}, k=K(), P=D.pct||[], g=(n,d)=>{ con
     P:P.map((r,i)=>({name:r.name,from:r.from,to:r.to,pct:num(g("p"+i,r.pct))}))}; }
 function dpCmpHtml(v){ if(!(v.mx>0&&v.k>0&&v.kb>0)) return `<p class="muted">Впишите материал и коэффициенты.</p>`;
   const cols=[v.c1,v.c2,v.c3].map(c=>c>0?c:v.k), base=v.mx/v.kb, norm=v.mx/v.k, nm=x=>/имя|дизайн/i.test(x.to)||/дизайн/i.test(x.name);
-  const C=cols.map(c=>{ const S0=v.mx/c, d=S0-norm; const rows=v.P.map(r=>({r,b0:r.from==="договор"?S0:base,amt:(r.from==="договор"?S0:base)*r.pct/100}));
+  const C=cols.map(c=>{ const S0=v.mx/c, d=S0-norm; const rows=v.P.map(r=>{ const pe=dpEffPct(r,c,v); return {r,pe,b0:r.from==="договор"?S0:base,amt:(r.from==="договор"?S0:base)*pe/100}; });
     const prem=d>=1&&S0>=v.min&&v.bonus>0?d*v.bonus/100:0, pay=rows.reduce((a,x)=>a+x.amt,0)+prem; return {c,S0,d,rows,prem,pay,firm:S0-v.mx-pay-(v.fg||0)}; });
   const lvOf=x=>dpLv(x.c,v), stOf=x=>LV_ST[lvOf(x)], cls=x=>({low:"dp-r",min:"dp-y2",high:"dp-g",top:"dp-g"})[stOf(x)]||"", head=(x,i)=>`<div class="dp-ch">Продала по ${nf(x.c)}<small class="${cls(x)}">${lvOf(x)}${stOf(x)==="top"?" ★":""}</small></div>`;
   const R2=(lbl,f,cl,sub)=>`<div class="dp-cl">${lbl}${sub?`<small>${sub}</small>`:""}</div>`+C.map((x,i)=>`<div class="${typeof cl==="function"?cl(x):cl||""}">${f(x,i)}</div>`).join("");
@@ -13569,14 +13569,14 @@ function dpCmpHtml(v){ if(!(v.mx>0&&v.k>0&&v.kb>0)) return `<p class="muted">В�
   let h=`<div class="dp-cg"><div class="dp-ch dp-mcell"><span>Материал + расходы</span><b>${N(v.mx)}</b>${v.rc>0?`<span>по чекам ${N(v.rc)}</span><small class="${v.rc>v.mx?"":"dp-gx"}">${v.rc>v.mx?"больше на "+N(v.rc-v.mx):v.rc<v.mx?"меньше на "+N(v.mx-v.rc):"сходится"}</small>`:""}${v.fg>0?`<small>забыли ${N(v.fg)}</small>`:""}</div>${C.map(head).join("")}`;
   h+=R2("Продала за",x=>`<b>${N(x.S0)}</b>`,x=>"dp-big "+cls(x),N(v.mx)+" ÷ коэф.");
   h+=R2("Дороже "+nf(v.k),x=>x.d>0.5?"+"+N(x.d):x.d<-0.5?"−"+N(-x.d):"0",x=>x.d>0.5?"dp-g":x.d<-0.5?"muted":"muted","с этого премия");
-  if(des.length){ h+=`<div class="dp-cs">От продажи</div>`; des.forEach(r=>{ h+=R2(pin(r),x=>N(x.S0*r.pct/100)+`<small>${N(x.S0)} × ${nf(r.pct)} %</small>`); });
+  if(des.length){ h+=`<div class="dp-cs">От продажи</div>`; des.forEach(r=>{ h+=R2(pin(r),x=>{ const z=x.rows.find(q=>q.r===r); return N(z.amt)+`<small>${N(x.S0)} × ${nf(z.pe)} %</small>`; }); });
     h+=R2(`<span class="dp-lr">Премия<span class="dp-pin dp-pin2"><input name="bonus" inputmode="decimal" value="${nf(v.bonus)}" aria-label="Премия дизайнеру, процент"> %</span></span>`,x=>x.prem?N(x.prem)+`<small>${N(x.d)} × ${nf(v.bonus)} %</small>`:"—",x=>x.prem?"dp-g":"muted");
-    h+=R2("<b>Дизайнеру всего</b>",x=>`<b>${N(des.reduce((a,r)=>a+x.S0*r.pct/100,0)+x.prem)}</b>`,x=>x.prem?"dp-g":""); }
-  h+=`<div class="dp-cs">Остальные (от ${N(base)})</div>`; oth.forEach(r=>{ h+=R2(pin(r)+(r.to&&!/заказа|снабженец/i.test(r.to)?`<small>${esc(r.to)}</small>`:""),x=>N(base*r.pct/100)); });
+    h+=R2("<b>Дизайнеру всего</b>",x=>`<b>${N(x.rows.filter(z=>des.includes(z.r)).reduce((a,z)=>a+z.amt,0)+x.prem)}</b>`,x=>x.prem?"dp-g":""); }
+  h+=`<div class="dp-cs">Остальные (от ${N(base)})</div>`; oth.forEach(r=>{ h+=R2(pin(r)+(r.to&&!/заказа|снабженец/i.test(r.to)?`<small>${esc(r.to)}</small>`:""),x=>{ const z=x.rows.find(q=>q.r===r); return N(z.amt)+(z.pe!==r.pct?`<small>${nf(z.pe)} %</small>`:""); }); });
   h+=R2("<b>Всем выплатам</b>",x=>N(x.pay));
   if(v.fg>0) h+=R2("Забыли в смете",()=>"−"+N(v.fg),"dp-y2");
   h+=R2("<b>Фирме остаётся</b>",x=>`<b>${N(x.firm)}</b>`,x=>"dp-big "+cls(x),"продажа − "+N(v.mx)+" − выплаты");
-  return h+`</div><p class="muted dp-hint">Продала по ${nf(C[2].c)} вместо ${nf(C[0].c)}: фирме ${C[2].firm-C[0].firm>=0?"+":"−"}${N(Math.abs(C[2].firm-C[0].firm))}, дизайнеру ${(C[2].prem+des.reduce((a,r)=>a+C[2].S0*r.pct/100,0))-(C[0].prem+des.reduce((a,r)=>a+C[0].S0*r.pct/100,0))>=0?"+":"−"}${N(Math.abs((C[2].prem+des.reduce((a,r)=>a+C[2].S0*r.pct/100,0))-(C[0].prem+des.reduce((a,r)=>a+C[0].S0*r.pct/100,0))))}.</p>`; }
+  return h+`</div><p class="muted dp-hint">Продала по ${nf(C[2].c)} вместо ${nf(C[0].c)}: фирме ${C[2].firm-C[0].firm>=0?"+":"−"}${N(Math.abs(C[2].firm-C[0].firm))}, дизайнеру ${(C[2].prem+C[2].rows.filter(z=>des.includes(z.r)).reduce((a,z)=>a+z.amt,0))-(C[0].prem+C[0].rows.filter(z=>des.includes(z.r)).reduce((a,z)=>a+z.amt,0))>=0?"+":"−"}${N(Math.abs((C[2].prem+C[2].rows.filter(z=>des.includes(z.r)).reduce((a,z)=>a+z.amt,0))-(C[0].prem+C[0].rows.filter(z=>des.includes(z.r)).reduce((a,z)=>a+z.amt,0))))}.</p>`; }
 document.addEventListener("input",ev=>{ const f=ev.target.closest&&ev.target.closest('[data-dp-form="set"]'); if(!f) return; const v=dpSetVals(f);
   S.dp.mx=v.mx; S.dp.fgx=v.fg; S.dp.rcx=v.rc; S.dp.c1=f.elements.c1.value; S.dp.c2=f.elements.c2.value; S.dp.c3=f.elements.c3.value; S.dp.setV=v; const box=f.querySelector(".dp-cmp"); if(!box) return;
   const nm=ev.target.name, pos=ev.target.selectionStart, inBox=box.contains(ev.target); box.innerHTML=dpCmpHtml(v);
@@ -13715,9 +13715,13 @@ html.vt.sk[data-vt="dark"] .dp-r{color:#FF453A}html.vt.sk[data-vt="dark"] .dp-g{
 html.vt.sk[data-vt="dark"] .dp-warn{border-color:#FF453A;color:#FF453A}html.vt.sk[data-vt="dark"] .dp-warn.dp-y{border-color:#FFD60A;color:#FFD60A}
 html.vt.sk[data-vt="dark"] .dp-kf input,html.vt.sk[data-vt="dark"] .dp-pin input{background:#000;border-color:rgba(255,255,255,.2)}`;
 document.head.appendChild(st);
-})();
 /* вход в «Разбор договоров» из меню — всегда со списка (Кирилл 11.11) */
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-v="dpay"],[data-dv="dpay"]'); if(b&&S.dp){ S.dp._last=null; S.dp.cur=null; } },true);
+
+/* 11.11: продали хуже kLow — дизайнеру dLow %, офису плавно до ofLow %, бригада без изменений (как zpDeal_ на сервере) */
+function dpEffPct(r,c,v){ const KK=K(); if(!(c>KK.kLow+1e-9)) return r.pct; const t=String(r.to||"").toLowerCase(); if(/бригад|мастер заказа/.test(t)) return r.pct;
+  if(/дизайнер заказа/.test(t)) return Math.min(r.pct,KK.dLow); const f=Math.max(KK.ofLow/100,Math.min(1,1-(c-KK.kLow)/Math.max(0.0001,KK.lMin-KK.kLow)*(1-KK.ofLow/100))); return Math.round(r.pct*f*100)/100; }
+})();
 
 /* ---------- ЧЕРТЕЖИ ЧЁРНО-БЕЛЫЕ (утверждённый вариант 3): присадка детали/фасада и «Вид спереди» ----------
    Подключается после site_draw.js. Заменяет (обёртками, без правки исходных функций):
@@ -17252,19 +17256,21 @@ function qkCalc(d){ const q=d.qk, PR=qkProds(q);
   QK_CAT.forEach(([k])=>(q.it[k]||[]).forEach((x,i)=>{ const qq=k==="edge"&&x.au?(x.for?Math.ceil((q.it.ldsp||[]).concat(q.it.front||[]).filter(y=>y.n===x.for).reduce((a,y)=>a+num(y.q),0)*12):Math.ceil(sh*12)):num(x.q); items.push(Object.assign({},x,{cat:k,i,q:qq,sum:Math.round(qq*num(x.p))})); }));
   const em=items.filter(x=>x.cat==="edge").reduce((a,x)=>a+x.q,0), P=qkProf(q);
   const matB=items.reduce((a,x)=>a+x.sum,0), matP=P.L.reduce((a,x)=>a+x.sum,0), mat=matB+matP;
-  const exF=mat>0?(q.ex||[]).reduce((a,x)=>a+num(x.s),0):0, exP=Math.round(mat*num(q.ep)/100), exS=exF+exP, GR=qkGroups(items,q), gW=GR.reduce((a,g)=>a+g.wk,0), M=mat+exS+gW;
+  const fz=items.filter(x=>x.cat==="front"&&x.cz).reduce((a,x)=>a+x.sum,0), kF=qkKF(), fzP=fz>0?Math.round(fz/kF):0;   /* 11.11: заказные фасады — отдельно ÷ kF, не в М */
+  const exF=mat>0?(q.ex||[]).reduce((a,x)=>a+num(x.s),0):0, exP=Math.round((mat-fz)*num(q.ep)/100), exS=exF+exP, GR=qkGroups(items,q), gW=GR.reduce((a,g)=>a+g.wk,0), M=mat-fz+exS+gW;
   const k=Math.min(0.6,Math.max(0.2,+d.k||0.38)), meb=M>0?Math.round(M/k):0;
   const W=(q.wk||[]).map((x,i)=>{ const auto=x.a==="sheet"?sh:x.a==="edge"?em:null, qq=x.qm!=null&&x.qm!==""?num(x.qm):auto!=null?auto:num(x.q); return Object.assign({},x,{i,qq,auto,sum:Math.round(qq*num(x.p))}); }).concat(P.W).concat(PR.works);
   const wk=W.reduce((a,x)=>a+x.sum,0);
   const mo=q.mo||{m:"pct"}, mont=mo.m==="no"?0:mo.m==="sum"?Math.round(num(mo.s)):Math.round((meb+wk)*num(mo.p)/100);
   /* Кирилл 07.11: «монтаж — бригаде процентом, доставку внутрь»: цена клиенту = М ÷ коэффициент, всё включено.
      Работы, монтаж и доставка по строкам больше не прибавляются (расчёт спрятан, чтобы включить позже). Коэффициент везде один: выбрали 0,45 — и внизу 0,45. */
-  const deliv=Math.round(num(q.dl)), total=meb;
+  const deliv=Math.round(num(q.dl)), total=meb+fzP;
+  const BW=qkBwCalc(q,items,sh,em), br=BW.on?BW.sum:0;   /* пока ничего не вписали в «Работы бригады» — бригаде по-старому 21 % */
   /* для «Не забыли?» — что уже есть в смете */
   const all=items.concat(P.L), has=re=>all.filter(x=>re.test(x.n||"")).reduce((a,x)=>a+(+x.q||0),0);
   const lines=[["hinge",/петл/i],["slide",/направл|tandem|метабокс|legrabox|ящик/i],["handle",/ручк|push|пуш|tip.?on|gola/i],["legs",/опор|цокол|ножк/i],["top",/столешн/i],["apron",/фартук|стенов/i],["led",/лент|подсвет/i],["psu",/блок пит/i]].map(([kk,re])=>({s:{k:kk},q:has(re)})).filter(x=>x.q>0);
   const cutQ=W.filter(x=>/вырез|мойк/i.test(x.n||"")).reduce((a,x)=>a+x.qq,0);
-  return {qk:true,need:{tech:{},cut:{sink:cutQ},slide:1},lines,mats:M,matsK:mat,k,works:[],wC:0,wM:0,office:0,furn:meb,mont:0,deliv:0,inK:{wk,mont,deliv},total,br:0,mk:{},
+  return {qk:true,fz,fzP,kF,need:{tech:{},cut:{sink:cutQ},slide:1},lines,mats:M,matsK:mat,k,works:[],wC:0,wM:0,office:0,furn:meb,mont:0,deliv:0,inK:{wk,mont,deliv},total,br,BW,mk:{},
     noPrice:all.filter(x=>(+x.q||0)>0&&!(num(x.p)>0)).length,disc:0,discA:0,furnD:0,firm:0,firm0:0,mgP:0,mgP0:0,
     M,mat,matB,matP,exF,exP,exS,meb,W,wk,sh,em,items,P,PR,GR,gW}; }
 const _qkCalc0=smCalc; smCalc=function(d){ return d&&d.qk?qkCalc(d):_qkCalc0.apply(this,arguments); };
@@ -17286,7 +17292,7 @@ function qkGroups(items,q){ const G=new Map(), get=k=>{ if(!G.has(k)) G.set(k,{k
 function qkGrpOpen(k){ try{ const o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); return o[k]!==0; }catch(_){ return true; } }
 function qkRowHtml(x,k){ const it=qkCatIt(x.n), sw=it&&typeof catSw==="function"?catSw(it,"cat-sw qk-sw"):`<span class="qk-sw0"></span>`;
   if(x.prod) return `<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="prod" data-i="${x.pi}"><b>${esc(x.n)}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u)+" · ":`<span class="qk-bad">нет цены</span> · `}из шкафа${x.sub?" · "+esc(x.sub):""}</small>${x.cut?`<span class="qk-cutl" data-qk="3d" data-i="-1">▦ 3D и раскрой</span>`:""}</button><span class="qk-ro">${F(x.q)}</span><span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>`;
-  return `<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="ed" data-c="${k}" data-i="${x.i}"><b>${esc(x.n||"без названия")}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u):`<span class="qk-bad">нет цены — нажмите</span>`}${x.au?" · авто 12 м на лист":""}</small></button>
+  return `<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="ed" data-c="${k}" data-i="${x.i}"><b>${esc(x.n||"без названия")}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u):`<span class="qk-bad">нет цены — нажмите</span>`}${x.au?" · авто 12 м на лист":""}</small></button>${k==="front"?`<button type="button" class="qk-cz${x.cz?" on":""}" data-qk="cz" data-i="${x.i}" title="Заказной фасад от поставщика — своя наценка" aria-pressed="${!!x.cz}">${x.cz?"✓ заказной":"заказной?"}</button>`:""}
     ${inp(`it.${k}.${x.i}.q`,x.au?"":x.q,"n",x.au?x.q:"0","qk-q","Количество: "+(x.n||""))}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>`; }
 function qkGroupsHtml(c,q,only){ const GR=only||c.GR||[]; if(!GR.length) return "";
   return GR.map(g=>{ const op=qkGrpOpen(g.key), pin=(f,v,l)=>`<input class="qk-in qk-p qk-clsp" data-qcls="${esc(g.key)}|${f}" inputmode="decimal" value="${esc(String(v))}" aria-label="${esc(l)}">`;
@@ -17461,7 +17467,7 @@ function qkStepsHtml(c,q,d,sm){ const cur=QK_STEPS.some(x=>x[0]===q.stp)?q.stp:"
     h+=card('data-qk="kupe" data-i="-1"',"🚪","Двери-купе (раздвижные)","ширина и высота проёма, сколько дверей → профиль, зеркало, стекло, ЛДСП",!has)+card('data-qk="stp" data-v="mat"',"✚","Только материалы","ЛДСП, кромка, фурнитура — списком");
     if((q.pr||[]).length) h+=qkWardListHtml(c,q); if((q.kp||[]).length) h+=kpqListHtml(c,q); if((q.dr||[]).length) h+=qkProfHtml(c,q); }
   if(cur==="mat") h+=qkMatListHtml(c,q);   /* Кирилл 07.11: всё списком по порядку */
-  if(cur==="price") h+=qkExHtml(c,q)+qkKHtml(c,d)+qkInHtml()+qkSumHtml(c,sm).replace(/<div class="qk-acts">[\s\S]*?<\/div><\/section>$/,"</section>");
+  if(cur==="price") h+=qkExHtml(c,q)+qkKHtml(c,d)+qkBwHtml(c,q)+qkInHtml()+qkSumHtml(c,sm).replace(/<div class="qk-acts">[\s\S]*?<\/div><\/section>$/,"</section>");
   if(cur==="send") h+=`<section class="qk-card"><div class="qk-tot big"><span>Клиенту</span><b>${N(c.total)} ₽</b></div>${c.noPrice?`<p class="qk-bad">У ${c.noPrice} ${pl(c.noPrice,"позиции","позиций","позиций")} нет цены — шаг 2</p>`:""}</section>
     <div class="smn-send">${!sm.saved||sm.dirty?`<button type="button" class="btn primary" data-act="sm-save">💾 Сохранить смету</button>`:`<p class="muted">✓ Смета сохранена</p>`}<button type="button" class="btn" data-act="sm-kp">📄 КП в PDF — отправить клиенту</button>${(q.pr||[]).length?`<button type="button" class="btn" data-qk="3d" data-i="-1">🧊 3D и раскрой — показать клиенту</button>`:""}<button type="button" class="btn" data-act="sm-client">Для клиента — без внутренних цифр</button>${sm.deal?`<button type="button" class="btn" data-act="sm-sum">Записать сумму в сделку</button>`:`<button type="button" class="btn ok-btn" data-act="sm-deal">✅ Клиент согласен → создать сделку</button>`}</div>`;
   h+=`</div>`; const pv=QK_STEPS[ix-1], nx=QK_STEPS[ix+1];
@@ -17710,7 +17716,7 @@ document.addEventListener("change",e=>{ const t=e.target.closest&&e.target.close
   if(p==="_k"){ const v=num(t.value); if(v>0) sm.data.k=v>1?v/100:v; qkDirty(); return shpRenderKeep(); }
   const a=p.split("."), last=a.pop(); let o=q; for(const k of a){ o=o[k]; if(o==null) return; }
   const raw=t.value.trim();
-  if(last==="qm"&&raw==="") delete o.qm; else if(t.dataset.t==="t") o[last]=raw; else o[last]=num(raw);
+  if((last==="qm"||a[0]==="bw")&&raw==="") delete o[last]; else if(t.dataset.t==="t") o[last]=raw; else o[last]=num(raw);
   if(a[0]==="it"&&a[1]==="edge"&&last==="q"){ if(raw==="") { o.au=1; } else delete o.au; }
   qkDirty(); shpRenderKeep(); },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qte]"); if(!b) return; e.preventDefault(); e.stopPropagation(); const sm=S.shop.sm; if(!sm||!sm.data||!sm.data.qk) return; if(typeof catLoad==="function") catLoad(); if(qkToneEdge(sm.data.qk,b.dataset.qte,true)){ qkDirty(); shpRenderKeep(); toast("Кромка в тон добавлена"); return; }
@@ -17749,6 +17755,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="exadd"){ q.ex=(q.ex||[]).concat([{n:"",s:0}]); qkDirty(); shpRenderKeep(); setTimeout(()=>{ const el=document.querySelector(`[data-qf="ex.${q.ex.length-1}.n"]`); if(el) el.focus(); },60); return; }
   if(a==="del"){ const p=t.dataset.p.split("."), i=+p.pop(); const arr=p.reduce((o,k)=>o&&o[k],q); if(Array.isArray(arr)) arr.splice(i,1); qkDirty(); return shpRenderKeep(); }
   if(a==="k"){ d.k=+t.dataset.v; qkDirty(); return shpRenderKeep(); }
+  if(a==="cz"){ const x=(q.it.front||[])[+t.dataset.i]; if(x){ x.cz=!x.cz; qkDirty(); toast(x.cz?"Заказной фасад — цена клиенту ÷ "+String(qkKF()).replace(".",",")+", не в базе процентов":"Обычный фасад — через коэффициент"); } return shpRenderKeep(); }
   if(a==="mo"){ q.mo=Object.assign({m:"pct",p:qkSet().mp,s:0},q.mo||{},{m:t.dataset.v}); qkDirty(); return shpRenderKeep(); }
   if(a==="top"){ const el=document.getElementById("qkSum"); if(el) el.scrollIntoView({behavior:"smooth",block:"center"}); return; } },true);
 
@@ -18117,7 +18124,6 @@ function qkKupeModal(i){ const q=S.shop.sm.data.qk; q.kp=q.kp||[]; const old=i>=
 (function(){ const st=document.createElement("style"); st.textContent=`.kpq-pic{background:#fff;border-radius:12px;padding:8px;margin:6px 0 10px}.kpq-pic svg{max-height:300px!important}.kpq-sch{display:flex;flex-wrap:wrap;gap:6px}.kpq-sec{display:flex;align-items:center;gap:8px;margin:6px 0}.kpq-sec>span{width:20px;font-weight:700;color:var(--muted,#999)}.kpq-sec input{width:84px;padding:8px;border-radius:9px;border:1px solid var(--line,#444);background:var(--bg,#111);color:inherit;font:inherit;text-align:center}
 .kpq-ls{display:grid;gap:6px}.kpq-l{display:grid;grid-template-columns:1fr 90px 70px;gap:8px;align-items:center}.kpq-l span{display:flex;flex-direction:column;min-width:0}.kpq-l small{color:var(--muted,#999)}.kpq-l input{width:100%;padding:8px;border-radius:9px;border:1px solid var(--line,#444);background:var(--bg,#111);color:inherit;font:inherit;text-align:right}.kpq-l>b{text-align:right}`; document.head.appendChild(st); })();
 window.__qk={calc:qkCalc,setData:x=>{QK.set=x;},push:(c,x)=>qkPush(c,x),price:(n,u)=>qkPrice(n,u),sec:QK_SEC,secOf:x=>qkSecOf(x),catIt:n=>qkCatIt(n),cat:QK_CAT};
-})();
 
 /* вид сметы — всегда виден сверху, «Сменить» */
 function smKindBar(){ const sm=S.shop.sm; if(!sm||!sm.data||S.shop.smClient) return ""; const q=!!sm.data.qk;
@@ -18135,6 +18141,26 @@ document.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.
   const oid=S.current&&S.current.orderId, M=S._qkMap&&S._qkMap[oid], sm=S.shop&&S.shop.sm; if(!M||!sm||!sm.data||!sm.data.qk) return;
   const row=M.rows[(+String(t.dataset.code).split("-").pop())-1], P=row&&sm.data.qk.pr[row.pi]; if(!P) return;
   P.rmk=(P.rmk||[]).concat([{k:row.rk,n:row.n,L:row.L,W:row.W}]); qkDirty(); toast("Убрано из сметы: "+row.n+" — смета пересчитана"); qkRmOpen(oid); },true);
+
+function qkKF(){ try{ const z=window.__sk&&window.__sk.K?window.__sk.K():null; return z&&z.kF>0?z.kF:0.70; }catch(_){ return 0.70; } }
+{ const st=document.createElement("style"); st.textContent=".qk-cz{flex:none;align-self:center;font:inherit;font-size:12px;padding:4px 8px;border-radius:10px;border:1px dashed rgba(127,127,127,.6);background:transparent;color:inherit;cursor:pointer;white-space:nowrap}.qk-cz.on{border-style:solid;border-color:#6c4cf0;color:#6c4cf0;background:rgba(108,76,240,.1)}"; document.head.appendChild(st); }
+
+/* ===== 11.11 (В): бригаде — по работам, расценки из таблицы Кирилла («себестоимость» = бригаде). Сумма → «ЗП бригаде» сделки вместо 21 % ===== */
+const QK_BW=[["l","Распил ЛДСП","лист",350,"ldsp"],["m","Распил МДФ","лист",480,"mdf"],["d","Распил ДВП","лист",50,"dvp"],["el","Кромка ЛДСП","м",15,"edge"],["em","Кромка МДФ","м",50,""],
+  ["b","Сборка базы (опоры, навесы, ДВП, сушка)","шт",130,""],["bu","Сборка угловой / радиусной базы","шт",300,""],["p","Сборка пенала","шт",500,""],["n","Установка направляющих","компл.",170,"drw"],["kr","Выдвижные корзины","шт",100,""],
+  ["h","Сверление под петлю","шт",15,"hinge"],["ib","Установка базы","шт",520,""],["t","Установка техники (варка, мойка, духовка, вытяжка, СВЧ)","шт",300,""],["tv","Встроенная техника (посудомойка, холодильник)","шт",500,""],
+  ["f","Установка фасада","шт",120,""],["r","Установка ручек","шт",25,"handle"],["pu","Пуш-ап","шт",25,""],["ps","Подсветка, замок, заглушки, полкодержатели","шт",100,""],["lt","Светодиодная лента врезная","м",400,""],["v","Вырезы (3 ур. сложности, более 10 шт)","шт",1000,""]];
+function qkBwRates(){ const c=(S.shop&&S.shop.cfgAll&&S.shop.cfgAll.bwR)||{}; return id=>{ const v=c[id]; return v!=null&&v!==""&&isFinite(+v)?+v:(QK_BW.find(x=>x[0]===id)||[])[3]||0; }; }
+function qkBwCalc(q,items,sh,em){ q.bw=q.bw||{}; const R=qkBwRates(), cnt=sec=>items.filter(x=>{ try{ return qkSecOf(x)===sec; }catch(_){ return false; } }).reduce((a,x)=>a+(+x.q||0),0);
+  const sheets=re=>items.filter(x=>/^л/.test(x.u||"")&&re.test(String(x.n||""))).reduce((a,x)=>a+(+x.q||0),0);
+  const AUTO={ldsp:sh,mdf:sheets(/мдф|mdf/i),dvp:sheets(/двп|хдф|hdf/i),edge:em,drw:cnt("drw"),hinge:cnt("hinge")*2,handle:cnt("handle")};
+  const L=QK_BW.map(([id,n,u,_,au])=>{ const set=q.bw[id]!=null&&q.bw[id]!=="", qq=set?num(q.bw[id]):(au?Math.round((AUTO[au]||0)*100)/100:0), r=R(id); return {id,n,u,r,au:!set&&!!au,auto:au?AUTO[au]||0:null,q:qq,sum:Math.round(qq*r)}; });
+  return {L,sum:L.reduce((a,x)=>a+x.sum,0),on:Object.keys(q.bw).some(k=>q.bw[k]!==""&&q.bw[k]!=null)}; }
+function qkBwHtml(c,q){ const B=c.BW; if(!B) return ""; const op=S.qkBwOpen!==false;
+  return `<section class="qk-card qk-bw"><button type="button" class="qk-h qk-gh" data-qbw="1" aria-expanded="${op}"><b>${op?"▾":"▸"} Работы бригады</b><span><b>${B.on?N(B.sum)+" ₽":"не заполнено"}</b></span></button>
+  ${op?`<p class="qk-sub">${B.on?"Бригада получает эту сумму, а не 21 %.":"Пока пусто — бригаде 21 %, как раньше. Впишите сборку, установку — и бригада пойдёт по работам."} Пустое поле — посчитано само (листы, кромка, петли, ручки, направляющие); впишите своё — заменит.</p>${B.L.map(x=>`<div class="qk-r qk-r2"><span class="qk-tl">${esc(x.n)}<small>${N(x.r)} ₽ за ${esc(x.u)}${x.au?" · само":""}</small></span>${inp("bw."+x.id,x.au?"":(q.bw[x.id]==null?"":q.bw[x.id]),"n",x.au?F(x.q):"0","qk-q","Сколько: "+x.n)}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${x.sum?N(x.sum):"—"}</b></div>`).join("")}`:""}</section>`; }
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qbw]"); if(!b) return; e.preventDefault(); e.stopPropagation(); S.qkBwOpen=S.qkBwOpen===false; shpRenderKeep(); },true);
+})();
 
 /* ===== ПРОЕКТ — «ровно как в БАЗИС-Салоне» (Кирилл 07.11) =====
    Новая смета → «Проект»: комната, каталог модулей (из «Библиотеки модулей» — блоки выгруженных заказов Базиса),
@@ -19791,11 +19817,11 @@ if(window.__smkOn||typeof smHtml!=="function") return; window.__smkOn=1;
 const SK={data:null,busy:false,pass:false};
 async function skLoad(){ if(SK.busy||SK.data) return; SK.busy=true; let j=null; try{ j=await shpGet("action=smScale",true); }catch(_){} SK.busy=false;
   SK.data=j&&j.ok?j:{zk:{k:0.40,kb:0.45,min:300000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.37,lTop:0.35},dpct:3,dfrom:"договор",chk:[],off:!j}; if(S.shop&&S.shop.sm&&S.view==="shop"&&typeof shpRenderKeep==="function") shpRenderKeep(); }
-const K=()=>Object.assign({k:0.40,kb:0.45,min:300000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.37,lTop:0.35},(SK.data&&SK.data.zk)||{});
+const K=()=>Object.assign({k:0.40,kb:0.45,min:300000,bonus:10,lMin:0.45,lMid:0.42,lGood:0.37,lTop:0.35,kAsk:0.42,kLow:0.40,dLow:2,ofLow:70,kF:0.70},(SK.data&&SK.data.zk)||{});
 const N=v=>Math.round(+v||0).toLocaleString("ru-RU"), nf=v=>String(Math.round(v*100)/100).replace(".",",");
 function skLv(k){ const KK=K(), e=1e-4; return k>KK.lMin+e?"ниже минимума":k>KK.lMid+e?"минимум":k>KK.k-e?"средне":k>KK.lGood+e?"хорошо":k>KK.lTop+e?"успех":"круто"; }
 const LVC={"ниже минимума":"r","минимум":"y","средне":"","хорошо":"g","успех":"g","круто":"g"};
-function skDes(S0,M){ if(window.APP_DES) return Math.max(0,Math.round(S0-M)); const KK=K(), p=(SK.data&&SK.data.dpct)||0, base=SK.data&&SK.data.dfrom==="база"?M/KK.kb:S0, ex=S0-M/KK.k; return Math.round(base*p/100+(ex>=1&&S0>=KK.min&&KK.bonus>0?ex*KK.bonus/100:0)); }
+function skDes(S0,M){ if(window.APP_DES) return Math.max(0,Math.round(S0-M)); const KK=K(), p0=(SK.data&&SK.data.dpct)||0, p=M/S0>KK.kLow+1e-9?Math.min(p0,KK.dLow):p0, base=SK.data&&SK.data.dfrom==="база"?M/KK.kb:S0, ex=S0-M/KK.k; return Math.round(base*p/100+(ex>=1&&S0>=KK.min&&KK.bonus>0?ex*KK.bonus/100:0)); }
 /* ---- 1) «Не забыли?» ---- */
 const lq=(c,k)=>{ const l=c.lines.find(x=>x.s&&x.s.k===k); return l?+l.q||0:0; };
 function skItems(d,c){ const L=[], need=c.need||{}, cut=(need.cut||{}), ww=c.works||[];
@@ -19829,7 +19855,7 @@ window.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.close
   ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
   skOpen(()=>{ SK.pass=true; t.click(); }); },true);
 /* ---- 2) светофор ---- */
-function skScaleHtml(c){ const KK=K(), M=c.mats, S0=c.total; if(!(M>0&&S0>0)) return "";
+function skScaleHtml(c){ const KK=K(), M=c.mats, S0=c.total-(c.fzP||0); if(!(M>0&&S0>0)) return "";
   const k=M/S0, lv=skLv(k), cl=LVC[lv], des=skDes(S0,M);
   const pts=[KK.lMin+0.03,KK.lMin,KK.lMid,KK.k,KK.lGood,KK.lTop,KK.lTop-0.03], pos=Math.max(0,Math.min(100,(pts[0]-k)/(pts[0]-pts[6])*100)), at=v=>((pts[0]-v)/(pts[0]-pts[6])*100).toFixed(1);
   const rows=[[KK.k,"средне"],[KK.lGood,"успех"],[KK.lTop,"круто ★"]].filter(([kk])=>kk<k-1e-4).map(([kk,n])=>{ const s2=M/kk; return `<li><span>по ${nf(kk)} · <i class="sk-${LVC[skLv(kk)]||"w"}">${n}</i></span><b>${N(s2)}</b><em>${N(skDes(s2,M))}</em></li>`; }).join("");
@@ -19846,14 +19872,14 @@ function skPremHtml(S0,M){ if(window.APP_DES) return ""; const KK=K(), ex=S0-M/K
 function skPartsHtml(c,des){ if(!c.qk||!(c.total>0)) return ""; const L=[], cat={}; (c.items||[]).forEach(x=>{ if(!(x.sum>0)) return; cat[x.cat]=(cat[x.cat]||0)+x.sum; });
   const CN={ldsp:"ЛДСП",edge:"Кромка",front:"Фасады",furn:"Фурнитура",other:"Столешница и прочее"}; Object.keys(CN).forEach(k=>{ if(cat[k]) L.push([CN[k]+(k==="edge"&&c.em?" ("+N(c.em)+" м)":k==="ldsp"&&c.sh?" ("+N(c.sh)+" л.)":""),cat[k]]); });
   Object.keys(cat).filter(k=>!CN[k]).forEach(k=>L.push(["Из шкафов и дверей",cat[k]])); if(c.matP>0) L.push(["Профиль, стекло, петли дверей",c.matP]); if(c.gW>0) L.push(["Распил и кромление",c.gW]); if(c.exS>0) L.push(["Расходы (доставка, крепёж, общие)",c.exS]);
-  const sd=S.shop.sm&&S.shop.sm.data, nm=!!(sd&&sd.noMont), base=c.M/0.45, brP=nm?((typeof dueCfg==="function"&&dueCfg().nm)||13):21, br=Math.round(base*brP/100), RW=(SK.data&&SK.data.rows)||null, OFR=RW?RW.filter(r=>!/дизайнер заказа/i.test(r.to||"")&&!/бригад/i.test(r.name+" "+(r.to||""))).map(r=>({name:r.name,to:r.to,pct:r.pct,amt:Math.round((r.from==="договор"?c.total:c.M/(K().kb||0.45))*r.pct/100)})):null,
-    of=OFR?OFR.reduce((a,r)=>a+r.amt,0):Math.round(base*0.16), firm=Math.round(c.total-c.M-br-of-des);
+  const sd=S.shop.sm&&S.shop.sm.data, nm=!!(sd&&sd.noMont), base=c.M/0.45, brP=nm?((typeof dueCfg==="function"&&dueCfg().nm)||13):21, bwOn=c.br>0, br=bwOn?Math.round(c.br):Math.round(base*brP/100), RW=(SK.data&&SK.data.rows)||null, OFR=RW?RW.filter(r=>!/дизайнер заказа/i.test(r.to||"")&&!/бригад/i.test(r.name+" "+(r.to||""))).map(r=>({name:r.name,to:r.to,pct:Math.round(r.pct*skLowF(c.M/c.total)*100)/100,amt:Math.round((r.from==="договор"?c.total:c.M/(K().kb||0.45))*r.pct*skLowF(c.M/c.total)/100)})):null,
+    of=OFR?OFR.reduce((a,r)=>a+r.amt,0):Math.round(base*0.16), firm=Math.round(c.total-c.M-(c.fz||0)-br-of-des);
   return `<p class="sk-sub" style="margin-top:12px">Из чего цена</p><ul class="sk-pt">${L.map(([n,v])=>`<li><span>${esc(n)}</span><b>${N(v)}</b></li>`).join("")}
     <li class="sk-pm"><span>Материал + расходы (М)</span><b>${N(c.M)}</b></li>
-    ${window.APP_DES?`<li class="sk-pf"><span>Работа и ваша наценка</span><b class="sk-g">${N(c.total-c.M)}</b></li></ul><p class="muted" style="font-size:12px;margin:4px 0 0">Цена клиенту минус материал и расходы. Из этого — оплата цеху за изготовление и монтаж и ваш доход.</p>`:`<li><span>Бригаде · ${brP}% ${nm?"(без монтажа)":"(распил, кромка, сборка, монтаж)"}</span><b>${N(br)}</b></li>
+    ${window.APP_DES?`<li class="sk-pf"><span>Работа и ваша наценка</span><b class="sk-g">${N(c.total-c.M)}</b></li></ul><p class="muted" style="font-size:12px;margin:4px 0 0">Цена клиенту минус материал и расходы. Из этого — оплата цеху за изготовление и монтаж и ваш доход.</p>`:`${c.fz>0?`<li><span>Заказные фасады: закупка ${N(c.fz)} → клиенту ÷ ${nf(c.kF||0.7)}</span><b>${N(c.fzP)}</b></li>`:""}<li><span>Бригаде ${bwOn?"· по работам":"· "+brP+"% "+(nm?"(без монтажа)":"(распил, кромка, сборка, монтаж)")}</span><b>${N(br)}</b></li>
     ${OFR?OFR.map(r=>`<li><span>${esc(r.name)}${r.to&&!/^(дизайнер заказа)$/i.test(r.to)?" · "+esc(r.to):""} · ${nf(r.pct)}%</span><b>${N(r.amt)}</b></li>`).join(""):`<li><span>Офис · 16% (технолог, снабженец, руководители)</span><b>${N(of)}</b></li>`}<li><span>Дизайнеру</span><b>${N(des)}</b></li>
-    <li class="sk-pf"><span>Фирме остаётся</span><b class="${firm>0?"sk-g":"sk-r"}">${N(firm)}</b></li></ul><p class="muted" style="font-size:12px;margin:4px 0 0">Бригаде и офису — от М ÷ 0,45, как в зарплате.</p>`}`; }
-window.__sk={scale:skScaleHtml,setData:x=>{SK.data=x;}};
+    <li class="sk-pf"><span>Фирме остаётся</span><b class="${firm>0?"sk-g":"sk-r"}">${N(firm)}</b></li></ul><p class="muted" style="font-size:12px;margin:4px 0 0">${bwOn?"Офису — от М ÷ 0,45; бригаде — по работам.":"Бригаде и офису — от М ÷ 0,45, как в зарплате."}</p>`}`; }
+window.__sk={scale:skScaleHtml,setData:x=>{SK.data=x;},K:()=>K()};
 /* тянуть пальцем (быстрая смета): позиция на шкале → коэффициент → цена клиенту = М ÷ коэффициент */
 let skDrag=false, skT=0;
 function skSetFrom(x){ const bar=document.querySelector(".sk-bar.sk-drag"), sm=S.shop.sm; if(!bar||!sm||!sm.data||!sm.data.qk) return; const r=bar.getBoundingClientRect(), KK=K(), p0=KK.lMin+0.03, p6=KK.lTop-0.03;
@@ -19863,7 +19889,7 @@ document.addEventListener("pointerdown",e=>{ const b=e.target.closest&&e.target.
 window.addEventListener("pointermove",e=>{ if(!skDrag) return; e.preventDefault(); skSetFrom(e.clientX); },{passive:false});
 window.addEventListener("pointerup",()=>{ if(!skDrag) return; skDrag=false; shpRenderKeep(); });   // для проверки на стенде
 const _skH=smHtml; smHtml=function(){ let h=_skH.apply(this,arguments); try{ const sm=S.shop.sm; if(!sm||!sm.data||S.shop.smClient||!S.shop.full) return h; if(!SK.data) setTimeout(skLoad,0);
-    const c=smCalc(sm.data), sc=skScaleHtml(c), k=c.mats>0&&c.total>0?c.mats/c.total:0;
+    const c=smCalc(sm.data), sc=skScaleHtml(c), k=c.mats>0&&c.total>0?c.mats/(c.total-(c.fzP||0)):0;
     const stp=sm.data.qk?sm.data.qk.stp:S.shop.smStp, show=sm.data.qk?stp==="price":(!S.shop.smStp||stp==="price"||stp==="send");   /* Кирилл 07.11: шкала — только на шаге «Цена», не в материалах */
     if(sc&&show){ const i=h.lastIndexOf('<div class="sm-spacer">'); const sc2=sm.data.qk?sc.replace('<div class="sk-bar"','<div class="sk-bar sk-drag" title="Тяните — цена меняется"'):sc; if(i>=0) h=h.slice(0,i)+sc2+h.slice(i); }
     if(k){ const lv=skLv(k); h=h.replace('<span class="smn-dkr">',`<span class="smn-dkr"><small class="sk-pill sk-${LVC[lv]||"w"}">${nf(k)} · ${lv}</small>`); }
@@ -19901,6 +19927,39 @@ html.vt.sk[data-vt="dark"] .sk-bar .r{background:#FF453A}html.vt.sk[data-vt="dar
 html.vt.sk[data-vt="dark"] .sk-bar b{color:#fff}html.vt.sk[data-vt="dark"] .sk-ck.on{background:#30D158;border-color:#30D158;color:#000}
 html.vt.sk[data-vt="dark"] .sk-own textarea{background:#000;border-color:rgba(255,255,255,.2)}`;
 document.head.appendChild(st);
+
+/* ===== 11.11 (А): коэффициент выше 0,42 — смету клиенту только с «Согласовать» директора/технолога ===== */
+function skKnow(){ const sm=S.shop&&S.shop.sm; if(!sm||!sm.data) return null; try{ const c=smCalc(sm.data); return c.mats>0&&c.total>0?{k:c.mats/(c.total-(c.fzP||0)),c}:null; }catch(_){ return null; } }
+function skNeedOk(){ const sm=S.shop&&S.shop.sm, x=skKnow(); if(!sm||!x||window.APP_DES) return false; const KK=K(); if(!(x.k>KK.kAsk+0.0005)) return false;
+  if(S.shop.tech) return false; const ok=sm.okK; return !(ok&&!ok.no&&ok.k>=x.k-0.0005); }
+window.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="sm-kp"],[data-act="sm-xsend"],[data-act="sm-deal"],[data-act="sm-sum"],[data-act="sm-real"]'); if(!t||!skNeedOk()) return;
+  ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); skAskModal(); },true);
+function skAskModal(){ const sm=S.shop.sm, x=skKnow(), KK=K(); document.getElementById("skAskM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="skAskM";
+  const asked=sm.askK&&sm.askK.k>=x.k-0.0005, no=sm.okK&&sm.okK.no;
+  m.innerHTML=`<div class="modal-card"><h2 style="margin:0 0 6px">Нужно согласие директора</h2><p style="margin:0 0 8px">Коэффициент <b>${nf(x.k)}</b> — выше ${nf(KK.kAsk)}: фирме остаётся мало. Клиенту за ${N(x.c.total)} ₽ можно отправить только после «Согласовать».</p>
+    ${no?`<p class="sk-warn">Директор не согласовал. Поднимите цену или попросите ещё раз.</p>`:asked?`<p class="muted">Уже попросили — ждём ответа. Придёт в Телеграм.</p>`:""}
+    <p class="muted" style="margin:0 0 10px">Чтобы не ждать — поднимите цену: при ${nf(KK.kAsk)} клиенту ${N(x.c.mats/KK.kAsk+(x.c.fzP||0))} ₽.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px"><button type="button" class="btn primary" data-ska="ask">${asked?"Напомнить директору":"Попросить согласовать"}</button>${sm.data.qk?`<button type="button" class="btn" data-ska="up">Поставить ${nf(KK.kAsk)}</button>`:""}<button type="button" class="btn" data-ska="x">Закрыть</button></div></div>`;
+  document.body.appendChild(m);
+  m.addEventListener("click",async e=>{ const b=e.target.closest("[data-ska]"); if(e.target===m||(b&&b.dataset.ska==="x")){ m.remove(); return; } if(!b) return;
+    if(b.dataset.ska==="up"){ sm.data.k=KK.kAsk; if(typeof qkDirty==="function") qkDirty(); else sm.dirty=true; m.remove(); shpRenderKeep(); toast("Коэффициент "+nf(KK.kAsk)+" — можно отправлять"); return; }
+    if(!sm.saved||sm.dirty){ toast("Сначала сохраните смету — потом попросите"); return; }
+    b.disabled=true; const j=await shpPost({action:"smAsk",id:sm.id,k:Math.round(x.k*1000)/1000,total:Math.round(x.c.total),client:sm.client||""}); b.disabled=false; if(!j) return;
+    sm.askK={k:Math.round(x.k*1000)/1000,by:S.who||"",at:Date.now()}; m.remove(); toast("Попросили — директору пришло сообщение"); shpRenderKeep(); }); }
+/* плашка в смете: директору — «Согласовать / Нет», дизайнеру — «ждём» или «согласовано» */
+if(typeof viewShop==="function"){ const _skA=viewShop; viewShop=function(){ let h=String(_skA.apply(this,arguments)); try{ const sm=S.shop.sm; if(!(S.shop.mode==="smeta"||document.querySelector)||!sm||!sm.data||S.shop.smClient) return h; const x=skKnow(), KK=K(); if(!x||!(x.k>KK.kAsk+0.0005)||h.indexOf("sm-head")<0) return h;
+    const ok=sm.okK&&!sm.okK.no&&sm.okK.k>=x.k-0.0005, ask=sm.askK; let bar="";
+    if(ok) bar=`<div class="sk-okbar sk-okg">✓ Цена согласована${sm.okK.by?" · "+esc(sm.okK.by):""} — коэф. ${nf(sm.okK.k)}</div>`;
+    else if(S.shop.tech) bar=`<div class="sk-okbar">${ask?esc(ask.by||"Дизайнер")+" просит согласовать":"Коэффициент выше "+nf(KK.kAsk)}: <b>${nf(x.k)}</b>, клиенту ${N(x.c.total)} ₽<span><button type="button" class="btn sm primary" data-skok="1">Согласовать</button>${ask?`<button type="button" class="btn sm" data-skok="0">Нет</button>`:""}</span></div>`;
+    else bar=`<div class="sk-okbar">Коэф. ${nf(x.k)} выше ${nf(KK.kAsk)} — ${ask?"ждём согласия директора":"клиенту только после согласия директора"}</div>`;
+    const i=h.indexOf('<div class="head sm-head">'); if(i>=0){ const j=h.indexOf("</div></div>",i); if(j>0) return h.slice(0,j+12)+bar+h.slice(j+12); } return bar+h; }catch(_){ return h; } }; }
+document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.closest("[data-skok]"); if(!b) return; const sm=S.shop.sm, x=skKnow(); if(!sm||!x) return; const yes=b.dataset.skok==="1";
+  b.disabled=true; const j=await shpPost({action:"smOk",id:sm.id,k:Math.round(x.k*1000)/1000,no:!yes,asker:(sm.askK&&sm.askK.by)||"",client:sm.client||""}); b.disabled=false; if(!j) return;
+  sm.okK={k:Math.round(x.k*1000)/1000,by:S.who||"",no:!yes,at:Date.now()}; toast(yes?"Согласовано — дизайнеру придёт сообщение":"Не согласовано"); shpRenderKeep(); });
+{ const st=document.createElement("style"); st.textContent=".sk-okbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;margin:0 0 10px;border-radius:12px;border:1px solid #e0b12b;background:rgba(224,177,43,.12);font-size:14px}.sk-okbar span{display:flex;gap:6px;margin-left:auto}.sk-okg{border-color:#30a46c;background:rgba(48,164,108,.12)}"; document.head.appendChild(st); }
+
+/* хуже kLow — офису плавно меньше (как на сервере, zpDeal_) */
+function skLowF(k){ const KK=K(); if(!(k>KK.kLow+1e-9)) return 1; return Math.max(KK.ofLow/100,Math.min(1,1-(k-KK.kLow)/Math.max(0.0001,KK.lMin-KK.kLow)*(1-KK.ofLow/100))); }
 })();
 
 /* ---------- Поставщики Якутска и закупка «сразу по поставщикам» (вариант Б) ----------
@@ -20991,7 +21050,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="d09f089cd9";
+const CHK_BUILD="fe5a944764";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21057,7 +21116,7 @@ function aiPaint(){ const L=document.getElementById("aiList"); if(!L) return;
   L.innerHTML=AI.hist.length?AI.hist.map(m=>`<div class="ai-m ${m.r==="a"?"ai-a":"ai-q"}">${aiEsc(m.t).replace(/\*\*([^*\n]{1,80})\*\*/g,"<b>$1</b>").replace(/^#{1,4}\s*/gm,"").replace(/\n{2,}/g,"\n").replace(/\n/g,"<br>")}${m.from==="kb"?`<small>готовый ответ</small>`:m.from==="tech"||m.from==="bug"?`<small>передано технологу</small>`:""}</div>`).join("")+(AI.busy?`<div class="ai-m ai-a ai-wait">Думаю…</div>`:"")
     :`<p class="ai-hi">Спросите, что делать или как сделать. Например: «как отметить деталь», «где раскрой», «почему не открывается 3D». Можно голосом — нажмите 🎤.</p>`;
   L.scrollTop=L.scrollHeight; }
-function aiSpeak(t){ if(!AI.say||!window.speechSynthesis) return; try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(String(t).slice(0,600)); u.lang="ru-RU"; u.rate=1.05; speechSynthesis.speak(u); }catch(_){} }
+function aiSpeak(t){ if(!AI.say||!window.speechSynthesis) return; try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(aiPlain(t).slice(0,600)); u.lang="ru-RU"; u.rate=1.0; const vv=aiVoice(); if(vv) u.voice=vv; speechSynthesis.speak(u); }catch(_){} }
 async function aiAsk(q){ q=String(q||"").trim(); if(!q||AI.busy) return; const url=typeof helpUrl==="function"?helpUrl():"";
   AI.hist.push({r:"q",t:q}); AI.busy=true; aiPaint();
   let ans="Нет связи с сервером. Попробуйте ещё раз.", from="";
@@ -21084,7 +21143,7 @@ function aiMic(btn){ const SR=window.SpeechRecognition||window.webkitSpeechRecog
 document.addEventListener("visibilitychange",()=>{ if(document.hidden){ aiMicOff(true); try{ speechSynthesis.cancel(); }catch(_){} } });
 window.addEventListener("pagehide",()=>aiMicOff(true));
 function aiOpen(){ document.getElementById("aiM")?.remove(); const m=document.createElement("div"); m.className="ai-wrap"; m.id="aiM"; m.setAttribute("role","dialog"); m.setAttribute("aria-label","ИИ-помощник");
-  m.innerHTML=`<div class="ai-card"><div class="ai-h"><b>ИИ-помощник</b><button type="button" class="ai-say" aria-pressed="${AI.say}" title="Читать ответ вслух">${AI.say?"🔊":"🔇"}</button><button type="button" class="ai-x" aria-label="Закрыть">✕</button></div>
+  m.innerHTML=`<div class="ai-card"><div class="ai-h"><b>ИИ-помощник</b><button type="button" class="ai-say" aria-pressed="${AI.say}" title="Читать ответ вслух">${AI.say?"🔊":"🔇"}</button><button type="button" class="ai-say ai-vbtn" data-aivp="1" title="Выбрать голос" style="width:auto;padding:0 10px;font-size:14px">Голос</button><button type="button" class="ai-x" aria-label="Закрыть">✕</button></div>
     <div class="ai-list" id="aiList"></div>
     <form class="ai-f" autocomplete="off"><button type="button" class="ai-mic" aria-label="Спросить голосом" aria-pressed="false">🎤</button><input id="aiIn" maxlength="600" placeholder="Ваш вопрос…" enterkeyhint="send"><button type="submit" class="ai-go" aria-label="Отправить">➤</button></form></div>`;
   document.body.appendChild(m); aiPaint();
@@ -21151,6 +21210,24 @@ html.csf-on .ai-fab,body:has(.fv-win) .ai-fab,body:has(.asm.full) .ai-fab,body:h
 (function(){ const st=document.createElement("style"); st.textContent=`.ai-wrap{background:transparent!important;pointer-events:none}.ai-wrap .ai-card{pointer-events:auto;height:auto!important;max-height:45vh;min-height:0;box-shadow:0 -6px 24px rgba(0,0,0,.18)}
 .ai-wrap .ai-h{padding:8px 12px}.ai-wrap .ai-list{padding:8px 10px;gap:6px;min-height:60px}.ai-wrap .ai-m{font-size:14px;line-height:1.35;padding:7px 10px}.ai-wrap .ai-f{padding:8px 10px}.ai-wrap .ai-f input,.ai-wrap .ai-f textarea{min-height:42px}.ai-wrap .ai-go{min-height:42px;width:46px}
 html.pc .ai-wrap{justify-content:flex-end;padding:0 16px}html.pc .ai-wrap .ai-card{width:420px;max-height:55vh;border-radius:16px 16px 0 0}`; (document.head||document.documentElement).appendChild(st); })();
+
+/* 11.11: голос не читает разметку («звёздочка звёздочка»): убираем **, #, `, _, списки, ссылки и значки */
+function aiPlain(t){ return String(t||"").replace(/\[([^\]]+)\]\([^)]+\)/g,"$1").replace(/https?:\/\/\S+/g,"").replace(/[*_`#>|~]+/g," ").replace(/^\s*[-•·]\s+/gm,"").replace(/^\s*\d+[.)]\s+/gm,"").replace(/[→←↑↓✓✔✗×]/g," ").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu,"").replace(/\s{2,}/g," ").trim(); }
+
+/* 11.11: голос — лучший русский из тех, что есть в телефоне (улучшенные/премиум первыми); свой выбор — в окне помощника «🔊 Голос» */
+function aiVoices(){ try{ return (speechSynthesis.getVoices()||[]).filter(v=>/^ru/i.test(v.lang)); }catch(_){ return []; } }
+function aiVoice(){ const L=aiVoices(); if(!L.length) return null; let want=""; try{ want=localStorage.getItem("w24-ai-voice")||""; }catch(_){}
+  const my=want&&L.find(v=>v.name===want); if(my) return my; const sc=v=>(/premium|премиум/i.test(v.name)?40:0)+(/enhanced|улучш/i.test(v.name)?30:0)+(/neural|natural|online/i.test(v.name)?25:0)+(/milena|милена/i.test(v.name)?10:0)+(/google/i.test(v.name)?8:0)+(v.localService?0:2);
+  return L.slice().sort((a,b)=>sc(b)-sc(a))[0]; }
+try{ speechSynthesis.onvoiceschanged=()=>{}; speechSynthesis.getVoices(); }catch(_){}
+/* выбор голоса: долгое нажатие на 🔊 */
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-aivp]"); if(!b) return; e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); aiVoicePick(); },true);
+function aiVoicePick(){ const L=aiVoices(); document.getElementById("aiVM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="aiVM"; const cur=aiVoice();
+  m.innerHTML=`<div class="modal-card"><h2 style="margin:0 0 6px">Голос помощника</h2><p class="muted" style="margin:0 0 8px">Голоса — те, что есть в вашем телефоне. Лучшие можно скачать: iPhone → Настройки → Универсальный доступ → Устный контент → Голоса → Русский (Милена «улучшенный»).</p>
+    ${L.length?L.map(v=>`<button type="button" class="btn" style="display:block;width:100%;text-align:left;margin:4px 0${cur&&cur.name===v.name?";border-color:#6c4cf0;font-weight:700":""}" data-av="${esc(v.name)}">${esc(v.name)}</button>`).join(""):`<p>Русских голосов в телефоне не нашлось.</p>`}
+    <button type="button" class="btn" data-av="" style="margin-top:8px">Закрыть</button></div>`;
+  document.body.appendChild(m); m.addEventListener("click",e=>{ const b=e.target.closest("[data-av]"); if(e.target===m||(b&&!b.dataset.av)){ m.remove(); return; } if(!b) return; try{ localStorage.setItem("w24-ai-voice",b.dataset.av); }catch(_){}
+    const was=AI.say; AI.say=true; aiSpeak("Здравствуйте! Так я буду говорить."); AI.say=was; m.remove(); }); }
 
 /* ===== «Проще» (Кирилл 05.11: «давайте всё это изменим по порядку») =====
    2) Шапка: «?» (помощь) и ◐ (оформление) убраны — помощь в плавающем микрофоне и «Все разделы → Как работать», оформление в «Все разделы → Оформление».
@@ -21835,7 +21912,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="d09f089cd9";/*cehqr-build*/
+  const BUILD="fe5a944764";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
