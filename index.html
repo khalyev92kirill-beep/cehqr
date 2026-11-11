@@ -8210,6 +8210,43 @@ function smFavTog(n){ const F=smFav(); if(F[n]) delete F[n]; else F[n]=1; try{ l
 function smUseAdd(n){ const U=smUse(); U[n]=(U[n]||0)+1; try{ localStorage.setItem("w24-muse",JSON.stringify(U)); }catch(_){} }
 (function(){ const st=document.createElement("style"); st.textContent=`.sm-fv{flex:none;width:46px;border:1px solid var(--line);border-radius:12px;background:var(--surface,#fff);color:#b8860b;font-size:22px;line-height:1;cursor:pointer}.sm-fv.on{background:#fff6d6;border-color:#e2b53a;color:#b8860b}.sm-favh{font-size:12px;align-self:center}`; document.head.appendChild(st); })();
 
+/* ---- Кирилл 11.11 (вариант А): в окне выбора материала слева — всё, что уже выбрано в смете.
+   Нажал строку — сразу её материалы, окно не закрывается. Выбрал материал — само открывает следующее «не выбрано».
+   На телефоне тот же список — полосой сверху. Быстрая смета и фасад модуля — как раньше. ---- */
+function smSideRows(){ const d=S.shop.sm&&S.shop.sm.data; if(!d) return []; let c; try{ c=smCalc(d); }catch(_){ return []; }
+  return SM_SLOTS.map(s=>c.lines.find(l=>l.s.k===s.k)).filter(Boolean); }
+function smSideHtml(k){ const R=smSideRows(); if(R.length<2) return ""; const ok=R.filter(l=>l.m&&l.m.n).length;
+  return `<div class="sm-side"><p class="sm-sideh">Выбрано ${ok} из ${R.length}</p>${R.map(l=>{ const has=l.m&&l.m.n, sw=has&&S.cat&&S.cat.data?smSw(l.m.n):"";
+    return `<button type="button" class="sm-sl${l.s.k===k?" on":""}${has?"":" no"}" data-smside="${esc(l.s.k)}">${sw?sw.replace(/class="cat-sw[^"]*"/,'class="sm-slsw"'):`<span class="sm-slsw none"></span>`}<span class="sm-slt"><b>${esc(l.s.n)}</b><small>${has?esc(l.m.n):"⚠ не выбрано"}</small></span>${has?`<i class="sm-slok">✓</i>`:""}</button>`; }).join("")}</div>`; }
+function smSideNext(k){ const R=smSideRows(), i=R.findIndex(l=>l.s.k===k); const L=R.slice(i+1).concat(R.slice(0,Math.max(0,i))); const n=L.find(l=>!(l.m&&l.m.n)); return n?n.s.k:""; }
+const _smPMside=smPickModal;
+smPickModal=function(k,qo){ const r=_smPMside.apply(this,arguments); if(qo||String(k).startsWith("mod:")) return r;
+  const m=document.getElementById("smPickM"), card=m&&m.querySelector(".sm-pick"); if(!card) return r; const side=smSideHtml(k); if(!side) return r;
+  const main=document.createElement("div"); main.className="sm-pmain"; while(card.firstChild) main.appendChild(card.firstChild);
+  card.classList.add("sm-pick2"); card.insertAdjacentHTML("afterbegin",side); card.appendChild(main);
+  { const cu=((S.shop.sm.data.mat||{})[k]||{}).n; const h2=main.querySelector("h2"); if(cu&&h2) h2.insertAdjacentHTML("afterend",`<p class="sm-cur">Сейчас: <b>${esc(cu)}</b></p>`); }
+  const nx=smSideNext(k); if(nx){ const s=SM_SLOTS.find(x=>x.k===nx); main.insertAdjacentHTML("beforeend",`<p class="muted sm-nxt">Выберите — само откроет «${esc(s?s.n:nx)}»</p>`); }
+  setTimeout(()=>{ const on=card.querySelector(".sm-sl.on"); if(on&&on.scrollIntoView) try{ on.scrollIntoView({block:"nearest",inline:"center"}); }catch(_){} },30);
+  m.addEventListener("click",e=>{ const sb=e.target.closest("[data-smside]"); if(sb){ e.stopPropagation(); const k2=sb.dataset.smside; if(k2===k) return; m.remove(); return smPickModal(k2); }
+    if(e.target.closest(".sm-it")) setTimeout(()=>{ if(document.body.contains(m)||document.querySelector(".modal")) return; const n2=smSideNext(k); if(n2) smPickModal(n2); },80); },true);
+  return r; };
+(function(){ const st=document.createElement("style"); st.textContent=`
+.sm-pick.sm-pick2{width:min(980px,100%);display:grid;grid-template-columns:270px 1fr;gap:0;padding:0;overflow:hidden}
+.sm-pick2 .sm-pmain{padding:16px 18px;overflow:auto;max-height:88vh}.sm-pick2 .sm-pl{max-height:56vh}
+.sm-side{background:var(--bg,#f4f4f7);border-right:1px solid var(--line,#ddd);padding:10px;overflow:auto;max-height:88vh}
+.sm-sideh{margin:4px 6px 8px;font-size:13px;color:var(--muted,#666);font-weight:600}
+.sm-sl{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:0;background:none;border-radius:10px;padding:8px;margin:0 0 2px;cursor:pointer;color:inherit;font:inherit}
+.sm-sl:hover{background:rgba(0,0,0,.05)}.sm-sl.on{background:var(--ink,#2b2f33);color:var(--bg,#fff)}.sm-sl.on small{color:inherit;opacity:.75}
+.sm-slsw{width:28px;height:28px;border-radius:7px;flex:none;border:1px solid rgba(0,0,0,.12);background-size:cover;display:inline-block}.sm-slsw.none{border:1px dashed var(--muted,#999);background:transparent}
+.sm-slt{flex:1;min-width:0}.sm-slt b{display:block;font-size:13.5px}.sm-slt small{display:block;font-size:12.5px;color:var(--muted,#666);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sm-sl.no small{color:#e0533f}.sm-sl.on.no small{color:#e0533f;opacity:1}.sm-slok{font-style:normal;color:#1c8a3c;font-weight:800}
+.sm-nxt{font-size:12.5px;margin:8px 0 0}.sm-cur{margin:-4px 0 8px;font-size:13px;color:var(--muted,#666)}.sm-cur b{color:var(--ink)}
+@media (max-width:760px){.sm-pick.sm-pick2{display:flex;flex-direction:column}.sm-pick2 .sm-pmain{padding:12px 14px}
+.sm-side{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid var(--line,#ddd);padding:8px 10px;max-height:none;flex:none;-webkit-overflow-scrolling:touch}
+.sm-sideh{display:none}.sm-sl{flex:none;width:auto;max-width:190px;border:1px solid var(--muted,#999);border-radius:99px;padding:4px 10px 4px 4px;background:var(--surface,#fff);margin:0}.sm-sl.on{background:var(--ink,#2b2f33)}
+.sm-sl .sm-slsw{width:22px;height:22px;border-radius:50%}.sm-slt small{display:none}.sm-slt b{font-size:12.5px;white-space:nowrap}.sm-sl.no{border-color:#e7a1a1}.sm-sl.no b::after{content:" ⚠"}}
+`; document.head.appendChild(st); })();
+
 /* ---------- СКЛАД (Work24link): целые листы, остатки ЛДСП с размерами, кромка, фурнитура.
    Приход — из базы Базиса (как в «Материалах»), «Взял на заказ» — списание; от куска можно вернуть, что не пошло.
    Мелочь не пишем: остаток — длинная сторона от 600 и короткая от 300 (длинные полосы от 2000 — короткая от 100).
@@ -21160,7 +21197,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="45b3fcc344";
+const CHK_BUILD="1c5283cf28";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -22025,7 +22062,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="45b3fcc344";/*cehqr-build*/
+  const BUILD="1c5283cf28";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
