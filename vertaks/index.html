@@ -21286,7 +21286,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="410641901c";
+const CHK_BUILD="8079de4419";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21349,17 +21349,18 @@ function aiCtx(){ const a=[]; try{ const w=typeof helpWhere==="function"?helpWhe
   const sel=typeof asm!=="undefined"&&asm&&asm.st&&asm.st.selected, p=sel&&typeof partByCode==="function"?partByCode(sel):null; if(p) a.push("выбрана деталь: поз. "+(p.art||"")+" "+p.name+" "+p.L+"×"+p.W+"×"+p.T); }catch(_){} return a.join("; "); }
 function aiWho(){ try{ return S.who||(S.shop&&S.shop.name)||""; }catch(_){ return ""; } }
 function aiPaint(){ const L=document.getElementById("aiList"); if(!L) return;
-  L.innerHTML=AI.hist.length?AI.hist.map(m=>`<div class="ai-m ${m.r==="a"?"ai-a":"ai-q"}">${aiEsc(m.t).replace(/\*\*([^*\n]{1,80})\*\*/g,"<b>$1</b>").replace(/^#{1,4}\s*/gm,"").replace(/\n{2,}/g,"\n").replace(/\n/g,"<br>")}${m.from==="kb"?`<small>готовый ответ</small>`:m.from==="tech"||m.from==="bug"?`<small>передано технологу</small>`:""}</div>`).join("")+(AI.busy?`<div class="ai-m ai-a ai-wait">Думаю…</div>`:"")
-    :`<p class="ai-hi">Спросите, что делать или как сделать. Например: «как отметить деталь», «где раскрой», «почему не открывается 3D». Можно голосом — нажмите 🎤.</p>`;
+  L.innerHTML=AI.hist.length?AI.hist.map((m,mi)=>`<div class="ai-m ${m.r==="a"?"ai-a":"ai-q"}">${aiEsc(m.t).replace(/\*\*([^*\n]{1,80})\*\*/g,"<b>$1</b>").replace(/^#{1,4}\s*/gm,"").replace(/\n{2,}/g,"\n").replace(/\n/g,"<br>")}${m.from==="kb"?`<small>готовый ответ</small>`:m.from==="tech"||m.from==="bug"?`<small>передано технологу</small>`:""}${m.act&&typeof aiActHtml==="function"?aiActHtml(m.act,mi,m.done):""}</div>`).join("")+(AI.busy?`<div class="ai-m ai-a ai-wait">Думаю…</div>`:"")
+    :`<p class="ai-hi">Спросите, что делать или как сделать. Например: «как отметить деталь», «где раскрой», «почему не открывается 3D». Можно голосом — нажмите 🎤.<br><br>Можно поручить: «поставь Ване замер у Петрова завтра в 10», «напиши в чат Петрова, что фасады приехали», «сколько должен Петров».</p>`;
   L.scrollTop=L.scrollHeight; }
 function aiSpeak(t){ if(!AI.say||!window.speechSynthesis) return; try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(aiPlain(t).slice(0,600)); u.lang="ru-RU"; u.rate=1.0; const vv=aiVoice(); if(vv) u.voice=vv; speechSynthesis.speak(u); }catch(_){} }
 async function aiAsk(q){ q=String(q||"").trim(); if(!q||AI.busy) return; const url=typeof helpUrl==="function"?helpUrl():"";
   AI.hist.push({r:"q",t:q}); AI.busy=true; aiPaint();
-  let ans="Нет связи с сервером. Попробуйте ещё раз.", from="";
-  if(url){ try{ const j=await (await fetch(url,{method:"POST",body:JSON.stringify({action:"aiAsk",q,who:aiWho(),role:typeof helpRole==="function"?helpRole():"",app:typeof helpApp==="function"?helpApp():"",view:typeof helpWhere==="function"?helpWhere():"",
+  let ans="Нет связи с сервером. Попробуйте ещё раз.", from=""; let act=null;
+  if(url){ try{ const j=await (await fetch(url,{method:"POST",body:JSON.stringify({action:"aiAsk",q,who:aiWho(),pin:typeof shpPin==="function"?(shpPin()||""):"",role:typeof helpRole==="function"?helpRole():"",app:typeof helpApp==="function"?helpApp():"",view:typeof helpWhere==="function"?helpWhere():"",
       order:S.current&&S.current.orderId||"",ctx:aiCtx(),hist:JSON.stringify(AI.hist.slice(-7,-1))})})).json();
     if(j&&j.ok){ ans=j.a; from=j.from||""; } else if(j&&j.error==="often") ans="Слишком много вопросов подряд — подождите минуту."; }catch(_){} }
-  AI.busy=false; AI.hist.push({r:"a",t:ans,from}); aiPaint(); aiSpeak(ans); }
+  { const mm=String(ans).match(/ДЕЙСТВИЕ:\s*(\{[\s\S]*?\})\s*$/); if(mm){ try{ act=JSON.parse(mm[1]); }catch(_){ act=null; } ans=String(ans).replace(/\n?\s*ДЕЙСТВИЕ:[\s\S]*$/,"").trim()||"Готово — проверьте и нажмите «Создать»."; } }
+  AI.busy=false; AI.hist.push({r:"a",t:ans,from,act:act&&/^(task|chat)$/.test(act.type)?act:null}); aiPaint(); aiSpeak(ans); }
 /* iPhone сам запись не заканчивает (Кирилл 05.11: «аудио запись не останавливается») —
    останавливаем сами: после паузы 1,8 с, через 15 с в любом случае, при закрытии окна и уходе из приложения. */
 function aiMicOff(hard){ const r=AI.rec; clearTimeout(AI.recT); clearTimeout(AI.recMax); if(!r) return;
@@ -21466,6 +21467,29 @@ function aiVoicePick(tr){ const L=aiVoices(); if(!L.length&&!tr){ try{ speechSyn
     const was=AI.say; AI.say=true; aiSpeak("Здравствуйте! Так я буду говорить."); AI.say=was; m.remove(); }); }
 /* 11.11: окна (смета, выбор 3D, договор, корпус, голос) — поверх панели помощника, а не под ней */
 { const st=document.createElement("style"); st.textContent=".ai-wrap{z-index:45!important}body:has(.modal:not(.ai-wrap)) .ai-fab{visibility:hidden!important;pointer-events:none!important}"; document.head.appendChild(st); }
+
+/* ===== ИИ-исполнитель (Кирилл 11.11, вариант А): помощник готовит задачу или сообщение — человек жмёт «Создать».
+   Сервер добавляет к вопросу людей, сделки (и суммы — директору) и просит строку «ДЕЙСТВИЕ: {…}». Сам ничего не делает. ===== */
+function aiDealT(id){ try{ const o=id&&typeof shpById==="function"?shpById(id):null; return o?shpTitle(o):""; }catch(_){ return ""; } }
+function aiDueT(d){ if(!d) return ""; const x=new Date(d+"T12:00:00"); if(isNaN(x)) return d; const t=new Date(); t.setHours(12,0,0,0); const n=Math.round((x-t)/864e5); return n===0?"сегодня":n===1?"завтра":n===2?"послезавтра":x.toLocaleDateString("ru-RU",{day:"numeric",month:"long",weekday:"short"}); }
+function aiActHtml(a,i,done){ const dl=aiDealT(a.deal);
+  const body=a.type==="task"?`<b>📌 ${aiEsc(a.text||"Задача")}${a.time?" · "+aiEsc(a.time):""}</b><span>Кому: ${aiEsc(a.to||"себе")}${a.due?" · "+aiEsc(aiDueT(a.due)):""}</span>${dl?`<span>Сделка: ${aiEsc(dl)}</span>`:""}`
+    :`<b>💬 В чат ${aiEsc(dl||(a.deal==="general"||!a.deal?"«Общий»":a.deal))}</b><span>${aiEsc(a.text||"")}</span>`;
+  return `<div class="ai-act">${body}${done?`<p class="ai-actok">✓ ${done}</p>`:`<div class="ai-actb"><button type="button" data-aiact="ok" data-i="${i}">${a.type==="task"?"Создать":"Отправить"}</button><button type="button" data-aiact="edit" data-i="${i}">Изменить</button><button type="button" data-aiact="no" data-i="${i}">Не надо</button></div>`}</div>`; }
+document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.closest("[data-aiact]"); if(!b) return; e.preventDefault(); e.stopPropagation();
+  const m=AI.hist[+b.dataset.i]; if(!m||!m.act||m.done) return; const a=m.act, k=b.dataset.aiact;
+  if(k==="no"){ m.done="отменено"; return aiPaint(); }
+  if(typeof shpPost!=="function"||!(typeof shpPin==="function"&&shpPin())){ toast("Войдите в Work24link — тогда помощник сможет создавать задачи"); return; }
+  const text=String(a.text||"").trim()+(a.type==="task"&&a.time&&!String(a.text||"").includes(a.time)?" в "+a.time:"");
+  if(k==="edit"){ if(a.type==="task"&&typeof shpTaskModal==="function"){ document.getElementById("aiM")?.remove(); shpTaskModal(null,{text,to:a.to||"",due:a.due||"",order:a.deal||""}); m.done="открыто для правки"; }
+    else { const v=prompt("Сообщение:",text); if(v==null) return; a.text=v; aiPaint(); } return; }
+  b.disabled=true;
+  if(a.type==="task"){ const j=await shpPost({action:"taskSave",task:{text,to:a.to||"",due:a.due||"",order:a.deal||""}}); if(!j){ b.disabled=false; return; } m.done="задача поставлена"+(a.to?": "+a.to:"");
+    try{ if(typeof shpTasksLoad==="function") shpTasksLoad(true); }catch(_){} }
+  else { const j=await shpPost({action:"chatSend",chat:a.deal||"general",text}); if(!j){ b.disabled=false; return; } m.done="отправлено"; }
+  aiPaint(); try{ toast("Готово: "+m.done); }catch(_){} },true);
+{ const st=document.createElement("style"); st.textContent=`.ai-act{margin-top:8px;border:1px solid rgba(127,127,127,.35);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:3px;background:rgba(127,127,127,.08)}.ai-act span{font-size:13.5px;opacity:.85}
+.ai-actb{display:flex;gap:6px;margin-top:8px}.ai-actb button{flex:1;min-height:38px;border-radius:10px;border:1px solid rgba(127,127,127,.4);background:none;color:inherit;font:inherit;font-weight:600;cursor:pointer}.ai-actb button:first-child{background:#5b3fd6;border-color:#5b3fd6;color:#fff}.ai-actok{margin:6px 0 0;color:#1f9d4c;font-weight:700}`; document.head.appendChild(st); }
 
 /* ===== «Проще» (Кирилл 05.11: «давайте всё это изменим по порядку») =====
    2) Шапка: «?» (помощь) и ◐ (оформление) убраны — помощь в плавающем микрофоне и «Все разделы → Как работать», оформление в «Все разделы → Оформление».
@@ -22151,7 +22175,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="410641901c";/*cehqr-build*/
+  const BUILD="8079de4419";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
