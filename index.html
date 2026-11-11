@@ -11513,7 +11513,7 @@ function accOpen(){ document.getElementById("accM")?.remove(); const R=accRoles(
       <button type="button" class="btn" data-acc="help">🛠 Написать в техподдержку</button>
       ${rows}
       ${S.pin?`<button type="button" class="btn" data-acc="pin">Выйти из отметки этапов</button>`:""}
-      ${R.length+(S.pin?1:0)>1?`<button type="button" class="btn danger" data-acc="all">Выйти полностью</button>`:""}
+      <button type="button" class="btn danger" data-acc="all">Выйти полностью</button>
       <button type="button" class="btn sm" data-acc="x">Закрыть</button></div>
     <p class="muted" style="margin:12px 0 0;font-size:12.5px">После выхода войти снова можно по ссылке от технолога.</p></div>`;
   m.addEventListener("click",async e=>{ if(e.target===m){ m.remove(); return; } const b=e.target.closest("[data-acc],[data-acc-out]"); if(!b) return;
@@ -11525,14 +11525,28 @@ function accOpen(){ document.getElementById("accM")?.remove(); const R=accRoles(
     if(a==="pin"){ m.remove(); S.pin=""; try{ localStorage.removeItem("cehqr-pin"); }catch(_){} toast("Вы вышли из отметки этапов"); render(); return; }
     if(a==="all"){ if(typeof appConfirm==="function"&&!(await appConfirm("Выйти из всех режимов на этом телефоне?","Выйти"))) return; m.remove();
       try{ ["cehqr-pin","cehqr-techpin","cehqr-officepin","cehqr-suppin","w24-pin-dir","w24-pin-tech","w24-altpin","w24-des"].forEach(k=>localStorage.removeItem(k)); sessionStorage.removeItem("w24-newfirm");   /* 11.11: выход стирает всё */ }catch(_){} S.pin="";
-      try{ delete _ks.master; delete _ks.masters; delete _ks.designers; delete _ks.supply; delete _ks.orders; keySave(); }catch(_){}
-      toast("Вы вышли"); if(typeof siteLoadIndex==="function") siteLoadIndex().then(()=>setView("orders")); else location.reload(); } });
+      try{ delete _ks.master; delete _ks.masters; delete _ks.designers; delete _ks.supply; _ks.orders={}; keySave(); }catch(_){}
+      /* 11.11 (сверка): PIN-ы убираем и из открытой страницы и перезагружаем её — иначе до перезагрузки человек оставался технологом */
+      try{ if(S.shop){ S.shop.techPin=""; S.shop.officePin=""; S.shop.supPin=""; S.shop.loaded=false; S.shop.orders=[]; S.shop.tech=false; S.shop.role=""; } if(S.sup) S.sup.pin=""; }catch(_){}
+      location.reload(); } });
   document.body.appendChild(m); }
 document.addEventListener("click",ev=>{ const r=ev.target.closest&&ev.target.closest("#role.acc-btn"); if(!r) return; ev.stopPropagation(); ev.preventDefault(); accOpen(); },true);
 document.addEventListener("keydown",ev=>{ if((ev.key==="Enter"||ev.key===" ")&&document.activeElement&&document.activeElement.matches&&document.activeElement.matches("#role.acc-btn")){ ev.preventDefault(); accOpen(); } });
 if(typeof render==="function"){ const _accR=render; render=function(){ const r=_accR.apply(this,arguments); try{ accPaint(); }catch(_){} return r; }; }
 setInterval(()=>{ try{ accPaint(); }catch(_){} },1500);
 (function(){ const st=document.createElement("style"); st.textContent=`#role.acc-btn{cursor:pointer;border:1px solid var(--field,var(--line));border-radius:999px;padding:6px 12px;min-height:32px;display:inline-flex;align-items:center;white-space:nowrap;max-width:46vw;overflow:hidden;text-overflow:ellipsis}#role.acc-btn:focus-visible{outline:2px solid var(--accent)}#accM .btn{min-height:46px;justify-content:center}#accM .danger{color:var(--bad,#C7361F)}`; document.head.appendChild(st); })();
+
+/* 11.11 Кирилл: «обновил — всё равно видно»: вышел из последней роли — ключи заказов на телефоне тоже стираем (как «Выйти полностью») */
+(function(){ const PK=["cehqr-pin","cehqr-techpin","cehqr-officepin","cehqr-suppin","w24-pin-dir","w24-pin-tech","w24-altpin","w24-des"];
+  const anyIn=()=>{ try{ return PK.some(k=>localStorage.getItem(k)); }catch(_){ return true; } };
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-acc-out],[data-act="shp-out"],[data-act="site-logout"]'); if(!b) return;
+    /* выход бывает через окно «Выйти?» — ждём, пока на телефоне не останется ни одного PIN: проверка раз в 0,5 с в течение минуты.
+       Не осталось — siteLoadIndex() сам сотрёт ключи заказов (keysDropRole: режима на телефоне нет; заказы по своему QR остаются) */
+    if(!anyIn()) return;   /* PIN на телефоне и так нет (вход только по ссылке) — свою ссылку снимает сама кнопка выхода */
+    clearInterval(window.__accOutT); const T0=Date.now();
+    window.__accOutT=setInterval(()=>{ if(Date.now()-T0>60000){ clearInterval(window.__accOutT); return; } if(anyIn()) return; clearInterval(window.__accOutT);
+      try{ delete _ks.master; delete _ks.masters; delete _ks.designers; delete _ks.supply; keySave(); }catch(_){}   /* ключи режима пришли вместе с PIN (keysGet) — без PIN их не оставляем; заказы по своему QR не трогаем */
+      try{ if(typeof siteLoadIndex==="function") siteLoadIndex().then(()=>{ try{ render(); }catch(_){} }); }catch(_){} },500); },true); })();
 
 /* ---------- «✓ Проверить комплект»: мастер по спецификации сделки отмечает «Есть» / «Не хватает» / «Брак» ----------
    Чего не хватает (и брак, и новые позиции «нет в списке») → строки в спецификации сделки «мастер Имя · причина», статус снабжения «Нужно»,
@@ -22028,7 +22042,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="d588cf232d";
+const CHK_BUILD="177c60ea70";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -22534,6 +22548,524 @@ window.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.cl
   if(document.body.classList.contains("has-full")&&t.getAttribute("data-act")==="dq-close"&&S.asmOrder&&S.asmOrder.oid&&/^QK/i.test(S.asmOrder.oid||"")) return;   /* 3D черновика быстрой сметы — у него свой «Назад» в смету */
   e.preventDefault(); e.stopImmediatePropagation(); if(!bkBack()) { BK.st=[]; t.click(); } },true);
 
+/* ===== Ввод PIN «как на айфоне» (Кирилл 11.11, вариант А) =====
+   Окно на весь экран: плашка «Имя · роль ▾», точки, круглые кнопки 0–9 с буквами, ⌫, «Войти», «Забыл PIN», «Отмена».
+   Старые окна входа не переписаны: модуль находит их в странице, прячет под собой, цифры кладёт в старое поле
+   и нажимает старую кнопку «Войти» — проверка PIN, сохранение и ошибки остаются как были.
+   PIN живёт только в этом окне, пока оно открыто, и в старом поле формы — нигде больше не сохраняется и не печатается. */
+(function(){
+  if(window.__pinpad) return; window.__pinpad=1;
+  const LOGO=`<svg viewBox="0 0 1080 1080" aria-hidden="true"><rect width="1080" height="1080" rx="230" fill="#111315"/><polyline points="200,350 340,730 540,450 740,730 880,350" stroke="#fff" stroke-width="72" fill="none" stroke-linejoin="round"/><g fill="#111315" stroke="#fff" stroke-width="60"><circle cx="200" cy="350" r="76"/><circle cx="340" cy="730" r="76"/><circle cx="540" cy="450" r="76"/><circle cx="740" cy="730" r="76"/><circle cx="880" cy="350" r="76"/></g></svg>`;
+  const LET=["","","АБВГ","ДЕЖЗ","ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪЫ","ЬЭЮЯ"];
+  const qs=(r,s)=>{ try{ return r&&s?r.querySelector(s):null; }catch(_){ return null; } };
+  const txt=e=>String(e&&e.textContent||"").replace(/\s+/g," ").trim();
+  const H=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  /* где вводят PIN: f — форма, p — поля PIN по порядку, w — поле имени, r — роль на плашке,
+     tap — в форме есть другие поля: окно открывается по нажатию на поле PIN; fill — только вписать (без «Войти») */
+  const CFG=[
+    {f:"#loginForm",p:["#loginPin"],w:"#loginWho",r:"мастер"},                                   // мастер (PIN цеха) — Технолог 3D и Work24link
+    {f:"#shpTechForm",p:["#shpTechPin"],w:"#shpTechWho",r:"технолог"},
+    {f:"#shpOfficeForm",p:["#shpOfficePin"],w:"#shpOfficeWho",r:f=>/снабж/i.test(txt(qs(f,"h2")))?"снабженец":"дизайнер / офис"},
+    {f:"#supPinForm",p:["#supPin"],w:"#supWho",r:"снабженец"},
+    {f:"#dirForm",p:["#dirPin"],w:"#dirWho",r:"директор"},
+    {f:"#dirSetF",p:["#dsTech","#dsNew","#dsNew2"],w:"#dsWho",r:"директор"},
+    {f:"#mstF",p:["#mstC","#mstP","#mstP2"],n1:"#mstN",nm:f=>txt(qs(f,".note b")),r:"свой PIN",back:'[data-m="back"]'},   // «Войти: имя + свой PIN»
+    {f:"#ntPpForm",p:['[name="ppin"]'],w:'[name="name"]',r:"личный PIN"},
+    {f:"#invPinF",p:["#invP1","#invP2"],nm:()=>txt(document.querySelector(".inv-name b")),r:()=>txt(document.querySelector(".inv-page h2 b"))||"приглашение",cancel:'[data-act="inv-pstep"][data-v="0"]'},
+    {f:"#desF",p:['[name="ppin"]'],w:'[name="name"]',r:()=>typeof S!=="undefined"&&S&&S.desSt&&S.desSt.mode==="login"?"дизайнер · Смета":"новый дизайнер · Смета",tap:1,err:"#desErr"},   // Смета
+    {f:"#frmF",p:['[name="ppin"]'],w:'[name="name"]',r:"директор новой фирмы",tap:1,err:"#frmErr"},
+    {f:"#onbF",p:["#onbP1","#onbP2"],w:"#onbName",r:"директор",tap:1},
+    {f:"#lgF",p:["#lgPin"],r:"",start:1},                                                        // первый экран: один PIN — сервер сам понимает, кто это (site_login.js)
+    {f:"#lgNameF",p:[],n1:"#lgN",r:""},                                                          // такой PIN у двоих — спросить имя
+    {f:"#lgNewF",p:["#lgP1","#lgP2"],w:"#lgWho",nm:f=>f.dataset.nm||String((qs(f,"#lgWho")||{}).value||"").trim(),r:"свой PIN"},                                   // придумать свой PIN (после кода / после входа по общему PIN)
+    {i:"#dirNewPin",r:"директор",fill:1},
+    {i:"#ntPpIn",r:"личный PIN",fill:1}
+  ];
+  let P=null, el=null, sched=0;
+
+  /* ---------- оформление ---------- */
+  const st=document.createElement("style");
+  st.textContent=`
+#ppad{position:fixed;inset:0;z-index:2147482000;display:flex;justify-content:center;background:linear-gradient(180deg,#262624 0%,#1f1e1d 100%);color:#fff;font:400 16px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;overscroll-behavior:contain}
+#ppad *{box-sizing:border-box}
+#ppad button{all:unset;color:#fff!important;border-color:transparent!important;box-sizing:border-box;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#ppad button:focus-visible{outline:2px solid rgba(255,255,255,.7);outline-offset:3px}
+#ppad .pp-in{width:100%;max-width:420px;height:100%;display:flex;flex-direction:column;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 28px) 24px calc(env(safe-area-inset-bottom,0px) + 18px);overflow:auto}
+#ppad .pp-who{display:inline-flex;align-items:center;gap:10px;max-width:100%;min-height:44px;padding:6px 16px 6px 6px;border-radius:999px;background:rgba(255,255,255,.10)!important;border:0!important;font-size:17px;color:#fff!important}
+#ppad .pp-who.nob{padding-left:16px}
+#ppad .pp-who[disabled]{cursor:default}
+#ppad .pp-who span.n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#ppad .pp-av{flex:none;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.12);color:#f0eee9;display:grid;place-items:center;font-weight:700;font-size:15px}
+#ppad .pp-logo{display:flex;flex-direction:column;align-items:center;gap:8px;margin:0 0 18px;color:#f0eee9}
+#ppad .pp-logo svg{width:64px;height:64px;border-radius:15px;box-shadow:0 0 0 1px rgba(255,255,255,.14)}
+#ppad .pp-logo b{font-size:20px;font-weight:700;letter-spacing:.2px}
+#ppad .pp-logo.sm{flex-direction:row;gap:10px;margin:0 0 14px}#ppad .pp-logo.sm svg{width:34px;height:34px;border-radius:9px}#ppad .pp-logo.sm b{font-size:16px}
+#ppad .pp-nm{width:100%;max-width:300px;margin:12px 0 0;display:grid;gap:6px}
+#ppad .pp-nm label{font-size:13px;color:rgba(255,255,255,.65)}
+#ppad .pp-nm input{width:100%;height:46px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,255,255,.22)!important;background:rgba(255,255,255,.08)!important;color:#fff!important;font:inherit;font-size:17px;outline:none;-webkit-user-select:text;user-select:text}
+#ppad .pp-nm input{outline:none!important;box-shadow:none!important}
+#ppad .pp-nm input:focus{border-color:rgba(255,255,255,.55)!important}
+#ppad .pp-t{margin:26px 0 4px;font-size:22px;font-weight:400;text-align:center}
+#ppad .pp-s{min-height:18px;font-size:13px;color:rgba(255,255,255,.6);text-align:center}
+#ppad .pp-dots{display:flex;flex-wrap:wrap;justify-content:center;gap:16px;min-height:16px;margin:14px 0 0;max-width:280px}
+#ppad .pp-dots i{width:14px;height:14px;border-radius:50%;border:1.5px solid #fff!important;transition:background .08s}
+#ppad .pp-dots i.on{background:#fff!important}
+#ppad .pp-dots.sh{animation:ppSh .42s}
+@keyframes ppSh{0%,100%{transform:translateX(0)}15%{transform:translateX(-16px)}30%{transform:translateX(14px)}45%{transform:translateX(-10px)}60%{transform:translateX(8px)}75%{transform:translateX(-4px)}}
+#ppad .pp-e{min-height:40px;margin:10px 0 0;max-width:320px;text-align:center;font-size:14px;color:#ff8a80}
+#ppad .pp-e.busy{color:rgba(255,255,255,.65)}
+#ppad .pp-e.hint{color:rgba(255,255,255,.85)}
+#ppad .pp-k{display:grid;grid-template-columns:repeat(3,78px);gap:16px 26px;margin:auto 0 0;padding-top:6px}
+#ppad .pp-k button{width:78px;height:78px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(255,255,255,.10)!important;border:1px solid rgba(255,255,255,.14)!important;color:#fff!important;box-shadow:none!important;transition:background .12s}
+#ppad .pp-k button b{font-weight:400;font-size:34px;line-height:1}
+#ppad .pp-k button small{margin-top:2px;font-size:10px;letter-spacing:2px;color:rgba(255,255,255,.75);min-height:12px}
+#ppad .pp-k button:active,#ppad .pp-k button.on{background:rgba(255,255,255,.38)!important}
+#ppad .pp-k button.x{background:none!important;border-color:transparent!important;font-size:17px}
+#ppad .pp-k button.x:active,#ppad .pp-k button.x.on{background:rgba(255,255,255,.12)!important}
+#ppad .pp-k button.go{font-weight:600}
+#ppad .pp-k button[aria-disabled="true"]{opacity:.35;pointer-events:none}
+#ppad .pp-k.off button{pointer-events:none;opacity:.55}
+#ppad .pp-next{width:100%;max-width:300px;height:52px;margin:18px 0 0;border-radius:14px;background:rgba(255,255,255,.16)!important;border:1px solid rgba(255,255,255,.2)!important;color:#fff!important;display:flex!important;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+#ppad .pp-b{width:100%;max-width:330px;display:flex;justify-content:space-between;margin-top:22px;font-size:17px}
+#ppad .pp-b button{padding:10px 12px;min-height:44px;display:inline-flex;align-items:center}
+#ppad .pp-b button:active{opacity:.6}
+#ppad .pp-b .sp{visibility:hidden}
+@media (max-height:700px){#ppad .pp-logo{margin-bottom:10px}#ppad .pp-logo svg{width:48px;height:48px}#ppad .pp-logo.sm svg{width:28px;height:28px}#ppad .pp-k{grid-template-columns:repeat(3,70px);gap:12px 24px}#ppad .pp-k button{width:70px;height:70px}#ppad .pp-k button b{font-size:30px}#ppad .pp-t{margin-top:16px}}
+@media (min-width:720px){#ppad{background:rgba(0,0,0,.6);align-items:center}#ppad .pp-in{width:420px;max-width:calc(100vw - 32px);height:auto;max-height:calc(100vh - 40px);min-height:min(760px,calc(100vh - 40px));border-radius:28px;background:linear-gradient(180deg,#262624 0%,#1f1e1d 100%);box-shadow:0 20px 60px rgba(0,0,0,.5);padding:30px 24px 18px}}
+body.pp-on{overflow:hidden}
+.modal.pp-hid{visibility:hidden!important}
+body.pp-on #toast{display:none!important}`;
+  (document.head||document.documentElement).appendChild(st);
+
+  /* ---------- поиск окон ---------- */
+  function stepsOf(c,f){
+    if(c.fill){ const i=f; return [{inp:i,lab:"Новый PIN"}]; }
+    return c.p.map(s=>qs(f,s)).filter(Boolean).map(inp=>({inp,lab:labOf(inp)}));
+  }
+  function labOf(inp){ const l=inp.closest("label"); let t="";
+    if(l){ const c=l.cloneNode(true); c.querySelectorAll("input,span.field-err,.field-err,small").forEach(x=>x.remove()); t=txt(c); }
+    return (t||inp.getAttribute("aria-label")||inp.placeholder||"PIN").replace(/^\d+\.\s*/,"").replace(/^Повторите$/,"Повторите PIN"); }
+  function nameInp(c,f){ return c.w?qs(f,c.w):null; }
+  function roleOf(c,f){ try{ return typeof c.r==="function"?c.r(f):c.r; }catch(_){ return ""; } }
+  function scan(){ sched=0;
+    if(P&&!P.form.isConnected){ const nf=find(P.c); if(nf) bind(P.c,nf,true); else if(!P.keep) close(true); }
+    for(const c of CFG){ document.querySelectorAll(c.f||c.i).forEach(f=>{ if(f.__pp) return; f.__pp=1; setup(c,f); }); }
+  }
+  function find(c){ const L=[...document.querySelectorAll(c.f||c.i)]; return L.find(f=>f.isConnected)||null; }
+  function setup(c,f){
+    const ins=c.fill?[f]:c.p.map(s=>qs(f,s)).filter(Boolean);
+    ins.forEach(i=>{ try{ i.setAttribute("inputmode","none"); }catch(_){}
+      const op=e=>{ if(P&&P.form===f) return; if(e&&e.type!=="focus") e.preventDefault(); try{ i.blur(); }catch(_){} open(c,f); };
+      i.addEventListener("pointerdown",op); i.addEventListener("focus",op); });
+    if(c.tap||c.fill) return;
+    if(c.n1&&qs(f,c.n1)&&!ins.length){   // «Вход по своему PIN», шаг 1 — имя: имя сохранено — сразу дальше
+      const n=qs(f,c.n1), m=f.closest(".modal")||f; if(n.value.trim()&&!m.__ppAuto){ m.__ppAuto=1; open(c,f,"name"); setTimeout(()=>{ if(P&&P.form===f) submit(); },0); return; }
+      m.__ppAuto=1; open(c,f,"name"); return; }
+    if(!ins.length) return;
+    open(c,f);
+  }
+
+  /* ---------- окно ---------- */
+  function open(c,f,mode){
+    if(P&&P.form===f) return;
+    if(P&&P.form!==f&&P.busy) return;
+    if(P&&P.c===c&&P.form!==f){ bind(c,f,true,mode); return; }
+    bind(c,f,false,mode);
+  }
+  function bind(c,f,re,mode){
+    const steps=stepsOf(c,f), n1=c.n1?qs(f,c.n1):null;
+    const nm=mode||(n1&&!steps.length?"name":"pin");
+    const sig=steps.map(s=>s.inp.id||s.inp.name).join(",")+"|"+nm;
+    const keep=re&&P&&P.sig===sig;
+    const old=P;
+    P={c,form:f,steps,sig,mode:nm,i:keep?old.i:0,buf:keep?old.buf:steps.map(()=>""),busy:false,msg:"",hint:false,nameOpen:keep?old.nameOpen:false,n1};
+    if(nm==="pin"){ const ex=qs(f,".field-err"); if(ex&&!re) P.msg=txt(ex); }
+    if(!P.nameOpen){ const w=nameInp(c,f); if(w&&!w.value.trim()) P.nameOpen=true; }
+    if(old&&old.hid&&old.hid!==f.closest(".modal")) old.hid.classList.remove("pp-hid");
+    if(!c.tap&&!c.fill){ const m=f.closest(".modal"); if(m){ m.classList.add("pp-hid"); P.hid=m; } }
+    if(nm==="name"){ const ex=qs(f,".field-err"); if(ex) P.msg=txt(ex); }
+    if(old&&old.poll&&old.form!==f) clearInterval(old.poll);
+    if(!el){ el=document.createElement("div"); el.id="ppad"; el.setAttribute("role","dialog"); el.setAttribute("aria-modal","true"); el.setAttribute("aria-label","Ввод PIN");
+      el.addEventListener("click",onClick); el.addEventListener("input",onInput); document.body.appendChild(el); document.body.classList.add("pp-on"); }
+    draw();
+    setTimeout(blurBehind,60); setTimeout(blurBehind,200);
+    if(nm==="name") setTimeout(()=>{ const i=qs(el,".pp-nm input"); if(i&&!P.busy) try{ i.focus(); }catch(_){} },80);
+  }
+  function blurBehind(){ const a=document.activeElement; if(P&&a&&a!==document.body&&!(el&&el.contains(a))&&P.form.contains(a)) try{ a.blur(); }catch(_){} }
+  function close(gone){ if(P&&P.poll) clearInterval(P.poll); if(P&&P.hid) P.hid.classList.remove("pp-hid"); P=null; if(el){ el.remove(); el=null; } document.body.classList.remove("pp-on"); }
+
+  function curName(){ if(!P) return ""; if(P.c.nm) return P.c.nm(P.form)||""; const w=nameInp(P.c,P.form); return w?w.value.trim():""; }
+  function canName(){ return !!(P&&(nameInp(P.c,P.form)||(P.c.back&&qs(P.form,P.c.back)))); }
+  function draw(){ if(!el||!P) return;
+    const c=P.c, name=curName(), role=roleOf(c,P.form), w=nameInp(c,P.form), multi=P.steps.length>1, s=P.steps[P.i]||{lab:""};
+    const create=/придумай|повтор|нов/i.test(s.lab)||!!c.fill;
+    const last=P.i>=P.steps.length-1, sb=qs(P.form,'[type="submit"]'), goT=c.fill?"Готово":!last?"Далее":/войти/i.test(txt(sb))||!sb?"Войти":"Готово";
+    const plate=`<button type="button" class="pp-who${name?"":" nob"}" data-pp="who"${canName()?"":" disabled"} aria-label="${H(name?name+", "+role:role)}${canName()?" — сменить имя":""}">${name?`<span class="pp-av" aria-hidden="true">${H(name.charAt(0).toUpperCase())}</span>`:""}<span class="n">${H(name?name+" · "+role:role)}</span>${canName()?`<span aria-hidden="true">▾</span>`:""}</button>`;
+    const nmBox=(open,lab)=>open&&(w||P.mode==="name")?`<div class="pp-nm"><label for="ppName">${H(lab||"Ваше имя")}</label><input id="ppName" maxlength="40" autocomplete="username" value="${H(P.mode==="name"?(P.n1&&P.n1.value)||"":w.value)}" placeholder="Например, Кирилл"></div>`:"";
+    const F=P.form, ft=F.dataset&&F.dataset.pptitle, fs=F.dataset&&F.dataset.ppsub, fmin=+(F.dataset&&F.dataset.ppmin)||4;
+    const fb=[...F.querySelectorAll("[data-ppfoot]")], foot=fb.length?`<div class="pp-b">${fb.map((b,k)=>`<button type="button" data-pp="foot" data-i="${k}">${H(txt(b))}</button>`).join("")}${fb.length<2?`<button type="button" class="sp" tabindex="-1" aria-hidden="true">.</button>`:""}</div>`:"";
+    let h=`<div class="pp-in"><div class="pp-logo${c.start?"":" sm"}">${LOGO}<b>Work24link</b></div>`;
+    if(P.mode==="name"){
+      h+=`<div class="pp-t" style="margin-top:8px">Вход по своему PIN</div><div class="pp-s">Ваше имя — как в «Сотрудниках»</div>${nmBox(true,"Ваше имя")}
+        <div class="pp-e${P.busy?" busy":""}" role="alert">${P.busy?"Проверяю…":H(P.msg)}</div>
+        <button type="button" class="pp-next" data-pp="go"${P.busy?' aria-disabled="true"':""}>Дальше</button>
+        ${foot?foot.replace('class="pp-b"','class="pp-b" style="margin-top:auto"'):`<div class="pp-b" style="margin-top:auto"><button type="button" class="sp" tabindex="-1" aria-hidden="true">Забыл PIN</button><button type="button" data-pp="cancel">Отмена</button></div>`}`;
+    } else {
+      const n=P.buf[P.i].length, max=+(s.inp&&s.inp.maxLength>0?s.inp.maxLength:20), cnt=Math.min(Math.max(fmin,n),max);
+      const lm=/^(.*?)\s*\(([^)]*)\)\s*$/.exec(s.lab||""), lt=lm?lm[1]:s.lab, lh=lm?lm[2]:"";   // «Придумайте PIN (4–12 цифр)» → заголовок + «4–12 цифр» строкой ниже
+      h+=(c.start?"":plate)+nmBox(P.nameOpen)+`<div class="pp-t"${c.start?' style="margin-top:6px"':""}>${H(multi||create?lt:ft||"Введите PIN")}</div><div class="pp-s">${H([multi?`Шаг ${P.i+1} из ${P.steps.length}`:"",multi||create?lh:fs||""].filter(Boolean).join(" · "))}</div>
+        <div class="pp-dots${P.shake?" sh":""}" aria-label="Введено цифр: ${n}">${Array.from({length:cnt},(_,k)=>`<i class="${k<n?"on":""}"></i>`).join("")}</div>
+        <div class="pp-e${P.busy?" busy":P.hint&&!P.msg?" hint":""}" role="alert">${P.busy?"Проверяю…":P.msg?H(P.msg):P.hint?"Спросите PIN у директора или технолога":""}</div>
+        <div class="pp-k${P.busy?" off":""}">${[1,2,3,4,5,6,7,8,9].map(d=>`<button type="button" data-d="${d}" aria-label="${d}"><b>${d}</b><small>${LET[d]}</small></button>`).join("")}
+          <button type="button" class="x go" data-pp="go"${n?"":' aria-disabled="true"'}>${goT}</button><button type="button" data-d="0" aria-label="0"><b>0</b><small></small></button>
+          <button type="button" class="x" data-pp="del" aria-label="Стереть цифру"${n?"":' aria-disabled="true"'}><svg width="30" height="22" viewBox="0 0 30 22" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M9 2h18a1.5 1.5 0 0 1 1.5 1.5v15A1.5 1.5 0 0 1 27 20H9L1.5 11z"/><path d="M14 7l8 8M22 7l-8 8" stroke-linecap="round"/></svg></button></div>
+        ${foot||`<div class="pp-b"><button type="button" data-pp="forgot"${create?' class="sp" tabindex="-1" aria-hidden="true"':""}>Забыл PIN</button><button type="button" data-pp="cancel">Отмена</button></div>`}`;
+    }
+    h+=`</div>`;
+    const fo=document.activeElement&&document.activeElement.id==="ppName", pos=fo?document.activeElement.selectionStart:null;
+    el.innerHTML=h; P.shake=false;
+    if(fo){ const i=qs(el,"#ppName"); if(i) try{ i.focus(); if(pos!=null) i.setSelectionRange(pos,pos); }catch(_){} }
+  }
+  function buzz(p){ try{ navigator.vibrate&&navigator.vibrate(p); }catch(_){} }
+  function flash(sel){ const b=el&&qs(el,sel); if(!b) return; b.classList.add("on"); setTimeout(()=>b.classList.remove("on"),110); }
+
+  /* ---------- нажатия ---------- */
+  function digit(d){ if(!P||P.busy||P.mode!=="pin") return; const s=P.steps[P.i], max=+(s&&s.inp.maxLength>0?s.inp.maxLength:20);
+    if(P.buf[P.i].length>=max) return; P.buf[P.i]+=d; P.msg=""; P.hint=false; buzz(8); draw(); }
+  function del(){ if(!P||P.busy||P.mode!=="pin") return; if(!P.buf[P.i].length) return; P.buf[P.i]=P.buf[P.i].slice(0,-1); buzz(8); draw(); }
+  function go(){ if(!P||P.busy) return;
+    if(P.mode==="name"){ const i=qs(el,"#ppName"); if(i&&P.n1) P.n1.value=i.value; if(!P.n1||!P.n1.value.trim()){ P.msg="Введите имя"; draw(); return; } submit(); return; }
+    if(!P.buf[P.i].length){ P.shake=true; buzz([20,40,20]); draw(); return; }
+    if(P.c.fill){ setVal(P.steps[0].inp,P.buf[0]); const f=P.form; close(); try{ f.dispatchEvent(new Event("input",{bubbles:true})); }catch(_){} return; }
+    if(P.i<P.steps.length-1){ P.i++; P.msg=""; draw(); return; }
+    const w=nameInp(P.c,P.form); if(w&&w.required&&!w.value.trim()){ P.nameOpen=true; P.msg="Введите имя"; draw(); const i=qs(el,"#ppName"); i&&i.focus(); return; }
+    submit(); }
+  function setVal(inp,v){ try{ inp.value=v; }catch(_){} }
+  function errOf(){ const f=P.form; const fe=qs(f,".field-err"); if(fe&&txt(fe)) return {m:txt(fe),inp:fe.previousElementSibling&&fe.previousElementSibling.tagName==="INPUT"?fe.previousElementSibling:qs(f,'[aria-invalid="true"]')};
+    const ai=qs(f,'input[aria-invalid="true"]'); if(ai) return {m:"",inp:ai};
+    const ep=P.c.err?document.querySelector(P.c.err):null; if(ep&&txt(ep)) return {m:txt(ep),inp:null};
+    return null; }
+  function toastNow(){ const t=document.getElementById("toast"); return t&&!t.hidden?txt(t):""; }
+  function submit(){ const f=P.form;
+    if(P.mode==="pin") P.steps.forEach((s,k)=>setVal(s.inp,P.buf[k]));
+    f.querySelectorAll(".field-err").forEach(e=>e.remove()); f.querySelectorAll('[aria-invalid="true"]').forEach(e=>e.removeAttribute("aria-invalid"));
+    if(P.c.err){ const ep=document.querySelector(P.c.err); if(ep) ep.textContent=""; }
+    if(P.c.tap&&!f.checkValidity()){ close(); try{ f.reportValidity(); }catch(_){} return; }
+    const t0=toastNow(), sb=qs(f,'[type="submit"]');
+    P.busy=true; P.msg=""; P.hint=false; draw();
+    try{ if(f.requestSubmit) f.requestSubmit(sb||undefined); else if(sb) sb.click(); else f.dispatchEvent(new Event("submit",{cancelable:true,bubbles:true})); }catch(_){ P.busy=false; draw(); return; }
+    const me=P, T=Date.now(); let seen=false;
+    me.poll=setInterval(()=>{
+      if(P!==me){ clearInterval(me.poll); return; }
+      if(!f.isConnected){ clearInterval(me.poll); me.busy=false; scan(); return; }
+      if(sb&&sb.disabled) seen=true;
+      const e=errOf();
+      if(e){ clearInterval(me.poll); fail(e.m,e.inp); return; }
+      if(me.mode==="pin"){ const k=me.steps.findIndex((s,j)=>me.buf[j]&&!s.inp.value); if(k>=0){ clearInterval(me.poll); fail(toastNow()||"PIN не подошёл",me.steps[k].inp); return; } }
+      const tn=toastNow(); if(tn&&tn!==t0&&!(sb&&sb.disabled)&&/неверн|не подош|нет связи|не получил|подождите|обновите|не задан|не похоже|нет в|сменился/i.test(tn)){ clearInterval(me.poll); fail(tn,null); return; }
+      if(Date.now()-T>25000){ clearInterval(me.poll); me.busy=false; me.msg="Нет ответа — попробуйте ещё раз"; draw(); }
+    },120);
+  }
+  function fail(m,inp){ if(!P) return; P.busy=false;
+    if(P.mode==="name"){ P.msg=m||"Не получилось"; buzz([30,40,30]); draw(); return; }
+    let k=inp?P.steps.findIndex(s=>s.inp===inp):-1; if(k<0) k=P.steps.length-1;
+    P.i=k; for(let j=k;j<P.buf.length;j++) P.buf[j]=""; P.msg=m||"Неверный PIN"; P.shake=true; buzz([30,40,30]); draw(); }
+  function cancel(){ if(!P) return; const c=P.c, f=P.form; close();
+    if(c.tap||c.fill) return;
+    const b=(c.cancel&&document.querySelector(c.cancel))||qs(f,'[data-act="qr-close"],[data-act="ntq-close"],[data-fx="x"]');
+    if(b) b.click();
+    setTimeout(()=>{ if(f.isConnected){ const m=f.closest(".modal"); if(m) m.remove(); } },0); }
+  function onClick(e){ const b=e.target.closest&&e.target.closest("button"); if(!b||!el.contains(b)||b.getAttribute("aria-disabled")==="true") return;
+    if(b.dataset.d!=null) return digit(b.dataset.d);
+    const a=b.dataset.pp;
+    if(a==="del") return del();
+    if(a==="go") return go();
+    if(a==="cancel") return cancel();
+    if(a==="foot"){ const fb=[...P.form.querySelectorAll("[data-ppfoot]")][+b.dataset.i]; if(fb&&!P.busy) fb.click(); return; }
+    if(a==="forgot"){ if(typeof window.w24Forgot==="function"){ cancel(); setTimeout(()=>window.w24Forgot(),0); return; } P.hint=!P.hint; P.msg=""; draw(); return; }
+    if(a==="who"){ if(P.busy) return; if(P.c.back){ const bk=qs(P.form,P.c.back); if(bk){ bk.click(); return; } }
+      if(nameInp(P.c,P.form)){ P.nameOpen=!P.nameOpen; draw(); if(P.nameOpen){ const i=qs(el,"#ppName"); i&&i.focus(); } } } }
+  function onInput(e){ if(!P||e.target.id!=="ppName") return; const v=e.target.value;
+    if(P.mode==="name"){ if(P.n1) P.n1.value=v; P.msg=""; return; }
+    const w=nameInp(P.c,P.form); if(w){ w.value=v; try{ w.dispatchEvent(new Event("input",{bubbles:true})); }catch(_){} }
+    const n=qs(el,".pp-who .n"), av=qs(el,".pp-av"); if(n){ const r=roleOf(P.c,P.form); n.textContent=v.trim()?v.trim()+" · "+r:r; } if(av) av.textContent=v.trim().charAt(0).toUpperCase(); }
+  /* клавиатура компьютера: цифры, Backspace, Enter, Esc */
+  window.addEventListener("keydown",e=>{ if(!P||!el) return; const inName=e.target&&e.target.id==="ppName";
+    if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); if(inName&&P.mode==="pin"){ P.nameOpen=false; draw(); return; } if(!P.c.start) cancel(); return; }
+    if(inName){ if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); if(P.mode==="name") go(); else { P.nameOpen=false; draw(); } } return; }
+    if(e.ctrlKey||e.metaKey||e.altKey) return;
+    if(/^[0-9]$/.test(e.key)){ e.preventDefault(); e.stopPropagation(); flash(`[data-d="${e.key}"]`); digit(e.key); return; }
+    if(e.key==="Backspace"){ e.preventDefault(); e.stopPropagation(); flash('[data-pp="del"]'); del(); return; }
+    if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); go(); return; }
+    if(e.key!=="Tab"&&e.key.length===1){ e.preventDefault(); e.stopPropagation(); } },true);
+  /* то, что за окном, не должно поднимать клавиатуру телефона */
+  document.addEventListener("focusin",e=>{ if(P&&el&&!el.contains(e.target)&&P.form.contains(e.target)) setTimeout(blurBehind,0); },true);
+  new MutationObserver(()=>{ if(!sched) sched=requestAnimationFrame(scan); }).observe(document.documentElement,{childList:true,subtree:true});
+  setTimeout(scan,0);
+})();
+
+/* ===== Вход «как в банке» (Кирилл 11.11, выбрал сам): один раз код на почту или в Телеграм → свой PIN (6 цифр и больше) → дальше только PIN.
+   1) Первый экран без входа на / и /vertaks/ — сразу клавиатура PIN (окно site_pinpad.js, форма #lgF). Сервер по PIN сам понимает, кто это (pinWho).
+      Личный PIN — пропуск «tgs.…»; PIN директора и общие PIN ролей — телефон хранит PIN, как раньше (остальное приложение не меняется).
+   2) «Забыл PIN» / новый телефон: почта, телефон или имя → код (codeSend) → 6 цифр (codeCheck) → «Придумайте PIN» (codeSet) → вход.
+   3) Вошёл по общему PIN роли или по короткому личному — окно «Придумайте свой PIN» (ppMine) при каждом входе, можно «Позже».
+   4) Директор/технолог: почта в карточке сотрудника и «Пригласить» (invSend), почта/Телеграм в «Пригласить работника»; директор — «Только личные PIN».
+   PIN и коды живут только в полях форм, пока открыто окно; в адрес, журнал и консоль не попадают. Заказ по QR-ссылке открывается без входа, как раньше. ===== */
+(function(){
+  if(window.APP_DES) return;   // «Смета для дизайнера» — свой вход
+  const LG={pin:"",to:"",ticket:"",tname:"",sent:0,msg:"",pause:0,asked:false};
+  const KEYS=()=>typeof MST_KEYS!=="undefined"?MST_KEYS:{tech:"cehqr-techpin",tester:"cehqr-techpin",office:"cehqr-officepin",supply:"cehqr-suppin",master:"cehqr-pin"};
+  const ls={ g:k=>{ try{ return localStorage.getItem(k)||""; }catch(_){ return ""; } }, s:(k,v)=>{ try{ localStorage.setItem(k,v); }catch(_){} }, d:k=>{ try{ localStorage.removeItem(k); }catch(_){} } };
+  const ss={ g:k=>{ try{ return sessionStorage.getItem(k)||""; }catch(_){ return ""; } }, s:(k,v)=>{ try{ sessionStorage.setItem(k,v); }catch(_){} }, d:k=>{ try{ sessionStorage.removeItem(k); }catch(_){} } };
+  const H=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  async function post(body){ try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify(body)}); return await r.json(); }catch(_){ return null; } }
+  const LOGO=`<svg viewBox="0 0 1080 1080" aria-hidden="true"><rect width="1080" height="1080" rx="230" fill="#111315"/><polyline points="200,350 340,730 540,450 740,730 880,350" stroke="#fff" stroke-width="72" fill="none" stroke-linejoin="round"/><g fill="#111315" stroke="#fff" stroke-width="60"><circle cx="200" cy="350" r="76"/><circle cx="340" cy="730" r="76"/><circle cx="540" cy="450" r="76"/><circle cx="740" cy="730" r="76"/><circle cx="880" cy="350" r="76"/></g></svg>`;
+
+  /* ---------- вошёл ли человек на этом телефоне ---------- */
+  function lgIn(){ try{ if(typeof shpPin==="function"&&S.shop&&shpPin()) return true; }catch(_){}
+    try{ if(_ks&&(_ks.master||_ks.masters||_ks.designers||_ks.supply)) return true; }catch(_){} return false; }
+  function mine(id){ return !!document.getElementById(id); }
+  function inTg(){ try{ return !!(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||/tgWebApp/.test(location.hash+location.search); }catch(_){ return false; } }
+  function lgNeed(){
+    if(window.APP_DEMO||!S.site||!S.site.stagesUrl||lgIn()||inTg()) return false;
+    if(S.inv&&S.inv.code) return false;                                   // открыли приглашение — своя страница
+    if(ss.g("w24-newfirm")||ss.g("w24-lgskip")) return false;              // только что создали фирму / «Мои заказы по QR»
+    if(mine("lgX")||mine("lgNM")||mine("lgNewM")||mine("lgCoM")) return false;
+    if(Date.now()<LG.pause||document.querySelector(".modal:not(#lgM):not(.pp-hid)")) { if(document.querySelector(".modal:not(#lgM):not(.pp-hid)")) LG.pause=Date.now()+800; return false; }   // другое окно (код компании, новая фирма…) — не перекрываем
+    const v=S.view; return v==="orders"||v==="shop"||v==="home";
+  }
+  /* заказы, открытые на этом телефоне по QR (q) — мастер видит их без входа, как раньше */
+  function qrCount(){ try{ return Object.keys(_ks.orders||{}).filter(id=>{ const o=_ks.orders[id]; return o&&(o.q||o.g)&&o.k; }).length; }catch(_){ return 0; } }
+  function firmName(){ try{ return (S.firmX&&S.firmX.name)||(S.site&&S.site.firmName)||""; }catch(_){ return ""; } }
+
+  /* ---------- 1. первый экран: сразу клавиатура PIN ---------- */
+  function lockShow(){ if(mine("lgM")) return; const m=document.createElement("div"); m.className="modal lg-m"; m.id="lgM"; const q=qrCount(), who=ls.g("cehqr-who"), fn=firmName();
+    m.innerHTML=`<form class="modal-card" id="lgF" data-pptitle="Введите PIN" data-ppsub="${H([who,fn].filter(Boolean).join(" · "))}" autocomplete="off">
+      <label>PIN<input id="lgPin" type="password" inputmode="numeric" maxlength="20" autocomplete="current-password" required></label>
+      <button type="submit">Войти</button>
+      <button type="button" data-ppfoot="1" data-lg="forgot">Забыл PIN</button><button type="button" data-ppfoot="1" data-lg="newco">Новая компания</button>${q?`<button type="button" data-ppfoot="1" data-lg="qr">Мои заказы по QR · ${q}</button>`:""}</form>`;
+    document.body.appendChild(m); }
+  function lockHide(){ document.getElementById("lgM")?.remove(); }
+  function tick(){ try{ if(lgNeed()) lockShow(); else if(mine("lgM")&&(lgIn()||!(S.view==="orders"||S.view==="shop"||S.view==="home")||(S.inv&&S.inv.code))) lockHide(); }catch(_){} }
+  if(typeof render==="function"){ const _lgR=render; render=function(){ const r=_lgR.apply(this,arguments); try{ setTimeout(tick,0); }catch(_){} return r; }; }
+  setInterval(tick,700); setTimeout(tick,300);
+
+  /* вход: личный PIN → пропуск; директор / роль → PIN как раньше. Перезагрузка — остальное приложение берёт вход само */
+  function lgDone(j,pin){ const K=KEYS();
+    Object.values(K).forEach(k=>ls.d(k)); ls.d("w24-pin-dir"); ls.d("w24-pin-tech"); ls.d("w24-altpin");
+    if(j.kind==="pp"){ ls.s(K[j.role]||K.master,j.session); ls.d("w24-lgdir"); if(j.weak) ls.s("w24-ppask","weak"); else ls.d("w24-ppask"); }
+    else { ls.s(K[j.role]||K.master,pin); if(j.dir){ ls.s("w24-lgdir","1"); ls.d("w24-ppask"); } else { ls.d("w24-lgdir"); ls.s("w24-ppask","shared"); } }
+    if(j.name) ls.s("cehqr-who",String(j.name).slice(0,40));
+    ss.d("w24-lgskip"); ss.d("w24-ppask-x");
+    try{ toast(j.name?"Вы вошли: "+j.name:j.dir?"Вы вошли как директор":"Вы вошли"); }catch(_){}
+    setTimeout(()=>{ try{ location.reload(); }catch(_){} },350); }
+  async function onStart(f){ const inp=f.querySelector("#lgPin"), pin=String(inp.value||"").trim(); if(!pin) return;
+    const sb=f.querySelector("[type=submit]"); sb.disabled=true; const j=await post({action:"pinWho",ppin:pin}); sb.disabled=false;
+    if(!j){ fieldErr(inp,"Нет связи — проверьте интернет"); inp.value=""; return; }
+    if(!j.ok){ if(j.error==="need_name"){ LG.pin=pin; inp.value=""; lockHide(); nameStep(); return; }
+      fieldErr(inp,j.error==="action"?"Обновите скрипт таблицы":j.msg||"Неверный PIN"); inp.value=""; return; }
+    lgDone(j,pin); }
+  /* такой PIN у двоих (старые PIN) — спросить имя */
+  function nameStep(){ document.getElementById("lgNM")?.remove(); const m=document.createElement("div"); m.className="modal lg-m"; m.id="lgNM";
+    m.innerHTML=`<form class="modal-card" id="lgNameF" autocomplete="off"><label>Ваше имя<input id="lgN" maxlength="40" autocomplete="username" required value=""></label><button type="submit">Дальше</button>
+      <p class="field-err">Такой PIN у двоих — впишите своё имя, как в «Сотрудниках»</p><button type="button" data-act="qr-close">Отмена</button></form>`;
+    m.addEventListener("click",e=>{ if(e.target.closest('[data-act="qr-close"]')){ LG.pin=""; m.remove(); } });
+    document.body.appendChild(m); }
+  async function onName(f){ const n=f.querySelector("#lgN"), name=String(n.value||"").trim(); f.querySelector("p.field-err")?.remove(); if(!name){ fieldErr(n,"Впишите имя"); return; }
+    const sb=f.querySelector("[type=submit]"); sb.disabled=true; const j=await post({action:"pinWho",ppin:LG.pin,name}); sb.disabled=false;
+    if(!j){ fieldErr(n,"Нет связи — проверьте интернет"); return; }
+    if(!j.ok){ if(j.error==="need_name"||j.error==="bad"){ fieldErr(n,j.error==="bad"?"С этим именем PIN не подходит — проверьте имя":j.msg); return; } LG.pin=""; document.getElementById("lgNM")?.remove(); try{ toast(j.msg||"Неверный PIN"); }catch(_){} return; }
+    const pin=LG.pin; LG.pin=""; lgDone(j,pin); }
+
+  /* ---------- 2. «Забыл PIN» / новый телефон: код → свой PIN ---------- */
+  function xOpen(step){ lockHide(); let x=document.getElementById("lgX"); if(!x){ x=document.createElement("div"); x.id="lgX"; x.className="lg-x"; x.setAttribute("role","dialog"); x.setAttribute("aria-modal","true"); x.setAttribute("aria-label","Вход по коду"); document.body.appendChild(x); document.body.classList.add("pp-on"); }
+    LG.step=step; xDraw(); }
+  function xClose(){ document.getElementById("lgX")?.remove(); document.body.classList.remove("pp-on"); clearInterval(LG.cd); LG.ticket=""; }
+  function xDraw(){ const x=document.getElementById("lgX"); if(!x) return; const top=`<div class="lg-logo">${LOGO}<b>Work24link</b></div>`;
+    if(LG.step==="to"){
+      x.innerHTML=`<div class="lg-in">${top}<h2 class="lg-t">Вход по коду</h2><p class="lg-s">Ваша почта, телефон или имя — как в «Сотрудниках». Код придёт на почту или в Телеграм.</p>
+        <form class="lg-f" id="lgToF" autocomplete="on"><label class="lg-l" for="lgTo">Почта, телефон или имя</label><input id="lgTo" class="lg-inp" maxlength="120" value="${H(LG.to)}" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="kirill@mail.ru" enterkeyhint="send">
+        <button type="submit" class="lg-go">Получить код</button><p class="lg-e" role="alert">${H(LG.msg)}</p></form>
+        <p class="lg-n">Телеграм — если вы уже писали боту цеха. Почты нет в «Сотрудниках» — попросите директора или технолога вписать.</p>
+        <div class="lg-b"><button type="button" data-lgx="back">Назад</button></div></div>`;
+      setTimeout(()=>{ const i=document.getElementById("lgTo"); i&&i.focus(); },60); return; }
+    if(LG.step==="code"){ const left=Math.max(0,Math.ceil((LG.sent+60e3-Date.now())/1000));
+      x.innerHTML=`<div class="lg-in">${top}<h2 class="lg-t">Введите код</h2><p class="lg-s">${H(LG.say||"")}<br><span class="lg-to">${H(LG.to)}</span></p>
+        <form class="lg-f" id="lgCodeF" autocomplete="off"><div class="lg-cells" aria-hidden="true">${[0,1,2,3,4,5].map(k=>`<span data-c="${k}"></span>`).join("")}</div>
+        <input id="lgCode" class="lg-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" aria-label="Код из 6 цифр" pattern="[0-9]*"><p class="lg-e" role="alert">${H(LG.msg)}</p></form>
+        <p class="lg-n">Не пришло ни туда, ни сюда — попросите директора задать вам PIN в карточке сотрудника.</p>
+        <p class="lg-n" id="lgAgain">${left?`Не пришёл? Отправить ещё раз через ${left} с`:`<button type="button" class="lg-lnk" data-lgx="again">Отправить код ещё раз</button>`}</p>
+        <div class="lg-b"><button type="button" data-lgx="to">Другой адрес</button><button type="button" data-lgx="back">Отмена</button></div></div>`;
+      cells(); clearInterval(LG.cd); LG.cd=setInterval(()=>{ const a=document.getElementById("lgAgain"); if(!a){ clearInterval(LG.cd); return; } const l=Math.max(0,Math.ceil((LG.sent+60e3-Date.now())/1000)); if(l) a.textContent=`Не пришёл? Отправить ещё раз через ${l} с`; else { a.innerHTML=`<button type="button" class="lg-lnk" data-lgx="again">Отправить код ещё раз</button>`; clearInterval(LG.cd); } },1000);
+      setTimeout(()=>{ const i=document.getElementById("lgCode"); i&&i.focus(); },60); return; }
+  }
+  function cells(){ const i=document.getElementById("lgCode"); if(!i) return; const v=i.value.replace(/\D/g,"").slice(0,6); document.querySelectorAll(".lg-cells span").forEach((s,k)=>{ s.textContent=v[k]||""; s.classList.toggle("cur",k===v.length); }); }
+  async function sendCode(again){ const i=document.getElementById("lgTo"), to=again?LG.to:String(i&&i.value||"").trim(); if(!to){ LG.msg="Впишите почту, телефон или имя"; xDraw(); return; }
+    const b=document.querySelector("#lgToF .lg-go"); if(b){ b.disabled=true; b.textContent="Отправляю…"; }
+    const j=await post({action:"codeSend",to}); LG.to=to;
+    if(!j){ LG.msg="Нет связи — проверьте интернет"; xDraw(); return; }
+    if(!j.ok){ if(j.error==="often"&&j.wait===60&&LG.sent){ LG.msg=j.msg; LG.step="code"; xDraw(); return; } LG.msg=j.msg||"Не получилось"; LG.step="to"; xDraw(); return; }
+    LG.sent=Date.now(); LG.say=j.msg||"Если адрес есть в цехе — код отправлен"; LG.msg=""; LG.step="code"; xDraw(); }
+  async function checkCode(){ const i=document.getElementById("lgCode"); const v=String(i&&i.value||"").replace(/\D/g,""); if(v.length!==6) return;
+    i.disabled=true; const j=await post({action:"codeCheck",to:LG.to,code:v});
+    if(!j){ LG.msg="Нет связи — проверьте интернет"; xDraw(); return; }
+    if(!j.ok){ LG.msg=j.msg||"Неверный код"; xDraw(); const c=document.querySelector(".lg-cells"); if(c){ c.classList.add("sh"); setTimeout(()=>c.classList.remove("sh"),450); } return; }
+    LG.ticket=j.ticket; LG.tname=j.name||""; LG.msg=""; clearInterval(LG.cd); document.getElementById("lgX")?.remove(); document.body.classList.remove("pp-on"); newPin("code"); }
+
+  /* «Придумайте PIN» — окно PIN (site_pinpad.js), 2 шага. mode: code — после кода; ask — после входа по общему PIN */
+  function newPin(mode){ document.getElementById("lgNewM")?.remove(); const m=document.createElement("div"); m.className="modal lg-m"; m.id="lgNewM"; m.dataset.mode=mode;
+    const nm=mode==="code"?LG.tname:"", needName=mode==="ask";
+    m.innerHTML=`<form class="modal-card" id="lgNewF" data-nm="${H(nm)}" data-ppmin="6" autocomplete="off">
+      ${needName?`<label>Ваше имя<input id="lgWho" maxlength="40" required value="${H((S&&S.who)||ls.g("cehqr-who"))}"></label>`:""}
+      <label>Придумайте свой PIN (6 цифр и больше)<input id="lgP1" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label>
+      <label>Повторите PIN<input id="lgP2" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label>
+      <button type="submit">Готово</button><button type="button" data-ppfoot="1" data-lg="${mode==="code"?"newback":"later"}">${mode==="code"?"Отмена":"Позже"}</button></form>`;
+    document.body.appendChild(m); }
+  async function onNew(f){ const m=f.closest(".modal"), mode=m&&m.dataset.mode, a=f.querySelector("#lgP1"), b=f.querySelector("#lgP2"), P=String(a.value||"").trim(), w=f.querySelector("#lgWho");
+    if(!/^\d{6,12}$/.test(P)){ fieldErr(a,"PIN — от 6 до 12 цифр"); a.value=""; b.value=""; return; }
+    if(P!==String(b.value||"").trim()){ fieldErr(b,"Не совпадает — введите ещё раз"); b.value=""; return; }
+    const sb=f.querySelector("[type=submit]"); sb.disabled=true;
+    const j=mode==="code"?await post({action:"codeSet",ticket:LG.ticket,ppin:P}):await post({action:"ppMine",pin:shpPin(),name:w?String(w.value||"").trim():"",ppin:P});
+    sb.disabled=false;
+    if(!j){ fieldErr(b,"Нет связи — проверьте интернет"); b.value=""; return; }
+    if(!j.ok||!/^tgs\./.test(j.session||"")){
+      if(j.error==="ticket"){ m.remove(); LG.msg=j.msg; xOpen("to"); return; }
+      if(j.error==="pp_short"||j.error==="pp_same"||j.error==="pp_format"){ fieldErr(a,j.msg); a.value=""; b.value=""; return; }
+      if(w&&(j.error==="notfound"||j.error==="role"||j.error==="name")){ fieldErr(w,j.msg); return; }
+      fieldErr(b,j.msg||"Не получилось"); b.value=""; return; }
+    LG.ticket=""; ls.d("w24-ppask"); m.remove(); lgDone(j,""); }
+
+  /* «Забыл PIN» — отовсюду (кнопка в окне PIN) */
+  window.w24Forgot=function(){ LG.msg=""; xOpen("to"); };
+
+  /* «Новая компания»: подключить свою фирму · войти в другую компанию по коду · демо */
+  function coSheet(){ lockHide(); document.getElementById("lgCoM")?.remove(); const m=document.createElement("div"); m.id="lgCoM"; m.className="lg-x"; m.setAttribute("role","dialog"); m.setAttribute("aria-modal","true"); document.body.classList.add("pp-on");
+    m.innerHTML=`<div class="lg-in"><div class="lg-logo">${LOGO}<b>Work24link</b></div><h2 class="lg-t">Новая компания</h2><p class="lg-s">Свой цех в Work24link — 30 дней бесплатно</p>
+      <div class="lg-list"><button type="button" class="lg-go" data-lgc="firm">Подключить свою фирму</button><button type="button" class="lg-sec" data-lgc="code">Войти в другую компанию по коду</button><a class="lg-sec" href="?demo=1" data-lgc="demo">Посмотреть демо-фирму</a></div>
+      <div class="lg-b"><button type="button" data-lgc="back">Назад</button></div></div>`;
+    document.body.appendChild(m);
+    m.addEventListener("click",e=>{ const b=e.target.closest("[data-lgc]"); if(!b) return; const a=b.dataset.lgc; if(a==="demo") return; m.remove(); document.body.classList.remove("pp-on");
+      if(a==="back") return tick(); LG.pause=Date.now()+1500;
+      const x=document.createElement("button"); x.type="button"; x.hidden=true; if(a==="firm") x.setAttribute("data-frmnew","1"); else x.dataset.act="lic-code"; document.body.appendChild(x); x.click(); x.remove(); }); }
+
+  /* нажатия и отправка форм */
+  document.addEventListener("submit",e=>{ const f=e.target; if(!f||!f.id) return;
+    if(f.id==="lgF"){ e.preventDefault(); e.stopPropagation(); onStart(f); }
+    else if(f.id==="lgNameF"){ e.preventDefault(); e.stopPropagation(); onName(f); }
+    else if(f.id==="lgNewF"){ e.preventDefault(); e.stopPropagation(); onNew(f); }
+    else if(f.id==="lgToF"){ e.preventDefault(); e.stopPropagation(); sendCode(false); }
+    else if(f.id==="lgCodeF"){ e.preventDefault(); e.stopPropagation(); checkCode(); } },true);
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-lg],[data-lgx]"); if(!b) return; const a=b.dataset.lg||b.dataset.lgx;
+    if(a==="forgot"){ e.preventDefault(); window.w24Forgot(); }
+    else if(a==="newco"){ e.preventDefault(); coSheet(); }
+    else if(a==="qr"){ e.preventDefault(); ss.s("w24-lgskip","1"); lockHide(); try{ setView("orders"); }catch(_){ try{ render(); }catch(__){} } }
+    else if(a==="back"){ e.preventDefault(); xClose(); LG.msg=""; tick(); }
+    else if(a==="to"){ e.preventDefault(); LG.msg=""; LG.step="to"; xDraw(); }
+    else if(a==="again"){ e.preventDefault(); sendCode(true); }
+    else if(a==="newback"){ e.preventDefault(); LG.ticket=""; document.getElementById("lgNewM")?.remove(); tick(); }
+    else if(a==="later"){ e.preventDefault(); ss.s("w24-ppask-x","1"); document.getElementById("lgNewM")?.remove(); }
+    else if(a==="pinv"){ e.preventDefault(); invFromCard(b); } },true);
+  document.addEventListener("click",e=>{ if(e.target.closest&&e.target.closest('[data-act="staff-in"]')) ss.d("w24-lgskip"); },true);   // «Я сотрудник» — снова экран PIN
+  document.addEventListener("input",e=>{ if(e.target&&e.target.id==="lgCode"){ e.target.value=e.target.value.replace(/\D/g,"").slice(0,6); LG.msg=""; const er=document.querySelector("#lgCodeF .lg-e"); if(er) er.textContent=""; cells(); if(e.target.value.length===6) checkCode(); } });
+
+  /* ---------- 3. «Придумайте свой PIN» после входа по общему PIN роли или по короткому личному ---------- */
+  function askNeed(){ try{
+    if(LG.asked||ss.g("w24-ppask-x")||!lgIn()||!S.shop||!S.shop.loaded||typeof shpPin!=="function") return false;
+    if(mine("lgNewM")||mine("lgX")||document.querySelector(".modal:not(.pp-hid)")||document.getElementById("ppad")) return false;
+    const p=shpPin(); if(!p) return false;
+    if(/^tgs\./.test(p)) return ls.g("w24-ppask")==="weak";                      // вошёл своим, но коротким PIN
+    if(ls.g("w24-lgdir")==="1"||(S.shop.tech&&S.shop.dir&&S.shop.hasDir)) return false;   // PIN директора — свой, не общий
+    return true;                                                                  // общий PIN роли
+  }catch(_){ return false; } }
+  setInterval(()=>{ if(askNeed()){ LG.asked=true; newPin("ask"); } },1500);
+
+  /* ---------- 4. карточка сотрудника: почта и «Пригласить»; «Пригласить работника» — почта или Телеграм ---------- */
+  const siteInv=()=>{ try{ return typeof invWebUrl==="function"?invWebUrl("").replace(/#inv=.*$/,"#inv="):""; }catch(_){ return ""; } };
+  if(typeof shpPersonModal==="function"){ const _lgPM=shpPersonModal; shpPersonModal=function(name){ const r=_lgPM.apply(this,arguments);
+    try{ if(!S.shop||!S.shop.tech) return r; const f=document.getElementById("shpPersonForm"); if(!f||f.elements.email) return r;
+      const p=name?(S.shop.staff||[]).find(x=>shpNorm(x.name)===shpNorm(name)):null, tgL=f.elements.tg&&f.elements.tg.closest("label");
+      const l=document.createElement("label"); l.innerHTML=`Почта<input name="email" type="email" inputmode="email" autocomplete="off" maxlength="120" value="${H(p&&p.email||"")}" placeholder="для кода входа и приглашения"><span class="shp-tghint">На почту придёт код, если человек забыл PIN или вошёл с нового телефона.</span>`;
+      if(tgL) tgL.insertAdjacentElement("afterend",l); else f.querySelector(".shp-mb")?.insertAdjacentElement("beforebegin",l);
+      if(p&&name){ const mb=f.querySelector(".shp-mb"); if(mb){ const b=document.createElement("button"); b.type="button"; b.className="btn"; b.dataset.lg="pinv"; b.dataset.k=p.name; b.textContent="Пригласить"; mb.insertBefore(b,mb.children[1]||null); } }
+    }catch(_){} return r; }; }
+  async function invFromCard(b){ const f=document.getElementById("shpPersonForm"), to=f&&f.elements.email?String(f.elements.email.value||"").trim():"";
+    if(to&&!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to)){ fieldErr(f.elements.email,"Проверьте почту"); return; }
+    b.disabled=true; const j=await shpPostRaw({action:"invSend",name:b.dataset.k,to,site:siteInv()}); b.disabled=false;
+    if(!j){ toast("Нет связи с таблицей"); return; } if(!j.ok){ toast(j.msg||(j.error==="tech"?"Приглашать может директор или технолог":"Не получилось")); return; }
+    toast(j.msg||"Приглашение создано");
+    if(!j.sent&&typeof invLinkModal==="function"){ document.getElementById("shpPersonModal")?.remove(); const x={code:j.code,name:j.name,role:j.role,exp:j.exp,status:"wait",created:Date.now(),phone:""}; if(S.inv) S.inv.list=[x].concat(S.inv.list||[]); invLinkModal(x); } }
+  if(typeof shpPost==="function"){ const _lgP=shpPost; shpPost=function(body){
+    try{ if(body&&body.action==="staffSave"){ const f=document.getElementById("shpPersonForm"), e=f&&f.elements.email; if(e){ const v=String(e.value||"").trim();
+        if(v&&!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)){ fieldErr(e,"Проверьте почту"); return Promise.resolve(null); }
+        body=Object.assign({},body,{staff:Object.assign({},body.staff,{email:v})});
+        return _lgP.call(this,body).then(j=>{ if(j) setTimeout(()=>{ try{ const x=(S.shop.staff||[]).find(q=>shpNorm(q.name)===shpNorm(body.staff.name)); if(x) x.email=v; }catch(_){} },0); return j; }); } } }catch(_){}
+    return _lgP.apply(this,arguments); }; }
+  if(typeof invNewModal==="function"){ const _lgIN=invNewModal; invNewModal=function(){ const r=_lgIN.apply(this,arguments);
+    try{ const f=document.getElementById("invForm"); if(f&&!f.elements.to){ const ph=f.elements.phone&&f.elements.phone.closest("label"); const l=document.createElement("label"); l.innerHTML=`Почта или Телеграм (необязательно)<input name="to" maxlength="120" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="почта — придёт письмо со ссылкой">`; if(ph) ph.insertAdjacentElement("afterend",l); } }catch(_){} return r; }; }
+  if(typeof shpPostRaw==="function"){ const _lgPR=shpPostRaw; shpPostRaw=function(body){
+    try{ if(body&&body.action==="invNew"){ const f=document.getElementById("invForm"), t=f&&f.elements.to?String(f.elements.to.value||"").trim():""; if(t){ body=Object.assign({},body,{to:t,site:siteInv()});
+        return _lgPR.call(this,body).then(j=>{ if(j&&j.ok&&j.msg) setTimeout(()=>{ try{ toast(j.msg); }catch(_){} },700); return j; }); } } }catch(_){}
+    return _lgPR.apply(this,arguments); }; }
+
+  /* ---------- 5. «Только личные PIN» — в окне директора «Что можно технологу» ---------- */
+  if(typeof dirModal==="function"){ const _lgDM=dirModal; dirModal=function(){ const r=_lgDM.apply(this,arguments);
+    try{ const m=document.getElementById("dirM"); if(!m||!S.shop||!S.shop.hasDir) return r; const paint=on=>{ const c=m.querySelector(".dir-pin"); if(!c) return; let w=m.querySelector(".lg-only"); if(!w){ w=document.createElement("div"); w.className="dir-pin lg-only"; c.insertAdjacentElement("afterend",w); }
+        w.innerHTML=`<label class="dir-r" style="border:0;padding:0"><span><b>Только личные PIN</b><small>Общие PIN ролей (мастера, офис, технолог, снабженец) больше не пускают. Каждый входит своим PIN. PIN директора остаётся.</small></span><input type="checkbox" role="switch" data-lgonly="1"${on?" checked":""}></label>`; };
+      paint(!!S.shop.ppOnly); shpPostRaw({action:"ppOnly"}).then(j=>{ if(j&&j.ok){ S.shop.ppOnly=!!j.on; if(document.getElementById("dirM")===m) paint(S.shop.ppOnly); } });
+      m.addEventListener("change",async e=>{ const c=e.target.closest&&e.target.closest("[data-lgonly]"); if(!c) return; e.stopPropagation(); const on=c.checked;
+        if(on&&!(await appConfirm("Включить «Только личные PIN»? Кто входит общим PIN роли, не войдёт — ему нужно придумать свой PIN (кнопка «Забыл PIN» на экране входа или приглашение).","Включить"))){ c.checked=false; return; }
+        c.disabled=true; const j=await shpPostRaw({action:"ppOnly",on}); c.disabled=false;
+        if(!j||!j.ok){ c.checked=!on; toast((j&&j.msg)||"Не получилось — нет связи"); return; } S.shop.ppOnly=!!j.on; toast(j.on?"Включено: только личные PIN":"Выключено: общие PIN ролей снова пускают"); },true);
+    }catch(_){} return r; }; }
+
+  /* ---------- 6. старые экраны «Проекты открываются по QR-коду» и кнопки ролей больше не видны (их перекрывает экран PIN) ---------- */
+  const lockable=()=>!window.APP_DEMO&&!!(S.site&&S.site.stagesUrl)&&!lgIn()&&!inTg()&&!ss.g("w24-lgskip")&&!ss.g("w24-newfirm");
+  if(typeof shpLoginHtml==="function"){ const _lgL=shpLoginHtml; shpLoginHtml=function(){ try{ if(lockable()) return `<div class="lg-wait" aria-hidden="true"></div>`; }catch(_){} return _lgL.apply(this,arguments); }; }
+  if(typeof viewOrders==="function"){ const _lgV=viewOrders; viewOrders=function(){ const h=_lgV.apply(this,arguments); try{ if(lockable()&&/Проекты открываются по QR-коду/.test(h)) return `<div class="lg-wait" aria-hidden="true"></div>`; }catch(_){} return h; }; }
+
+  /* ---------- 7. правило «6 цифр и больше»: старые подписи «4–12 цифр» в окнах PIN (до того, как их возьмёт окно PIN) ---------- */
+  function fix612(root){ try{ root.querySelectorAll("label,input[placeholder]").forEach(el=>{
+      if(el.tagName==="INPUT"){ if(/4–12|4-12|4–20/.test(el.placeholder)) el.placeholder=el.placeholder.replace(/4[–-](12|20)/,"6–12"); if(el.minLength===4) el.minLength=6; return; }
+      el.childNodes.forEach(t=>{ if(t.nodeType===3&&/\(4[–-](12|20) цифр\)/.test(t.nodeValue)) t.nodeValue=t.nodeValue.replace(/\(4[–-](12|20) цифр\)/,"(6–12 цифр)"); }); }); }catch(_){} }
+  new MutationObserver(ms=>{ for(const m of ms) for(const n of m.addedNodes){ if(n.nodeType===1&&(n.tagName==="FORM"||n.tagName==="LABEL"||(n.querySelector&&n.querySelector("form,label")))) fix612(n.tagName==="LABEL"?n.parentElement||n:n); } }).observe(document.documentElement,{childList:true,subtree:true});
+
+  /* ---------- оформление (как окно PIN: графит, тёплый серый, без фиолетового) ---------- */
+  const st=document.createElement("style"); st.textContent=`
+#lgM,#lgNM,#lgNewM{visibility:hidden}
+.lg-wait{min-height:60vh}
+#ppad .pp-b{flex-wrap:wrap;row-gap:4px}#ppad .pp-b button:nth-child(3){flex-basis:100%;justify-content:center;font-size:15px;color:rgba(240,238,233,.75)!important}
+.lg-x{position:fixed;inset:0;z-index:2147482000;display:flex;justify-content:center;background:linear-gradient(180deg,#262624 0%,#1f1e1d 100%);color:#f0eee9;font:400 16px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+.lg-x *{box-sizing:border-box}
+.lg-x .lg-in{width:100%;max-width:420px;height:100%;display:flex;flex-direction:column;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 28px) 24px calc(env(safe-area-inset-bottom,0px) + 18px);overflow:auto}
+.lg-logo{display:flex;flex-direction:column;align-items:center;gap:8px;margin:0 0 18px}.lg-logo svg{width:64px;height:64px;border-radius:15px;box-shadow:0 0 0 1px rgba(255,255,255,.14)}.lg-logo b{font-size:20px;font-weight:700}
+.lg-x .lg-t{margin:8px 0 6px;font-size:24px;font-weight:600;text-align:center;color:#f0eee9}
+.lg-x .lg-s{margin:0 0 18px;font-size:14.5px;color:rgba(240,238,233,.7);text-align:center;max-width:330px}
+.lg-x .lg-to{color:#f0eee9}
+.lg-x .lg-f{width:100%;max-width:330px;display:flex;flex-direction:column;align-items:stretch}
+.lg-x .lg-l{font-size:13px;color:rgba(240,238,233,.65);margin:0 0 6px}
+.lg-x .lg-inp{width:100%;height:54px;padding:0 16px;border-radius:14px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#f0eee9;font:inherit;font-size:18px;outline:none}
+.lg-x .lg-inp:focus{border-color:rgba(255,255,255,.55)}
+.lg-x .lg-go,.lg-x .lg-sec{all:unset;box-sizing:border-box;width:100%;min-height:54px;margin:14px 0 0;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;cursor:pointer;text-align:center}
+.lg-x .lg-go{background:#f0eee9;color:#1f1e1d}.lg-x .lg-go:active{opacity:.8}.lg-x .lg-go[disabled]{opacity:.6}
+.lg-x .lg-sec{background:rgba(255,255,255,.10);color:#f0eee9;border:1px solid rgba(255,255,255,.16);font-weight:500}
+.lg-x .lg-list{width:100%;max-width:330px}
+.lg-x .lg-e{min-height:22px;margin:10px 0 0;font-size:14px;color:#ff8a80;text-align:center}
+.lg-x .lg-n{margin:14px 0 0;max-width:330px;font-size:13.5px;color:rgba(240,238,233,.6);text-align:center}
+.lg-x .lg-lnk{all:unset;cursor:pointer;color:#f0eee9;text-decoration:underline;font-size:15px;padding:8px}
+.lg-x .lg-b{width:100%;max-width:330px;display:flex;justify-content:space-between;margin-top:auto;padding-top:22px}
+.lg-x .lg-b button{all:unset;cursor:pointer;padding:10px 12px;min-height:44px;display:inline-flex;align-items:center;font-size:17px;color:#f0eee9}
+.lg-x .lg-b button:only-child{margin-left:auto}
+.lg-x .lg-cells{position:relative;display:flex;gap:10px;justify-content:center;pointer-events:none}
+.lg-x .lg-cells span{width:46px;height:58px;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);display:grid;place-items:center;font-size:28px;font-weight:500;color:#f0eee9}
+.lg-x .lg-cells span.cur{border-color:rgba(255,255,255,.7)}
+.lg-x .lg-cells.sh{animation:ppSh .42s}
+.lg-x .lg-code{position:relative;margin:-58px auto 0;width:100%;max-width:330px;height:58px;opacity:0;font-size:16px;letter-spacing:40px;caret-color:transparent;border:0;background:transparent;color:transparent}
+@media (min-width:720px){.lg-x{background:rgba(0,0,0,.6);align-items:center}.lg-x .lg-in{width:420px;height:auto;max-height:calc(100vh - 40px);min-height:min(700px,calc(100vh - 40px));border-radius:28px;background:linear-gradient(180deg,#262624 0%,#1f1e1d 100%);box-shadow:0 20px 60px rgba(0,0,0,.5);padding:30px 24px 18px}}
+@media (max-width:360px){.lg-x .lg-cells span{width:40px;height:52px}}
+@keyframes ppSh{0%,100%{transform:translateX(0)}15%{transform:translateX(-16px)}30%{transform:translateX(14px)}45%{transform:translateX(-10px)}60%{transform:translateX(8px)}75%{transform:translateX(-4px)}}`;
+  (document.head||document.documentElement).appendChild(st);
+})();
+
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
   const t=ev.target.closest("[data-act],[data-view]"); if(!t) return;
@@ -22937,7 +23469,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="d588cf232d";/*cehqr-build*/
+  const BUILD="177c60ea70";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
