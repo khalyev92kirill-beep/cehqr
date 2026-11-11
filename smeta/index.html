@@ -5676,6 +5676,7 @@ function viewShop(){
   const m=S.shop.mode;
   if(m==="form") return shpFormHtml();
   const nav=shpNavHtml(), wait=`<p class="muted">${S.shop.err?"Нет связи с таблицей. Нажмите «Обновить».":"Загружаю…"}</p>`;
+  if(m==="general"&&S.shop.dm) return nav+`<div class="head"><h1>✉ ${esc(S.shop.dmName||"Личный чат")}</h1><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="chats">← Чаты</button></div></div>${shpChatBox(S.shop.dm,"Личная переписка — видите только вы двое")}`;
   if(m==="general") return nav+`<div class="head"><h1>Общий чат</h1><div class="head-actions"><button type="button" class="btn" data-act="shp-tab" data-v="chats">← Чаты</button></div></div>${shpChatBox("general","Все мастера, офис и технолог")}`;
   if(m==="order") return nav+(S.shop.loaded?shpOrderHtml():`<p class="muted">Загружаю заказ…</p>`);
   if(m!=="board"&&m!=="more"&&!S.shop.loaded) return nav+wait;
@@ -7025,7 +7026,7 @@ render=function(){
   document.body.dataset.page="shop"; document.body.classList.remove("client","has-full");
   document.body.classList.toggle("anon",!shpPin()&&!!(S.site&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())&&!(typeof siteIsSupply==="function"&&siteIsSupply())&&!(typeof siteIsDesigners==="function"&&siteIsDesigners())));
   document.querySelectorAll("#nav button").forEach(b=>b.setAttribute("aria-current",String(b.dataset.view==="shop")));
-  const want=S.shop.mode==="order"?(S.shop.otab==="client"?"K:"+S.shop.cur:S.shop.cur):S.shop.mode==="general"?"general":null;
+  const want=S.shop.mode==="order"?(S.shop.otab==="client"?"K:"+S.shop.cur:S.shop.cur):S.shop.mode==="general"?(S.shop.dm||"general"):null;
   if(want&&shpPin()&&(!S.shop.chat||S.shop.chat.id!==want||!shpTimer)) shpChatStart(want);
   const ae=document.activeElement, keepTa=ae&&ae.closest&&ae.closest(".shp-send")?ae.selectionStart:null;
   { const vw=$("#view"), vh=viewShop(); if(!(typeof perfSameOk==="function"&&perfSameOk(vw,vh))){ vw.innerHTML=vh; if(typeof perfMark==="function") perfMark(vw,vh); } }   // фоновое обновление без изменений — экран не трогаем (site_perf.js)
@@ -7144,7 +7145,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="shp-pedit") return shpPersonModal(t.dataset.k||"");
   if(a==="shp-pdel"){ if(!(await appConfirm("Убрать «"+t.dataset.k+"» из списка сотрудников?","Убрать"))) return; const j=await shpPost({action:"staffDel",name:t.dataset.k}); if(!j) return;
     S.shop.staff=S.shop.staff.filter(x=>shpNorm(x.name)!==shpNorm(t.dataset.k)); document.getElementById("shpPersonModal")?.remove(); toast("Убран из списка"); shpRenderKeep(); return; }
-  if(a==="shp-general"){ S.shop.chat=null; return shpGo("general"); }
+  if(a==="shp-general"){ S.shop.chat=null; S.shop.dm=null; return shpGo("general"); }
   if(a==="shp-new"){ S.shop.edit={stage:"dogovor"}; S.shop.backTo=null; return shpGo("form"); }
   if(a==="shp-edit"){ const o=shpById(S.shop.cur); if(!o) return; S.shop.edit=Object.assign({},o); S.shop.backTo=o.id; S.shop.chat=null; S.shop.mode="form"; render(); window.scrollTo(0,0); return; }
   if(a==="shp-cancel"){ const b=S.shop.backTo; S.shop.edit=null; return b?shpGo("order",b):shpGo("board"); }
@@ -11180,6 +11181,28 @@ if(typeof shpOrderHtml==="function"){ const _onlOH=shpOrderHtml; shpOrderHtml=fu
 .onl-rb{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.onl-rb b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.onl-rb .muted{font-size:12.5px}
 .onl-st{flex:none;font-size:13px;color:var(--muted);text-align:right}.onl-st.on{color:var(--ok,#17643E);font-weight:600}
 `; document.head.appendChild(st); })();
+/* ===== 11.11 (просьба Вани-снабженца): личный чат с сотрудником — «✉ Написать» в «Кто в сети» и раздел «Сотрудники» в «Чатах» ===== */
+S.dm=S.dm||{threads:null,busy:false};
+function dmMe(){ return shpNorm(typeof shpWho==="function"?shpWho():S.who||""); }
+function dmId(name){ return "P:"+[dmMe(),shpNorm(name)].sort().join("~"); }
+function dmOpen(name){ if(!name||shpNorm(name)===dmMe()) return; document.getElementById("onlModal")?.remove(); document.getElementById("dmNewM")?.remove(); S.shop.dm=dmId(name); S.shop.dmName=name; S.shop.chat=null; if(typeof shpGo==="function") shpGo("general"); }
+function dmNameOf(id){ const other=String(id).slice(2).split("~").filter(n=>n!==dmMe())[0]||""; const p=(S.shop.staff||[]).find(q=>shpNorm(q.name)===other); return p?p.name:other; }
+async function dmLoad(){ if(S.dm.busy) return; S.dm.busy=true; try{ const j=await shpGet("action=dmList",true); if(j&&j.ok) S.dm.threads=j.threads||[]; }catch(_){} S.dm.busy=false; if(S.view==="shop"&&S.shop.mode==="chats"&&!document.querySelector(".modal")) shpRenderKeep(); }
+/* «Кто в сети»: кнопка «Написать» у каждого (кроме себя) */
+if(typeof onlSheetBody==="function"){ const _dmOB=onlSheetBody; onlSheetBody=function(L){ let h=String(_dmOB.apply(this,arguments)); try{ L=L||onlPeople(); let i=0;
+    h=h.replace(/<\/li>/g,m=>{ const p=L[i++]; return p&&!p.me&&shpNorm(p.name)!==dmMe()?`<button type="button" class="btn sm dm-w" data-dm="${esc(p.name)}" aria-label="Написать: ${esc(p.name)}">✉ Написать</button>`+m:m; }); }catch(_){} return h; }; }
+/* «Чаты»: блок «Сотрудники» */
+if(typeof shpChatsHtml==="function"){ const _dmCH=shpChatsHtml; shpChatsHtml=function(){ let h=String(_dmCH.apply(this,arguments)); try{ if(S.dm.threads===null&&!S.dm.busy) setTimeout(dmLoad,0); const T=S.dm.threads||[];
+    const rows=T.map(t=>`<li><button type="button" class="shp-row" data-dm="${esc(dmNameOf(t.id))}"><span class="shp-av" aria-hidden="true">✉</span><span class="shp-rb"><b>${esc(dmNameOf(t.id))}</b><span class="muted">${esc((t.who?t.who+": ":"")+(t.text||""))}</span></span><span class="shp-rr"><span class="muted">${t.when?esc(shpTime(t.when)):""}</span></span></button></li>`).join("");
+    const blk=`<h2 class="dm-h">Сотрудники <button type="button" class="btn sm" data-dmnew="1">✉ Написать сотруднику</button></h2>${rows?`<ul class="shp-list">${rows}</ul>`:`<p class="muted" style="margin:0 0 10px">Личных переписок пока нет. Нажмите «Написать сотруднику» — увидите только вы двое.</p>`}`;
+    const i=h.indexOf('<ul class="shp-list">'); return i>=0?h.slice(0,i)+blk+`<h2 class="dm-h">Общий и по заказам</h2>`+h.slice(i):h+blk; }catch(_){ return h; } }; }
+function dmNewModal(){ document.getElementById("dmNewM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="dmNewM";
+  const L=(S.shop.staff||[]).filter(p=>p.name&&shpNorm(p.name)!==dmMe()).sort((a,b)=>a.name.localeCompare(b.name,"ru"));
+  m.innerHTML=`<div class="modal-card"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Кому написать</h2><button type="button" class="btn sm" data-dmx="1">Закрыть</button></div>
+    <ul class="shp-list" style="margin-top:10px">${L.map(p=>`<li><button type="button" class="shp-row" data-dm="${esc(p.name)}"><span class="shp-av" aria-hidden="true">${esc(p.name[0]||"?")}</span><span class="shp-rb"><b>${esc(p.name)}</b><span class="muted">${esc(p.role||"")}</span></span></button></li>`).join("")||`<li class="muted">Список сотрудников пуст</li>`}</ul></div>`;
+  document.body.appendChild(m); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-dmx]")) m.remove(); }); }
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-dm],[data-dmnew]"); if(!b) return; e.preventDefault(); e.stopPropagation(); if(b.dataset.dmnew) return dmNewModal(); dmOpen(b.dataset.dm); },true);
+{ const st=document.createElement("style"); st.textContent=".dm-w{flex:none;margin-left:8px}.dm-h{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:16px;margin:14px 0 8px}"; document.head.appendChild(st); }
 
 /* ---------- «📋 Спецификация от дизайнера» в заказе Технолог 3D ----------
    Сделка Work24link, у которой поле t3d = номер этого заказа → её примерная спецификация закупки (action=specGet&deal=…),
@@ -15130,7 +15153,7 @@ const AP_NAME=String(window.APP_NAME||"Fablink24");
 const AP_VTX=window.APP_ENTRY==="vertaks";
 S.app=S.app||{ctab:"",sec:null,keepTab:false};
 document.body.classList.add("app1");
-const AP_BAR={master:["tasks","orders","scan","chats","more"],office:["board","inbox","orders","smetas","more"],supply:["board","stock","buy","chats","more"],tech:["board","orders","smetas","chats","more"]};
+const AP_BAR={master:["tasks","orders","scan","chats","more"],office:["board","inbox","orders","smetas","more"],supply:["board","orders","buy","chats","more"],tech:["board","orders","smetas","chats","more"]};
 const AP_TAB={tasks:["Задачи","tasks"],orders:["Заказы","cube"],scan:["Сканер","qr"],chats:["Чаты","chats"],more:["Ещё","more"],board:["Сделки","deals"],inbox:["Входящие","inbox"],
   smetas:["Сметы","calc"],cal:["Календарь","cal"],stock:["Склад","box"],buy:["Закупка","cart"]};
 try{ Object.assign(SHP_I,{cube:SHP_I.cube||'<path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><path d="M4 7.4 12 12l8-4.6M12 12v9.2"/>',
@@ -21108,7 +21131,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    вид спереди (все стены и модули), сборочный чертёж, ошибки программы — и отправляет найденное технологу
    в «Вопросы и ошибки» (лист «Поддержка», от имени «Проверщик»). Каждое утро Claude разбирает замечания и исправляет.
    Одно и то же замечание с одного телефона — не чаще раза в сутки; в Телеграм автозамечания не шлются (только в список). ===== */
-const CHK_BUILD="56bfd2baed";
+const CHK_BUILD="62a5949fc5";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -21972,7 +21995,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="56bfd2baed";/*cehqr-build*/
+  const BUILD="62a5949fc5";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
