@@ -7621,14 +7621,67 @@ const CCH=(function(){
     if(document.querySelector(".modal,.dragging,.shp-dragging")) return true;
     if(S.view==="shop"&&S.shop&&S.shop.mode==="form") return true;
     return false; }
+  /* ---- тихая перерисовка «как на iPhone» (13.11): экран не мигает и ничего не съезжает ----
+     Свежие данные пришли в фоне → экран перерисовывается, но то, что видит человек, остаётся как было:
+     прокрутка страницы и лент внутри (чат, колонки, полоски), раскрытые блоки, кнопка в фокусе, карточка под пальцем —
+     на том же месте (даже на iPhone, где браузер сам место не держит). Плавно проявляются только карточки, где правда что-то
+     поменялось; раньше весь экран на миг тускнел (08.11, вариант В). Фоновая перерисовка — когда человек не нажимает и не пишет. */
+  const SCR=new Set();   // что человек прокручивал внутри экрана
+  document.addEventListener("scroll",ev=>{ const t=ev.target; if(t&&t.nodeType===1){ SCR.add(t); if(SCR.size>40) SCR.delete(SCR.values().next().value); } },{capture:true,passive:true});
+  let bgN=0, gestAt=0, inKeep=0;
+  ["pointerdown","keydown","click","input","change","submit"].forEach(t=>document.addEventListener(t,ev=>{ if(ev.isTrusted) gestAt=Date.now(); },{capture:true,passive:true}));
+  // перерисовка сейчас «фоновая»: свежие данные, человек не нажимает, ничего не записываем
+  function bg(){ if(bgN<=0||posts>0||Date.now()-postAt<1500||Date.now()-gestAt<400) return false;
+    const e=window.event; return !(e&&e.isTrusted&&/^(click|pointer|mouse|touch|key|input|change|submit)/.test(e.type||"")); }
+  const KA=["data-id","data-deal","data-st","data-tk","data-chat","data-k","data-v","data-kbi","data-day"];
+  function k1(n){ for(const a of KA){ const x=n.getAttribute(a); if(x) return n.tagName.toLowerCase()+"["+a+'="'+CSS.escape(x)+'"]'; } return ""; }
+  // адрес элемента внутри экрана: по id или data-… (переживает перестановку), иначе по порядку
+  function path(el,root){ const P=[]; let n=el;
+    while(n&&n!==root&&n.nodeType===1){ if(n.id) { P.unshift("#"+CSS.escape(n.id)); return P.join(" > "); }
+      let s=k1(n); if(!s){ let i=1, p=n; while((p=p.previousElementSibling)) i++; s=n.tagName.toLowerCase()+":nth-child("+i+")"; }
+      P.unshift(s); n=n.parentElement; }
+    return n===root?":scope > "+P.join(" > "):""; }
+  function find(p,root){ if(!p) return null; try{ const n=p.charAt(0)==="#"?document.querySelector(p):root.querySelector(p); return n&&root.contains(n)?n:null; }catch(_){ return null; } }
+  // какой экран открыт: другой экран после перерисовки — ничего не переносим
+  function scr(){ try{ const sh=S.shop||{}; return [S.view,sh.mode,sh.cur,sh.bview,S.current&&S.current.orderId].join("|"); }catch(_){ return ""; } }
+  // текст карточки без значков и пробелов: оформление (site_skin2.js) меняет эмодзи на значки позже, в свободное время — это не «новое»
+  let EMO; try{ EMO=new RegExp("[\\p{Extended_Pictographic}\\uFE0F\\u200D\\s]+","gu"); }catch(_){ EMO=/\s+/g; }
+  const txt=c=>String(c.textContent||"").replace(EMO,"");
+  const sumOf=d=>{ const x=d.querySelector(":scope > summary"); return x?String(x.textContent||"").trim().slice(0,80):""; };
+  function snap(v){ const s={k:scr(),y:window.scrollY,sc:[],dt:[],cards:new Map()}, ae=document.activeElement;
+    SCR.forEach(el=>{ if(!el.isConnected){ SCR.delete(el); return; } if(el!==v&&v.contains(el)&&(el.scrollLeft||el.scrollTop)) s.sc.push({p:path(el,v),c:el.className,l:el.scrollLeft,t:el.scrollTop,end:el.scrollHeight-el.scrollTop-el.clientHeight<60,chat:el.id==="shpMsgs"}); });
+    const D=v.getElementsByTagName("details"); for(let i=0;i<D.length&&i<80;i++) s.dt.push({p:path(D[i],v),o:D[i].open,t:sumOf(D[i])});
+    if(ae&&ae!==document.body&&v.contains(ae)) s.fo=path(ae,v);
+    const C=v.querySelectorAll("[data-id]"); if(C.length<=300) C.forEach(c=>{ const k=c.tagName+"|"+c.dataset.id; if(!s.cards.has(k)) s.cards.set(k,txt(c)); });
+    if(s.y>4){ let a=document.elementFromPoint(Math.round(innerWidth/2),Math.round(innerHeight*0.4));   // карточка посреди экрана — она останется на месте
+      while(a&&a!==v&&!(a.nodeType===1&&(a.id||k1(a)))) a=a.parentElement;
+      if(a&&a!==v&&v.contains(a)){ const p=path(a,v), r=a.getBoundingClientRect(); if(p) s.an={p,top:r.top,left:r.left}; } }
+    return s; }
+  function restore(s,v){ if(s.k!==scr()) return;
+    s.dt.forEach(d=>{ const n=find(d.p,v); if(n&&n.tagName==="DETAILS"&&n.open!==d.o&&sumOf(n)===d.t) n.open=d.o; });
+    s.sc.forEach(x=>{ const n=find(x.p,v); if(!n||n.className!==x.c) return; if(x.chat&&x.end) return;   // чат внизу — пусть остаётся внизу (видно новые)
+      if(n.scrollLeft!==x.l) n.scrollLeft=x.l; if(n.scrollTop!==x.t) n.scrollTop=x.t; SCR.add(n); });
+    if(Math.abs(window.scrollY-s.y)>1) window.scrollTo(0,s.y);
+    if(s.an){ const n=find(s.an.p,v); if(n){ const r=n.getBoundingClientRect(), d=r.top-s.an.top; if(Math.abs(d)>1&&Math.abs(d)<innerHeight&&Math.abs(r.left-s.an.left)<40) window.scrollBy(0,d); } }   // карточка переехала в другую колонку — страницу не двигаем
+    if(s.fo){ const ae=document.activeElement; if(!ae||ae===document.body){ const n=find(s.fo,v); if(n) try{ n.focus({preventScroll:true}); }catch(_){} } }
+    if(s.cards.size&&v.animate&&!(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)){ const ch=[];
+      const C=v.querySelectorAll("[data-id]"); if(C.length<=300) for(const c of C){ const o=s.cards.get(c.tagName+"|"+c.dataset.id); if(o!==undefined&&o!==txt(c)){ ch.push(c); if(ch.length>8) break; } }
+      if(ch.length&&ch.length<=8) ch.forEach(c=>{ try{ c.animate([{opacity:.45},{opacity:1}],{duration:220,easing:"ease-out"}); }catch(_){} }); } }
+  // перерисовать, сохранив то, что видит человек (только для фоновой перерисовки)
+  function keep(fn,self,args){ const v=document.getElementById("view"); if(inKeep||!v) return fn.apply(self,args||[]);
+    let s=null; try{ s=snap(v); }catch(e){ console.warn("cache keep",e); }
+    inKeep++; let r; try{ r=fn.apply(self,args||[]); } finally{ inKeep--; }
+    const v2=document.getElementById("view"); if(s&&v2) try{ restore(s,v2); }catch(e){ console.warn("cache keep",e); }
+    return r; }
+  function bgRun(fn,self,args){ bgN++; try{ return keep(fn,self,args); } finally{ bgN--; } }
   let qT=0;
   function flush(){ clearTimeout(qT); qT=0; if(!queue.size) return; if(userBusy()){ qT=setTimeout(flush,800); return; }
-    const L=[...queue.values()]; queue.clear();
-    const v=document.getElementById("view"), h0=v?v.innerHTML:"", y0=window.scrollY, t0=Date.now(), P=[];
-    L.forEach(m=>{ const f=R[m.act]; if(!f) return; once[m.k]=Date.now(); try{ const r=f(m.p,m); if(r&&r.catch){ r.catch(e=>console.warn("cache refresh",m.act,e)); P.push(r.catch(()=>{})); } }catch(e){ console.warn("cache refresh",m.act,e); } });
-    /* Кирилл 08.11 (вариант В): свежие данные — плавно и без прыжка страницы */
-    Promise.all(P).then(()=>requestAnimationFrame(()=>{ try{ if(!v||v.innerHTML===h0) return; if(Date.now()-t0<500&&Math.abs(window.scrollY-y0)>2) window.scrollTo(0,y0);
-      if(!(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)&&v.animate) v.animate([{opacity:.6},{opacity:1}],{duration:260,easing:"ease-out"}); }catch(_){} })); }
+    const L=[...queue.values()]; queue.clear(); const P=[], y0=window.scrollY, k0=scr(), t0=Date.now();
+    bgN++;
+    try{ L.forEach(m=>{ const f=R[m.act]; if(!f) return; once[m.k]=Date.now(); try{ const r=f(m.p,m); if(r&&r.catch){ r.catch(e=>console.warn("cache refresh",m.act,e)); P.push(r.catch(()=>{})); } }catch(e){ console.warn("cache refresh",m.act,e); } }); }
+    finally{ let done=false; const fin=()=>{ if(!done){ done=true; bgN--; } }; setTimeout(fin,8000);
+      // загрузчик сначала показал «Загружаю…», потом экран — страница могла укоротиться и съехать вверх: возвращаем, если человек сам не крутил
+      Promise.all(P).then(()=>{ fin(); requestAnimationFrame(()=>{ try{ if(scr()===k0&&gestAt<t0&&Date.now()-t0<1500&&Math.abs(window.scrollY-y0)>2) window.scrollTo(0,y0); }catch(_){} }); },fin); } }
   function refresh(m){ if(!R[m.act]) return; queue.set(m.k,m); if(!qT) qT=setTimeout(flush,0); }
   document.addEventListener("focusout",()=>{ if(queue.size){ clearTimeout(qT); qT=setTimeout(flush,350); } },true);
   /* ---- сеть ---- */
@@ -7676,9 +7729,11 @@ const CCH=(function(){
 #cchDot span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}@keyframes cchP{from{opacity:.35}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){#cchDot i{animation:none}.cch-wait{animation-duration:.01s}}`; document.head.appendChild(st); }catch(_){}
   const WAIT=/^\s*(Загружаю|Считаю)/;
-  function mark(n){ if(n.nodeType!==1) return; const L=n.matches&&n.matches(".muted")?[n]:[]; if(n.querySelectorAll) L.push(...n.querySelectorAll(".muted")); L.forEach(x=>{ if(WAIT.test(x.textContent||"")) x.classList.add("cch-wait"); }); }
-  try{ new MutationObserver(ms=>ms.forEach(r=>r.addedNodes.forEach(mark))).observe(document.documentElement,{childList:true,subtree:true}); }catch(_){}
-  return {R,warm,purgePin,purgeAll,purgeOrders,keyOf,userBusy,stats:()=>({mem:mem.size,ls:Object.keys(idx).length,lsSize:total(),orders:omem.size,ordersSize:oSize,inflight:Object.keys(infl).length})};
+  /* 13.11: легче — только добавленные блоки, где есть .muted (поиск по классу — быстрый, без перебора всех узлов); текст смотрим лишь у этих строк */
+  function mark(n){ if(n.nodeType!==1) return; if(n.classList.contains("muted")&&!n.classList.contains("cch-wait")&&WAIT.test(n.textContent||"")) n.classList.add("cch-wait");
+    if(!n.firstElementChild) return; const L=n.getElementsByClassName("muted"); for(let i=0;i<L.length;i++){ const x=L[i]; if(!x.classList.contains("cch-wait")&&WAIT.test(x.textContent||"")) x.classList.add("cch-wait"); } }
+  try{ new MutationObserver(ms=>{ for(const r of ms){ const A=r.addedNodes; for(let i=0;i<A.length;i++) if(A[i].nodeType===1) mark(A[i]); } }).observe(document.documentElement,{childList:true,subtree:true}); }catch(_){}
+  return {R,warm,keep,bg,bgRun,purgePin,purgeAll,purgeOrders,keyOf,userBusy,stats:()=>({mem:mem.size,ls:Object.keys(idx).length,lsSize:total(),orders:omem.size,ordersSize:oSize,inflight:Object.keys(infl).length})};
 })();
 
 /* ---------- Техподдержка во всех приложениях: «что не так» + фото → лист «Поддержка» (и Telegram технологу). Список обращений — у технолога в Work24link ---------- */
@@ -12129,6 +12184,18 @@ setTimeout(()=>{ if(typeof sp3Card==="function"){ const _fokSC=sp3Card; sp3Card=
   let shopJ=null;   // последний ответ «shop» (пришли ли с ним задачи)
   if(F(shpSetRole)){ const _sr=shpSetRole; shpSetRole=function(j){ shopJ=j; return _sr.apply(this,arguments); }; }
   if(F(shpLoad)){ const _l=shpLoad; shpLoad=async function(q){ shopJ=null; const r=await _l.apply(this,arguments); try{ warmAll(shopJ); }catch(_){} return r; }; }
+  /* 13.11 («как iPhone»): фоновая перерисовка — без мигания и сдвигов (CCH.keep: прокрутка, раскрытые блоки, фокус, карточка посреди экрана).
+     Обёртки ставим самыми внешними — когда все модули уже подключены, чтобы восстановление шло после всех дорисовок. */
+  if(F(CCH.keep)) setTimeout(()=>{
+    if(F(render)){ const _r=render; render=function(){ return CCH.bg()?CCH.keep(_r,this,arguments):_r.apply(this,arguments); }; }
+    if(F(shpRenderKeep)&&typeof shpRK==="object"){ const _k=shpRenderKeep; shpRenderKeep=function(){ return shpRK.fire?CCH.bgRun(_k,this,arguments):_k.apply(this,arguments); }; }   // отложенная (собранная) перерисовка — фоновая
+  },0);
+  /* чат сделки опрашивается раз в 15 с: нет новых сообщений — ленту не пересобираем (фото не мигают, выделение текста и прокрутка остаются) */
+  if(F(shpDrawMsgs)&&F(shpMsgsHtml)){ const _dm=shpDrawMsgs; shpDrawMsgs=function(){ const box=document.getElementById("shpMsgs"); let h=null;
+      try{ if(box&&box.__cchB===box.lastChild&&box.__cchN===box.childNodes.length){ h=shpMsgsHtml(); if(h===box.__cchH) return; } }catch(_){ h=null; }
+      const r=_dm.apply(this,arguments);
+      try{ const b2=document.getElementById("shpMsgs"); if(b2){ b2.__cchH=h!==null&&b2===box?h:shpMsgsHtml(); b2.__cchB=b2.lastChild; b2.__cchN=b2.childNodes.length; } }catch(_){}
+      return r; }; }
 })();
 
 /* ---------- быстродействие на слабых телефонах (Технолог 3D и Work24link) ----------
@@ -12187,7 +12254,10 @@ setTimeout(()=>{ try{ perfHoverFix(); }catch(_){} },6000);   // стили, ко
 /* перерисовка Work24link «в фоне» (раз в минуту, после ответа таблицы): если HTML экрана тот же и после прошлой отрисовки
    человек ничего не нажимал — DOM не трогаем (не сбиваем прокрутку, открытые блоки и не тормозим касания) */
 function perfSameOk(el,html){ if(!el||el.__perfHtml!==html||el.__perfFirst!==el.firstElementChild||!el.__perfAt) return false;
-  return PERF.inAt<el.__perfAt; }
+  if(PERF.inAt<el.__perfAt) return true;
+  /* 13.11: свежие данные пришли в фоне (человек сейчас не нажимает, ничего не записываем — CCH.bg) и экран тот же — тоже не трогаем:
+     раньше одно касание (даже прокрутка) заставляло следующее обновление перерисовать всё — раскрытое закрывалось, слабый телефон подтормаживал */
+  try{ return typeof CCH==="object"&&typeof CCH.bg==="function"&&CCH.bg(); }catch(_){ return false; } }
 function perfMark(el,html){ if(!el) return; el.__perfHtml=html; el.__perfFirst=el.firstElementChild; el.__perfAt=performance.now(); }
 /* поиск по длинным спискам (детали заказа, сделки, договоры): если фильтр на этом телефоне тяжёлый (>12 мс),
    при быстром наборе фильтруем один раз через 160 мс после последней буквы, а не на каждую букву */
@@ -16417,17 +16487,25 @@ function apBarOn(){ if(!apStaff()) return false; const b=document.body;
   if(b.classList.contains("has-full")||S.fvWin||document.getElementById("scanWin")||S.view==="part"||S.view==="import") return false;
   if(S.view==="shop"&&(S.shop.mode==="form"||S.shop.mode==="note")) return false;
   return true; }
-function apPaint(){ try{ const on=apBarOn(); document.body.classList.toggle("app-bar-on",on); let n=document.getElementById("appBar");
-  if(!on){ if(n) n.hidden=true; apMeasure(); return; }
-  const h=apBarHtml(); if(!n||n.dataset.h!==h){ const w=document.createElement("div"); w.innerHTML=h; const nn=w.firstElementChild; nn.dataset.h=h; if(n) n.replaceWith(nn); else document.body.appendChild(nn); n=nn; }
-  n.hidden=false; apMeasure(); }catch(e){ console.error("appBar",e); } }
+function apPaint(){ try{ const on=apBarOn(), b=document.body, was=b.classList.contains("app-bar-on"); b.classList.toggle("app-bar-on",on); let n=document.getElementById("appBar");
+  if(!on){ if(n&&!n.hidden) n.hidden=true; if(was||apPaint.h===undefined||apPaint.h) apMeasure(); return; }
+  const h=apBarHtml(); let ch=!was||!n||n.hidden||apPaint.h===undefined||!apPaint.h;   /* 13.11: раз в 4 с панель та же — вёрстку не пересчитываем (размер ловит ResizeObserver) */
+  if(!n||n.dataset.h!==h){ const w=document.createElement("div"); w.innerHTML=h; const nn=w.firstElementChild; nn.dataset.h=h; if(n) n.replaceWith(nn); else document.body.appendChild(nn); n=nn; ch=true; }
+  if(n.hidden) n.hidden=false; if(ch) apMeasure(); }catch(e){ console.error("appBar",e); } }
 function apMeasure(){ if(apMeasure.raf) return; apMeasure.raf=requestAnimationFrame(()=>{ apMeasure.raf=0; /* W24BAR: высота видимой нижней панели — каждый раз, от низа экрана до её верха; 0 если её нет */
   const b=document.getElementById("appBar"), r=b&&!b.hidden&&document.body.classList.contains("app-bar-on")?b.getBoundingClientRect():null;
   const hh=r&&r.height?Math.max(0,Math.round(Math.min(r.height,window.innerHeight-r.top))):0, de=document.documentElement;
   if(apPaint.h!==hh){ apPaint.h=hh; de.style.setProperty("--apbar",hh+"px"); }
-  const sb=document.querySelector(".sup-bar"), sh=sb&&sb.getClientRects().length?Math.round(sb.getBoundingClientRect().height):0; if(apMeasure.sh!==sh){ apMeasure.sh=sh; de.style.setProperty("--supbar",sh+"px"); }
-  if(b&&window.ResizeObserver&&apMeasure.rb!==b){ try{ if(!apMeasure.ro) apMeasure.ro=new ResizeObserver(()=>apMeasure()); apMeasure.ro.observe(b); apMeasure.rb=b; }catch(_){} } }); }
-try{ window.visualViewport&&visualViewport.addEventListener("resize",()=>apMeasure()); new MutationObserver(()=>apMeasure()).observe(document.body||document.documentElement,{childList:true,subtree:true}); }catch(_){}
+  const sb=AP_SB[0]||null, sh=sb&&sb.getClientRects().length?Math.round(sb.getBoundingClientRect().height):0; if(apMeasure.sh!==sh){ apMeasure.sh=sh; de.style.setProperty("--supbar",sh+"px"); }
+  if(window.ResizeObserver){ try{ if(!apMeasure.ro) apMeasure.ro=new ResizeObserver(()=>apMeasure());
+    if(b&&apMeasure.rb!==b){ if(apMeasure.rb) apMeasure.ro.unobserve(apMeasure.rb); apMeasure.ro.observe(b); apMeasure.rb=b; }
+    if(apMeasure.rs!==sb){ if(apMeasure.rs) apMeasure.ro.unobserve(apMeasure.rs); if(sb) apMeasure.ro.observe(sb); apMeasure.rs=sb; } }catch(_){} } }); }
+/* 13.11: раньше любое изменение страницы (каждая перерисовка, сообщение, подсказка) заставляло пересчитывать вёрстку ради двух высот.
+   Теперь: размеры панели и полоски снабжения ловит ResizeObserver, а наблюдатель только смотрит, не появилась ли / не пропала ли полоска
+   (живой список по классу — без перебора узлов), и не чаще раза за кадр. */
+const AP_SB=document.getElementsByClassName("sup-bar");
+try{ window.visualViewport&&visualViewport.addEventListener("resize",()=>apMeasure());
+  let q=0; new MutationObserver(()=>{ if(q) return; q=1; Promise.resolve().then(()=>{ q=0; const sb=AP_SB[0]||null; if(sb!==apMeasure.rs||(apMeasure.rb&&!apMeasure.rb.isConnected)) apMeasure(); }); }).observe(document.body||document.documentElement,{childList:true,subtree:true}); }catch(_){}
 
 /* переход по вкладке */
 function apShopTab(v){ const b=document.createElement("button"); b.type="button"; b.hidden=true; b.dataset.act="shp-tab"; b.dataset.v=v; (document.getElementById("view")||document.body).appendChild(b); b.click(); b.remove(); }
@@ -16588,7 +16666,8 @@ window.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.close
 /* старые слова «Вертакс» в подписях (не в переписке) — одно имя приложения */
 const AP_W=[[/Выйти из «Вертакса»/g,"Выйти"],[/Войдите в «Вертакс»/g,"Войдите"],[/Войдите в Вертакс/g,"Войдите"],[/Вход в Вертакс/g,"Вход"],[/«Вертакс» не подключён/g,"Сделки не подключены"],
   [/Открыть сделку в Вертаксе/g,"Открыть сделку"],[/Открыть в Вертаксе/g,"Открыть сделку"],[/Поменяйте в Вертаксе/g,"Поменяйте в сделке"],[/^В «?Вертакс»?$/g,"К сделкам"],[/^Вертакс$/g,AP_NAME],[/Разделы Вертакса/g,"Разделы"]];
-function apWords(root){ try{ if(!root) return; const tw=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.nodeValue.indexOf("Вертакс")>=0&&!(n.parentNode&&n.parentNode.closest&&n.parentNode.closest(".shp-msgs,.shp-msg,.inb-body,textarea,input,.nt-ed"))?1:2}); const L=[]; while(tw.nextNode()) L.push(tw.currentNode);
+function apWords(root){ try{ if(!root) return; if(String(root.textContent||"").indexOf("Вертакс")<0&&!(root.querySelector&&root.querySelector('[aria-label*="Вертакс"]'))) return;   /* 13.11: слова нет — не перебираем каждую строку */
+  const tw=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.nodeValue.indexOf("Вертакс")>=0&&!(n.parentNode&&n.parentNode.closest&&n.parentNode.closest(".shp-msgs,.shp-msg,.inb-body,textarea,input,.nt-ed"))?1:2}); const L=[]; while(tw.nextNode()) L.push(tw.currentNode);
   L.forEach(n=>{ let t=n.nodeValue; const tr=t.trim(); AP_W.forEach(([re,to])=>{ if(re.source.charAt(0)==="^"){ if(re.test(tr)) t=t.replace(tr,to); re.lastIndex=0; } else t=t.replace(re,to); }); if(t!==n.nodeValue) n.nodeValue=t; });
   root.querySelectorAll&&root.querySelectorAll('[aria-label*="Вертакс"]').forEach(e=>e.setAttribute("aria-label",e.getAttribute("aria-label").replace(/«?Вертакс[а-я]*»?/g,AP_NAME))); }catch(_){} }
 try{ new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(n=>{ if(n.nodeType===1&&(n.classList.contains("modal")||n.classList.contains("toast"))) apWords(n); }))).observe(document.body,{childList:true}); }catch(_){}
@@ -22970,7 +23049,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="acf49574df";
+const CHK_BUILD="92f912e788";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -23357,7 +23436,8 @@ document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.
       w.innerHTML=`<button type="button" class="kb-ar" data-kbgo="${i-1}" aria-label="Предыдущий этап"${i?"":" disabled"}>‹</button><span class="kb-pos">${i+1} из ${cols.length}</span><button type="button" class="kb-ar" data-kbgo="${i+1}" aria-label="Следующий этап"${i<cols.length-1?"":" disabled"}>›</button>`; h.appendChild(w); });
     kb.addEventListener("scroll",()=>{ if(kb._raf) return; kb._raf=requestAnimationFrame(()=>{ kb._raf=0; kbSync(kb); }); },{passive:true}); kbSync(kb); }
   document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-kbi],[data-kbgo]"); if(!b) return; const kb=document.getElementById("shpKb"); if(!kb) return; e.preventDefault(); e.stopPropagation(); kbGo(kb,+(b.dataset.kbi!=null?b.dataset.kbi:b.dataset.kbgo)); },true);
-  new MutationObserver(()=>{ if(document.getElementById("shpKb")&&!document.getElementById("shpKb").dataset.kbn) requestAnimationFrame(kbEnhance); }).observe(document.documentElement,{childList:true,subtree:true});
+  /* 13.11: новая доска (dk) этого не ждёт — на каждое изменение страницы ничего не делаем; и не больше одного раза за кадр */
+  { let kq=0; new MutationObserver(()=>{ if(kq) return; const kb=document.getElementById("shpKb"); if(!kb||kb.dataset.kbn||kb.classList.contains("dk")) return; kq=requestAnimationFrame(()=>{ kq=0; kbEnhance(); }); }).observe(document.documentElement,{childList:true,subtree:true}); }
   const st5=document.createElement("style"); st5.textContent=`.kb-nav{position:sticky;top:var(--toph,0px);z-index:5;background:var(--bg,#fff);margin:0 -16px 6px;padding:6px 16px;border-bottom:1px solid var(--line)}
 .kb-st{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}.kb-st::-webkit-scrollbar{display:none}
 .kb-st button{flex:none;min-height:40px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface,#fff);color:inherit;font:inherit;font-size:14px;white-space:nowrap}
@@ -27256,7 +27336,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="acf49574df";/*cehqr-build*/
+  const BUILD="92f912e788";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
