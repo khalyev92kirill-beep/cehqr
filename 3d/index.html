@@ -12875,12 +12875,16 @@ function plHtml(){ const D=plData(), sel=S.shop.plSel||"", nf=D.fresh.length, my
       :tile("pay",my,shpPl(my,"моя задача","мои задачи","моих задач"),'data-act="shp-tab" data-v="tasks" data-tt="me"'))+`</div>`;
   h+=plSelHtml(D);
   const L=plTodo(D), cut=S.shop.plAll?L.length:8;
-  h+=`<section class="pl-sec"><h2><span>Что сделать сейчас</span><span class="pl-n">${L.length||""}</span></h2>${L.length?`<div class="pl-list">${L.slice(0,cut).join("")}</div>${L.length>cut?`<button type="button" class="pl-allb" data-act="vx-more">Показать ещё ${L.length-cut}</button>`:""}`:`<p class="pl-ok">Срочных дел нет — всё идёт по плану.</p>`}</section>`;
+  const oT=plOpen("todo",true);
+  h+=`<section class="pl-sec${oT?"":" shut"}"><h2><button type="button" class="pl-acc" data-act="vx-acc" data-v="todo" aria-expanded="${oT}"><span>Что сделать сейчас<span class="pl-n">${L.length||"0"}</span></span><i aria-hidden="true">${oT?"▴":"▾"}</i></button></h2>${!oT?"":L.length?`<div class="pl-list">${L.slice(0,cut).join("")}</div>${L.length>cut?`<button type="button" class="pl-allb" data-act="vx-more">Показать ещё ${L.length-cut}</button>`:""}`:`<p class="pl-ok">Срочных дел нет — всё идёт по плану.</p>`}</section>`;
   const st=SHP_ST.filter(s=>s.k!=="closed"&&s.k!=="lost");
-  h+=`<section class="pl-sec"><h2><span>Где сделки</span></h2><div class="pl-st">${st.map((s,i)=>{ const n=D.open.filter(o=>o.stage===s.k).length;
-    return `<button type="button" class="pl-s${n?"":" zero"}${S.shop.plSt===s.k?" on":""}" data-act="vx-st" data-v="${esc(s.k)}" aria-pressed="${S.shop.plSt===s.k}" style="--plc:${PL_C[s.k]||PL_PAL[i%PL_PAL.length]}" title="${esc(s.n)} — показать сделки" aria-label="${esc(s.n)}: ${n}. Показать сделки"><b>${n}</b><span>${esc(PL_N[s.k]||String(s.s||s.n).toLowerCase())}</span></button>`; }).join("")}</div>${plStHtml(D,st)}</section>`;
+  const oS=plOpen("st",false);
+  h+=`<section class="pl-sec${oS?"":" shut"}"><h2><button type="button" class="pl-acc" data-act="vx-acc" data-v="st" aria-expanded="${oS}"><span>Где сделки<span class="pl-n">${D.open.length}</span></span><i aria-hidden="true">${oS?"▴":"▾"}</i></button></h2>${!oS?"</section>":`<div class="pl-st">${st.map((s,i)=>{ const n=D.open.filter(o=>o.stage===s.k).length;
+    return `<button type="button" class="pl-s${n?"":" zero"}${S.shop.plSt===s.k?" on":""}" data-act="vx-st" data-v="${esc(s.k)}" aria-pressed="${S.shop.plSt===s.k}" style="--plc:${PL_C[s.k]||PL_PAL[i%PL_PAL.length]}" title="${esc(s.n)} — показать сделки" aria-label="${esc(s.n)}: ${n}. Показать сделки"><b>${n}</b><span>${esc(PL_N[s.k]||String(s.s||s.n).toLowerCase())}</span></button>`; }).join("")}</div>${plStHtml(D,st)}</section>`}`;
   return h; }
 /* 12.11 Кирилл: «Где сделки» — нажал этап, ниже список его сделок (по порядку появляются); на телефоне закрыто, на компьютере все этапы открыты */
+/* 12.11 Кирилл: «Что сделать сейчас» и «Где сделки» — открыть/закрыть нажатием; телефон помнит выбор; на компьютере открыто */
+function plOpen(k,def){ if(plDesk()) return true; try{ const v=localStorage.getItem("pl_acc_"+k); if(v==="1") return true; if(v==="0") return false; }catch(_){} return def; }
 function plDesk(){ try{ return matchMedia("(min-width:900px)").matches; }catch(_){ return false; } }
 function plStHtml(D,st){ const seen=shpSeen(), desk=plDesk(), one=k=>{ const s=st.find(x=>x.k===k)||{}, L=D.open.filter(o=>o.stage===k);
     const rows=L.map((o,i)=>vxRow(o,null,D.today,seen).replace(/ hidden>/g,">").replace(/^<(\w+)/,`<$1 style="--pli:${Math.min(i,12)}"`));
@@ -12900,6 +12904,7 @@ document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.clo
   if(a==="vx-rem"){ const o=shpById(t.dataset.id); if(o) plRemind(o); return; }
   if(a==="vx-take"){ const o=shpById(t.dataset.id), me=String(S.who||"").trim(); if(!o||!S.shop.full||!me||String(o.owner||"").trim()) return; t.disabled=true; t.textContent="Сохраняю…";
     shpPost({action:"shopSave",order:Object.assign({},o,{owner:me,v3:1})}).then(j=>{ if(!j){ t.disabled=false; t.textContent="Взять себе"; return; } o.owner=me; toast("Сделка № "+o.num+" — теперь её ведёте вы"); shpRenderKeep(); shpLoad(true); }); return; }
+  if(a==="vx-acc"){ const v=t.dataset.v, now=plOpen(v,v==="todo"); try{ localStorage.setItem("pl_acc_"+v,now?"0":"1"); }catch(_){} plPaint(); return; }
   if(a==="vx-st"){ const k=t.dataset.v; if(plDesk()){ const g=document.querySelector('.pl-stl[data-k="'+CSS.escape(k)+'"]'); if(g) g.scrollIntoView({block:"start",behavior:"smooth"}); return; } S.shop.plSt=S.shop.plSt===k?"":k; plPaint(); if(S.shop.plSt){ const g=document.querySelector(".pl-stl"); if(g&&g.getBoundingClientRect().top>innerHeight*0.75) g.scrollIntoView({block:"start",behavior:"smooth"}); } return; S.shop.bview="board"; S.shop.mode="board"; render(); window.scrollTo(0,0);
     setTimeout(()=>{ try{ const c=document.querySelector('#shpKb .shp-col[data-st="'+CSS.escape(k)+'"]'); if(!c) return; c.scrollIntoView({block:"nearest",inline:"start"}); c.classList.add("pl-flash"); setTimeout(()=>c.classList.remove("pl-flash"),1800); }catch(_){} },80); return; } });
 { const st=document.createElement("style"); st.id="plCss"; st.textContent=`
@@ -12931,14 +12936,19 @@ html[data-vt="dark"]{--pl-r:#FF6B5E;--pl-y:#F2B824;--pl-bl:#56B6F7;--pl-g:#34C77
 .pl-bt{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0}
 .pl-b{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border:0;border-radius:10px;background:var(--sunk);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--frame,var(--line));font:700 15px var(--f-brand,var(--f-body,system-ui));text-decoration:none;white-space:nowrap;cursor:pointer}
 .pl-b{gap:7px}.pl-b i{font-style:normal}
-#vxPult .pl-b.pri,#vxPult a.pl-b.pri:any-link{background:var(--ink);color:var(--surface);box-shadow:none}html #vxPult a.pl-b{color:var(--ink)!important;text-decoration:none}html #vxPult a.pl-b.pri{color:var(--surface)!important}
+#vxPult .pl-b.pri,#vxPult a.pl-b.pri:any-link{background:var(--sunk);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--frame,var(--line))}html #vxPult a.pl-b{color:var(--ink)!important;text-decoration:none}html #vxPult a.pl-b.pri{color:var(--ink)!important}   /* 12.11 Кирилл: «кнопки белые, надо убрать белые» — все кнопки пульта тёмные */
 .pl-b:disabled{opacity:.6}
 .pl-st{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.pl-st::-webkit-scrollbar{display:none}
 .pl-s{flex:1 0 44px;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1px;min-height:58px;padding:6px 2px 7px;border:0;border-top:3px solid var(--plc,#8E94A0);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}
 .pl-s b{font:800 19px/1.2 var(--f-num,var(--f-brand,var(--f-body,system-ui)))}
 .pl-s span{max-width:100%;font-size:11.5px;line-height:1.2;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pl-s.zero b{color:var(--muted);font-weight:600}
-.pl-s.on{background:var(--plc,#8E94A0);color:#1f1e1d}.pl-s.on span{color:#1f1e1d}.pl-s.on b{color:#1f1e1d}
+.pl-acc{display:flex;width:100%;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer;text-align:left}
+.pl-acc .pl-n{margin-left:8px}.pl-acc i{font-style:normal;color:var(--muted)}.pl-sec.shut{margin-top:10px}.pl-sec h2:has(.pl-acc){margin:0 0 8px}
+@media (min-width:900px){.pl-acc{pointer-events:none;border:0;background:none;padding:0 2px}.pl-acc i{display:none}}
+.pl-s{border-top-width:4px}.pl-s.on{box-shadow:0 0 0 2px var(--plc,#8E94A0);color:var(--ink)}.pl-s.on span{color:var(--ink)}   /* 12.11 Кирилл, вариант А: нажатый этап обводится своим цветом, без заливки */
+html #vxPult .pl-s{border-top:4px solid var(--plc,#8E94A0)!important}html #vxPult .pl-s.on{box-shadow:0 0 0 2px var(--plc,#8E94A0)!important}
+html #vxPult .pl-stl .vx-list>*{border-left:4px solid var(--plc,#8E94A0)!important}
 .pl-stl{margin-top:10px}.pl-stl h3{display:flex;justify-content:space-between;align-items:center;margin:0 0 6px;font-size:15px;padding-left:8px;border-left:3px solid var(--plc,#8E94A0)}
 .pl-stl .vx-list>*{animation:plIn .28s ease both;animation-delay:calc(var(--pli,0)*45ms)}
 @keyframes plIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -22592,7 +22602,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="ecc3eb15d2";
+const CHK_BUILD="02d5206819";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -25252,7 +25262,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="ecc3eb15d2";/*cehqr-build*/
+  const BUILD="02d5206819";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
