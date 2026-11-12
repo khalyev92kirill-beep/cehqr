@@ -1229,20 +1229,27 @@ function perfPokeAll(ms){ PERF_LOOPS.forEach(l=>l.poke(ms)); }
 function perfLoop(o){
   let raf=0, tm=0, last=null, hot=performance.now()+2500, dead=false;
   const L={ poke(ms){ if(dead) return; hot=Math.max(hot,performance.now()+(ms||700)); if(!raf){ clearTimeout(tm); tm=0; raf=requestAnimationFrame(frame); } },
-    stop(){ dead=true; cancelAnimationFrame(raf); clearTimeout(tm); raf=tm=0; PERF_LOOPS.delete(L); } };
-  function frame(){ raf=0; if(dead) return; const now=performance.now(), d=o.dirty&&o.dirty(); o.draw(); if(d) hot=Math.max(hot,now+400);
+    stop(){ dead=true; cancelAnimationFrame(raf); clearTimeout(tm); raf=tm=0; PERF_LOOPS.delete(L); },
+    force(){ drawn=null; } };   // следующий кадр — обязательно нарисовать (вернулись в приложение, видеокарта восстановила холст)
+  let drawn=null;
+  function frame(){ raf=0; if(dead) return; if(o.pre) o.pre(); const now=performance.now(), d=o.dirty&&o.dirty();
+    let s=null; if(!d&&o.sig){ try{ s=o.sig(); }catch(_){ s=null; } }
+    if(d||s===null||s!==drawn){ o.draw(); drawn=d?null:s; } if(d) hot=Math.max(hot,now+400);
     if(now<hot) raf=requestAnimationFrame(frame); else { try{ last=o.sig(); }catch(_){ last=null; } tm=setTimeout(idle,250); } }
   function idle(){ tm=0; if(dead) return; let s=null; try{ s=o.sig(); }catch(_){} if(s!==last||(o.dirty&&o.dirty())||s===null) L.poke(500); else tm=setTimeout(idle,document.hidden?1000:250); }
   PERF_LOOPS.add(L); perfHook(); raf=requestAnimationFrame(frame); return L;
 }
 function perfSig(cam,root){ const p=cam.position, q=cam.quaternion, m=cam.projectionMatrix.elements; let s=p.x*7+p.y*13+p.z*17+q.x*19+q.y*23+q.z*29+q.w*31+m[0]+m[5]*3+m[10]*5+m[14]*7+(cam.zoom||1), i=0;
   if(root) root.traverse(x=>{ i++; s+=(x.visible?1:-1)*i*0.37+(x.position.x*3+x.position.y*5+x.position.z*7)*(i%13+1)+x.scale.x+x.rotation.x+x.rotation.y*2+x.rotation.z*3+x.renderOrder;
-    const ms=x.material; if(ms) (Array.isArray(ms)?ms:[ms]).forEach(mt=>{ s+=mt.id*0.011+(mt.opacity||0)*i+(mt.visible?1:0)+(mt.map?mt.map.version*0.3:0)+(mt.color?mt.color.r+mt.color.g*2+mt.color.b*3:0); }); });
+    const ms=x.material; if(ms) (Array.isArray(ms)?ms:[ms]).forEach(mt=>{ s+=mt.id*0.011+(mt.opacity||0)*i+(mt.visible?1:0)+(mt.map?mt.map.version*0.3:0)+(mt.color?mt.color.r+mt.color.g*2+mt.color.b*3:0)+(mt.emissive?(mt.emissive.r*5+mt.emissive.g*7+mt.emissive.b*11)*(1+(mt.emissiveIntensity||0)):0); }); s+=x.layers.mask*0.29*(i%11+1); });
   return s+"|"+i; }
 let perfHooked=false;
-function perfHook(){ if(perfHooked) return; perfHooked=true; const P=e=>perfPokeAll(e&&e.type==="pointermove"?400:900);
+let PERF_INPUT_AT=0;
+function perfHook(){ if(perfHooked) return; perfHooked=true; const P=e=>{ PERF_INPUT_AT=performance.now(); perfPokeAll(e&&e.type==="pointermove"?400:900); };
   ["pointerdown","pointermove","pointerup","wheel","keydown","click","input","change","touchstart","touchmove"].forEach(t=>document.addEventListener(t,P,{capture:true,passive:true}));
-  window.addEventListener("resize",P,{passive:true}); document.addEventListener("visibilitychange",()=>{ if(!document.hidden) perfPokeAll(600); });
+  window.addEventListener("resize",P,{passive:true});
+  const F=()=>{ PERF_LOOPS.forEach(l=>l.force&&l.force()); perfPokeAll(600); };
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden) F(); }); window.addEventListener("pageshow",F); document.addEventListener("webglcontextrestored",F,true);
   try{ const M=THREE.DefaultLoadingManager, a=M.onProgress, b=M.onLoad; M.onProgress=function(){ perfPokeAll(800); return a&&a.apply(this,arguments); }; M.onLoad=function(){ perfPokeAll(800); return b&&b.apply(this,arguments); }; }catch(_){} }
 function mount3D(p, z0){
   disposeThree();
@@ -1295,8 +1302,8 @@ function mount3D(p, z0){
   function size(){ const w=canvas.clientWidth, h=canvas.clientHeight; if(!w||!h) return; renderer.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix(); }
   const ro=new ResizeObserver(size); ro.observe(canvas); size();
   three={renderer,ro,raf:0};
-  const me=three; three.loop=perfLoop({draw:()=>renderer.render(scene,cam), sig:()=>perfSig(cam,grp)+"|"+canvas.width+"x"+canvas.height});
-  ro.disconnect(); const ro2=new ResizeObserver(()=>{ size(); me.loop&&me.loop.poke(300); }); ro2.observe(canvas); three.ro=ro2;
+  const me=three; three.loop=perfLoop({dirty:()=>{ const d=!!me._sz; me._sz=false; return d; }, draw:()=>renderer.render(scene,cam), sig:()=>perfSig(cam,grp)+"|"+canvas.width+"x"+canvas.height});
+  ro.disconnect(); const ro2=new ResizeObserver(()=>{ size(); me._sz=true; me.loop&&me.loop.poke(300); }); ro2.observe(canvas); three.ro=ro2;
 }
 
 /* ---------- 3D всего изделия ---------- */
@@ -1311,11 +1318,13 @@ function matColor(name){
   if(/сер/.test(n)) return 0xb9bbbd;
   return 0xf4f3ef;
 }
-const TEX_TILE=1200, texCache={};
+const TEX_TILE=1200, TEX_MAX=1024, texCache={};
 function texFor(name){
   const d=S.textures[name]; if(!d||typeof THREE==="undefined") return null;
   const key=name+"|"+d.length;
-  if(!texCache[key]){ const t=new THREE.TextureLoader().load(d); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=4; texCache[key]=t; }
+  if(!texCache[key]){ const t=new THREE.TextureLoader().load(d,tx=>{ try{ const im=tx.image, w=im&&(im.naturalWidth||im.width), h=im&&(im.naturalHeight||im.height), mx=Math.max(w||0,h||0);
+        if(mx>TEX_MAX){ const k=TEX_MAX/mx, c=document.createElement("canvas"); c.width=Math.max(1,Math.round(w*k)); c.height=Math.max(1,Math.round(h*k)); const g=c.getContext("2d"); g.imageSmoothingQuality="high"; g.drawImage(im,0,0,c.width,c.height); tx.image=c; tx.needsUpdate=true; } }catch(_){} });
+    t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=4; texCache[key]=t; }
   return texCache[key];
 }
 function grainAxis(p){
@@ -1329,7 +1338,7 @@ function texUV(geo, dims, g){
     for(let k=0;k<4;k++){ const i=f*4+k, u=uv.getX(i), v=uv.getY(i); if(rot) uv.setXY(i,v*lv,u*lu); else uv.setXY(i,u*lu,v*lv); } }
   uv.needsUpdate=true;
 }
-function disposeAsm(){ if(asm){ cancelAnimationFrame(asm.raf); asm.loop&&asm.loop.stop(); asm.ro&&asm.ro.disconnect(); asm.renderer.dispose(); asm=null; } }
+function disposeAsm(){ if(asm){ cancelAnimationFrame(asm.raf); asm.loop&&asm.loop.stop(); asm.batch&&asm.batch.stop(); asm.ro&&asm.ro.disconnect(); asm.renderer.dispose(); asm=null; } }
 // похожая фурнитура (когда нет точной модели из Базиса): форма по названию внутри габарита b (мм), центр в 0
 const FURN_MAT={};
 function furnMatOf(k){ if(FURN_MAT[k]) return FURN_MAT[k];
@@ -1372,7 +1381,7 @@ function mountAssembly(canvas, parts, opt){
   const withBox=parts.filter(p=>p.box);
   if(!withBox.length) return;
   const renderer=new THREE.WebGLRenderer({canvas,antialias:!perfWeak(),alpha:true});
-  renderer.setPixelRatio(perfPR());
+  renderer.setPixelRatio(perfPR()); try{ renderer.debug.checkShaderErrors=false; }catch(_){}
   const scene=new THREE.Scene(), K=0.001;
   scene.add(new THREE.HemisphereLight(0xffffff,0xb3ab9c,0.78));
   const sun=new THREE.DirectionalLight(0xffffff,0.5);
@@ -1560,7 +1569,11 @@ function mountAssembly(canvas, parts, opt){
   }
   // точка на плоскости через центр вращения под курсором — для масштаба к курсору и сдвига
   const _pl=new THREE.Plane(), _v=new THREE.Vector3(), _hit=new THREE.Vector3();
-  function pointAt(cx,cy){ const r=canvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1), cam);
+  // рамка холста: во время жеста — одна (снята при касании), иначе — не старше 0,12 с; раньше её снимали на каждое движение пальца,
+  // и браузер каждый раз пересчитывал вёрстку всей страницы (главная причина рывков при вращении)
+  let gRect=null, cRectC=null, cRectT=0;
+  const cRect=()=>{ if(gRect) return gRect; const now=performance.now(); if(cRectC&&now-cRectT<120) return cRectC; cRectT=now; return cRectC=canvas.getBoundingClientRect(); };
+  function pointAt(cx,cy){ const r=cRect(); ray.setFromCamera(new THREE.Vector2(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1), cam);
     cam.getWorldDirection(_v); _pl.setFromNormalAndCoplanarPoint(_v, st.target); return ray.ray.intersectPlane(_pl,_hit)?_hit.clone():null; }
   function zoomAt(cx,cy,f){ const nd=Math.max(size*0.15,Math.min(size*6,st.dist*f)); f=nd/st.dist; const p=pointAt(cx,cy);
     if(p) st.target.add(p.sub(st.target).multiplyScalar(1-f)); st.dist=nd; place2(); }
@@ -1597,15 +1610,27 @@ function mountAssembly(canvas, parts, opt){
   const posEls=items.map(m=>{ if(!m.userData.art) return null; const el=document.createElement("b"); el.className="pos"; el.textContent=m.userData.art; el.hidden=true; layer&&layer.appendChild(el); return el; });
   let dirty=true;
   const corner=new THREE.Vector3(), lray=new THREE.Raycaster();
+  let lbT=0, lbTm=0, lbG=null; const lbShown=[];
+  const lbPut=(el,x,y)=>{ el.style.left=x+"px"; el.style.top=y+"px"; };
+  // во время движения: уже показанные подписи едут за деталью; закрытость другими деталями пересчитаем, когда модель остановится
+  function labelsMove(){ const W=lbG.W, H=lbG.H;
+    for(const r of lbShown){ if(r.el.hidden) continue; const sp=r.m.position.clone().project(cam); lbPut(r.el,(sp.x+1)/2*W,(1-sp.y)/2*H+r.dy); }
+    if(typeof placeMeas==="function") placeMeas();
+    const t=document.getElementById("asmPick"); if(t&&!t.hidden&&!t.classList.contains("dock")) placeTag(); }
   function updateLabels(){
     dirty=false; if(!layer) return;
-    layer.style.top=canvas.offsetTop+"px"; layer.style.height=canvas.clientHeight+"px"; layer.style.bottom="auto";
+    const now=performance.now(), moving=lbG&&now-lbT<100; lbT=now; clearTimeout(lbTm);
+    if(moving){ lbTm=setTimeout(()=>{ lbTm=0; lbT=0; dirty=true; asm&&asm.loop&&asm.loop.poke(80); },140); labelsMove(); return; }
+    const top=canvas.offsetTop, W=canvas.clientWidth, H=canvas.clientHeight;
+    if(!lbG||lbG.top!==top||lbG.H!==H){ layer.style.top=top+"px"; layer.style.height=H+"px"; layer.style.bottom="auto"; }
+    lbG={top,W,H}; lbShown.length=0;
     const FOC=foc(), MULTI=nMulti()>1;
-    const show=st.labels!==false&&!MULTI, showPos=st.pos!==false, W=canvas.clientWidth, H=canvas.clientHeight, vis=items.filter(m=>m.visible);
+    const show=st.labels!==false&&!MULTI, showPos=st.pos!==false, vis=items.filter(m=>m.visible);
     const cand=[];
+    if(!show&&!showPos){ labels.forEach(el=>{ if(!el.hidden) el.hidden=true; }); posEls.forEach(pe=>{ if(pe&&!pe.hidden) pe.hidden=true; }); if(typeof placeMeas==="function") placeMeas(); placeTag(); return; }
     items.forEach((m,i)=>{
       const el=labels[i], pe=posEls[i], u=m.userData, sel=isSel(u.code);
-      el.hidden=true; if(pe) pe.hidden=true;
+      if(!el.hidden) el.hidden=true; if(pe&&!pe.hidden) pe.hidden=true;
       if((!show&&!showPos)||!m.visible||(FOC&&!sel)) return;
       if(!m.geometry.boundingBox) m.geometry.computeBoundingBox(); const bb=m.geometry.boundingBox;
       let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,behind=false;
@@ -1618,15 +1643,16 @@ function mountAssembly(canvas, parts, opt){
       if(!sel&&!st.wire&&hit&&hit.object!==m) return;
       const sp=c.project(cam), sx=(sp.x+1)/2*W, sy=(1-sp.y)/2*H;
       let dimShown=false;
-      if(show){ el.hidden=false; const lw=el.offsetWidth;
-        if(sel||(pw>=lw+6&&ph>=16)){ el.className=sel?"sel":""; el.style.left=sx+"px"; el.style.top=sy+"px"; dimShown=true; } else el.hidden=true; }
-      if(showPos&&pe&&(sel||(pw>=22&&ph>=22)||(pw>=12&&ph>=60)||(ph>=12&&pw>=60))) cand.push({pe,sel,sx,sy:dimShown?sy-20:sy,a:pw*ph,art:u.art});
+      if(show){ const cls=sel?"sel":""; if(el.className!==cls) el.className=cls; const wc=el._w||(el._w={}); let lw=wc[cls];
+        if(lw==null){ el.hidden=false; lw=wc[cls]=el.offsetWidth; el.hidden=true; }   // ширина подписи — один раз (раньше замер на каждый кадр)
+        if(sel||(pw>=lw+6&&ph>=16)){ el.hidden=false; lbPut(el,sx,sy); lbShown.push({el,m,dy:0}); dimShown=true; } }
+      if(showPos&&pe&&(sel||(pw>=22&&ph>=22)||(pw>=12&&ph>=60)||(ph>=12&&pw>=60))) cand.push({pe,m,sel,sx,sy:dimShown?sy-20:sy,dy:dimShown?-20:0,a:pw*ph,art:u.art});
     });
     // крупные детали — первыми; номер, который налезает на уже поставленный, не показываем
     cand.sort((a,b)=>(b.sel-a.sel)||(b.a-a.a));
     const done=[];
     cand.forEach(c=>{ if(!c.sel&&done.some(d=>Math.abs(d.x-c.sx)<24&&Math.abs(d.y-c.sy)<22)) return;
-      done.push({x:c.sx,y:c.sy}); c.pe.hidden=false; c.pe.className="pos"+(c.sel?" sel":""); c.pe.style.left=c.sx+"px"; c.pe.style.top=c.sy+"px"; });
+      done.push({x:c.sx,y:c.sy}); c.pe.hidden=false; c.pe.className="pos"+(c.sel?" sel":""); lbPut(c.pe,c.sx,c.sy); lbShown.push({el:c.pe,m:c.m,dy:c.dy}); });
     if(typeof placeMeas==="function") placeMeas();
     placeTag();
   }
@@ -1695,11 +1721,12 @@ function mountAssembly(canvas, parts, opt){
   // iPhone/Android: жест на модели не должен листать или увеличивать страницу — всё отдаём 3D
   ["touchstart","touchmove","gesturestart","gesturechange"].forEach(ev=>canvas.addEventListener(ev,e=>{ if(e.cancelable) e.preventDefault(); },{passive:false}));
   // скорость поворота от размера окна: провёл пальцем по всей ширине — пол-оборота (одинаково на телефоне и на компьютере)
-  const rotK=()=>{ const r=canvas.getBoundingClientRect(), t=matchMedia("(pointer:coarse)").matches?0.8:1; return {kx:t*Math.PI/Math.max(240,r.width), ky:t*Math.PI*0.75/Math.max(240,r.height)}; };
+  const COARSE=matchMedia("(pointer:coarse)").matches;
+  const rotK=()=>{ const r=cRect(), t=COARSE?0.8:1; return {kx:t*Math.PI/Math.max(240,r.width), ky:t*Math.PI*0.75/Math.max(240,r.height)}; };
   const stopSpin=()=>{ if(spin){ cancelAnimationFrame(spin.raf); spin=null; } };
   const startDrag=(x,y,pan)=>{ drag={x,y,yaw:st.yaw,pitch:st.pitch,pan,p0:pan?pointAt(x,y):null,t0:st.target.clone(),hist:[{x,y,t:performance.now()}]}; };
   const twoPinch=()=>{ const [a,b]=[...ptrs.values()]; pinch={d:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),dist:st.dist,mx:(a.x+b.x)/2,my:(a.y+b.y)/2,ang:Math.atan2(b.y-a.y,b.x-a.x)}; drag=null; };
-  canvas.onpointerdown=e=>{ stopSpin(); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+  canvas.onpointerdown=e=>{ stopSpin(); if(!ptrs.size) gRect=canvas.getBoundingClientRect(); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
     if(ptrs.size===1){ moved=false; tap={x:e.clientX,y:e.clientY,t:performance.now(),touch:e.pointerType!=="mouse"};
       if(tap.touch&&!st.measure&&!st.steps&&!opt.focus){ const t=tap, ex=e.clientX, ey=e.clientY; t.long=setTimeout(()=>{ if(moved||ptrs.size!==1||tap!==t) return; t.longArm=true; try{ haptic("long"); }catch(_){} },500); }
       const pan=e.button===1||e.button===2||e.shiftKey||(st.ortho&&e.pointerType==="mouse"); startDrag(e.clientX,e.clientY,pan); }
@@ -1709,7 +1736,7 @@ function mountAssembly(canvas, parts, opt){
     if(e.pointerType!=="mouse"||ptrs.size) return;
     if(st.measure){ measHover(e); return; }
     hoverQ=e; requestAnimationFrame(()=>{ if(!hoverQ) return; const ev=hoverQ; hoverQ=null;
-      const r=canvas.getBoundingClientRect(), v=new THREE.Vector2(((ev.clientX-r.left)/r.width)*2-1, -((ev.clientY-r.top)/r.height)*2+1);
+      const r=cRect(), v=new THREE.Vector2(((ev.clientX-r.left)/r.width)*2-1, -((ev.clientY-r.top)/r.height)*2+1);
       ray.setFromCamera(v,cam); const h=ray.intersectObjects(pickable(),false)[0];
       const code=h?h.object.userData.code:null;
       canvas.classList.toggle("hovering",!!code);
@@ -1729,7 +1756,7 @@ function mountAssembly(canvas, parts, opt){
       if(drag.pan){ if(drag.p0){ st.target.copy(drag.t0); place(); const p1=pointAt(e.clientX,e.clientY); if(p1) st.target.copy(drag.t0).add(drag.p0.clone().sub(p1)); } place2(); return; }
       if(st.ortho){ st.ortho=false; st.view="3d"; syncViewBtns(); }
       const k=rotK(); st.yaw=drag.yaw-dx*k.kx; st.pitch=Math.max(-1.3,Math.min(1.3,drag.pitch+dy*k.ky)); place2(); } };
-  const up=e=>{ const wasTwo=ptrs.size===2; ptrs.delete(e.pointerId);
+  const up=e=>{ const wasTwo=ptrs.size===2; ptrs.delete(e.pointerId); if(!ptrs.size) gRect=null;
     if(wasTwo&&ptrs.size===1){ pinch=null; const [r]=[...ptrs.values()]; startDrag(r.x,r.y,false); return; }   // убрали один палец — второй сразу крутит, без рывка
     if(ptrs.size<2) pinch=null;
     // бросок: после быстрого движения модель ещё немного докручивается и плавно останавливается
@@ -1809,10 +1836,10 @@ function mountAssembly(canvas, parts, opt){
   const mLine=new THREE.LineBasicMaterial({color:hiC,depthTest:false,transparent:true});
   const mExt=new THREE.LineDashedMaterial({color:hiC,depthTest:false,transparent:true,dashSize:0.01,gapSize:0.008,opacity:0.8});
   const toW=a=>new THREE.Vector3((a[0]-C[0])*K,(a[1]-C[1])*K,(a[2]-C[2])*K), toMM=v=>[v.x/K+C[0],v.y/K+C[1],v.z/K+C[2]].map(x=>Math.round(x*2)/2);
-  const scr=v=>{ const r=canvas.getBoundingClientRect(), q=v.clone().project(cam); return {x:r.left+(q.x+1)/2*r.width, y:r.top+(1-q.y)/2*r.height, z:q.z}; };
+  const scr=v=>{ const r=cRect(), q=v.clone().project(cam); return {x:r.left+(q.x+1)/2*r.width, y:r.top+(1-q.y)/2*r.height, z:q.z}; };
   // точка под пальцем/курсором: угол детали → ребро детали → точка на поверхности
   function snapAt(cx,cy){
-    const r=canvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1), cam);
+    const r=cRect(); ray.setFromCamera(new THREE.Vector2(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1), cam);
     const hit=ray.intersectObjects(items.filter(m=>m.visible),false)[0]; if(!hit) return null;
     const m=hit.object; if(!m.geometry.boundingBox) m.geometry.computeBoundingBox();
     const bb=m.geometry.boundingBox, P=m.position, cs=[];
@@ -1949,7 +1976,103 @@ function mountAssembly(canvas, parts, opt){
     asm.anims={n:A.filter(a=>!(a.par>=0)).length, all(open){ A.forEach(a=>{ a.tg=open?1:0; }); if(open&&st.explode){ st.explode=0; apply2(); } run(); }, any(){ return A.some(a=>a.tg); }};
     if(A.some(a=>a.f)) anApply();
   })();
-  asm.loop=perfLoop({dirty:()=>dirty, draw:()=>{ renderer.render(scene,cam); if(dirty){ updCube(); updateLabels(); } }, sig:()=>perfSig(cam,scene)+"|"+canvas.width+"x"+canvas.height});
+  /* ---- быстродействие (13.11, Кирилл: «нужна скорость и плавность»): детали, которые сейчас не двигаются и не подсвечены,
+     рисуем «пачками» — одна сетка на материал, все кромки одним махом, все отверстия одним; вместо 300–600 вызовов рисования — десяток.
+     Сами детали остаются на месте (нажатие, размеры, выбор работают как раньше), просто не рисуются, пока они в пачке.
+     Деталь сдвинулась, выделена, подсвечена — в тот же кадр выходит из пачки и рисуется сама; постояла спокойно 0,25 с — снова в пачку. */
+  const BATCH=asmBatch(scene, items, opt._exactGroup, ()=>asm&&asm.loop&&asm.loop.poke(120), exact?null:{items:furnItems, group:furnGroup, mat:furnMat});
+  ray.layers.mask=lray.layers.mask=0xffffffff;   // фурнитура в пачке прячется слоем — нажатие по ней работает как раньше
+  asm.batch=BATCH;
+  { const snap0=asm.snap; asm.snap=function(){ try{ BATCH&&BATCH.sync(); }catch(_){} return snap0.apply(this,arguments); }; }
+  asm.loop=perfLoop({pre:()=>{ try{ BATCH&&BATCH.sync(); }catch(e){ console.warn("batch",e); } }, dirty:()=>dirty, draw:()=>{ renderer.render(scene,cam); if(dirty){ updCube(); updateLabels(); } }, sig:()=>perfSig(cam,scene)+"|"+canvas.width+"x"+canvas.height});
+}
+/* «Пачки» для 3D всего изделия (см. выше). entries — детали (свои материалы, кромки, отверстия) и точная фурнитура Базиса (общие материалы).
+   Пачка собирается заново только когда состав меняется; в покое и при вращении — ничего не пересчитывается. */
+function asmBatch(scene, items, exactG, poke, fu){
+  if(typeof window!=="undefined"&&window.__noBatch) return null;
+  const STILL=250, GAP=300, M=new THREE.Matrix4(), M2=new THREE.Matrix4(), N3=new THREE.Matrix3(), V=new THREE.Vector3();
+  const mats={};   // материалы пачек — живут, пока открыт заказ
+  // деталь: «подпись вида» — пока она та же, деталь выглядит как в пачке; null — рисуется сама
+  const itemSig=m=>{ const mt=m.material, u=m.userData; if(!m.visible||mt!==u._m0||u.glass||m.renderOrder) return null;
+    if(mt.emissiveIntensity>0&&(mt.emissive.r||mt.emissive.g||mt.emissive.b)) return null;
+    if(mt.color.getHex()!==u._c0||mt.map!==u._map0||mt.side!==THREE.FrontSide) return null;
+    if(mt.map&&!(mt.map.image&&mt.map.image.width)) return null;   // текстура ещё грузится (или не загрузилась) — деталь рисуется сама, как раньше
+    const ch=m.children, e=ch[0], h=ch[1], c=ch[2]; if(ch.length>3||!e||!e.isLineSegments||e.children.length) return null;
+    if(h&&(!h.isMesh||h.children.length>1)) return null; if(c&&!c.isLineSegments) return null;
+    return mt.opacity+"|"+(mt.depthWrite?1:0)+"|"+(e.visible?e.material.color.getHex()+"/"+e.material.opacity+"/"+e.renderOrder:"-")+"|"+(h&&h.visible?1:0)+"|"+(c&&c.visible?1:0); };
+  const mk=(key,f)=>mats[key]||(mats[key]=f());
+  const itemParts=(m,out)=>{ const mt=m.material, ch=m.children, W=m.matrix;
+    if(mt.opacity>0){ const hex=mt.color.getHex(), op=mt.opacity, dw=mt.depthWrite;
+      out.push({key:"m|"+(mt.map?mt.map.uuid:hex)+"|"+op+"|"+dw, ro:op<1?-2:0, mat:()=>new THREE.MeshLambertMaterial({map:mt.map||null,color:hex,transparent:op<1,opacity:op,depthWrite:dw}), geo:m.geometry, M:W, uv:!!mt.map, nor:true}); }
+    const e=ch[0]; if(e.visible){ e.updateMatrix(); const em=e.material, hx=em.color.getHex(), eo=em.opacity;
+      out.push({key:"e|"+hx+"|"+eo+"|"+e.renderOrder, ro:-1, line:true, mat:()=>new THREE.LineBasicMaterial({color:hx,transparent:true,opacity:eo}), geo:e.geometry, M:new THREE.Matrix4().multiplyMatrices(W,e.matrix)}); }
+    const h=ch[1]; if(h&&h.visible){ h.updateMatrix(); const HW=new THREE.Matrix4().multiplyMatrices(W,h.matrix);
+      out.push({key:"h|"+h.material.uuid, ro:h.renderOrder, mat:()=>h.material, geo:h.geometry, M:HW});
+      const r=h.children[0]; if(r&&r.visible&&r.isLineSegments){ r.updateMatrix(); out.push({key:"r|"+r.material.uuid, ro:-1, line:true, mat:()=>r.material, geo:r.geometry, M:new THREE.Matrix4().multiplyMatrices(HW,r.matrix)}); } }
+    const c=ch[2]; if(c&&c.visible){ c.updateMatrix(); out.push({key:"c|"+c.material.uuid, ro:c.renderOrder, line:true, mat:()=>c.material, geo:c.geometry, M:new THREE.Matrix4().multiplyMatrices(W,c.matrix)}); } };
+  // спрятать деталь, пока она в пачке: свой материал не рисуется (нажатие по детали работает), кромки и отверстия — слоем
+  const itemHide=(m,on)=>{ const u=m.userData; u._m0.visible=!on&&!(m.material===u._m0&&u._m0.opacity===0); for(const c of m.children) c.traverse(x=>{ x.layers.mask=on?0:1; }); };
+  items.forEach(m=>{ const u=m.userData; u._m0=m.material; u._c0=m.material.color.getHex(); u._map0=m.material.map||null; });
+  const core=(list,sigOf,partsOf,hide,parentM,tag,each)=>{
+    const n=list.length, inB=new Uint8Array(n), bs=new Array(n), snap=new Float64Array(n*16).fill(NaN), chg=new Float64Array(n).fill(-1e9);
+    list.forEach((o,i)=>{ if(o.matrixAutoUpdate) o.updateMatrix(); const e=o.matrix.elements; for(let k=0;k<16;k++) snap[i*16+k]=e[k]; });
+    const root=new THREE.Group(); root.userData.batch=tag; root.matrixAutoUpdate=false; scene.add(root);
+    let builtAt=-1e9, tmr=0, tmrAt=0;
+    const later=t=>{ if(tmr&&tmrAt<=t) return; clearTimeout(tmr); tmrAt=t; tmr=setTimeout(()=>{ tmr=0; poke(); },Math.max(16,t-performance.now()+8)); };
+    function build(now,sigs){
+      for(const o of root.children.slice()){ root.remove(o); o.geometry.dispose(); }
+      const B=new Map();
+      for(let i=0;i<n;i++){ const s=sigs[i], join=s!==null&&now-chg[i]>=STILL;
+        if(join){ const o=list[i], arr=[]; partsOf(o,arr); arr.forEach(p=>{ let b=B.get(p.key); if(!b){ b={p,list:[]}; B.set(p.key,b); } b.list.push(p); }); }
+        if(join!==!!inB[i]) hide(list[i],join);
+        inB[i]=join?1:0; bs[i]=join?s:null; }
+      B.forEach(b=>{ const P=b.p; let nv=0, ni=0; b.list.forEach(q=>{ const g=q.geo, c=g.attributes.position.count; nv+=c; ni+=g.index?g.index.count:c; });
+        if(!nv) return;
+        const pos=new Float32Array(nv*3), nor=P.nor?new Float32Array(nv*3):null, uv=P.uv?new Float32Array(nv*2):null, idx=nv>65535?new Uint32Array(ni):new Uint16Array(ni);
+        let vo=0, io=0;
+        b.list.forEach(q=>{ const g=q.geo, pa=g.attributes.position, na=g.attributes.normal, ua=g.attributes.uv, c=pa.count;
+          if(parentM) M.multiplyMatrices(parentM,q.M); else M.copy(q.M); if(nor) N3.getNormalMatrix(M);
+          for(let k=0;k<c;k++){ V.fromBufferAttribute(pa,k).applyMatrix4(M); pos[(vo+k)*3]=V.x; pos[(vo+k)*3+1]=V.y; pos[(vo+k)*3+2]=V.z;
+            if(nor&&na){ V.fromBufferAttribute(na,k).applyMatrix3(N3).normalize(); nor[(vo+k)*3]=V.x; nor[(vo+k)*3+1]=V.y; nor[(vo+k)*3+2]=V.z; }
+            if(uv&&ua){ uv[(vo+k)*2]=ua.getX(k); uv[(vo+k)*2+1]=ua.getY(k); } }
+          if(g.index){ const ix=g.index.array, cnt=g.index.count; for(let k=0;k<cnt;k++) idx[io+k]=ix[k]+vo; io+=cnt; } else { for(let k=0;k<c;k++) idx[io+k]=vo+k; io+=c; }
+          vo+=c; });
+        const geo=new THREE.BufferGeometry(); geo.setAttribute("position",new THREE.BufferAttribute(pos,3)); if(nor) geo.setAttribute("normal",new THREE.BufferAttribute(nor,3)); if(uv) geo.setAttribute("uv",new THREE.BufferAttribute(uv,2)); geo.setIndex(new THREE.BufferAttribute(idx,1));
+        const mat=mk(P.key,P.mat), obj=P.line?new THREE.LineSegments(geo,mat):new THREE.Mesh(geo,mat);
+        obj.renderOrder=P.ro||0; obj.matrixAutoUpdate=false; obj.raycast=()=>{}; root.add(obj); });
+      builtAt=now; }
+    return { root, n:()=>root.children.length, members:()=>inB.reduce((a,b)=>a+b,0),
+      sync(now){ if(!n) return false; let leave=false, join=0, next=Infinity; const sigs=new Array(n);
+        for(let i=0;i<n;i++){ const o=list[i]; if(o.matrixAutoUpdate) o.updateMatrix(); const e=o.matrix.elements, b=i*16;
+          let same=true; for(let k=0;k<16;k++) if(snap[b+k]!==e[k]){ same=false; break; }
+          if(!same){ for(let k=0;k<16;k++) snap[b+k]=e[k]; chg[i]=now; }
+          const s=sigOf(o); sigs[i]=s;
+          if(inB[i]){ if(s!==bs[i]||chg[i]>=builtAt) leave=true; }
+          else { if(each) each(o); if(s!==null){ if(now-chg[i]>=STILL) join++; else next=Math.min(next,chg[i]+STILL); } } }
+        if(leave||(join&&now-builtAt>=GAP)){ build(now,sigs); return true; }
+        if(join) next=Math.min(next,builtAt+GAP);
+        if(next<Infinity) later(next);
+        return false; },
+      stop(){ clearTimeout(tmr); } };
+  };
+  // деталь не в пачке и совсем прозрачная (каркас в чёрной теме) — сетку не рисуем вовсе, только её кромки
+  const A=core(items,itemSig,itemParts,itemHide,null,"items",m=>{ const u=m.userData, v=!(m.material===u._m0&&u._m0.opacity===0); if(u._m0.visible!==v) u._m0.visible=v; });
+  // точная фурнитура из Базиса: материалы общие — прячем слоем; группа фурнитуры стоит в нуле
+  const fx=exactG?exactG.children.filter(o=>o.isMesh&&!o.children.length):[];
+  const F=fx.length?core(fx,o=>o.visible&&o.material&&!Array.isArray(o.material)?o.material.uuid:null,
+    (o,out)=>out.push({key:"f|"+o.material.uuid, mat:()=>o.material, geo:o.geometry, M:o.matrix, nor:!!o.geometry.attributes.normal, ro:o.renderOrder}),
+    (o,on)=>{ o.layers.mask=on?0:1; }, null, "furn"):null;
+  if(F) exactG.add(F.root);   // пачка фурнитуры прячется вместе с группой («без фурнитуры», разбор)
+  // похожая фурнитура коробками (когда нет точной из Базиса): материал общий — прячем слоем (нажатие — лучом по всем слоям)
+  const FB=fu&&fu.items.length?core(fu.items,m=>{ const e=m.children[0]; return m.visible&&m.material===fu.mat&&fu.mat.opacity===1&&m.children.length<=1&&(!e||e.isLineSegments)?(e&&e.visible?"e":"-"):null; },
+    (m,out)=>{ const hex=fu.mat.color.getHex(); out.push({key:"fb|"+hex, mat:()=>new THREE.MeshLambertMaterial({color:hex}), geo:m.geometry, M:m.matrix, nor:true});
+      const e=m.children[0]; if(e&&e.visible){ e.updateMatrix(); out.push({key:"fe|"+e.material.uuid, ro:-1, line:true, mat:()=>e.material, geo:e.geometry, M:new THREE.Matrix4().multiplyMatrices(m.matrix,e.matrix)}); } },
+    (m,on)=>{ m.layers.mask=on?2:1; for(const c of m.children) c.traverse(x=>{ x.layers.mask=on?0:1; }); }, null, "furnBox"):null;
+  if(FB) fu.group.add(FB.root);
+  const L=[A,F,FB].filter(Boolean);
+  return { sync(){ const now=performance.now(); let r=false; L.forEach(c=>{ if(c.sync(now)) r=true; }); return r; },
+    info(){ return {items:A.members()+"/"+items.length, calls:L.reduce((a,c)=>a+c.n(),0), furn:F?F.members()+"/"+fx.length:"-", box:FB?FB.members()+"/"+fu.items.length:"-"}; },
+    stop(){ L.forEach(c=>c.stop()); } };
 }
 /* Кирилл 05.11: «при приближении всё огромное — сделать поменьше»: при увеличении цифры растут медленнее чертежа,
    а толщина линий остаётся как на экране (не толстеет). */
@@ -2674,8 +2797,13 @@ function framePrint(){
 S.cat=S.cat||{data:null,loading:false,q:"",top:"",sub:"",limit:80,pickView:false};
 try{ S.catPick=JSON.parse(localStorage.getItem("cehqr-pick")||"[]"); }catch(_){ S.catPick=[]; }
 function catSavePick(){ try{ localStorage.setItem("cehqr-pick",JSON.stringify(S.catPick)); }catch(_){} }
-function catLoad(){ if(S.cat.data||S.cat.loading) return; S.cat.loading=true;
-  fetch("catalog.json").then(r=>r.ok?r.json():Promise.reject(r.status)).then(j=>{ S.cat.data=j; j.items.forEach((it,i)=>{ it.i=i; it.s=(it.n+" "+it.a+" "+it.g).toLowerCase().replace(/ё/g,"е"); }); S.cat.loading=false; if(S.view==="catalog"||S.view==="order") render(); })
+function catLoad(){ if(S.cat.data||S.cat.loading) return;
+  /* 13.11: справочник большой (3,5 МБ) — его разбор и перерисовка страницы давали рывки сборки 3D при открытии заказа: ждём конца сборки (не дольше 6 с) */
+  try{ const t0=S.introT0, now=performance.now(); if(S.view==="order"&&S.dqFull&&t0&&(t0===-1||now-t0<4800)&&!(catLoad.w&&now-catLoad.w>6000)){ if(!catLoad.w) catLoad.w=now;
+      if(!catLoad.t) catLoad.t=setTimeout(()=>{ catLoad.t=0; catLoad(); }, t0>0?Math.max(300,5000-(now-t0)):600); return; } }catch(_){}
+  catLoad.w=0; S.cat.loading=true;
+  const reRender=()=>{ if(!(S.view==="catalog"||S.view==="order")) return; if(S.view==="order"&&typeof PERF_INPUT_AT!=="undefined"&&performance.now()-PERF_INPUT_AT<600){ setTimeout(reRender,400); return; } render(); };
+  fetch("catalog.json").then(r=>r.ok?r.json():Promise.reject(r.status)).then(j=>{ S.cat.data=j; j.items.forEach((it,i)=>{ it.i=i; it.s=(it.n+" "+it.a+" "+it.g).toLowerCase().replace(/ё/g,"е"); }); S.cat.loading=false; reRender(); })
     .catch(()=>{ S.cat.loading=false; S.cat.err=true; if(S.view==="catalog") render(); }); }
 const CAT_SHEET=/^(Листовой|Кромочные|Погонные)/;
 function catIsSwatch(it){ return CAT_SHEET.test(it.g)||it.t!=null; }
@@ -22631,7 +22759,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="eca87bc9ad";
+const CHK_BUILD="9db9c94c89";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -26908,7 +27036,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="eca87bc9ad";/*cehqr-build*/
+  const BUILD="9db9c94c89";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
