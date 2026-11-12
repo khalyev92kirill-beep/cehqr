@@ -12713,7 +12713,8 @@ body.lic-open{overflow:hidden}
    Панель: мастер — Сделки, Задачи, Чаты, Замер, Ещё; технолог — Сделки, Сметы, Задачи, Чаты, Ещё;
    снабженец — Сделки, Склад, Задачи, Чаты, Ещё; офис/дизайнер и остальные — Сделки, Задачи, Чаты, Календарь, Ещё.
    Что не поместилось (Календарь, Сметы, Склад, Подарки) — первыми строками в «Ещё». Названия разделов (data-v) прежние.
-   «Сделки»: вид «Сегодня» (список открытых сделок по срочности) или «Доска» (прежняя доска) — выбор помнит телефон. */
+   «Сделки»: вид «Сегодня» — «Пульт дня» (12.11: плитки, «Что сделать сейчас», «Где сделки»; список по срокам — при поиске и по кнопке «Все сделки списком»)
+   или «Доска» — выбор помнит телефон. */
 SHP_I.ruler=SHP_I.ruler||'<path d="M4 16.5L16.5 4l3.5 3.5L7.5 20z"/><path d="M8 12.5l1.8 1.8M10.5 10l2.5 2.5M13 7.5l1.8 1.8"/>';
 SHP_I.search=SHP_I.search||'<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>';
 function vxRole(){
@@ -12750,10 +12751,10 @@ function vxUrg(o,TD){ let best=null; const add=(d,k)=>{ if(/^\d{4}-\d{2}-\d{2}$/
 function vxKey(o){ return [o.client,o.num,"№"+o.num,o.phone,String(o.phone||"").replace(/\D/g,""),o.address,o.kind].join(" ").toLowerCase(); }
 function vxMatch(s,own){ const q=String(S.shop.q||"").trim().toLowerCase(), me=shpWho().trim().toLowerCase(), words=q.split(/\s+/).filter(Boolean);
   return (!S.shop.mine||own===me)&&words.every(w=>s.includes(w)||(/^[\d+()-]{3,}$/.test(w)&&w.replace(/\D/g,"").length>=3&&s.includes(w.replace(/\D/g,"")))); }
-function vxRow(o,u,today,seen){
-  let tag="", cls="";
+function vxRow(o,u,today,seen,right){
+  let tag="", cls="", sm=u?u.k:"";
   if(u){ const d=shpDays(u.d,today), dt=new Date(u.d+"T00:00:00");
-    if(d<0){ cls="bad"; tag=`на ${-d} ${shpPl(-d,"день","дня","дней")}`; } else if(d===0){ cls="warn"; tag="сегодня"; } else if(d===1){ cls="warn"; tag="завтра"; }
+    if(d<0){ cls="bad"; tag=`опоздали на ${-d} ${shpPl(-d,"день","дня","дней")}`; sm=u.k+" был"+(u.k==="задача"?"а":"")+" "+shpDM(u.d); } else if(d===0){ cls="warn"; tag="сегодня"; } else if(d===1){ cls="warn"; tag="завтра"; }
     else tag=(d<7?VX_WD[dt.getDay()]+" ":"")+shpDM(u.d); }
   const key=vxKey(o), own=String(o.owner||"").trim().toLowerCase(), sum=S.shop.sumSee&&+o.sum, cl=shpClosed(o);
   const typ=o.otype==="gift"?`<span class="vx-ty">подарок</span>`:o.otype==="repair"?`<span class="vx-ty">ремонт</span>`:"";
@@ -12761,7 +12762,7 @@ function vxRow(o,u,today,seen){
   return `<button type="button" class="vx-deal" data-act="shp-open" data-id="${esc(o.id)}" data-s="${esc(key)}" data-own="${esc(own)}"${vxMatch(key,own)?"":" hidden"}>
     <span class="vx-dl"><span class="vx-d1"><b>${esc(o.client||"Без имени")}</b><span class="mono muted">№ ${esc(o.num)}</span>${nw}</span>
     <span class="vx-d2">${typ}${o.kind?`<span>${esc(o.kind)}</span>`:""}<span class="vx-st">${esc(vxStage(o))}</span><span class="muted">${esc(o.owner||"без ответственного")}</span></span></span>
-    <span class="vx-dr">${sum?`<b class="vx-sum mono">${esc(shpMoney(o.sum))}</b>`:""}${!cl&&u?`<span class="vx-ub${cls?" "+cls:""}" title="${esc(u.k+" "+shpDM(u.d))}"><small>${esc(u.k)}</small> ${esc(tag)}</span>`:""}</span></button>`; }
+    <span class="vx-dr">${right!==undefined?right:(sum?`<b class="vx-sum mono">${esc(shpMoney(o.sum))}</b>`:"")+(!cl&&u?(cls==="bad"?`<span class="vx-ub bad" title="${esc(sm)}">${esc(tag)}</span><small class="vx-was">${esc(sm)}</small>`:`<span class="vx-ub${cls?" "+cls:""}" title="${esc(u.k+" "+shpDM(u.d))}"><small>${esc(u.k)}</small> ${esc(tag)}</span>`):"")}</span></button>`; }
 function vxChips(){
   let h="";
   try{ if(typeof onlPeople==="function"&&S.shop.loaded&&(typeof onlCan!=="function"||onlCan())){ const L=onlPeople(); if(!L.length) h+=`<button type="button" class="vx-chip vx-onl" id="vxOnl" data-onl="open" aria-label="Сейчас в сети"><i class="vx-dot" aria-hidden="true"></i>в сети <b>…</b></button>`; if(L.length){ const on=L.filter(p=>p.on), n=on.length, av=(on.length?on:L).slice(0,2);
@@ -12772,34 +12773,189 @@ function vxChips(){
 function vxSwitch(){ const b=S.shop.bview; return `<div class="shp-seg vx-bv" role="group" aria-label="Как показать сделки"><button type="button" data-act="vx-bv" data-v="today" aria-pressed="${b==="today"}">Сегодня</button><button type="button" data-act="vx-bv" data-v="board" aria-pressed="${b==="board"}">Доска</button></div>`; }
 function vxTodayHtml(){
   const today=shpToday(), seen=shpSeen(), O=S.shop.orders, open=O.filter(o=>!shpClosed(o)), ncl=O.length-open.length, find=S.shop.vxFind||!!S.shop.q;
-  let h=`<div class="head vx-thead"><h1>Сделки</h1><span class="muted vx-inw">в работе <b>${open.length}</b></span>
+  let h=`<div class="head vx-thead"><h1>Сегодня</h1><span class="muted vx-inw"></span>
     <button type="button" class="btn vx-ib" data-act="vx-find" aria-label="Поиск сделки" aria-pressed="${find}">${shpIco("search",20)}</button>
     <details class="vx-menu"><summary class="btn vx-ib" aria-label="Ещё действия">${shpIco("more",20)}</summary><div class="vx-pop" role="menu">
       <button type="button" role="menuitem" data-act="shp-tab" data-v="chess">▦ График работы</button><button type="button" role="menuitem" data-act="shp-reload">↻ Обновить</button><button type="button" role="menuitem" data-act="vx-closed" aria-pressed="${!!S.shop.showClosed}">${S.shop.showClosed?"Скрыть закрытые":"Показать закрытые"} · ${ncl}</button></div></details>
-    <button type="button" class="btn primary vx-new" data-act="shp-new">+ Заказ</button></div>
+    <button type="button" class="btn primary vx-new" data-act="shp-new">+ Заказ</button></div><p class="pl-day">${esc(plDayLine(open.length))}</p>
   <div class="vx-row2">${vxSwitch()}<div class="shp-seg" role="group" aria-label="Какие заказы показать"><button type="button" data-act="shp-mine" data-v="0" aria-pressed="${!S.shop.mine}">Все</button><button type="button" data-act="shp-mine" data-v="1" aria-pressed="${!!S.shop.mine}">Мои</button></div></div>`;
   if(find) h+=`<div class="vx-find"><input id="shpQ" type="search" value="${esc(S.shop.q||"")}" placeholder="Поиск: клиент, №, телефон, адрес" aria-label="Поиск заказа" enterkeyhint="search" autocomplete="off"></div>`;
   if(!S.shop.loaded) return h+`<p class="muted">${S.shop.err?"Нет связи с таблицей. Нажмите «Обновить».":"Загружаю заказы…"}</p>`;
   h+=vxChips();
   const TD={}; (S.shop.tasks||[]).forEach(t=>{ if(t.order&&t.status!=="done"&&t.due) (TD[t.order]=TD[t.order]||[]).push(t.due); });
-  const wk=(7-new Date(today+"T00:00:00").getDay())%7, G=[["late","Просрочено",[]],["soon","Сегодня и завтра",[]],["week","На этой неделе",[]],["later","Позже",[]],["none","Без срока",[]]];
+  const wk=(7-new Date(today+"T00:00:00").getDay())%7, G=[["late","Опоздали",[]],["soon","Сегодня и завтра",[]],["week","На этой неделе",[]],["later","Позже",[]],["none","Без срока",[]]];
   open.forEach(o=>{ const u=vxUrg(o,TD), d=u?shpDays(u.d,today):null; G[u==null?4:d<0?0:d<=1?1:d<=wk?2:3][2].push({o,u}); });
   G.forEach(g=>g[2].sort((a,b)=>a.u&&b.u?a.u.d.localeCompare(b.u.d):(b.o.stageAt||0)-(a.o.stageAt||0)||String(a.o.num).localeCompare(String(b.o.num))));
   if(S.shop.showClosed) G.push(["closed","Закрытые",O.filter(shpClosed).sort((a,b)=>(b.stageAt||0)-(a.stageAt||0)).slice(0,60).map(o=>({o,u:null}))]);
   if(!open.length) h+=`<p class="note">${O.length?"Открытых сделок нет.":"Заказов пока нет."} Нажмите «+ Заказ», когда будет первый замер.</p>`;
-  h+=`<div class="vx-today">`+G.filter(g=>g[2].length).map(([k,n,L])=>{ const rows=L.map(x=>vxRow(x.o,x.u,today,seen)).join(""), vis=(rows.match(/class="vx-deal"[^>]*data-own="[^"]*">/g)||[]).length;
+  const q=!!String(S.shop.q||"").trim(), all=q||!!S.shop.vxAll;
+  if(open.length){ try{ h+=`<div id="vxPult" data-mine="${S.shop.mine?1:0}"${q?" hidden":""}>${plHtml()}</div>`; }catch(e){ console.error("пульт дня",e); S.shop.vxAll=1; }
+    h+=`<button type="button" class="pl-allb" data-act="vx-all" aria-expanded="${!!S.shop.vxAll}"${q?" hidden":""}>${S.shop.vxAll?"Скрыть список":"Все сделки списком"} · ${open.length}</button>`; }
+  h+=`<div class="vx-today${all?"":" pl-onlycl"}"${all||S.shop.showClosed?"":" hidden"}>`+G.filter(g=>g[2].length).map(([k,n,L])=>{ const rows=L.map(x=>vxRow(x.o,x.u,today,seen)).join(""), vis=(rows.match(/class="vx-deal"[^>]*data-own="[^"]*">/g)||[]).length;
     return `<section class="vx-grp vx-g-${k}" data-g="${k}"${vis?"":" hidden"}><h2><span>${n}</span><span class="vx-gn">${vis}</span></h2><div class="vx-list">${rows}</div></section>`; }).join("")+`</div>`;
-  return h+`<p class="muted shp-nofind"${O.length&&(S.shop.q||S.shop.mine)&&!/class="vx-grp[^"]*" data-g="[a-z]+">/.test(h)?"":" hidden"}>Ничего не нашлось.</p>`; }
+  return h+`<p class="muted shp-nofind"${O.length&&(q||(S.shop.mine&&S.shop.vxAll))&&!/class="vx-grp[^"]*" data-g="[a-z]+">/.test(h)?"":" hidden"}>Ничего не нашлось.</p>`; }
 function vxFilter(){ const box=document.querySelector(".vx-today"); if(!box) return; let shown=0;
+  const q=!!String(S.shop.q||"").trim(), all=q||!!S.shop.vxAll, pu=document.getElementById("vxPult"), ab=document.querySelector(".pl-allb");
+  if(pu){ pu.hidden=q; if(pu.dataset.mine!==(S.shop.mine?"1":"0")) plPaint(); } if(ab) ab.hidden=q;
+  box.hidden=!(all||S.shop.showClosed); box.classList.toggle("pl-onlycl",!all);
   box.querySelectorAll(".vx-grp").forEach(g=>{ let n=0; g.querySelectorAll(".vx-deal").forEach(c=>{ const ok=vxMatch(c.dataset.s||"",c.dataset.own||""); c.hidden=!ok; if(ok) n++; });
     const gn=g.querySelector(".vx-gn"); if(gn) gn.textContent=n; g.hidden=!n; shown+=n; });
-  const nf=document.querySelector(".shp-nofind"); if(nf) nf.hidden=!(shown===0&&S.shop.orders.length&&(S.shop.q||S.shop.mine)); }
+  const nf=document.querySelector(".shp-nofind"); if(nf) nf.hidden=!(shown===0&&S.shop.orders.length&&(q||(S.shop.mine&&S.shop.vxAll))); }
 { const _vxAF=shpApplyFilter; shpApplyFilter=function(){ const r=_vxAF.apply(this,arguments); try{ vxFilter(); }catch(_){} return r; }; }
 { const _vxBoard=shpBoardHtml; shpBoardHtml=function(){
   if(!VTX) return _vxBoard();
   if(S.shop.bview!=="board") return vxTodayHtml();
   const h=_vxBoard(), a=h.indexOf('class="head-actions"'), e=a<0?-1:h.indexOf("</div></div>",a);
   return e<0?vxSwitch()+h:h.slice(0,e+12)+`<div class="vx-row2 vx-brow">${vxSwitch()}</div>`+h.slice(e+12); }; }
+/* ---- «Пульт дня» (Кирилл 12.11, вариант А): первый экран «Сегодня» ----
+   Сверху 4 плитки: опоздали · сегодня и завтра · новая заявка без ответа · ждём от клиентов (кому суммы не видны — «мои задачи»).
+   Нажали плитку — ниже список этих сделок. «Что сделать сейчас» — дела по срочности с кнопками. Внизу «Где сделки» — этапы, нажатие открывает Доску на этом этапе.
+   Всё считается из того, что сервер уже отдал этой роли (мастер — свои сделки, без сумм; снабженец — без сумм, если права нет): нового с сервера не берём.
+   Поиск, «Показать закрытые» и «Все сделки списком» показывают прежний список по срокам (.vx-today). */
+const PL_C={dogovor:"#7C6CF6",zamer:"#F2B824",proekt:"#56B6F7",proekt_ok:"#2CC5B5",zakup:"#F28C28",cex:"#A78BFA",montazh:"#34C77B"};   /* цвета этапов — как DK_C в site_doska.js */
+const PL_PAL=["#7C6CF6","#F2B824","#56B6F7","#2CC5B5","#F28C28","#A78BFA","#34C77B","#EC6FA8","#8E94A0"];
+const PL_N={dogovor:"договор",zamer:"замер",proekt:"проект",proekt_ok:"готов",zakup:"закупка",cex:"цех",montazh:"монтаж"};
+const PL_MON=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+function plDayLine(n){ const d=new Date(), w=VX_WD[d.getDay()]; return w.charAt(0).toUpperCase()+w.slice(1)+", "+d.getDate()+" "+PL_MON[d.getMonth()]+" · "+n+" "+shpPl(n,"сделка","сделки","сделок")+" в работе"; }
+function plIsDay(d){ return /^\d{4}-\d{2}-\d{2}$/.test(d||""); }
+/* опоздали: срок сделки, замер (пока сделка до замера), монтаж (пока в цехе / на монтаже) — те же правила, что dkLate на Доске; берём самую давнюю дату */
+function plLate(o,today){ if(shpClosed(o)) return null; let b=null; const add=(d,k)=>{ if(plIsDay(d)&&d<today&&(!b||d<b.d)) b={d,k}; };
+  add(o.deadline,"срок"); if(o.stage==="dogovor"||o.stage==="zamer") add(o.zamerDate,"замер"); if(o.stage==="cex"||o.stage==="montazh") add(o.montazhDate,"монтаж");
+  if(b) b.n=shpDays(today,b.d); return b; }
+/* сегодня и завтра: монтаж, замер (пока сделка до замера), срок сдачи */
+function plSoon(o,today){ let b=null; const add=(d,k)=>{ if(!plIsDay(d)||d<today) return; const n=shpDays(d,today); if(n<=1&&(!b||d<b.d)) b={d,k,n}; };
+  add(o.montazhDate,"монтаж"); if(o.stage==="dogovor"||o.stage==="zamer") add(o.zamerDate,"замер"); add(o.deadline,"срок"); return b; }
+function plRest(o){ const s=+o.sum||0; return s>0?Math.max(0,s-(+o.prepay||0)):0; }
+function plShort(n){ n=Math.round(n); if(n>=1e6) return String(Math.round(n/1e5)/10).replace(".",",")+" млн"; if(n>=1000) return Math.round(n/1000)+" тыс"; return n+" ₽"; }
+function plAgo(ms){ const m=Math.max(0,Math.round((Date.now()-ms)/6e4)); if(!ms) return ""; if(m<60) return Math.max(1,m)+" "+shpPl(Math.max(1,m),"минуту","минуты","минут");
+  const h=Math.round(m/60); if(h<48) return h+" "+shpPl(h,"час","часа","часов"); const d=Math.round(h/24); return d+" "+shpPl(d,"день","дня","дней"); }
+function plTel(p){ const t=String(p||"").replace(/[^\d+]/g,""); return t.replace(/\D/g,"").length>=5?t:""; }
+function plStaffTel(name){ const k=shpNorm(name); if(!k) return ""; const p=(S.shop.staff||[]).find(x=>shpNorm(x.name)===k); return p?plTel(p.phone):""; }
+function plWhoLine(o){ return [o.owner?"👤 "+o.owner:"👤 никто не ведёт",o.master&&shpNorm(o.master)!==shpNorm(o.owner)?"🔨 "+o.master:""].filter(Boolean).join(" · "); }
+function plNum(o){ return "№ "+o.num+" "+(o.client||"Без имени"); }
+function plData(){ const today=shpToday(), me=shpMe(), O=S.shop.orders||[], all=O.filter(o=>!shpClosed(o)), open=all.filter(o=>!S.shop.mine||shpNorm(o.owner)===me);
+  const payOk=!!S.shop.sumSee&&(!!S.shop.tech||O.some(o=>o.prepay!==undefined&&o.prepay!==null));   /* оплаты видит только тот, кому сервер их отдал */
+  const late=[], soon=[], pay=[]; let wait=0;
+  open.forEach(o=>{ const l=plLate(o,today), s=l?null:plSoon(o,today); if(l) late.push({o,u:l}); else if(s) soon.push({o,u:s});
+    if(payOk){ const r=plRest(o); if(r>0){ wait+=r; pay.push({o,r}); } } });
+  late.sort((a,b)=>a.u.d.localeCompare(b.u.d)); soon.sort((a,b)=>a.u.d.localeCompare(b.u.d)); pay.sort((a,b)=>b.r-a.r);
+  /* новая заявка без ответа: сделка на первом этапе, которую никто не взял (нет «Кто ведёт») — видна и при «Мои» */
+  const fresh=all.filter(o=>o.stage===SHP_ST[0].k&&!String(o.owner||"").trim()).sort((a,b)=>(a.created||0)-(b.created||0)).map(o=>({o}));
+  const tasks=(S.shop.tasks||[]).filter(t=>t.status!=="done"&&shpNorm(t.to)===me), tNow=tasks.filter(t=>plIsDay(t.due)&&t.due<=today).sort((a,b)=>a.due.localeCompare(b.due));
+  return {today,me,open,late,soon,fresh,pay,wait,payOk,tasks,tNow}; }
+function plBtn(txt,act,id,pri,ic){ return `<button type="button" class="pl-b${pri?" pri":""}" data-act="${act}" data-id="${esc(id)}">${ic?`<i aria-hidden="true">${ic}</i>`:""}${esc(txt)}</button>`; }
+function plCall(tel,txt,lab,pri){ return tel?`<a class="pl-b${pri?" pri":""}" href="tel:${esc(tel)}" aria-label="${esc(lab)}"><i aria-hidden="true">📞</i>${esc(txt)}</a>`:""; }
+/* кому звонить по сделке: мастеру, а если мастера нет (или это я) — тому, кто ведёт */
+function plCallStaff(o,me,pri){ for(const n of [o.master,o.owner]){ const t=n&&shpNorm(n)!==me?plStaffTel(n):""; if(t) return plCall(t,n,"Позвонить: "+n,pri); } return ""; }
+function plIt(k,tag,ttl,sub,btns,open){ return `<article class="pl-it k-${k}"><p class="pl-tag">${esc(tag)}</p>
+  <button type="button" class="pl-ttl" data-act="${open[0]}" data-id="${esc(open[1])}">${esc(ttl)}</button>${sub?`<p class="pl-sub">${esc(sub)}</p>`:""}
+  ${btns?`<div class="pl-bt">${btns}</div>`:""}</article>`; }
+function plTodo(D){ const L=[], used={}, me=D.me, canTake=!!S.shop.full&&!!String(S.who||"").trim();
+  D.fresh.forEach(({o})=>{ used[o.id]=1; const ago=plAgo(o.created), from=/^Заявка из ([^\n(]{2,30})/.exec(o.notes||""), c=plCall(plTel(o.phone),"Позвонить","Позвонить клиенту",true);
+    L.push(plIt("new","🆕 Заявка"+(ago?" "+ago:"")+" без ответа",(o.client||"Без имени")+(o.kind?" — "+o.kind:""),"никто не взял"+(from?" · из "+from[1].trim():""),
+      c+(canTake?plBtn("Взять себе","vx-take",o.id,!c):"")+(c||canTake?"":plBtn("Открыть","shp-open",o.id)),["shp-open",o.id])); });
+  D.late.forEach(({o,u})=>{ if(used[o.id]) return; used[o.id]=1; const c=plCallStaff(o,me,true);
+    L.push(plIt("late","⏰ Опоздали на "+u.n+" "+shpPl(u.n,"день","дня","дней")+" — "+u.k+" был "+shpDM(u.d),plNum(o)+" · "+vxStage(o),plWhoLine(o),c+plBtn("Открыть","shp-open",o.id,!c),["shp-open",o.id])); });
+  if(D.payOk) D.open.forEach(o=>{ const r=plRest(o), n=plIsDay(o.montazhDate)?shpDays(o.montazhDate,D.today):-1; if(used[o.id]||!(r>0)||n<0||n>1) return; used[o.id]=1;
+    L.push(plIt("pay","💰 Доплата при монтаже "+(n?"завтра":"сегодня"),plNum(o)+" — "+shpMoney(r),plWhoLine(o),plBtn("Напомнить клиенту","vx-rem",o.id,true,"💬")+plBtn("Открыть","shp-open",o.id),["shp-open",o.id])); });
+  D.tNow.forEach(t=>{ const n=shpDays(D.today,t.due), o=t.order?shpById(t.order):null;
+    L.push(plIt(n>0?"late":"soon",n>0?"⏰ Задача — опоздали на "+n+" "+shpPl(n,"день","дня","дней")+", срок был "+shpDM(t.due):"☑ Задача на сегодня",t.text||"Задача",[t.by&&shpNorm(t.by)!==me?"от "+t.by:"",o?plNum(o):""].filter(Boolean).join(" · "),
+      plBtn("Сделано","vx-tdone",t.id,true,"✓")+(o?plBtn("Открыть сделку","shp-open",o.id):""),["shp-topen",t.id])); });
+  D.soon.forEach(({o,u})=>{ if(used[o.id]) return; used[o.id]=1; const w=u.n?"завтра":"сегодня", c=u.k==="замер"?plCall(plTel(o.phone),"Клиенту","Позвонить клиенту",true):plCallStaff(o,me,true);
+    L.push(plIt("soon",(u.k==="замер"?"📏 Замер ":u.k==="монтаж"?"🚚 Монтаж ":"⏰ Срок сдачи ")+w,plNum(o)+" · "+vxStage(o),plWhoLine(o),c+plBtn("Открыть","shp-open",o.id,!c),["shp-open",o.id])); });
+  return L; }
+function plSelHtml(D){ const k=S.shop.plSel; if(!k||(k==="pay"&&!D.payOk)) return ""; const seen=shpSeen(), T={late:"Опоздали",soon:"Сегодня и завтра",new:"Новые заявки без ответа",pay:"Ждём от клиентов"};
+  const rows=k==="late"?D.late.map(x=>vxRow(x.o,x.u,D.today,seen)):k==="soon"?D.soon.map(x=>vxRow(x.o,x.u,D.today,seen))
+    :k==="new"?D.fresh.map(x=>vxRow(x.o,null,D.today,seen,x.o.created?`<span class="vx-ub">${esc(plAgo(x.o.created))}</span>`:""))
+    :D.pay.map(x=>vxRow(x.o,null,D.today,seen,`<b class="vx-sum mono">${esc(shpMoney(x.r))}</b><small class="vx-was">из ${esc(shpMoney(x.o.sum))}</small>`));
+  return `<section class="pl-sel k-${k}"><h2><span>${T[k]} · ${rows.length}</span><button type="button" class="pl-x" data-act="vx-tile" data-v="${k}" aria-label="Скрыть список">✕</button></h2>${rows.length?`<div class="vx-list">${rows.join("").replace(/ hidden>/g,">")}</div>`:`<p class="muted pl-none">Таких сделок нет.</p>`}</section>`; }
+function plHtml(){ const D=plData(), sel=S.shop.plSel||"", nf=D.fresh.length, my=D.tasks.length;
+  const tile=(k,n,lab,act)=>`<button type="button" class="pl-t k-${k}${n?"":" zero"}" ${act||`data-act="vx-tile" data-v="${k}" aria-pressed="${sel===k}"`}><b>${esc(String(n))}</b><span>${esc(lab)}</span></button>`;
+  let h=`<div class="pl-tiles">${tile("late",D.late.length,"опоздали")}${tile("soon",D.soon.length,"сегодня и завтра")}${tile("new",nf,shpPl(nf,"новая заявка","новые заявки","новых заявок")+" без ответа")}`
+    +(D.payOk?`<button type="button" class="pl-t k-pay${D.wait?"":" zero"}" data-act="vx-tile" data-v="pay" aria-pressed="${sel==="pay"}"><b>${esc(D.wait?plShort(D.wait):"0")}</b><span>ждём от клиентов</span></button>`
+      :tile("pay",my,shpPl(my,"моя задача","мои задачи","моих задач"),'data-act="shp-tab" data-v="tasks" data-tt="me"'))+`</div>`;
+  h+=plSelHtml(D);
+  const L=plTodo(D), cut=S.shop.plAll?L.length:8;
+  h+=`<section class="pl-sec"><h2><span>Что сделать сейчас</span><span class="pl-n">${L.length||""}</span></h2>${L.length?`<div class="pl-list">${L.slice(0,cut).join("")}</div>${L.length>cut?`<button type="button" class="pl-allb" data-act="vx-more">Показать ещё ${L.length-cut}</button>`:""}`:`<p class="pl-ok">Срочных дел нет — всё идёт по плану.</p>`}</section>`;
+  const st=SHP_ST.filter(s=>s.k!=="closed"&&s.k!=="lost");
+  h+=`<section class="pl-sec"><h2><span>Где сделки</span></h2><div class="pl-st">${st.map((s,i)=>{ const n=D.open.filter(o=>o.stage===s.k).length;
+    return `<button type="button" class="pl-s${n?"":" zero"}${S.shop.plSt===s.k?" on":""}" data-act="vx-st" data-v="${esc(s.k)}" aria-pressed="${S.shop.plSt===s.k}" style="--plc:${PL_C[s.k]||PL_PAL[i%PL_PAL.length]}" title="${esc(s.n)} — показать сделки" aria-label="${esc(s.n)}: ${n}. Показать сделки"><b>${n}</b><span>${esc(PL_N[s.k]||String(s.s||s.n).toLowerCase())}</span></button>`; }).join("")}</div>${plStHtml(D,st)}</section>`;
+  return h; }
+/* 12.11 Кирилл: «Где сделки» — нажал этап, ниже список его сделок (по порядку появляются); на телефоне закрыто, на компьютере все этапы открыты */
+function plDesk(){ try{ return matchMedia("(min-width:900px)").matches; }catch(_){ return false; } }
+function plStHtml(D,st){ const seen=shpSeen(), desk=plDesk(), one=k=>{ const s=st.find(x=>x.k===k)||{}, L=D.open.filter(o=>o.stage===k);
+    const rows=L.map((o,i)=>vxRow(o,null,D.today,seen).replace(/ hidden>/g,">").replace(/^<(\w+)/,`<$1 style="--pli:${Math.min(i,12)}"`));
+    return `<div class="pl-stl" data-k="${esc(k)}" style="--plc:${PL_C[k]||"#8E94A0"}"><h3>${esc(s.n||k)} · ${L.length}${desk?"":`<button type="button" class="pl-x" data-act="vx-st" data-v="${esc(k)}" aria-label="Скрыть">✕</button>`}</h3>${L.length?`<div class="vx-list">${rows.join("")}</div>`:`<p class="muted pl-none">На этом этапе сделок нет.</p>`}</div>`; };
+  if(desk) return `<div class="pl-stall">${st.filter(s=>D.open.some(o=>o.stage===s.k)).map(s=>one(s.k)).join("")}</div>`;
+  return S.shop.plSt?one(S.shop.plSt):""; }
+function plPaint(){ const p=document.getElementById("vxPult"); if(!p) return; try{ p.dataset.mine=S.shop.mine?"1":"0"; p.innerHTML=plHtml(); }catch(e){ console.error("пульт дня",e); } }
+/* «Напомнить клиенту»: открываем переписку с клиентом и кладём черновик в поле — отправляет человек сам */
+function plRemind(o){ const r=plRest(o), n=plIsDay(o.montazhDate)?shpDays(o.montazhDate,shpToday()):-1; S.shop.cur=o.id; S.shop.otab="client"; S.shop.focusChat=true; shpGo("order",o.id);
+  if(!o.kOn||!(r>0)) return; const txt="Здравствуйте! Напоминаем: "+(n===0?"сегодня":n===1?"завтра":shpDM(o.montazhDate))+" монтаж. Доплата по договору — "+shpMoney(r)+".";
+  [400,1500,3000].forEach(ms=>setTimeout(()=>{ try{ if(S.view!=="shop"||S.shop.mode!=="order"||S.shop.cur!==o.id) return; const ta=document.querySelector('.shp-send[data-chat="K:'+CSS.escape(o.id)+'"] textarea'); if(ta&&!ta.value&&document.activeElement!==ta){ ta.value=txt; ta.dispatchEvent(new Event("input",{bubbles:true})); } }catch(_){} },ms)); }
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act^="vx-"]'); if(!t) return; const a=t.dataset.act;
+  if(a==="vx-tile"){ S.shop.plSel=S.shop.plSel===t.dataset.v?"":t.dataset.v; plPaint(); if(S.shop.plSel){ const s=document.querySelector(".pl-sel"); if(s&&s.getBoundingClientRect().top>innerHeight*0.7) s.scrollIntoView({block:"center",behavior:"smooth"}); } return; }
+  if(a==="vx-more"){ S.shop.plAll=1; plPaint(); return; }
+  if(a==="vx-all"){ S.shop.vxAll=!S.shop.vxAll; shpRenderKeep(); return; }
+  if(a==="vx-tdone"){ if(typeof shpTaskToggle==="function") shpTaskToggle(t.dataset.id,t); return; }
+  if(a==="vx-rem"){ const o=shpById(t.dataset.id); if(o) plRemind(o); return; }
+  if(a==="vx-take"){ const o=shpById(t.dataset.id), me=String(S.who||"").trim(); if(!o||!S.shop.full||!me||String(o.owner||"").trim()) return; t.disabled=true; t.textContent="Сохраняю…";
+    shpPost({action:"shopSave",order:Object.assign({},o,{owner:me,v3:1})}).then(j=>{ if(!j){ t.disabled=false; t.textContent="Взять себе"; return; } o.owner=me; toast("Сделка № "+o.num+" — теперь её ведёте вы"); shpRenderKeep(); shpLoad(true); }); return; }
+  if(a==="vx-st"){ const k=t.dataset.v; if(plDesk()){ const g=document.querySelector('.pl-stl[data-k="'+CSS.escape(k)+'"]'); if(g) g.scrollIntoView({block:"start",behavior:"smooth"}); return; } S.shop.plSt=S.shop.plSt===k?"":k; plPaint(); if(S.shop.plSt){ const g=document.querySelector(".pl-stl"); if(g&&g.getBoundingClientRect().top>innerHeight*0.75) g.scrollIntoView({block:"start",behavior:"smooth"}); } return; S.shop.bview="board"; S.shop.mode="board"; render(); window.scrollTo(0,0);
+    setTimeout(()=>{ try{ const c=document.querySelector('#shpKb .shp-col[data-st="'+CSS.escape(k)+'"]'); if(!c) return; c.scrollIntoView({block:"nearest",inline:"start"}); c.classList.add("pl-flash"); setTimeout(()=>c.classList.remove("pl-flash"),1800); }catch(_){} },80); return; } });
+{ const st=document.createElement("style"); st.id="plCss"; st.textContent=`
+html{--pl-r:#D92D20;--pl-y:#A86400;--pl-bl:#1F6FD0;--pl-g:#1E8E4E}
+html[data-vt="dark"]{--pl-r:#FF6B5E;--pl-y:#F2B824;--pl-bl:#56B6F7;--pl-g:#34C77B}
+.pl-day{margin:2px 0 0;font-size:14px;color:var(--muted)}
+#vxPult{max-width:1100px}#vxPult[hidden]{display:none}
+.pl-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0 0}
+.pl-t{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:76px;padding:10px 14px 11px;border:0;border-radius:12px;background:var(--surface);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--frame,var(--line));font:inherit;text-align:left;cursor:pointer}
+.pl-t b{font:800 28px/1.15 var(--f-num,var(--f-brand,var(--f-body,system-ui)));letter-spacing:0;white-space:nowrap}
+.pl-t span{font-size:14.5px;line-height:1.25;color:var(--ink)}
+.pl-t.k-late b{color:var(--pl-r)}.pl-t.k-soon b{color:var(--pl-y)}.pl-t.k-new b{color:var(--pl-bl)}.pl-t.k-pay b{color:var(--pl-g)}
+.pl-t.zero b{color:var(--muted)}.pl-t.zero span{color:var(--muted)}
+.pl-t[aria-pressed="true"]{box-shadow:inset 0 0 0 2px currentColor}
+.pl-t.k-late[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--pl-r)}.pl-t.k-soon[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--pl-y)}.pl-t.k-new[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--pl-bl)}.pl-t.k-pay[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--pl-g)}
+.pl-t:focus-visible,.pl-s:focus-visible,.pl-b:focus-visible,.pl-ttl:focus-visible{outline:2px solid var(--accent,#ffc21a);outline-offset:2px}
+.pl-sec,.pl-sel{margin:18px 0 0}
+.pl-sec h2,.pl-sel h2{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px 2px;font:700 17px var(--f-brand,var(--f-body,system-ui));letter-spacing:0;text-transform:none;color:var(--ink)}
+.pl-n{font-size:14px;color:var(--muted)}
+.pl-sel.k-late h2 span{color:var(--pl-r)}.pl-sel.k-soon h2 span{color:var(--pl-y)}.pl-sel.k-new h2 span{color:var(--pl-bl)}.pl-sel.k-pay h2 span{color:var(--pl-g)}
+.pl-x{min-width:44px;min-height:36px;border:0;border-radius:8px;background:none;color:var(--muted);font:600 16px var(--f-body,system-ui);cursor:pointer}
+.pl-none,.pl-ok{margin:0;padding:12px 14px;border-radius:12px;background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--frame,var(--line));font-size:15px;color:var(--muted)}
+.pl-list{display:grid;grid-template-columns:1fr;gap:8px}
+.pl-it{display:flex;flex-direction:column;gap:3px;min-width:0;padding:11px 14px 12px;border-radius:12px;background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--frame,var(--line))}
+.pl-tag{margin:0;font:700 14px/1.3 var(--f-brand,var(--f-body,system-ui));color:var(--muted)}
+.pl-it.k-new .pl-tag{color:var(--pl-bl)}.pl-it.k-late .pl-tag{color:var(--pl-r)}.pl-it.k-pay .pl-tag{color:var(--pl-g)}.pl-it.k-soon .pl-tag{color:var(--pl-y)}
+.pl-ttl{display:block;width:100%;margin:0;padding:0;border:0;background:none;color:var(--ink);font:700 17px/1.3 var(--f-brand,var(--f-body,system-ui));text-align:left;cursor:pointer;overflow-wrap:anywhere}
+.pl-sub{margin:0;font-size:14px;line-height:1.35;color:var(--muted);overflow-wrap:anywhere}
+.pl-bt{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0}
+.pl-b{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border:0;border-radius:10px;background:var(--sunk);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--frame,var(--line));font:700 15px var(--f-brand,var(--f-body,system-ui));text-decoration:none;white-space:nowrap;cursor:pointer}
+.pl-b{gap:7px}.pl-b i{font-style:normal}
+#vxPult .pl-b.pri,#vxPult a.pl-b.pri:any-link{background:var(--ink);color:var(--surface);box-shadow:none}html #vxPult a.pl-b{color:var(--ink)!important;text-decoration:none}html #vxPult a.pl-b.pri{color:var(--surface)!important}
+.pl-b:disabled{opacity:.6}
+.pl-st{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.pl-st::-webkit-scrollbar{display:none}
+.pl-s{flex:1 0 44px;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1px;min-height:58px;padding:6px 2px 7px;border:0;border-top:3px solid var(--plc,#8E94A0);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}
+.pl-s b{font:800 19px/1.2 var(--f-num,var(--f-brand,var(--f-body,system-ui)))}
+.pl-s span{max-width:100%;font-size:11.5px;line-height:1.2;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-s.zero b{color:var(--muted);font-weight:600}
+.pl-s.on{background:var(--plc,#8E94A0);color:#1f1e1d}.pl-s.on span{color:#1f1e1d}.pl-s.on b{color:#1f1e1d}
+.pl-stl{margin-top:10px}.pl-stl h3{display:flex;justify-content:space-between;align-items:center;margin:0 0 6px;font-size:15px;padding-left:8px;border-left:3px solid var(--plc,#8E94A0)}
+.pl-stl .vx-list>*{animation:plIn .28s ease both;animation-delay:calc(var(--pli,0)*45ms)}
+@keyframes plIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.pl-stl .vx-list>*{animation:none}}
+.pl-stall{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.pl-allb{display:block;width:100%;min-height:44px;margin:12px 0 0;padding:0 14px;border:0;border-radius:10px;background:none;color:var(--muted);box-shadow:inset 0 0 0 1.5px var(--frame,var(--line));font:600 15px var(--f-brand,var(--f-body,system-ui));cursor:pointer}
+.pl-allb[hidden]{display:none}
+.vx-today.pl-onlycl .vx-grp:not(.vx-g-closed){display:none}
+.vx-was{font-size:12px;line-height:1.2;padding-right:4px;color:var(--muted);white-space:nowrap}
+#shpKb .shp-col.pl-flash{box-shadow:inset 0 0 0 2px var(--dkc,var(--accent,#ffc21a))}
+@media (max-width:379px){.pl-t b{font-size:25px}.pl-t span{font-size:13.5px}.pl-s span{font-size:10.5px}}
+@media (min-width:900px){
+.pl-tiles{grid-template-columns:repeat(4,1fr);gap:12px}.pl-t{min-height:92px;padding:14px 18px}.pl-t b{font-size:32px}.pl-t span{font-size:15.5px}
+.pl-list{grid-template-columns:1fr 1fr;gap:12px}.pl-st{gap:10px}.pl-s{min-height:68px}.pl-s b{font-size:22px}.pl-s span{font-size:13.5px}
+.pl-allb{width:auto;min-width:260px}}
+`; document.head.appendChild(st); }
 /* «в сети» в фишке обновляется вместе со строкой «Сейчас в сети» */
 if(typeof onlPaint==="function"){ const _vxOP=onlPaint; onlPaint=function(){ _vxOP.apply(this,arguments); try{ const c=document.getElementById("vxOnl"); if(c&&S.view==="shop"){ const w=document.createElement("div"); w.innerHTML=vxChips(); const n=w.querySelector("#vxOnl"); if(n) c.replaceWith(n); } }catch(_){} }; }
 document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act^="vx-"]'); if(!t) return; const a=t.dataset.act;
@@ -13882,7 +14038,9 @@ if(typeof brdGo==="function"&&typeof brdTpl==="function"){ const _dlgBg=brdGo; b
    Фирмы (?f=код, window.APP_FIRM) и дизайнеры (/smeta/, window.APP_DES): окно «Подписка» — срок, тарифы, QR и реквизиты, «Я оплатил».
    Главная таблица (своя фирма Кирилла, без кода) подписки не платит; технолог/директор видит «Подписки клиентов»:
    цены тарифов, текст для перевода, картинка QR и список фирм и дизайнеров с кнопкой «Продлить на месяц».
-   Сервер: GET subInfo (без PIN), subList; POST subSave, subExtend, subPaid (фирма), desPaid (дизайнер). ===== */
+   Сервер: GET subInfo (без PIN), subList; POST subSave, subExtend, subPaid (фирма), desPaid (дизайнер).
+   Р6 (12.11): у каждого цеха — «Выключить / Включить» и «Удалить» (своё окно: сколько сделок и сотрудников; со сделками удалить нельзя).
+   Сервер: GET firmInfo {id}; POST firmOff {id,on}, firmDel {id,confirm}. Код фирмы шлём в поле id — поле firm сервер понимает как «уйти в таблицу фирмы». ===== */
 (function(){
 const SB={info:null,adm:null,busy:false};
 const se=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -13968,15 +14126,56 @@ function admHtml(){ const A=SB.adm; let h=`<div class="sb-wrap"><div class="sb-h
     <label>Картинка QR вашего счёта ${c.qr?`<span class="muted">(есть — можно заменить)</span>`:""}<input name="qr" type="file" accept="image/*"></label>${c.qr?`<img class="sb-qr sm" src="${se(c.qr)}" alt="QR"><label class="sb-chk"><input type="checkbox" name="qrDel"> убрать QR</label>`:""}
     <button type="submit" class="btn primary">Сохранить</button></form></details>`;
   const fprice=x=>{ const t=c.t.find(t=>t.n===x.tariff); return t?rub(x.founder&&t.f?t.f:t.p)+"/мес":""; };
-  const card=(x,kind)=>`<div class="sb-row"><div class="sb-rt"><b>${se(x.name||x.code||x.id)}</b><small>${kind==="firm"?"код "+se(x.code)+" · "+se(x.owner||""):se(x.firm||"")} · +${se(String(x.phone||"").replace(/^\+/,""))}</small>
-      <small>до ${se(dt(x.until))} ${kind==="des"&&x.free?`<span class="sb-chip ok">бесплатно — цех платит${x.fname?" («"+se(x.fname)+"»)":""}</span>`:chip(x,now,gr)}${kind==="firm"&&fprice(x)?" · "+fprice(x):""}</small>
+  const isOff=x=>x.status==="выключена", nOff=A.firms.filter(isOff).length;
+  const card=(x,kind)=>{ const off=kind==="firm"&&isOff(x); return `<div class="sb-row${off?" sb-off":""}"><div class="sb-rt"><b>${se(x.name||x.code||x.id)}${off?` <span class="sb-chip off">выключена</span>`:""}</b><small>${kind==="firm"?"код "+se(x.code)+" · "+se(x.owner||""):se(x.firm||"")} · +${se(String(x.phone||"").replace(/^\+/,""))}</small>
+      <small>до ${se(dt(x.until))} ${kind==="des"&&x.free?`<span class="sb-chip ok">бесплатно — цех платит${x.fname?" («"+se(x.fname)+"»)":""}</span>`:off?"":chip(x,now,gr)}${kind==="firm"&&fprice(x)?" · "+fprice(x):""}</small>
       <label class="sb-chk sb-fdc"><input type="checkbox" data-sbfd="${kind}" data-id="${se(kind==="firm"?x.code:x.id)}"${x.founder?" checked":""}> цена для первых клиентов</label>${x.burned?`<span class="sb-chip bad">цена для первых клиентов сгорела — перерыв в оплате больше 14 дней</span>`:""}
       ${kind==="des"?`<label class="sb-fc">фирма (код)<input data-sbfc="${se(x.id)}" value="${se(x.fcode||"")}" maxlength="8" placeholder="—" autocapitalize="characters"></label>`:""}</div>
-    <div class="sb-ra">${kind==="firm"?`<select data-sbtar="${se(x.code)}" aria-label="Тариф">${["<option value=\"\">тариф —</option>"].concat(c.t.map(t=>`<option${t.n===x.tariff?" selected":""}>${se(t.n)}</option>`)).join("")}</select>`:""}
-      <button type="button" class="btn sm primary" data-sba="ext" data-m="1" data-k="${kind}" data-id="${se(kind==="firm"?x.code:x.id)}">Продлить на месяц</button><button type="button" class="btn sm" data-sba="ext" data-m="12" data-k="${kind}" data-id="${se(kind==="firm"?x.code:x.id)}">Продлить на год</button></div></div>`;
-  h+=`<p class="sb-l">Цехи · ${A.firms.length} <span class="muted">· цена для первых клиентов у ${nF} из ${c.fN}</span></p>${A.firms.length?A.firms.slice().sort((a,b)=>a.until-b.until).map(x=>card(x,"firm")).join(""):`<p class="muted">Пока нет. Фирмы подключаются сами: «Подключить свою фирму».</p>`}`;
+    ${off?`<div class="sb-ra"><span class="sb-offn">Сотрудники фирмы не могут войти. Данные сохранены.</span></div>`:`<div class="sb-ra">${kind==="firm"?`<select data-sbtar="${se(x.code)}" aria-label="Тариф">${["<option value=\"\">тариф —</option>"].concat(c.t.map(t=>`<option${t.n===x.tariff?" selected":""}>${se(t.n)}</option>`)).join("")}</select>`:""}
+      <button type="button" class="btn sm primary" data-sba="ext" data-m="1" data-k="${kind}" data-id="${se(kind==="firm"?x.code:x.id)}">Продлить на месяц</button><button type="button" class="btn sm" data-sba="ext" data-m="12" data-k="${kind}" data-id="${se(kind==="firm"?x.code:x.id)}">Продлить на год</button></div>`}
+    ${kind==="firm"?`<div class="sb-rb"><button type="button" class="btn sm" data-sba="foff" data-on="${off?0:1}" data-id="${se(x.code)}">${off?"Включить":"Выключить"}</button><button type="button" class="btn sm danger" data-sba="fdel" data-id="${se(x.code)}">🗑 Удалить</button></div>`:""}</div>`; };
+  h+=`<p class="sb-l">Цехи · ${A.firms.length} <span class="muted">· цена для первых клиентов у ${nF} из ${c.fN}${nOff?" · выключено "+nOff:""}</span></p>${A.firms.length?A.firms.slice().sort((a,b)=>(isOff(a)-isOff(b))||(a.until-b.until)).map(x=>card(x,"firm")).join(""):`<p class="muted">Пока нет. Фирмы подключаются сами: «Подключить свою фирму».</p>`}`;
   h+=`<p class="sb-l">Дизайнеры · ${A.des.length} <span class="muted">· цена для первых клиентов у ${nD} из ${c.dN}</span></p>${A.des.length?A.des.slice().sort((a,b)=>a.until-b.until).map(x=>card(x,"des")).join(""):`<p class="muted">Пока нет.</p>`}`;
-  return h+`<p class="sb-foot">«Продлить» — от конца срока (или от сегодня, если уже просрочено). Цена для первых клиентов ставится сама первым ${c.fN} цехам и ${c.dN} дизайнерам и сгорает сама, если перерыв в оплате больше 14 дней; галочку можно снять или вернуть. Дизайнер бесплатный, если его фирма (код) на тарифе «Цех» или выше. Клиент жмёт «Я оплатил» — вам приходит сообщение в Телеграм.</p></div>`; }
+  return h+`<p class="sb-foot">«Продлить» — от конца срока (или от сегодня, если уже просрочено). Цена для первых клиентов ставится сама первым ${c.fN} цехам и ${c.dN} дизайнерам и сгорает сама, если перерыв в оплате больше 14 дней; галочку можно снять или вернуть. Дизайнер бесплатный, если его фирма (код) на тарифе «Цех» или выше. Клиент жмёт «Я оплатил» — вам приходит сообщение в Телеграм. «Выключить» — сотрудники цеха не смогут войти, данные остаются; «Включить» возвращает как было. «Удалить» — только цех без сделок: его таблица уходит в корзину Google Диска на 30 дней.</p></div>`; }
+/* Р6: свой запрос без общих подсказок — показываем то, что ответил сервер.
+   Старый сервер (скрипт таблицы ещё не обновился) на незнакомое действие отвечает «pin» — PIN при этом верный. Поэтому сначала перепроверяем PIN
+   чтением списка: не подошёл — shpGet сам сделает как обычно (shpBadPin), подошёл — просим подождать, а PIN не трогаем */
+async function fPinOrOld(){ const t=await shpGet("action=subList",true); if(t) toast("Скрипт таблицы ещё не обновился — попробуйте через минуту."); }
+async function fPost(body){ const j=await shpPostRaw(body); if(!j){ toast("Нет связи с таблицей. Попробуйте ещё раз."); return null; }
+  if(!j.ok){ if(j.error==="pin"){ await fPinOrOld(); return null; } toast(j.msg||(j.error==="dir"?"Это может только директор":j.error==="role"?"Нет прав на это действие":j.error==="notfound"?"Не нашлось — возможно, уже удалили. Обновите.":"Не получилось. Обновите скрипт таблицы.")); return null; }
+  return j; }
+/* Р6: окно «Удалить фирму» — сначала считаем сделки и сотрудников (GET firmInfo), «Удалить» активна только у пустой фирмы */
+function firmDelAsk(code){ const x=((SB.adm&&SB.adm.firms)||[]).find(f=>f.code===code); if(!x) return; document.getElementById("sbDelM")?.remove();
+  const m=document.createElement("div"); m.className="modal"; m.id="sbDelM"; m.setAttribute("role","dialog"); m.setAttribute("aria-modal","true"); m.setAttribute("aria-label","Удалить фирму");
+  const nm=x.name||x.code, off=x.status==="выключена"; let I=null, st="load", err="", done="";
+  const close=()=>{ m.remove(); document.removeEventListener("keydown",onKey,true); }, onKey=e=>{ if(e.key==="Escape"&&st!=="del"){ e.stopPropagation(); close(); } };
+  const draw=()=>{ let body="", can=false;
+    if(done) body=`<div class="sb-st warn"><b>Таблица осталась на Google Диске</b><span>${se(done)}</span></div>`;
+    else if(st==="load") body=`<p class="sb-dn muted">Считаю сделки и сотрудников…</p>`;
+    else if(!I) body=`<div class="sb-st warn"><b>Не получилось посчитать сделки</b><span>Нет связи или не обновлён скрипт таблицы. Без этого удалять нельзя.</span></div>`;
+    else { body=`<p class="sb-dn">Сделок <b>${I.deals}</b> · сотрудников <b>${I.staff}</b></p>`;
+      if(I.main) body=`<div class="sb-st bad"><b>Это главная таблица</b><span>Её удалить нельзя.</span></div>`;
+      else if(I.noTable) body=`<div class="sb-st bad"><b>Таблица фирмы не открывается</b><span>Проверить, есть ли сделки, нельзя — поэтому удалить нельзя. Фирму можно только выключить.</span></div>`;
+      else if(I.deals>0) body+=`<div class="sb-st bad"><b>Удалить нельзя — в фирме есть сделки (${I.deals})</b><span>${off?"Фирма уже выключена: сотрудники не входят, данные сохранены.":"Её можно только выключить: сотрудники не смогут войти, данные сохранятся."}</span></div>`;
+      else { can=true; body+=`<p class="sb-dt">Таблица уйдёт в корзину Google Диска, 30 дней можно вернуть.</p>`; } }
+    if(err) body+=`<p class="sb-de" role="alert">${se(err)}</p>`;
+    const offBtn=I&&!can&&!I.main&&!off&&!done?`<button type="button" class="btn" data-sbd="off">Выключить</button>`:"";
+    m.innerHTML=`<div class="modal-card sb-del"><h2>${done?"Готово":`Удалить «${se(nm)}» (${se(code)})?`}</h2>${body}<div class="sb-db">${done?`<button type="button" class="btn primary" data-sbd="x">Понятно</button>`
+      :`<button type="button" class="btn" data-sbd="x">Отмена</button>${st!=="load"&&!I?`<button type="button" class="btn" data-sbd="again">Повторить</button>`:""}${offBtn}<button type="button" class="btn danger sb-dgo" data-sbd="go"${can&&st!=="del"?"":" disabled"}>${st==="del"?"Удаляю…":"Удалить"}</button>`}</div></div>`; };
+  const load=async()=>{ st="load"; err=""; draw(); const j=await shpGet("action=firmInfo&id="+encodeURIComponent(code),true); if(!m.isConnected) return; I=j&&typeof j.deals==="number"?j:null; st="ask"; draw(); };
+  m.addEventListener("click",async e=>{ if(e.target===m&&st!=="del") return close(); const b=e.target.closest("[data-sbd]"); if(!b||b.disabled) return; const a=b.dataset.sbd;
+    if(a==="x"){ close(); if(done) admLoad(); return; } if(a==="again") return load();
+    if(a==="off"){ b.disabled=true; const j=await fPost({action:"firmOff",id:code,on:true}); if(!m.isConnected) return; if(j){ close(); toast("Фирма «"+nm+"» выключена"); admLoad(); } else b.disabled=false; return; }
+    if(a!=="go"||!I||st==="del") return; st="del"; err=""; draw();
+    const j=await shpPostRaw({action:"firmDel",id:code,confirm:code}); if(!m.isConnected) return; st="ask";
+    if(!j){ err="Нет связи с таблицей — фирма не удалена. Попробуйте ещё раз."; return draw(); }
+    if(j.ok){ if(SB.adm&&SB.adm.firms) SB.adm.firms=SB.adm.firms.filter(f=>f.code!==code); if(j.warn){ done=j.warn; draw(); shpRenderKeep(); return; }
+      close(); toast("Фирма «"+nm+"» удалена. Таблица — в корзине Google Диска"); shpRenderKeep(); admLoad(); return; }
+    if(j.error==="pin"){ close(); await fPinOrOld(); return; }
+    if(j.error==="has_deals"){ I.deals=j.deals||1; if(typeof j.staff==="number") I.staff=j.staff; } else if(j.error==="no_table") I.noTable=1; else if(j.error==="main") I.main=1;
+    else err=j.msg||(j.error==="dir"?"Это может только директор":j.error==="role"?"Нет прав на это действие":j.error==="notfound"?"Фирма не нашлась — возможно, её уже удалили. Обновите список.":"Не получилось удалить. Обновите скрипт таблицы.");
+    draw(); });
+  document.addEventListener("keydown",onKey,true); document.body.appendChild(m); load(); }
 if(typeof viewShop==="function"){ const _sbView=viewShop; viewShop=function(){
   if(S.shop.mode==="subadm"){ if(!admOn()){ S.shop.mode="more"; return _sbView.apply(this,arguments); } if(!SB.adm&&!SB.busy) setTimeout(admLoad,0); return shpNavHtml()+admHtml(); }
   return _sbView.apply(this,arguments); }; }
@@ -13988,6 +14187,10 @@ document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.
     if(box.querySelectorAll("[data-sbtc]").length<=1){ toast("Должен остаться хотя бы один тариф"); return; }
     if(nm&&!(await appConfirm("Убрать тариф «"+nm+"»? Он пропадёт после «Сохранить». Фирмы на этом тарифе останутся — им нужно будет выбрать другой.","Убрать"))) return;
     cd.remove(); const ad=document.querySelector('.sb-add'); if(ad) ad.hidden=false; return; }
+  if(b.dataset.sba==="fdel") return firmDelAsk(b.dataset.id);
+  if(b.dataset.sba==="foff"){ const on=b.dataset.on==="1";   /* выключить — со вторым нажатием «Точно?», включить — сразу */
+    if(on&&b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Точно выключить?"; setTimeout(()=>{ if(b.isConnected){ b.dataset.sure=""; b.textContent="Выключить"; } },3500); return; }
+    b.disabled=true; const j=await fPost({action:"firmOff",id:b.dataset.id,on}); b.disabled=false; if(j){ toast(on?"Фирма выключена — её сотрудники не смогут войти":"Фирма включена"); admLoad(); } else if(b.isConnected){ b.dataset.sure=""; b.textContent=on?"Выключить":"Включить"; } return; }
   if(b.dataset.sba==="ext"){ const lb=b.dataset.m==="12"?"Продлить на год":"Продлить на месяц"; if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Точно? "+(b.dataset.m==="12"?"на год":"на месяц"); setTimeout(()=>{ if(b.isConnected){ b.dataset.sure=""; b.textContent=lb; } },3500); return; }
     const k=b.dataset.k, id=b.dataset.id, tsel=k==="firm"?document.querySelector(`[data-sbtar="${CSS.escape(id)}"]`):null; b.disabled=true;
     const body={action:"subExtend",kind:k,id,months:+b.dataset.m===12?12:1}; if(tsel) body.tariff=tsel.value;
@@ -14025,6 +14228,12 @@ const st=document.createElement("style"); st.textContent=`
 .sb-g{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sb-set label.sb-f{gap:3px;min-width:0;justify-content:flex-end}.sb-f small{font-size:12px;color:var(--muted,#888);line-height:1.2}.sb-f input{width:100%;min-width:0;box-sizing:border-box;border-radius:10px}
 .sb-f.fo input{background:rgba(124,92,255,.14)!important;border-color:rgba(124,92,255,.5)!important}.sb-tdel{margin-top:8px;font-size:13px;color:var(--muted,#888)}
 .sb-add{display:block;width:100%;min-height:48px;margin-top:10px;border:1.5px dashed rgba(124,92,255,.7);border-radius:14px;background:none;color:#8f78ff;font:inherit;font-weight:700;cursor:pointer}.sb-add[hidden]{display:none}.sb-f.w{grid-column:1/-1}.sb-f input::placeholder{opacity:.4}
+.sb-rb{flex:0 0 100%;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}.sb-rb .btn{min-height:36px}.sb-off .sb-rt{opacity:.55}.sb-chip.off{background:rgba(127,127,127,.28);color:inherit;margin-left:6px;vertical-align:middle}.sb-offn{font-size:12.5px;color:var(--muted,#777)}
+.sb-del{width:min(440px,100%)}.sb-del h2{margin:0 0 10px;font-size:19px;line-height:1.25;overflow-wrap:anywhere}.sb-dn{margin:0 0 8px;font-size:16px}.sb-dt{margin:0 0 4px;font-size:14px;line-height:1.4;color:var(--muted,#666)}.sb-de{margin:8px 0 0;font-size:14px;font-weight:600;color:#c0392b}
+.sb-db{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:14px}.sb-db .btn{min-height:44px;min-width:104px}.sb-dgo:not([disabled]){background:#c0392b!important;color:#fff!important;border-color:#c0392b!important}.sb-dgo[disabled]{opacity:.45;cursor:not-allowed}
+html.vt[data-vt="dark"] .sb-de{color:#ff8a7a!important}
+html.vt.sk.sk.sk.sk[data-vt="dark"] .sb-del .btn.sb-dgo:not([disabled]){background:#b9382c!important;border:1px solid #b9382c!important;color:#fff!important}html.vt.sk.sk.sk.sk[data-vt="dark"] .sb-rb .btn.danger{color:#ff9d8f!important}
+html.vt.sk.sk.sk.sk[data-vt="dark"] .sb-del .sb-st.warn,html.vt.sk.sk.sk.sk[data-vt="dark"] .sb-del .sb-st.warn *{color:#4a3800!important}html.vt.sk.sk.sk.sk[data-vt="dark"] .sb-del .sb-st.bad,html.vt.sk.sk.sk.sk[data-vt="dark"] .sb-del .sb-st.bad *{color:#5a1710!important}
 html.vt.sk.sk.sk[data-vt="dark"] .sb-tc{border:1px solid rgba(255,255,255,.10)!important;background:#30302e!important}html.vt.sk.sk.sk[data-vt="dark"] .sb-tc.best{border:2px solid #7c5cff!important}
 html.vt.sk.sk.sk[data-vt="dark"] .sb-f.fo input{background:rgba(124,92,255,.2)!important;border:1px solid rgba(124,92,255,.65)!important}html.vt.sk.sk.sk[data-vt="dark"] .sb-note{border:1px solid rgba(124,92,255,.5)!important}html.vt.sk.sk.sk[data-vt="dark"] .sb-add{border:1.5px dashed rgba(124,92,255,.8)!important}
 
@@ -22384,7 +22593,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="0ad20649e2";
+const CHK_BUILD="ecc3eb15d2";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -23590,11 +23799,16 @@ function dkCard(o,seen,today){
   if(late) tip.push(late.tip); else if(o.deadline&&!shpClosed(o)) tip.push("срок "+shpDM(o.deadline));
   if(nw) tip.push("новое в чате"); if(kw) tip.push("клиент написал"); if(rem) tip.push("замечание клиента"); if(o.stage==="lost"&&o.reason) tip.push("причина: "+o.reason);
   const ty=o.otype==="gift"?"подарок":o.otype==="repair"?"ремонт":"";
-  const m=sum?shpMoney(sum):late?late.t:"";
+  const m=sum?shpMoney(sum):"";
+  /* 12.11 Кирилл: «Тут нужен инфо и кто делает заказы» — на карточке кто ведёт и мастер; просрочка словами, цена обычная */
+  const who=[o.owner?"👤 "+o.owner:"",o.master&&o.master!==o.owner?"🔨 "+o.master:""].filter(Boolean).join(" · ");
+  const lt=late?"⏰ "+late.t+(o.deadline&&late.t.indexOf("просрочен")===0?" (срок "+shpDM(o.deadline)+")":""):"";
   return `<button type="button" class="shp-card dk-c${late?" late":""}" data-act="shp-open" data-id="${esc(o.id)}" data-s="${esc(key)}" data-own="${esc(String(o.owner||"").trim().toLowerCase())}"${sum?` data-sum="${esc(String(sum))}"`:""} title="${esc(tip.join(" · "))}" aria-label="${esc(tip.join(", "))}">`
     +`<span class="dk-t"><i class="dk-dot" aria-hidden="true"></i><b>№ ${esc(o.num)}</b></span><span class="dk-n">${esc(o.client||"Без имени")}</span>`
     +(step||ty?`<span class="dk-st">${esc([step,ty].filter(Boolean).join(" · "))}</span>`:"")
-    +(m?`<span class="dk-m${sum?"":" dk-lt"}">${esc(m)}</span>`:"")
+    +(who?`<span class="dk-who">${esc(who)}</span>`:"")
+    +(lt?`<span class="dk-late">${esc(lt)}</span>`:"")
+    +(m?`<span class="dk-m">${esc(m)}</span>`:"")
     +(nw||kw||rem?`<i class="dk-new" aria-hidden="true"></i>`:"")+`</button>`; }
 /* «Сдано» по месяцам: последний месяц открыт, прошлые свёрнуты (нажать на месяц — открыть); при поиске видно всё найденное */
 function dkMonths(g,seen,today){ const yNow=new Date().getFullYear(); let h="", last=null, n=0;
@@ -23687,7 +23901,7 @@ html[data-vt="dark"]{--dk-lane:#1f1e1d;--dk-card:#30302e;--dk-line:rgba(255,255,
 .dk-c .dk-n{font-size:14px;line-height:1.25;font-weight:600;color:var(--dk-ink);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto}
 .dk-c .dk-st{font-size:12px;line-height:1.25;font-weight:500;color:var(--dk-mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dk-c .dk-m{min-width:0;margin-top:1px;font-size:12.5px;line-height:1.25;font-weight:500;color:var(--dk-mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dk-c.late .dk-m{color:var(--dk-bad);font-weight:700}.dk-c .dk-m.dk-lt{white-space:normal}
+.dk-c .dk-who{font-size:12.5px;color:var(--dk-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dk-c .dk-late{font-size:12.5px;font-weight:700;color:var(--dk-bad)}.dk-c .dk-m.dk-lt{white-space:normal}
 .dk-c .dk-new{position:absolute;top:9px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--dk-bad)}
 #shpKb.dk .dk-mon{display:flex;flex-direction:column}#shpKb.dk .dk-mon[hidden]{display:none}
 #shpKb.dk .dk-monh{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 5px;width:100%;min-height:32px;margin:0 0 4px;padding:4px 16px 4px 3px;position:relative;border:0;border-radius:8px;background:none;color:var(--dk-mut);font:inherit;font-size:12px;line-height:1.3;text-align:left;cursor:pointer}
@@ -25039,7 +25253,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="0ad20649e2";/*cehqr-build*/
+  const BUILD="ecc3eb15d2";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
