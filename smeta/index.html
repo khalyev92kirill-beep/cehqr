@@ -18310,21 +18310,28 @@ function qkBrand(it){ const g=String(it.g||""), m=/^Каталог (\w+)/.exec(g
 function qkSecItems(key){ const D=S.cat&&S.cat.data; if(!D) return null; const S0=QK_SEC.find(x=>x[0]===key); if(!S0) return [];
   if(key==="other") return []; return D.items.filter(it=>!/^(Листовые|Кромочные|Материалы для построения|Инструменты)/.test(it.g)&&(S0[3].test(it.g)||(S0[4]&&!/^Фурнитура/.test(it.g)&&S0[4].test(it.n)))&&!/Подъ[её]мн/.test(key==="hinge"?it.g:"")); }
 /* Кирилл 07.11 (вариант А): «Материалы» сразу списком по порядку — ЛДСП → МДФ и фасады → Кромка → Столешница → Фартук → Петли → Ящики… Нажали — раскрылось. */
-function qkMatListHtml(c,q){ const GR=c.GR||[], inG=new Set(GR.flatMap(g=>g.rows)), isM=k=>/^МДФ/.test(k), rest=cat=>c.items.filter(y=>y.cat===cat&&!inG.has(y)&&!y.pvh);
+function qkSecMap(c,q){ const GR=c.GR||[], inG=new Set(GR.flatMap(g=>g.rows)), isM=k=>/^МДФ/.test(k), rest=cat=>c.items.filter(y=>y.cat===cat&&!inG.has(y)&&!y.pvh);
   const by={}; c.items.filter(x=>x.cat==="furn"||x.cat==="other").forEach(x=>{ const k=qkSecOf(x); (by[k]=by[k]||[]).push(x); });
   const empty=!c.items.length&&!(q.pr||[]).length;
   const mat=[["m:ldsp","ЛДСП",GR.filter(g=>!isM(g.key)&&g.key!=="Кромка (общая)"),rest("ldsp"),"ldsp","+ ЛДСП — из базы (Egger, ExtraVert, Kastamonu…)"],["m:mdf","МДФ и фасады",GR.filter(g=>isM(g.key)),rest("front"),"front","+ МДФ / фасад — из базы"],["m:edge","Кромка",GR.filter(g=>g.key==="Кромка (общая)"),rest("edge"),"edge","+ Кромка — из базы"]];
-  const row=(k,n,cnt,sum,body,def)=>{ let op=S.qkSecOpen===k; if(!op){ try{ const o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); op=o["sec:"+k]===1||(o["sec:"+k]!==0&&def); }catch(_){ op=def; } }
-    return `<div class="qk-sec${op?" on":""}"><button type="button" class="qk-sech" data-qsec="${esc(k)}" data-qop="${op?1:0}"><b>${op?"▾":"▸"} ${esc(n)}</b><span>${cnt?`${cnt} поз. · ${N(sum)}`:"—"}</span></button>${op?`<div class="qk-secb">${body}</div>`:""}</div>`; };
   const E={}, cfg=qkSecCfg();
+  /* 12.11 (плитки сметы): у каждого раздела — название, сумма, позиции (G — группы листов с распилом и кромлением, rows — остальные строки) и body() — тот же список, что раньше */
   mat.forEach(([k,n,G,R0,cat,lab])=>{ const cnt=G.reduce((a,g)=>a+g.rows.length,0)+R0.length, sum=G.reduce((a,g)=>a+g.sum,0)+R0.reduce((a,x)=>a+x.sum,0); const nm=cfg.names[k]||n;
-    E[k]={cnt,html:()=>row(k,nm,cnt,sum,qkGroupsHtml(c,q,G)+R0.map(x=>qkRowHtml(x,cat)).join("")+`<button type="button" class="qk-add" data-qk="add" data-c="${cat}">${esc(lab)}</button>`,cnt>0||(empty&&k==="m:ldsp"))}; });
+    E[k]={cnt,sum,n:nm,G,rows:R0,cat,def:cnt>0||(empty&&k==="m:ldsp"),body:()=>qkGroupsHtml(c,q,G)+R0.map(x=>qkRowHtml(x,cat)).join("")+`<button type="button" class="qk-add" data-qk="add" data-c="${cat}">${esc(lab)}</button>`}; });
   { const L=c.items.filter(y=>y.cat==="front"&&y.pvh), sum=L.reduce((a,x)=>a+x.sum,0), nm=cfg.names["m:pvh"]||"Фасады ПВХ (заказные)";
-    E["m:pvh"]={cnt:L.length,html:()=>row("m:pvh",nm,L.length,sum,qkPvhSecHtml(c,q,L),L.length>0)}; }
-  qkSecAll(q).filter(x=>!/^m:/.test(x[0])).forEach(([k,n])=>{ const L=by[k]||[], sum=L.reduce((a,x)=>a+x.sum,0), nm=cfg.names[k]||n;
-    E[k]={cnt:L.length,html:()=>row(k,nm,L.length,sum,L.map(x=>qkRowHtml(x,x.cat)).join("")+`<button type="button" class="qk-add" data-qsp="${esc(k)}">+ ${esc(nm)} — из раздела</button>`,L.length>0)}; });
+    E["m:pvh"]={cnt:L.length,sum,n:nm,G:[],rows:L,cat:"front",def:L.length>0,body:()=>qkPvhSecHtml(c,q,L)}; }
+  const secs=qkSecAll(q).filter(x=>!/^m:/.test(x[0]));
+  secs.forEach(([k,n])=>{ const L=by[k]||[], sum=L.reduce((a,x)=>a+x.sum,0), nm=cfg.names[k]||n;
+    E[k]={cnt:L.length,sum,n:nm,G:[],rows:L,def:L.length>0,body:()=>L.map(x=>qkRowHtml(x,x.cat)).join("")+`<button type="button" class="qk-add" data-qsp="${esc(k)}">+ ${esc(nm)} — из раздела</button>`}; });
+  /* позиции с разделом, которого уже нет в списке (свой раздел удалили) — в старом списке их не видно; плитки покажут в «Прочем» (extra) */
+  Object.keys(by).filter(k=>!E[k]).forEach(k=>{ const L=by[k], sum=L.reduce((a,x)=>a+x.sum,0), nm=k.replace(/^c:/,"");
+    E[k]={cnt:L.length,sum,n:nm,G:[],rows:L,def:true,extra:true,body:()=>L.map(x=>qkRowHtml(x,x.cat)).join("")}; });
+  return {E,cfg}; }
+function qkMatListHtml(c,q){ const {E,cfg}=qkSecMap(c,q);
+  const row=(k,n,cnt,sum,body,def)=>{ let op=S.qkSecOpen===k; if(!op){ try{ const o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); op=o["sec:"+k]===1||(o["sec:"+k]!==0&&def); }catch(_){ op=def; } }
+    return `<div class="qk-sec${op?" on":""}"><button type="button" class="qk-sech" data-qsec="${esc(k)}" data-qop="${op?1:0}"><b>${op?"▾":"▸"} ${esc(n)}</b><span>${cnt?`${cnt} поз. · ${N(sum)}`:"—"}</span></button>${op?`<div class="qk-secb">${body()}</div>`:""}</div>`; };
   const order=qkSecOrder(q), hid=order.filter(k=>cfg.hide[k]&&!(E[k]&&E[k].cnt)).length;
-  return `<section class="qk-card qk-secs"><div class="qk-secbar"><button type="button" class="btn sm" data-qsecedit="1">✏️ Порядок разделов</button></div>`+order.filter(k=>E[k]&&(!cfg.hide[k]||E[k].cnt)).map(k=>E[k].html()).join("")
+  return `<section class="qk-card qk-secs"><div class="qk-secbar"><button type="button" class="btn sm" data-qsecedit="1">✏️ Порядок разделов</button></div>`+order.filter(k=>E[k]&&(!cfg.hide[k]||E[k].cnt)).map(k=>{ const e=E[k]; return row(k,e.n,e.cnt,e.sum,e.body,e.def); }).join("")
     +`${hid?`<p class="qk-sub" style="margin:8px 0 0">Скрыто разделов: ${hid} — «✏️ Порядок разделов»</p>`:""}<button type="button" class="qk-add qk-secadd2" data-qsecadd="1">+ Свой раздел · двери в профиле · купе · работы</button></section>`; }
 /* Кирилл 07.11 (вариант А): дизайнер сам упорядочивает разделы — ↑↓, скрыть, переименовать, свои разделы навсегда. Хранится в «Мои цены» (secCfg); главный дизайнер — «для всех». */
 const QK_MATSEC=[["m:ldsp","ЛДСП"],["m:mdf","МДФ и фасады"],["m:pvh","Фасады ПВХ (заказные)"],["m:edge","Кромка"]];   /* 12.11: «Фасады ПВХ (заказные)» — из прайса поставщика */
@@ -18408,7 +18415,7 @@ function qkExHtml(c,q){ return `<section class="qk-card"><div class="qk-h"><b>Р
   <button type="button" class="qk-add" data-qk="exadd">+ Свой расход</button></section>`; }
 function qkKHtml(c,d){ const ks=[0.45,0.44,0.43,0.42,0.41,0.4,0.39,0.38,0.37,0.36,0.35,0.34,0.33], cur=Math.round(c.k*100)/100;
   return `<section class="qk-card"><div class="qk-h"><b>Материал + расходы (М)</b><span><b>${N(c.M)} ₽</b></span></div>
-  <p class="qk-sub">материал ${N(c.mat)}${c.gW?` + распил и кромление ${N(c.gW)}`:""} + расходы ${N(c.exS)}${c.wZ?` + услуги поставщиков (${esc(typeof wrSrcBoth==="function"?wrSrcBoth():"Азуми / Ремстрой")}) ${N(c.wZ)}`:""}</p><p class="qk-lbl">Коэффициент — мебель = М ÷ коэффициент</p>
+  <p class="qk-sub">материал ${N(Math.round(c.M)-Math.round(c.gW)-Math.round(c.exS)-Math.round(c.wZ))}${c.gW?` + распил и кромление ${N(c.gW)}`:""} + расходы ${N(c.exS)}${c.wZ?` + услуги поставщиков (${esc(typeof wrSrcBoth==="function"?wrSrcBoth():"Азуми / Ремстрой")}) ${N(c.wZ)}`:""} = <b>${N(c.M)}</b>${c.fz>0?`<br>заказные фасады (ПВХ и др.) ${N(c.fz)} — считаются отдельно, не в «М»: клиенту ${N(c.fz)} ÷ ${kf2(c.kF)} = ${N(c.fzP)}`:""}</p><p class="qk-lbl">Коэффициент — мебель = М ÷ коэффициент</p>
   <div class="qk-ks">${ks.map(v=>`<button type="button" class="qk-k${Math.abs(v-cur)<1e-6?" on":""}" data-qk="k" data-v="${v}">${v.toFixed(2).replace(".",",")}</button>`).join("")}<input class="qk-in qk-kin" data-qf="_k" data-t="n" inputmode="decimal" value="${ks.some(v=>Math.abs(v-cur)<1e-6)?"":nf(cur)}" placeholder="своё" aria-label="Свой коэффициент"></div>
   <div class="qk-tot"><span>Мебель (${N(c.M)} ÷ ${nf(cur)})</span><b>${N(c.meb)}</b></div></section>`; }
 function qkWkHtml(c,q){ const rows=c.W.map(x=>x.prof||x.prod?`<div class="qk-r qk-r2"><span class="qk-tl">${esc(x.n)}<small>${x.prod?"из шкафов":"из вкладки «Профиль»"} · ${N(x.qq)} × ${N(x.p)}</small></span><b class="qk-s">${N(x.sum)}</b></div>`
@@ -18453,6 +18460,10 @@ function qkClientHtml(c,q){ const it=c.items.filter(x=>x.q>0&&x.n), dr=(q.dr||[]
     ${(q.pr||[]).map((p,i)=>{ const G=c.PR.gens[i]; return G&&G.ok?`<div class="qk-r qk-r2"><span class="qk-tl">Шкаф распашной ${N(p.W)} × ${N(p.H)} × ${N(p.D)}<small>${esc(qkWardSub(G))}</small></span></div>`:""; }).join("")}
     ${dr.map(x=>`<div class="qk-r qk-r2"><span class="qk-tl">Дверь в алюминиевом профиле ${N(x.w)} × ${N(x.h)}${+x.n>1?" — "+x.n+" шт":""}</span></div>`).join("")}</section>
     <section class="qk-card qk-sum">${[["Изготовление, монтаж и доставка",c.total]].filter(x=>x[1]>0).map(([n,v])=>`<div class="qk-tot"><span>${n}</span><span>${N(v)}</span></div>`).join("")}<div class="qk-tot big"><span>Итого</span><b>${N(c.total)} ₽</b></div></section>`; }
+/* 12.11 (плитки сметы): тело шагов «Цена» и «Отправить» — отдельно, чтобы тот же расчёт показывал экран «Итог и КП» (noBw — без блока работ, он в своей плитке; noSum — без строки итога) */
+function qkPriceBody(c,q,d,sm,noBw){ return qkExHtml(c,q)+qkKHtml(c,d)+qkFzHtml(c,q)+(noBw?"":qkBwHtml(c,q))+qkInHtml()+(typeof mkRefHtml==="function"&&!window.APP_DES?mkRefHtml(c):"")+(typeof smDiscHtml==="function"?smDiscHtml(c,d):"")+qkSumHtml(c,sm).replace(/<div class="qk-acts">[\s\S]*?<\/div><\/section>$/,"</section>"); }
+function qkSendBody(c,q,sm,noSum){ return (noSum?"":`<section class="qk-card"><div class="qk-tot big"><span>Клиенту</span><b>${N(c.total)} ₽</b></div>${c.noPrice?`<p class="qk-bad">У ${c.noPrice} ${pl(c.noPrice,"позиции","позиций","позиций")} нет цены — шаг 2</p>`:""}</section>`)+`
+    <div class="smn-send">${!sm.saved||sm.dirty?`<button type="button" class="btn primary" data-act="sm-save">💾 Сохранить смету</button>`:`<p class="muted">✓ Смета сохранена</p>`}<button type="button" class="btn" data-act="sm-kp">📄 КП в PDF — отправить клиенту</button>${(q.pr||[]).length?`<button type="button" class="btn" data-qk="3d" data-i="-1">🧊 3D и раскрой — показать клиенту</button>`:""}<button type="button" class="btn" data-act="sm-client">Для клиента — без внутренних цифр</button>${sm.deal?`<button type="button" class="btn" data-act="sm-sum">Записать сумму в сделку</button>`:`<button type="button" class="btn ok-btn" data-act="sm-deal">✅ Клиент согласен → создать сделку</button>`}</div>`; }
 const QK_STEPS=[["what","Что делаем"],["mat","Материалы"],["price","Цена"],["send","Отправить"]];
 const QK_HINT={what:"Двери-купе: размер проёма и сколько дверей — дальше профиль и заполнение. Кухни и шкафы из модулей — в «Проекте».",mat:"Проверьте материалы. Из шкафа — посчитаны сами, нужно только выбрать декор и цену. Добавьте, что ещё нужно.",price:"Расходы и коэффициент. Выбрали коэффициент — цена клиенту пересчитается сразу.",send:"Сохраните смету и отправьте клиенту: КП в PDF или 3D."};
 function qkStepsHtml(c,q,d,sm){ const cur=QK_STEPS.some(x=>x[0]===q.stp)?q.stp:"what", ix=QK_STEPS.findIndex(x=>x[0]===cur), has=(q.pr||[]).length||(q.dr||[]).length||(q.kp||[]).length||c.items.some(x=>x.q>0);
@@ -18463,9 +18474,8 @@ function qkStepsHtml(c,q,d,sm){ const cur=QK_STEPS.some(x=>x[0]===q.stp)?q.stp:"
     h+=card('data-qk="kupe" data-i="-1"',"🚪","Двери-купе (раздвижные)","ширина и высота проёма, сколько дверей → профиль, зеркало, стекло, ЛДСП",!has)+card('data-qk="stp" data-v="mat"',"✚","Только материалы","ЛДСП, кромка, фурнитура — списком");
     if((q.pr||[]).length) h+=qkWardListHtml(c,q); if((q.kp||[]).length) h+=kpqListHtml(c,q); if((q.dr||[]).length) h+=qkProfHtml(c,q); }
   if(cur==="mat") h+=qkMatListHtml(c,q);   /* Кирилл 07.11: всё списком по порядку */
-  if(cur==="price") h+=qkExHtml(c,q)+qkKHtml(c,d)+qkFzHtml(c,q)+qkBwHtml(c,q)+qkInHtml()+(typeof mkRefHtml==="function"&&!window.APP_DES?mkRefHtml(c):"")+(typeof smDiscHtml==="function"?smDiscHtml(c,d):"")+qkSumHtml(c,sm).replace(/<div class="qk-acts">[\s\S]*?<\/div><\/section>$/,"</section>");
-  if(cur==="send") h+=`<section class="qk-card"><div class="qk-tot big"><span>Клиенту</span><b>${N(c.total)} ₽</b></div>${c.noPrice?`<p class="qk-bad">У ${c.noPrice} ${pl(c.noPrice,"позиции","позиций","позиций")} нет цены — шаг 2</p>`:""}</section>
-    <div class="smn-send">${!sm.saved||sm.dirty?`<button type="button" class="btn primary" data-act="sm-save">💾 Сохранить смету</button>`:`<p class="muted">✓ Смета сохранена</p>`}<button type="button" class="btn" data-act="sm-kp">📄 КП в PDF — отправить клиенту</button>${(q.pr||[]).length?`<button type="button" class="btn" data-qk="3d" data-i="-1">🧊 3D и раскрой — показать клиенту</button>`:""}<button type="button" class="btn" data-act="sm-client">Для клиента — без внутренних цифр</button>${sm.deal?`<button type="button" class="btn" data-act="sm-sum">Записать сумму в сделку</button>`:`<button type="button" class="btn ok-btn" data-act="sm-deal">✅ Клиент согласен → создать сделку</button>`}</div>`;
+  if(cur==="price") h+=qkPriceBody(c,q,d,sm);
+  if(cur==="send") h+=qkSendBody(c,q,sm);
   h+=`</div>`; const pv=QK_STEPS[ix-1], nx=QK_STEPS[ix+1];
   h+=`<div class="smn-stn">${pv?`<button type="button" class="btn" data-qk="stp" data-v="${pv[0]}">‹ ${pv[1]}</button>`:"<span></span>"}${nx?`<button type="button" class="btn primary" data-qk="stp" data-v="${nx[0]}">Дальше: ${nx[1].toLowerCase()} ›</button>`:""}</div>`;
   return h; }
@@ -19124,7 +19134,11 @@ function qkKupeModal(i){ const q=S.shop.sm.data.qk; q.kp=q.kp||[]; const old=i>=
   draw(); }
 (function(){ const st=document.createElement("style"); st.textContent=`.kpq-pic{background:#fff;border-radius:12px;padding:8px;margin:6px 0 10px}.kpq-pic svg{max-height:300px!important}.kpq-sch{display:flex;flex-wrap:wrap;gap:6px}.kpq-sec{display:flex;align-items:center;gap:8px;margin:6px 0}.kpq-sec>span{width:20px;font-weight:700;color:var(--muted,#999)}.kpq-sec input{width:84px;padding:8px;border-radius:9px;border:1px solid var(--line,#444);background:var(--bg,#111);color:inherit;font:inherit;text-align:center}
 .kpq-ls{display:grid;gap:6px}.kpq-l{display:grid;grid-template-columns:1fr 90px 70px;gap:8px;align-items:center}.kpq-l span{display:flex;flex-direction:column;min-width:0}.kpq-l small{color:var(--muted,#999)}.kpq-l input{width:100%;padding:8px;border-radius:9px;border:1px solid var(--line,#444);background:var(--bg,#111);color:inherit;font:inherit;text-align:right}.kpq-l>b{text-align:right}`; document.head.appendChild(st); })();
-window.__qk={calc:qkCalc,setData:x=>{QK.set=x;},push:(c,x)=>qkPush(c,x),price:(n,u)=>qkPrice(n,u),sec:QK_SEC,secOf:x=>qkSecOf(x),catIt:n=>qkCatIt(n),cat:QK_CAT};
+window.__qk={calc:qkCalc,setData:x=>{QK.set=x;},push:(c,x)=>qkPush(c,x),price:(n,u)=>qkPrice(n,u),sec:QK_SEC,secOf:x=>qkSecOf(x),catIt:n=>qkCatIt(n),cat:QK_CAT,
+  /* 12.11 (плитки сметы, tools/site_plitki.js): то же, что рисует список разделов, — частями */
+  x:{set:()=>QK.set,load:f=>qkLoad(f),secMap:(c,q)=>qkSecMap(c,q),secAll:q=>qkSecAll(q),rowHtml:(x,k)=>qkRowHtml(x,k),groupsHtml:(c,q,G)=>qkGroupsHtml(c,q,G),bwRow:(x,q)=>qkBwRowHtml(x,q),bwFoot:c=>qkBwFootHtml(c),
+    ward:(c,q)=>qkWardListHtml(c,q),kupe:(c,q)=>kpqListHtml(c,q),prof:(c,q)=>qkProfHtml(c,q),price:(c,q,d,sm,noBw)=>qkPriceBody(c,q,d,sm,noBw),send:(c,q,sm,noSum)=>qkSendBody(c,q,sm,noSum),steps:(c,q,d,sm)=>qkStepsHtml(c,q,d,sm),
+    secPick:k=>qkSecPick(k),add:cat=>qkAddModal(cat),dirty:()=>qkDirty(),secAdd:()=>qkSecAddModal()}};
 
 /* вид сметы — всегда виден сверху, «Сменить» */
 function smKindBar(){ const sm=S.shop.sm; if(!sm||!sm.data||S.shop.smClient) return ""; const q=!!sm.data.qk;
@@ -19234,17 +19248,20 @@ function qkBwCalc(q,items,sh,em,noMont,dlvOn){ const bw=qkBwFix(q), dir=typeof w
     const auto=au?Math.round((AUTO[au]||0)*100)/100:0, qq=set?num(bw[id]):auto; if(!set&&!(auto>0)) return;
     const own=(r[5]||"s")==="s", mont=+r[8]===1, dlvW=own&&+r[8]===2, off=(!!noMont&&mont)||(!!dlvOn&&dlvW), rate=own?+r[3]||0:+r[7]||0, raw=off?0:qq*rate;
     if(own) sum+=raw; else zak+=raw; if(!off) cl+=qq*(+r[4]||0);
-    L.push({id,n:r[1],u:r[2],r:rate,cl:+r[4]||0,src:r[5]||"s",own,mont,dlvW,off,au:!set&&!!au,canAu:!!au,auto:au?auto:null,q:qq,sum:Math.round(raw)}); });
+    L.push({id,wait:!!r[11],n:r[1],u:r[2],r:rate,cl:+r[4]||0,src:r[5]||"s",own,mont,dlvW,off,au:!set&&!!au,canAu:!!au,auto:au?auto:null,q:qq,sum:Math.round(raw)}); });
   sum=Math.round(sum); zak=Math.round(zak); cl=Math.round(cl);
   /* «по работам» включается, когда дизайнер сам вписал хоть одну свою работу (сборку, установку…) или поправил количество; одни «само»-строки (листы, петли) — это ещё не все работы, бригаде остаётся 21 % */
-  const on=sum>0&&L.some(x=>x.own&&!x.au&&!x.off&&x.q>0);
+  const on=sum>0&&L.some(x=>x.own&&!x.au&&!x.off&&x.q>0)&&!L.some(x=>x.wait&&!x.off&&x.q>0);   /* 13.11: есть работа «ждёт проверки» — бригаде по работам не считаем (как на сервере) */
   return {L,sum,zak,cl,on,works:on?L.filter(x=>x.q>0).map(x=>[x.id,x.q]):L.filter(x=>x.q>0&&!x.own).map(x=>[x.id,x.q]),asm:L.some(x=>x.own&&!x.canAu&&!x.off&&x.q>0)}; }
-function qkBwHtml(c,q){ const B=c.BW; if(!B) return ""; const op=S.qkBwOpen!==false, SRC=typeof wrSrcName==="function"?{a:wrSrcName("a"),r:wrSrcName("r")}:{a:"Азуми",r:"Ремстрой"}, old=Math.round((c.M/0.45)*0.21);
-  const row=x=>`<div class="qk-r qk-r2${x.off?" qk-off":""}"><span class="qk-tl">${esc(x.n)}<small>${x.own?N(x.r)+" ₽ мастеру за "+esc(x.u):esc(SRC[x.src]||"услуга")+": закупка "+N(x.r)+" ₽ за "+esc(x.u)}${x.au?" · само":""}${x.off?(x.dlvW?" · везёт водитель — бригаде не идёт":" · монтаж — не идёт"):x.dlvW?" · если в сделке выберут водителя — бригаде не идёт":""}</small></span>${inp("bw."+x.id,x.au?"":(q.bw[x.id]==null?"":q.bw[x.id]),"n",x.au?F(x.q):"0","qk-q","Сколько: "+x.n)}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${x.sum?N(x.sum):"—"}</b>${x.canAu?`<span class="qk-x" style="visibility:hidden" aria-hidden="true">×</span>`:`<button type="button" class="qk-x" data-qbw="del" data-c="${esc(x.id)}" aria-label="Убрать работу">×</button>`}</div>`;
+function qkBwRowHtml(x,q){ const SRC=typeof wrSrcName==="function"?{a:wrSrcName("a"),r:wrSrcName("r")}:{a:"Азуми",r:"Ремстрой"};
+  return `<div class="qk-r qk-r2${x.off?" qk-off":""}"><span class="qk-tl">${esc(x.n)}<small>${x.wait?"ждёт проверки директора — мастеру пока 0":x.own?N(x.r)+" ₽ мастеру за "+esc(x.u):esc(SRC[x.src]||"услуга")+": закупка "+N(x.r)+" ₽ за "+esc(x.u)}${x.au?" · само":""}${x.off?(x.dlvW?" · везёт водитель — бригаде не идёт":" · монтаж — не идёт"):x.dlvW?" · если в сделке выберут водителя — бригаде не идёт":""}</small></span>${inp("bw."+x.id,x.au?"":(q.bw[x.id]==null?"":q.bw[x.id]),"n",x.au?F(x.q):"0","qk-q","Сколько: "+x.n)}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${x.sum?N(x.sum):"—"}</b>${x.canAu?`<span class="qk-x" style="visibility:hidden" aria-hidden="true">×</span>`:`<button type="button" class="qk-x" data-qbw="del" data-c="${esc(x.id)}" aria-label="Убрать работу">×</button>`}</div>`; }
+function qkBwFootHtml(c){ const B=c.BW, old=Math.round((c.M/0.45)*0.21); if(!B) return "";
+  return `<div class="qk-bwf">${B.on?`<div><span>Бригаде по работам</span><b>${N(B.sum)} ₽</b></div>${c.M>0?`<div class="muted"><span>для сравнения: 21 % было бы</span><span>${N(old)} ₽</span></div>`:""}`:`<div><span>Бригаде сейчас — 21 %</span><b>${N(old)} ₽</b></div><div class="muted"><span>посчитано само, без сборки и установки</span><span>${N(B.sum)} ₽</span></div>`}${B.zak?`<div><span>Услуги поставщиков (${esc(typeof wrSrcBoth==="function"?wrSrcBoth():"Азуми / Ремстрой")}) — закупка, входит в «М»</span><b>${N(B.zak)} ₽</b></div>`:""}${B.cl?`<div class="muted"><span>эти же работы по цене «клиенту»</span><span>${N(B.cl)} ₽</span></div>`:""}</div>`; }
+function qkBwHtml(c,q){ const B=c.BW; if(!B) return ""; const op=S.qkBwOpen!==false, row=x=>qkBwRowHtml(x,q);
   return `<section class="qk-card qk-bw"><button type="button" class="qk-h qk-gh" data-qbw="1" aria-expanded="${op}"><b>${op?"▾":"▸"} Работы</b><span><b>${B.on?"бригаде "+N(B.sum)+" ₽":"бригаде пока 21 %"}</b></span></button>
   ${op?`<p class="qk-sub">${B.on?"Бригада получает сумму «мастеру» по этим работам — вместо 21 %.":"Добавьте сборку и установку кнопкой ниже — тогда бригада получит сумму «мастеру» по работам. Пока своих работ не вписали — бригаде 21 %, как раньше."} Пустое поле — посчитано само (листы, кромка, петли, ручки, направляющие); впишите своё — заменит.</p>${B.L.map(row).join("")}
     <button type="button" class="qk-add" data-qbw="add">+ Работа из справочника</button>
-    <div class="qk-bwf">${B.on?`<div><span>Бригаде по работам</span><b>${N(B.sum)} ₽</b></div>${c.M>0?`<div class="muted"><span>для сравнения: 21 % было бы</span><span>${N(old)} ₽</span></div>`:""}`:`<div><span>Бригаде сейчас — 21 %</span><b>${N(old)} ₽</b></div><div class="muted"><span>посчитано само, без сборки и установки</span><span>${N(B.sum)} ₽</span></div>`}${B.zak?`<div><span>Услуги поставщиков (${esc(typeof wrSrcBoth==="function"?wrSrcBoth():"Азуми / Ремстрой")}) — закупка, входит в «М»</span><b>${N(B.zak)} ₽</b></div>`:""}${B.cl?`<div class="muted"><span>эти же работы по цене «клиенту»</span><span>${N(B.cl)} ₽</span></div>`:""}</div>`:""}</section>`; }
+    ${qkBwFootHtml(c)}`:""}</section>`; }
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qbw]"); if(!b) return; e.preventDefault(); e.stopPropagation(); const a=b.dataset.qbw, sm=S.shop&&S.shop.sm, q=sm&&sm.data&&sm.data.qk;
   if(a==="add"){ if(!q||typeof wrPickModal!=="function") return; return wrPickModal((code,n,w)=>{ q.bw=q.bw||{}; q.bw[code]=Math.round((num(q.bw[code])+n)*100)/100; qkDirty(); S.qkBwOpen=true; toast("Работа добавлена: "+w[1]); shpRenderKeep(); }); }
   if(a==="del"){ if(!q) return; delete q.bw[b.dataset.c]; qkDirty(); return shpRenderKeep(); }
@@ -22603,7 +22620,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="8586b93bc3";
+const CHK_BUILD="4d7cd44fb9";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -23770,166 +23787,476 @@ html[data-vt="light"] .shp-tabs button:is(:active,.perf-press){background:rgba(0
 })();
 try{ window.W24FAST=FAST; }catch(_){}
 
-/* ---------- ДОСКА СДЕЛОК «как на образце» (Кирилл 11.11, вариант А) ----------
-   «Сделки → Доска»: колонки этапов с цветной полоской сверху, под названием — число сделок; в колонке — маленькие карточки:
-   цветная точка этапа и «№ 108» жирным, ниже клиент, ниже сумма серым (сумму видят только те, кому можно — S.shop.sumSee).
-   Компьютер — все колонки сразу; телефон — видно примерно 2,5 колонки, остальные листаются пальцем вбок (с прилипанием к колонке).
-   Просрочено — сумма красная (кому суммы не видны — красная строка «просрочен N дн.»); новое в чате / клиент написал / замечание — красная точка в углу.
-   «Сдано» — по месяцам (последний месяц открыт, прошлые — по нажатию), «Отказ» — колонка появляется, когда в ней есть сделки или пока тащат карточку.
-   Разметка прежняя (#shpKb.shp-kb > .shp-col[data-st] > .shp-colb > .shp-card[data-id]) — поэтому перетаскивание, права (shpCanStage, techGate),
-   вопрос о долге (site_dolg.js), поиск и «Все / Мои» (shpApplyFilter), открытие сделки работают как раньше, без правок в site_shop.js.
-   Шаблоны этапов (brdTpl): колонки доски прежние, на карточке — название шага шаблона, если в колонке шагов несколько или шаг назван иначе.
+/* ---------- ДОСКА СДЕЛОК (Кирилл 12.11: «как в ролике» + 10 улучшений; до этого — 11.11, вариант А) ----------
+   «Сделки → Доска». Разметка прежняя (#shpKb.shp-kb > .shp-col[data-st] … .shp-card[data-id]) — поэтому перетаскивание, права (shpCanStage, techGate),
+   вопрос о долге (site_dolg.js), «Все / Мои» и открытие сделки работают как раньше, без правок в site_shop.js. Деньги, права и формулы не трогаем.
+   ВИД. Телефон: все этапы ровно по ширине экрана (сетка, без прокрутки вбок), дуга цвета этапа, короткое имя, число крупно, сумма этапа «318 т»;
+     карточка — «№108» / фамилия / «95 т», слева полоска цвета этапа; не влезло — «+N ещё». Доска — примерно до середины экрана,
+     ниже — «Нажмите на этап»: нажали — этап подсвечен, ниже его сделки крупно (кто ведёт, мастер, срок, «Позвонить», «→ следующий этап», «Открыть»).
+     «Проект готов» и «Отказ» на телефоне видны, только когда в них есть сделки (или пока тащат карточку).
+   Компьютер (от 900): доска на весь экран, карточки крупные (ведёт / мастер / опоздание), наведение мышки — окошко со сроком и оплатой.
+   Просрочено (dkLate) — красная рамка и свечение, плавно мигает раз в секунду.
+   УЛУЧШЕНИЯ: 1) перетащить карточку в другой этап (палец — подержать и тянуть; мышь — сразу) — тот же shpMoveStage, после — «✓ №105 → Закупка. Уведомили: …»;
+     2) «застряла» — жёлтая и «9дн», если в этапе дольше нормы (нормы меняет директор: «⋯ → Нормы „застряла“», настройка dkNorm);
+     3) «💰 Ждём доплат» над доской (только кто видит оплаты); 4) кружки мастеров; 5) «Сдано» — последние 30 дней, остальное «🗄 архив N» (по месяцам);
+     6) долгое нажатие без движения — меню (позвонить, чат, срок, следующий этап, открыть); на компьютере — правая кнопка мыши;
+     7) значки 💰 (предоплата есть) и ⚠ (сумма есть, предоплаты нет — как r3IsDog в site_r3.js: договор = предоплата > 0);
+     8) порядок: просроченные, потом по ближайшему сроку, потом остальные; 9) поиск — найденные жёлтым, остальные бледные; 10) окошко по наведению.
+   Шаблоны этапов (brdTpl): колонки прежние, на карточке (компьютер) — название шага, если оно что-то добавляет.
    Старый вид телефона «один этап на экран» (site_simple.js) для этой доски выключен (kb.classList.contains("dk")). */
 (function(){
 if(typeof shpBoardHtml!=="function"||typeof shpApplyFilter!=="function"||typeof SHP_ST==="undefined") return;
 const DK_N={dogovor:"Договор",zamer:"Замер",proekt:"Проект",proekt_ok:"Проект готов",zakup:"Закупка",cex:"Производство",montazh:"Монтаж",closed:"Сдано",lost:"Отказ"};
+const DK_S={proekt_ok:"Готов",cex:"Произв."};          /* короткое имя этапа — в узкой колонке телефона */
+const DK_GO={cex:"Цех"};                                /* кнопка «→ Цех» */
+const DK_TO={zakup:"Закупку"};                          /* меню: «→ В «Закупку»» */
 const DK_C={dogovor:"#7C6CF6",zamer:"#F2B824",proekt:"#56B6F7",proekt_ok:"#2CC5B5",zakup:"#F28C28",cex:"#A78BFA",montazh:"#34C77B",closed:"#8E94A0",lost:"#E5534B"};
 const DK_PAL=["#7C6CF6","#F2B824","#56B6F7","#2CC5B5","#F28C28","#A78BFA","#34C77B","#EC6FA8","#8E94A0"];   /* свой этап без цвета — по порядку */
+const DK_MC=["#56B6F7","#34C77B","#F2B824","#A78BFA","#F28C28","#2CC5B5","#EC6FA8","#7C6CF6"];             /* кружки мастеров */
 const DK_MON=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
-S.shop.dkMon=S.shop.dkMon||{};
+const DK_NORM={dogovor:3,zamer:3,proekt:5,proekt_ok:0,zakup:7,cex:7,montazh:3};   /* «застряла»: дней на этапе по умолчанию (0 — не следить) */
+const DK_DAY=864e5, DK_OLD=30;                          /* «Сдано» и «Отказ»: старше 30 дней — в архив */
+S.shop.dkMon=S.shop.dkMon||{}; S.shop.dkArch=S.shop.dkArch||{};
 function dkName(s){ return DK_N[s.k]||s.s||s.n; }
+function dkShort(s){ return DK_S[s.k]||DK_N[s.k]||s.s||s.n; }
 function dkColor(s,i){ return DK_C[s.k]||DK_PAL[i%DK_PAL.length]; }
 function dkWide(){ return innerWidth>=900; }
-/* просрочено: срок сделки, замер (пока сделка до замера), монтаж (пока в производстве / на монтаже) — как красные метки на прежней карточке */
+function dkOn(){ return S.view==="shop"&&S.shop.mode==="board"&&!!document.querySelector("#shpKb.dk"); }
+function dkNorms(){ const c=(S.shop.cfgAll&&S.shop.cfgAll.dkNorm)||{}, o={}; Object.keys(DK_NORM).forEach(k=>{ const v=c[k]; o[k]=v===undefined||v===null||v===""?DK_NORM[k]:Math.max(0,Math.round(+v)||0); }); return o; }
+function dkCanNorm(){ return !!S.shop.tech&&(typeof techCan!=="function"||techCan("cfg")); }
+/* оплаты видит только тот, кому сервер их отдал (как «Ждём от клиентов» на Пульте дня, site_vxnav.js) */
+function dkPayOk(){ return !!S.shop.sumSee&&(!!S.shop.tech||(S.shop.orders||[]).some(o=>o.prepay!==undefined&&o.prepay!==null)); }
+function dkRest(o){ const s=+o.sum||0; return s>0?Math.max(0,s-(+o.prepay||0)):0; }
+function dkRub(n){ return Math.round(+n||0).toLocaleString("ru-RU"); }
+function dkK(n){ n=Math.round(+n||0); if(!n) return ""; if(n>=1e6) return String(Math.round(n/1e5)/10).replace(".",",")+" млн"; if(n>=1000) return Math.round(n/1000)+" т"; return n+" ₽"; }
+function dkTel(p){ const t=String(p||"").replace(/[^\d+]/g,""); return t.replace(/\D/g,"").length>=5?t:""; }
+function dkSur(c){ const w=String(c||"").trim().split(/\s+/).filter(Boolean); if(!w.length) return "Без имени"; return w[0].replace(/[^0-9A-Za-zА-Яа-яЁё]/g,"").length<=3&&w[1]?w[0]+" "+w[1]:w[0]; }
+function dkNum(n){ const m=/^(0+)(\d.*)$/.exec(String(n)); return m?`<i class="dk-z">${esc(m[1])}</i>${esc(m[2])}`:esc(String(n)); }   /* «№0017» в узкой колонке — «№17» */
+function dkRole(name){ const k=shpNorm(name), p=(S.shop.staff||[]).find(x=>shpNorm(x.name)===k), r=p?String(p.role||"").trim().split(/[\s,/]+/)[0]:""; return r?r.toLowerCase():""; }
+/* просрочено: срок сделки, замер (пока сделка до замера), монтаж (пока в производстве / на монтаже) */
 function dkLate(o,today){ if(shpClosed(o)) return null;
-  if(o.deadline){ const d=shpDays(today,o.deadline); if(d>0) return {t:"просрочен "+d+" дн.",tip:"просрочен на "+d+" дн."}; }
+  if(o.deadline){ const d=shpDays(today,o.deadline); if(d>0) return {t:"просрочен "+d+" дн.",tip:"просрочен на "+d+" дн.",dl:1}; }
   if((o.stage==="dogovor"||o.stage==="zamer")&&o.zamerDate&&o.zamerDate<today) return {t:"замер "+shpDM(o.zamerDate),tip:"замер был "+shpDM(o.zamerDate)};
   if((o.stage==="cex"||o.stage==="montazh")&&o.montazhDate&&o.montazhDate<today) return {t:"монтаж "+shpDM(o.montazhDate),tip:"монтаж был "+shpDM(o.montazhDate)};
   return null; }
+/* «застряла»: на этапе дольше нормы */
+function dkStuck(o,N){ if(shpClosed(o)) return null; const t=+o.stageAt||+o.created||0, n=N[o.stage]||0; if(!t||!n) return null; const d=Math.floor((Date.now()-t)/DK_DAY); return d>n?{d,n}:null; }
+function dkOld(o){ return shpClosed(o)&&Date.now()-(+o.stageAt||+o.created||0)>DK_OLD*DK_DAY; }
+/* следующий этап по порядку (без «Отказа») — только если этой роли его можно ставить */
+function dkNext(o){ if(!o||shpClosed(o)) return null; const L=SHP_ST.filter(s=>s.k!=="lost"), i=L.findIndex(s=>s.k===o.stage), s=i>=0?L[i+1]:null; return s&&shpCanStage(o,s.k)?s:null; }
 /* шаг шаблона этапов — показываем, только если он что-то добавляет к названию колонки */
 function dkStep(o){ try{ if(typeof brdTpl!=="function"||o.stage==="lost"||o.stage==="closed") return ""; const T=brdTpl(o); if(!T) return "";
     const i=brdIdx(o,T), st=i>=0?T.st[i]:null; if(!st||st.k!==o.stage) return ""; const nm=String(st.n||"").trim(); if(!nm) return "";
     const many=T.st.filter(x=>x.k===o.stage).length>1, col=SHP_ST.find(x=>x.k===o.stage)||{};
     return many||![DK_N[o.stage],col.n,col.s].some(x=>String(x||"").toLowerCase()===nm.toLowerCase())?nm:""; }catch(_){ return ""; } }
-function dkCard(o,seen,today){
-  const late=dkLate(o,today), nw=shpUnread(o,seen), kw=shpKUnread(o,seen), rem=typeof shpHandState==="function"&&shpHandState(o)==="rem";
-  const sum=S.shop.sumSee&&+o.sum?+o.sum:0, step=dkStep(o);
+function dkCtx(){ const tf=S.shop.tf||"all", today=shpToday(), col={}; SHP_ST.forEach((s,i)=>{ col[s.k]=dkColor(s,i); });
+  return {tf,today,col,seen:shpSeen(),N:dkNorms(),payOk:dkPayOk(),sumSee:!!S.shop.sumSee,me:shpMe(),
+    L:(S.shop.orders||[]).filter(o=>tf==="all"||(tf==="norm"?!o.otype:o.otype===tf))}; }
+/* порядок в этапе: просроченные, потом по ближайшему сроку, потом остальные; «Сдано» и «Отказ» — свежие сверху */
+function dkGroup(k,ctx){ const g=ctx.L.filter(o=>o.stage===k); if(k==="closed"||k==="lost") return g.sort((a,b)=>(b.stageAt||0)-(a.stageAt||0));
+  const r=o=>dkLate(o,ctx.today)?0:o.deadline?1:2; return g.sort((a,b)=>r(a)-r(b)||(a.deadline||"9999").localeCompare(b.deadline||"9999")||String(a.num).localeCompare(String(b.num))); }
+function dkWho(o){ return [o.owner?"👤 "+o.owner:"",o.master&&shpNorm(o.master)!==shpNorm(o.owner)?"🔨 "+o.master:""].filter(Boolean).join(" · "); }
+function dkCard(o,ctx){
+  const late=dkLate(o,ctx.today), st=late?null:dkStuck(o,ctx.N), nw=shpUnread(o,ctx.seen), kw=shpKUnread(o,ctx.seen), rem=typeof shpHandState==="function"&&shpHandState(o)==="rem";
+  const sum=ctx.sumSee&&+o.sum?+o.sum:0, step=dkStep(o), who=dkWho(o), cl=shpClosed(o);
   const key=[o.client,o.num,"№"+o.num,o.phone,String(o.phone||"").replace(/\D/g,""),o.address,o.kind].join(" ").toLowerCase();
-  const tip=["№ "+o.num,o.client||"Без имени"]; if(o.kind) tip.push(o.kind); tip.push(o.owner?"ответственный "+o.owner:"без ответственного"); if(step) tip.push("шаг: "+step);
-  if(late) tip.push(late.tip); else if(o.deadline&&!shpClosed(o)) tip.push("срок "+shpDM(o.deadline));
-  if(nw) tip.push("новое в чате"); if(kw) tip.push("клиент написал"); if(rem) tip.push("замечание клиента"); if(o.stage==="lost"&&o.reason) tip.push("причина: "+o.reason);
   const ty=o.otype==="gift"?"подарок":o.otype==="repair"?"ремонт":"";
-  const m=sum?shpMoney(sum):"";
-  /* 12.11 Кирилл: «Тут нужен инфо и кто делает заказы» — на карточке кто ведёт и мастер; просрочка словами, цена обычная */
-  const who=[o.owner?"👤 "+o.owner:"",o.master&&o.master!==o.owner?"🔨 "+o.master:""].filter(Boolean).join(" · ");
-  const lt=late?"⏰ "+late.t+(o.deadline&&late.t.indexOf("просрочен")===0?" (срок "+shpDM(o.deadline)+")":""):"";
-  return `<button type="button" class="shp-card dk-c${late?" late":""}" data-act="shp-open" data-id="${esc(o.id)}" data-s="${esc(key)}" data-own="${esc(String(o.owner||"").trim().toLowerCase())}"${sum?` data-sum="${esc(String(sum))}"`:""} title="${esc(tip.join(" · "))}" aria-label="${esc(tip.join(", "))}">`
-    +`<span class="dk-t"><i class="dk-dot" aria-hidden="true"></i><b>№ ${esc(o.num)}</b></span><span class="dk-n">${esc(o.client||"Без имени")}</span>`
+  /* значок оплаты: 💰 — предоплата есть; ⚠ — сумма есть, а предоплаты нет (подарки и закрытые — без ⚠) */
+  const ic=!ctx.payOk||cl?"":(+o.prepay||0)>0?"💰":+o.sum>0&&o.otype!=="gift"?"⚠":"";
+  const tip=["№ "+o.num,o.client||"Без имени"]; if(o.kind) tip.push(o.kind); tip.push(o.owner?"ведёт "+o.owner:"никто не ведёт"); if(o.master) tip.push("мастер "+o.master); if(step) tip.push("шаг: "+step);
+  if(late) tip.push(late.tip); else if(o.deadline&&!cl) tip.push("срок "+shpDM(o.deadline)); if(st) tip.push("на этапе "+st.d+" дн., обычно до "+st.n);
+  if(ic==="💰") tip.push("предоплата есть"); if(ic==="⚠") tip.push("предоплаты нет");
+  if(nw) tip.push("новое в чате"); if(kw) tip.push("клиент написал"); if(rem) tip.push("замечание клиента"); if(o.stage==="lost"&&o.reason) tip.push("причина: "+o.reason);
+  return `<button type="button" class="shp-card dk-c${late?" late":st?" stuck":""}" data-act="shp-open" data-id="${esc(o.id)}" data-s="${esc(key)}" data-own="${esc(String(o.owner||"").trim().toLowerCase())}" data-ms="${esc(shpNorm(o.master))}"${sum?` data-sum="${esc(String(sum))}"`:""} aria-label="${esc(tip.join(", "))}">`
+    +`<span class="dk-t"><b>№${dkNum(o.num)}</b></span><span class="dk-n">${esc(o.client||"Без имени")}</span><span class="dk-ns">${esc(dkSur(o.client))}</span>`
     +(step||ty?`<span class="dk-st">${esc([step,ty].filter(Boolean).join(" · "))}</span>`:"")
     +(who?`<span class="dk-who">${esc(who)}</span>`:"")
-    +(lt?`<span class="dk-late">${esc(lt)}</span>`:"")
-    +(m?`<span class="dk-m">${esc(m)}</span>`:"")
+    +(sum?`<span class="dk-m">${esc(dkK(sum))}</span>`:"")
+    +(late?`<span class="dk-late"><i aria-hidden="true">⏰</i><em> ${esc(late.t)}</em></span>`:"")
+    +(st?`<span class="dk-days">${st.d}дн<em> на этапе</em></span>`:"")
+    +(ic?`<i class="dk-ic" aria-hidden="true">${ic}</i>`:"")
     +(nw||kw||rem?`<i class="dk-new" aria-hidden="true"></i>`:"")+`</button>`; }
-/* «Сдано» по месяцам: последний месяц открыт, прошлые свёрнуты (нажать на месяц — открыть); при поиске видно всё найденное */
-function dkMonths(g,seen,today){ const yNow=new Date().getFullYear(); let h="", last=null, n=0;
+/* архив по месяцам: последний месяц открыт, прошлые свёрнуты (нажать на месяц — открыть) */
+function dkMonths(g,ctx){ const yNow=new Date().getFullYear(); let h="", last=null, n=0;
   g.forEach(o=>{ const t=o.stageAt||o.created, d=t?new Date(t):null, k=d?d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"):"none";
     if(k!==last){ if(last!==null) h+=`</div>`; last=k; const open=S.shop.dkMon[k]!==undefined?!!S.shop.dkMon[k]:n===0; n++;
       h+=`<div class="dk-mon${open?"":" shut"}" data-mk="${k}"><button type="button" class="dk-monh" data-dk="mon" aria-expanded="${open}"><b>${d?DK_MON[d.getMonth()]+(d.getFullYear()!==yNow?" "+d.getFullYear():""):"Без даты"}</b><span class="dk-mc"></span></button>`; }
-    h+=dkCard(o,seen,today); });
+    h+=dkCard(o,ctx); });
   return h+(last!==null?`</div>`:""); }
+/* ---- то, что над доской и под ней: «Ждём доплат», мастера, сделки нажатого этапа ---- */
+function dkMine(L,ctx){ return S.shop.mine?L.filter(o=>shpNorm(o.owner)===ctx.me):L; }
+function dkPayHtml(ctx){ if(!ctx.payOk) return ""; const P=dkMine(ctx.L,ctx).filter(o=>!shpClosed(o)&&dkRest(o)>0).map(o=>({o,r:dkRest(o)})).sort((a,b)=>b.r-a.r); if(!P.length) return "";
+  const tot=P.reduce((a,x)=>a+x.r,0), open=!!S.shop.dkPay;
+  return `<button type="button" class="dk-payb" data-dk="pay" aria-expanded="${open}"><span>💰 Ждём доплат · ${P.length} ${shpPl(P.length,"сделка","сделки","сделок")}</span><b>${esc(dkRub(tot))} ₽ <i aria-hidden="true">${open?"⌄":"›"}</i></b></button>`
+    +(open?`<div class="dk-payl">${P.map(({o,r})=>`<button type="button" class="dk-pr" data-act="shp-open" data-id="${esc(o.id)}"><span class="dk-pl"><b>№${esc(o.num)} ${esc(o.client||"Без имени")}</b><small>${esc(dkName(SHP_ST.find(s=>s.k===o.stage)||{k:o.stage}))} · оплачено ${esc(dkRub(+o.prepay||0))} из ${esc(dkRub(o.sum))} ₽</small></span><b class="dk-ps">${esc(dkRub(r))} ₽</b></button>`).join("")}</div>`:""); }
+function dkMsList(ctx){ const M=new Map(); ctx.L.forEach(o=>{ if(shpClosed(o)) return; const k=shpNorm(o.master); if(!k) return; let m=M.get(k); if(!m){ m={k,name:String(o.master).trim(),n:0,late:0}; M.set(k,m); } m.n++; if(dkLate(o,ctx.today)) m.late++; });
+  const L=[...M.values()].sort((a,b)=>a.name.localeCompare(b.name,"ru")); L.forEach((m,i)=>{ const a=m.name.charAt(0).toUpperCase(); m.c=DK_MC[i%DK_MC.length]; m.l=L.filter(x=>x.name.charAt(0).toUpperCase()===a).length>1?a+m.name.charAt(1).toLowerCase():a; }); return L; }
+function dkMsHtml(ctx){ if(shpMyRole()==="master"){ S.shop.dkMs=""; return ""; } const L=dkMsList(ctx); if(!L.length){ S.shop.dkMs=""; return ""; } if(S.shop.dkMs&&!L.some(m=>m.k===S.shop.dkMs)) S.shop.dkMs="";
+  const sel=S.shop.dkMs||"";
+  return `<span class="dk-msl">Мастера:</span>${L.map(m=>`<button type="button" class="dk-mb" data-dk="ms" data-v="${esc(m.k)}" data-n="${esc(m.name)}" style="--mc:${m.c}" aria-pressed="${sel===m.k}" title="${esc(m.name)} — ${m.n} ${shpPl(m.n,"сделка","сделки","сделок")}${m.late?", опозданий "+m.late:""}" aria-label="${esc(m.name)}: ${m.n} ${shpPl(m.n,"сделка","сделки","сделок")}${m.late?", опозданий "+m.late:""}">${esc(m.l)}${m.late?`<i>${m.late}</i>`:""}</button>`).join("")}`
+    +(sel?`<button type="button" class="dk-mx" data-dk="ms" data-v="">✕ все</button>`:""); }
+function dkBig(o,ctx,i){ const late=dkLate(o,ctx.today), st=late?null:dkStuck(o,ctx.N), cl=shpClosed(o), sum=ctx.sumSee&&+o.sum?+o.sum:0, tel=dkTel(o.phone), nx=dkNext(o);
+  const who=[o.owner?"👤 "+o.owner:"👤 никто не ведёт",o.master&&shpNorm(o.master)!==shpNorm(o.owner)?"🔨 "+o.master:"",o.kind||""].filter(Boolean).join(" · ");
+  const ln=late?`<p class="dk-bl bad">⏰ ${esc(late.t)}${late.dl?" (срок "+esc(shpDM(o.deadline))+")":""}</p>`:st?`<p class="dk-bl warn">🟡 на этапе ${st.d} дн. — обычно до ${st.n}</p>`
+    :o.stage==="lost"?`<p class="dk-bl">отказ${o.reason?": "+esc(o.reason):""}</p>`:cl?`<p class="dk-bl">сдано${o.stageAt?" "+esc(shpDM(shpToday(new Date(o.stageAt)))):""}</p>`:o.deadline?`<p class="dk-bl">срок ${esc(shpDM(o.deadline))}</p>`:"";
+  return `<article class="dk-big${late?" late":st?" stuck":""}" style="--dkc:${ctx.col[o.stage]||"#8E94A0"};--dki:${Math.min(i,10)}">
+    <button type="button" class="dk-bh" data-act="shp-open" data-id="${esc(o.id)}"><b>№${esc(o.num)} ${esc(o.client||"Без имени")}</b>${sum?`<span>${esc(shpMoney(sum))}</span>`:""}</button>
+    <p class="dk-bw">${esc(who)}</p>${ln}
+    <div class="dk-bb">${tel?`<a class="dk-b" href="tel:${esc(tel)}" aria-label="Позвонить клиенту">📞 Позвонить</a>`:""}${nx?`<button type="button" class="dk-b" data-dk="next" data-id="${esc(o.id)}">→ ${esc(DK_GO[nx.k]||dkName(nx))}</button>`:""}<button type="button" class="dk-b" data-act="shp-open" data-id="${esc(o.id)}">Открыть</button></div></article>`; }
+function dkPanelHtml(ctx){ if(dkWide()) return ""; const k=S.shop.dkSel||"", s=k?SHP_ST.find(x=>x.k===k):null;
+  if(!s) return `<p class="dk-ph">👆 Нажмите на этап —<br>его сделки появятся здесь<small>Подержите карточку — появится меню. Подержите и тяните — перенесёте на другой этап.</small></p>`;
+  const g=dkMine(dkGroup(k,ctx),ctx), cl=k==="closed"||k==="lost", rec=cl?g.filter(o=>!dkOld(o)):g, old=cl?g.filter(dkOld):[], sum=ctx.sumSee?rec.reduce((a,o)=>a+(+o.sum||0),0):0, ao=!!S.shop.dkArch[k];
+  let h=`<div class="dk-pt"><b>${esc(dkName(s))} · ${rec.length}</b><button type="button" class="dk-px" data-dk="st" data-v="${esc(k)}">${sum?esc(dkRub(sum))+" ₽ · ":""}закрыть ✕</button></div>`;
+  h+=rec.length?rec.map((o,i)=>dkBig(o,ctx,i)).join(""):`<p class="dk-pn">${old.length?"За последние 30 дней — пусто.":"На этом этапе сделок нет."}</p>`;
+  if(old.length){ h+=`<button type="button" class="dk-pa" data-dk="arch" data-v="${esc(k)}" aria-expanded="${ao}">🗄 архив ${old.length} <i aria-hidden="true">${ao?"⌄":"›"}</i></button>`;
+    if(ao){ const yNow=new Date().getFullYear(); let last=null; old.forEach((o,i)=>{ const t=o.stageAt||o.created, d=t?new Date(t):null, mk=d?d.getFullYear()+"-"+d.getMonth():"none";
+      if(mk!==last){ last=mk; h+=`<h3 class="dk-pm">${d?DK_MON[d.getMonth()]+(d.getFullYear()!==yNow?" "+d.getFullYear():""):"Без даты"}</h3>`; } h+=dkBig(o,ctx,i); }); } }
+  return h; }
 function dkBoardHtml(){
-  const tf=S.shop.tf||"all", L=S.shop.orders.filter(o=>tf==="all"||(tf==="norm"?!o.otype:o.otype===tf)), seen=shpSeen(), today=shpToday();
-  const nT=t=>S.shop.orders.filter(o=>!shpClosed(o)&&o.otype===t).length, find=S.shop.vxFind||!!S.shop.q||dkWide();
-  const sortF=(a,b)=>(a.deadline||"9999").localeCompare(b.deadline||"9999")||String(a.num).localeCompare(String(b.num)), byAt=(a,b)=>(b.stageAt||0)-(a.stageAt||0);
-  const cols=SHP_ST.map((s,i)=>({s,i,g:L.filter(o=>o.stage===s.k).sort(s.k==="closed"||s.k==="lost"?byAt:sortF)})), vis=cols.filter(c=>c.s.k!=="lost"||c.g.length);
-  const nD=vis.reduce((a,c)=>a+c.g.length,0);
-  let h=`<div class="head vx-thead dk-head"><div class="dk-ttl"><h1>Доска</h1><span class="dk-sub" id="dkSub">${S.shop.loaded?vis.length+" "+shpPl(vis.length,"этап","этапа","этапов")+" · "+nD+" "+shpPl(nD,"сделка","сделки","сделок"):""}</span></div>
-    <button type="button" class="btn vx-ib dk-fb" data-act="vx-find" aria-label="Поиск сделки" aria-pressed="${!!(S.shop.vxFind||S.shop.q)}">${shpIco("search",20)}</button>
+  const ctx=dkCtx(), wide=dkWide(), tf=ctx.tf; S.shop.dkW=wide; const find=!!(S.shop.vxFind||S.shop.q), hasT=(S.shop.orders||[]).some(o=>o.otype);
+  /* нормы «застряла» лежат в настройках компании — читаем один раз, тихо */
+  if(S.shop.loaded&&!S.shop.cfgTried&&typeof cfgLoad==="function"){ try{ cfgLoad().then(()=>{ try{ if(S.shop.cfgAll&&S.shop.cfgAll.dkNorm&&dkOn()&&!document.querySelector(".modal,#dkMenu")) shpRenderKeep(); }catch(_){} }); }catch(_){} }
+  const my=typeof shpMyOpen==="function"?shpMyOpen():{n:0,late:0}, nb=my.late||my.n;
+  let rest=""; try{ if(typeof vxChips==="function") rest=String(vxChips()).replace(/^\s*<div class="vx-chips">/,"").replace(/<\/div>\s*$/,"").replace(/<button type="button" class="vx-chip" data-act="shp-tab" data-v="tasks"[^>]*>[\s\S]*?<\/button>/,""); }catch(_){ rest=""; }
+  let h=`<div class="head vx-thead dk-head"><div class="dk-ttl"><h1>Доска</h1><span class="dk-sub" id="dkSub"></span></div>
     <details class="vx-menu"><summary class="btn vx-ib" aria-label="Ещё действия">${shpIco("more",20)}</summary><div class="vx-pop" role="menu">
-      <button type="button" role="menuitem" data-act="shp-tab" data-v="chess">▦ График работы</button><button type="button" role="menuitem" data-act="shp-reload">↻ Обновить</button></div></details>
+      <button type="button" role="menuitem" data-act="shp-tab" data-v="chess">▦ График работы</button><button type="button" role="menuitem" data-act="shp-reload">↻ Обновить</button>
+      ${hasT?[["all","Все заказы"],["norm","Только обычные"],["gift","Только подарки"],["repair","Только ремонты"]].map(([k,n])=>`<button type="button" role="menuitem" data-act="shp-tf" data-v="${k}" aria-pressed="${tf===k}">${tf===k?"✓ ":""}${n}</button>`).join(""):""}
+      ${dkCanNorm()?`<button type="button" role="menuitem" data-dk="norm">⚙ Нормы «застряла»</button>`:""}</div></details>
     <button type="button" class="btn primary vx-new" data-act="shp-new">+ Заказ</button></div>
-  <div class="dk-bar">${typeof vxSwitch==="function"?vxSwitch():""}<div class="shp-seg dk-mine" role="group" aria-label="Какие заказы показать"><button type="button" data-act="shp-mine" data-v="0" aria-pressed="${!S.shop.mine}">Все</button><button type="button" data-act="shp-mine" data-v="1" aria-pressed="${!!S.shop.mine}">Мои</button></div>
-    ${S.shop.orders.some(o=>o.otype)?`<div class="shp-seg shp-tseg" role="group" aria-label="Тип заказов">${[["all","Все"],["norm","Обычные"],["gift","Подарки"],["repair","Ремонты"]].map(([k,n])=>`<button type="button" data-act="shp-tf" data-v="${k}" aria-pressed="${tf===k}">${n}${k==="gift"||k==="repair"?(nT(k)?" "+nT(k):""):""}</button>`).join("")}</div>`:""}
-    ${find?`<div class="vx-find dk-find"><input id="shpQ" type="search" value="${esc(S.shop.q||"")}" placeholder="Поиск: клиент, №, телефон, адрес" aria-label="Поиск заказа" enterkeyhint="search" autocomplete="off"></div>`:""}</div>`;
+  <div class="dk-bar${find&&!wide?" dk-bar-q":""}" id="dkBar">${typeof vxSwitch==="function"?vxSwitch():""}
+    <button type="button" class="dk-ch" data-act="shp-mine" data-v="0" aria-pressed="${!S.shop.mine}">Все</button><button type="button" class="dk-ch" data-act="shp-mine" data-v="1" aria-pressed="${!!S.shop.mine}">👤 Мои</button>
+    ${S.shop.v2?`<button type="button" class="dk-ch dk-bell${my.late?" bad":""}" data-act="shp-tab" data-v="tasks" data-tt="me" aria-label="Мои задачи: ${my.n}${my.late?", просрочено "+my.late:""}">🔔${nb?` <b>${nb}</b>`:""}</button>`:""}
+    <button type="button" class="dk-ch dk-fb" data-act="vx-find" aria-label="Поиск сделки">🔍</button>${rest}
+    ${find||wide?`<div class="dk-find"><span aria-hidden="true">🔍</span><input id="shpQ" type="search" value="${esc(S.shop.q||"")}" placeholder="${wide?"Поиск: клиент, №, телефон, адрес":"Клиент или № сделки"}" aria-label="Поиск сделки" enterkeyhint="search" autocomplete="off"><button type="button" class="dk-qx" data-dk="qx" aria-label="Сбросить поиск"${wide&&!S.shop.q?" hidden":""}>✕</button></div>`:""}</div>`;
   if(!S.shop.loaded) return h+`<p class="muted">${S.shop.err?"Нет связи с таблицей. Нажмите «Обновить».":"Загружаю заказы…"}</p>`;
-  if(typeof vxChips==="function") h+=vxChips(); else if(typeof shpTaskStrip==="function") h+=shpTaskStrip();
-  if(!L.length) h+=`<p class="note dk-note">Заказов пока нет. Нажмите «+ Заказ», когда будет первый замер.</p>`;
-  h+=`<div class="shp-kb dk" id="shpKb">`+cols.map(({s,i,g})=>{ const sum=S.shop.sumSee?g.reduce((a,o)=>a+(+o.sum||0),0):0;
-    return `<section class="shp-col dk-col${s.k==="lost"&&!g.length?" dk-off":""}" data-st="${s.k}" style="--dkc:${dkColor(s,i)}" aria-label="${esc(s.n)}"><header class="shp-colh"><h2 title="${esc(s.n)}">${esc(dkName(s))}</h2><span class="dk-hn"><span class="shp-cnt">${g.length}</span>${S.shop.sumSee?`<span class="shp-csum">${esc(shpKbSum(sum))}</span>`:""}</span></header>
-      <div class="shp-colb">${s.k==="closed"?dkMonths(g,seen,today):g.map(o=>dkCard(o,seen,today)).join("")}<p class="shp-none" hidden></p></div></section>`; }).join("")+`</div>`;
-  h+=`<p class="muted shp-nofind" hidden>Ничего не нашлось.</p><p class="muted shp-hint dk-hint">${matchMedia("(pointer:coarse)").matches||matchMedia("(any-pointer:coarse)").matches||navigator.maxTouchPoints>0?"Чтобы перенести заказ на другой этап — нажмите на карточку и подержите, потом тащите. Или откройте сделку и выберите этап.":"Карточку можно перетащить мышкой на другой этап."}</p>`;
+  h+=`<div class="dk-pay" id="dkPay">${dkPayHtml(ctx)}</div><div class="dk-ms" id="dkMs">${dkMsHtml(ctx)}</div>`;
+  if(!ctx.L.length) h+=`<p class="note dk-note">Заказов пока нет. Нажмите «+ Заказ», когда будет первый замер.</p>`;
+  h+=`<div class="shp-kb dk" id="shpKb">`+SHP_ST.map((s,i)=>{ const g=dkGroup(s.k,ctx), cl=s.k==="closed"||s.k==="lost", rec=cl?g.filter(o=>!dkOld(o)):g, old=cl?g.filter(dkOld):[];
+    return `<section class="shp-col dk-col${s.k==="lost"||s.k==="proekt_ok"?" dk-opt":""}${S.shop.dkSel===s.k&&!wide?" sel":""}" data-st="${s.k}" style="--dkc:${dkColor(s,i)}" aria-label="${esc(s.n)}"><header class="shp-colh" data-dk="st"><h2 title="${esc(s.n)}"><span class="dk-hl">${esc(dkName(s))}</span><span class="dk-hs">${esc(dkShort(s))}</span></h2><span class="shp-cnt">${rec.length}</span>${S.shop.sumSee?`<span class="shp-csum"></span>`:""}</header>
+      <div class="shp-colb"><div class="dk-cards">${rec.map(o=>dkCard(o,ctx)).join("")}</div><button type="button" class="dk-more" data-dk="st" hidden></button>${old.length?`<div class="dk-arch${S.shop.dkArch[s.k]?"":" shut"}" data-ak="${s.k}"><button type="button" class="dk-archb" data-dk="arch" data-v="${s.k}" aria-expanded="${!!S.shop.dkArch[s.k]}">🗄 архив <b>${old.length}</b></button><div class="dk-archl">${dkMonths(old,ctx)}</div></div>`:""}<p class="shp-none" hidden></p></div></section>`; }).join("")+`</div>`;
+  h+=`<div class="dk-panel" id="dkPanel">${dkPanelHtml(ctx)}</div><p class="muted shp-nofind" hidden>Ничего не нашлось.</p>`;
+  if(wide) h+=`<p class="muted shp-hint dk-hint">Карточку можно перетащить мышкой на другой этап · правая кнопка мыши — меню сделки${ctx.payOk?" · 💰 предоплата есть · ⚠ без предоплаты":""}</p>`;
+  else if(ctx.payOk) h+=`<p class="muted dk-hint">💰 предоплата есть · ⚠ без предоплаты</p>`;
   return h; }
 { const _dkB=shpBoardHtml; shpBoardHtml=function(){
   if(S.shop.bview!=="board"&&typeof vxTodayHtml==="function") return _dkB.apply(this,arguments);   /* вид «Сегодня» — как был */
   try{ return dkBoardHtml(); }catch(e){ console.error("доска",e); return _dkB.apply(this,arguments); } }; }
-/* после поиска / «Мои» / перерисовки: какие колонки видны, счёт по месяцам, «N этапов · M сделок» */
+/* во сколько раз страница уменьшена (zoom у body на компьютере и Андроиде): нужно, чтобы ставить окошки и карточку «в руке» ровно под палец */
+let dkZp=null;
+function dkZoom(){ try{ if(!dkZp||!dkZp.isConnected){ dkZp=document.createElement("div"); dkZp.style.cssText="position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;transform:translate(200px,0)"; document.body.appendChild(dkZp); }
+  const z=dkZp.getBoundingClientRect().left/200; return z>0.3&&z<3?z:1; }catch(_){ return 1; } }
+/* не влезло в колонку телефона — «+N ещё» (нажать — откроются сделки этапа) */
+function dkFit(kb,wide){ kb.querySelectorAll(":scope > .shp-col").forEach(col=>{ const box=col.querySelector(".dk-cards"), more=col.querySelector(".dk-more"); if(!box||!more) return;
+  const cards=[...box.children].filter(c=>c.classList.contains("shp-card")); cards.forEach(c=>c.classList.remove("dk-over")); more.hidden=true; if(wide||col.offsetParent===null) return;
+  const vis=cards.filter(c=>!c.hidden); if(!vis.length) return; const bot=()=>box.getBoundingClientRect().bottom+0.5;
+  if(vis[vis.length-1].getBoundingClientRect().bottom<=bot()) return;
+  more.hidden=false; more.textContent="+"+vis.length+" ещё"; const lim=bot(); let n=0;
+  for(let i=vis.length-1;i>=0;i--){ if(vis[i].getBoundingClientRect().bottom<=lim) break; vis[i].classList.add("dk-over"); n++; }
+  more.textContent="+"+n+" ещё"; more.setAttribute("aria-label","Ещё "+n+" — показать все сделки этапа"); }); }
+/* фамилия на телефоне — целиком, одной строкой: не влезла — чуть мельче шрифт; совсем длинная — переносим */
+function dkFitNames(root){ const L=[...root.querySelectorAll(".dk-c .dk-ns")]; L.forEach(e=>{ e.style.fontSize=""; e.classList.remove("dk-wr"); });
+  const M=L.map(e=>e.offsetParent===null?null:{e,sw:e.scrollWidth,cw:e.clientWidth,fs:parseFloat(getComputedStyle(e).fontSize)||9});
+  M.forEach(m=>{ if(!m||m.sw<=m.cw+0.5||!m.cw) return; const k=m.cw/m.sw; if(k>=0.66) m.e.style.fontSize=(m.fs*k*0.97).toFixed(2)+"px"; else m.e.classList.add("dk-wr"); }); }
+/* после перерисовки, поиска, «Мои», выбора мастера или этапа: что видно, что бледное, счётчики, «+N ещё», высота доски */
 function dkSync(){ const kb=document.getElementById("shpKb"); if(!kb||!kb.classList.contains("dk")) return;
-  const q=String(S.shop.q||"").trim(), flt=!!(q||S.shop.mine); kb.classList.toggle("dk-q",!!q); let nSt=0, nD=0;
-  kb.querySelectorAll(":scope > .shp-col").forEach(col=>{ const st=col.dataset.st, n=col.querySelectorAll(".shp-card:not([hidden])").length;
-    if(st==="closed") col.hidden=flt&&n===0;
-    else if(st==="lost"){ col.hidden=false; col.classList.toggle("dk-off",n===0); }
-    if(!col.hidden&&!col.classList.contains("dk-off")){ nSt++; nD+=n; } });
+  const wide=dkWide(), ctx=dkCtx(), q=String(S.shop.q||"").trim().toLowerCase(), words=q.split(/\s+/).filter(Boolean), me=shpWho().trim().toLowerCase();
+  const pay=document.getElementById("dkPay"), msb=document.getElementById("dkMs"), pan=document.getElementById("dkPanel");
+  if(S.shop.dkSel&&(wide||!SHP_ST.some(s=>s.k===S.shop.dkSel))) S.shop.dkSel="";
+  if(pay){ const t=dkPayHtml(ctx); if(pay.dataset.h!==t){ pay.dataset.h=t; pay.innerHTML=t; } pay.hidden=!t; }
+  if(msb){ const t=dkMsHtml(ctx); if(msb.dataset.h!==t){ msb.dataset.h=t; msb.innerHTML=t; } msb.hidden=!t; }
+  const ms=S.shop.dkMs||""; let nSt=0, nD=0, nHit=0, nMs=0;
+  kb.classList.toggle("dk-q",!!q);
+  kb.querySelectorAll(":scope > .shp-col").forEach(col=>{ const st=col.dataset.st; let n=0, sum=0, hits=0;
+    col.querySelectorAll(".shp-card").forEach(c=>{ const s=c.dataset.s||"", arch=!!c.closest(".dk-arch");
+      const mine=!S.shop.mine||c.dataset.own===me, hit=!!q&&words.every(w=>s.includes(w)||(/^[\d+()-]{3,}$/.test(w)&&w.replace(/\D/g,"").length>=3&&s.includes(w.replace(/\D/g,""))));
+      c.hidden=!mine; c.classList.toggle("dk-hit",mine&&hit); c.classList.toggle("dk-dim",(!!q&&!hit)||(!!ms&&c.dataset.ms!==ms));
+      if(!mine) return; if(hit){ hits++; nHit++; } if(arch) return; n++; sum+=+c.dataset.sum||0; if(ms&&c.dataset.ms===ms) nMs++; });
+    const cnt=col.querySelector(".shp-cnt"); if(cnt) cnt.textContent=n;
+    const cs=col.querySelector(".shp-csum"); if(cs){ cs.textContent=dkK(sum); cs.title=sum?dkRub(sum)+" ₽":""; }
+    const ar=col.querySelector(".dk-arch"); let na=0; if(ar){ na=[...ar.querySelectorAll(".shp-card")].filter(c=>!c.hidden).length; ar.hidden=!na; const b=ar.querySelector(".dk-archb b"); if(b) b.textContent=na; ar.classList.toggle("shut",!S.shop.dkArch[st]); }
+    col.hidden=false; col.classList.toggle("dk-off",st==="lost"&&n===0&&na===0&&!hits); col.classList.toggle("dk-offp",col.classList.contains("dk-opt")&&n===0&&!hits);
+    col.classList.toggle("sel",!wide&&S.shop.dkSel===st);
+    if(!col.classList.contains("dk-off")&&!(col.classList.contains("dk-offp")&&!wide)){ nSt++; nD+=n; } });
   kb.querySelectorAll(".dk-mon").forEach(g=>{ const v=[...g.querySelectorAll(".shp-card")].filter(c=>!c.hidden), sum=v.reduce((a,c)=>a+(+c.dataset.sum||0),0);
-    g.hidden=!v.length; const mc=g.querySelector(".dk-mc"); if(mc) mc.textContent=v.length+(sum?" · "+shpKbSum(sum):""); });
-  const sub=document.getElementById("dkSub"); if(sub) sub.textContent=nSt+" "+shpPl(nSt,"этап","этапа","этапов")+" · "+nD+" "+shpPl(nD,"сделка","сделки","сделок");
-  const nf=document.querySelector(".shp-nofind"); if(nf){ nf.hidden=!(nD===0&&S.shop.orders.length&&flt); if(!nf.hidden) nf.textContent=S.shop.mine&&!q?"Нет заказов, где ответственный — «"+shpWho()+"».":"Ничего не нашлось."; } }
+    g.hidden=!v.length; const mc=g.querySelector(".dk-mc"); if(mc) mc.textContent=v.length+(sum?" · "+dkK(sum):""); });
+  const sub=document.getElementById("dkSub"); if(sub){ const mb=ms&&msb?msb.querySelector('.dk-mb[aria-pressed="true"]'):null, tfN={norm:"только обычные",gift:"только подарки",repair:"только ремонты"}[ctx.tf]||"";
+    sub.textContent=!S.shop.loaded?"":q?"найдено: "+nHit:mb?mb.dataset.n+" · "+nMs+" "+shpPl(nMs,"сделка","сделки","сделок"):nSt+" "+shpPl(nSt,"этап","этапа","этапов")+" · "+nD+" "+shpPl(nD,"сделка","сделки","сделок")+(tfN?" · "+tfN:""); }
+  const nf=document.querySelector(".shp-nofind"); if(nf){ const none=q?nHit===0:nD===0; nf.hidden=!(none&&S.shop.orders.length&&(q||S.shop.mine)); if(!nf.hidden) nf.textContent=S.shop.mine&&!q?"Нет заказов, где ответственный — «"+shpWho()+"».":"Ничего не нашлось."; }
+  const qx=document.querySelector("#dkBar .dk-qx"); if(qx&&wide) qx.hidden=!q;
+  /* размеры: ширина колонки (от неё — буквы на телефоне), высота доски на компьютере — до низа экрана */
+  const c0=[...kb.children].find(c=>c.offsetParent!==null); if(c0) kb.style.setProperty("--dkw",c0.offsetWidth+"px");
+  if(wide){ try{ const z=dkZoom(), r=kb.getBoundingClientRect(), bar=document.querySelector(".shp-tabs.bottom"), br=bar&&bar.offsetParent!==null?bar.getBoundingClientRect():null, bh=br&&br.width>br.height&&br.top>innerHeight/2?Math.max(0,innerHeight-br.top):0, hn=document.querySelector(".dk-hint"), hh=hn?hn.getBoundingClientRect().height+10:0;
+      kb.style.height=Math.max(340,Math.round((innerHeight-(r.top+scrollY)-bh-hh-14)/z))+"px"; }catch(_){} } else kb.style.height="";
+  if(!wide) dkFitNames(kb); dkFit(kb,wide);
+  if(pan){ const t=dkPanelHtml(ctx); if(pan.dataset.h!==t){ pan.dataset.h=t; pan.innerHTML=t; pan.classList.toggle("dk-in",!!S.shop.dkIn); } S.shop.dkIn=0; }
+  if(dkTipC&&!dkTipC.isConnected) dkTipHide(); }
 { const _dkF=shpApplyFilter; shpApplyFilter=function(){ const r=_dkF.apply(this,arguments); try{ dkSync(); }catch(e){ console.error(e); } return r; }; }
-/* месяц в «Сдано»: открыть / свернуть (без перерисовки; выбор помнится, пока открыто приложение) */
-document.addEventListener("click",ev=>{ const b=ev.target.closest&&ev.target.closest('#shpKb.dk [data-dk="mon"]'); if(!b) return; ev.preventDefault();
-  const g=b.closest(".dk-mon"); if(!g) return; const open=g.classList.contains("shut"); g.classList.toggle("shut",!open); b.setAttribute("aria-expanded",String(open)); S.shop.dkMon[g.dataset.mk]=open; });
-/* карточка «в руке» при перетаскивании — того же вида (она вне доски, цвет этапа берём с карточки) */
-/* страница уменьшена (zoom у body на компьютере и Андроиде) — раньше карточка «в руке» отставала от курсора; считаем масштаб и ставим её ровно под курсор */
-if(typeof shpDragBegin==="function"&&typeof shpDragMove==="function"&&typeof SHP_DR!=="undefined"){
+{ let t=0; const again=()=>{ clearTimeout(t); t=setTimeout(()=>{ try{ if(!dkOn()) return; if(dkWide()!==S.shop.dkW&&!document.querySelector(".modal,#dkMenu")) shpRenderKeep(); else dkSync(); }catch(_){} },150); };
+  window.addEventListener("resize",again); try{ if(document.fonts&&document.fonts.ready) document.fonts.ready.then(again); }catch(_){} }
+/* ---- смена этапа: тот же shpMoveStage (права, вопрос о долге, откат и подсказка при отказе), после — кому ушло уведомление ---- */
+function dkTold(o,nx){ const s=SHP_ST.find(x=>x.k===nx)||{k:nx}, base="✓ №"+o.num+(o.client?" "+dkSur(o.client):"")+" → "+dkName(s);
+  toast(base); if(nx==="lost"||typeof shpTasksLoad!=="function") return;
+  /* сервер при смене этапа ставит задачу ответственному за новый этап (stDueHook_) и пишет тому, кто ведёт сделку (stageNote_) */
+  shpTasksLoad(true).then(()=>{ try{ const me=shpMe(), who=[], add=(n,lab)=>{ n=String(n||"").trim(); const k=shpNorm(n); if(!k||k===me||who.some(x=>x.k===k)) return; who.push({k,t:(lab?lab+" ":"")+n}); };
+    (S.shop.tasks||[]).forEach(t=>{ if(t.order===o.id&&t.status!=="done"&&t.kind==="due:"+nx) add(t.to,dkRole(t.to)); });
+    if(nx!=="closed") add(o.owner,dkRole(o.owner));
+    if(who.length&&o.stage===nx) toast(base+". Уведомили: "+who.map(x=>x.t).join(", "));
+    if(dkOn()&&!document.querySelector(".modal,#dkMenu")) shpRenderKeep(); }catch(_){} }); }
+if(typeof shpMoveStage==="function"){ const _dkMv=shpMoveStage; shpMoveStage=async function(o,nx){ const from=o&&o.stage, on=dkOn();
+  const ok=await _dkMv.apply(this,arguments); try{ if(ok&&on&&o&&from!==nx&&o.stage===nx) dkTold(o,nx); }catch(e){ console.error(e); } return ok; }; }
+/* ---- нажатия ---- */
+function dkSelect(k,keep){ if(dkWide()) return; S.shop.dkSel=S.shop.dkSel===k&&!keep?"":k; S.shop.dkIn=1; dkSync();
+  if(S.shop.dkSel){ const p=document.getElementById("dkPanel"); if(p){ const top=p.getBoundingClientRect().top, lim=innerHeight-190; if(top>lim) window.scrollBy({top:top-lim,behavior:"smooth"}); } } }
+document.addEventListener("click",ev=>{ const t=ev.target; if(!t||!t.closest) return; const b=t.closest("[data-dk]");
+  if(!b){ const col=t.closest("#shpKb.dk > .shp-col"); if(col&&!t.closest(".shp-card,button,a")&&!dkWide()){ ev.preventDefault(); dkSelect(col.dataset.st); } return; }
+  const a=b.dataset.dk;
+  if(a==="mon"){ ev.preventDefault(); const g=b.closest(".dk-mon"); if(!g) return; const open=g.classList.contains("shut"); g.classList.toggle("shut",!open); b.setAttribute("aria-expanded",String(open)); S.shop.dkMon[g.dataset.mk]=open; return; }
+  if(a==="st"){ const col=b.closest(".shp-col"), k=b.dataset.v||(col&&col.dataset.st); if(k) dkSelect(k,b.classList.contains("dk-more")); return; }
+  if(a==="arch"){ const k=b.dataset.v; if(!k) return; if(!dkWide()&&b.closest("#shpKb")){ S.shop.dkArch[k]=true; dkSelect(k,true); return; } S.shop.dkArch[k]=!S.shop.dkArch[k]; b.setAttribute("aria-expanded",String(!!S.shop.dkArch[k])); dkSync(); return; }
+  if(a==="pay"){ S.shop.dkPay=!S.shop.dkPay; dkSync(); return; }
+  if(a==="ms"){ S.shop.dkMs=S.shop.dkMs===b.dataset.v?"":b.dataset.v; dkSync(); return; }
+  if(a==="qx"){ S.shop.q=""; S.shop.vxFind=false; if(dkWide()){ const i=document.getElementById("shpQ"); if(i){ i.value=""; i.focus(); } shpApplyFilter(); } else shpRenderKeep(); return; }
+  if(a==="next"){ const o=shpById(b.dataset.id), nx=dkNext(o); if(o&&nx){ b.disabled=true; shpMoveStage(o,nx.k); } return; }
+  if(a==="norm"){ dkNormModal(); return; } });
+/* ---- меню карточки: долгое нажатие без движения (телефон), правая кнопка мыши (компьютер) ---- */
+function dkMenuClose(){ const m=document.getElementById("dkMenu"); if(m) m.remove(); }
+function dkMenu(card){ dkMenuClose(); dkTipHide(); const o=shpById(card.dataset.id); if(!o||!card.isConnected) return;
+  const z=dkZoom(), r=card.getBoundingClientRect(), cs=getComputedStyle(card), s=SHP_ST.find(x=>x.k===o.stage)||{k:o.stage}, nx=dkNext(o), tel=dkTel(o.phone);
+  const ov=document.createElement("div"); ov.id="dkMenu"; ov.className="dk-ov"; ov.dataset.t=String(Date.now());
+  const lift=card.cloneNode(true); lift.removeAttribute("data-act"); lift.removeAttribute("id"); lift.hidden=false; lift.className=card.className.replace(/\b(dk-dim|dk-over|dk-hit|dragging)\b/g,"")+" dk-lift"; lift.setAttribute("aria-hidden","true"); lift.tabIndex=-1;
+  lift.style.cssText="left:"+(r.left/z)+"px;top:"+(r.top/z)+"px;width:"+(r.width/z)+"px;--dkc:"+cs.getPropertyValue("--dkc")+";--dkw:"+(cs.getPropertyValue("--dkw")||"52px");
+  const m=document.createElement("div"); m.className="dk-menu"; m.setAttribute("role","menu"); m.setAttribute("aria-label","Сделка № "+o.num);
+  m.innerHTML=`<p class="dk-mh">№${esc(o.num)} ${esc(dkSur(o.client))} · ${esc(dkName(s))}</p>`
+    +(tel?`<a role="menuitem" href="tel:${esc(tel)}" data-dkm="tel">📞 Позвонить клиенту</a>`:`<button type="button" role="menuitem" disabled>📞 Телефон клиента не записан</button>`)
+    +`<button type="button" role="menuitem" data-dkm="chat">💬 Написать в чат сделки</button>`
+    +(S.shop.full?`<button type="button" role="menuitem" data-dkm="due">📅 Сменить срок${o.deadline?" · сейчас "+esc(shpDM(o.deadline)):""}</button>`:"")
+    +(nx?`<button type="button" role="menuitem" data-dkm="next">→ В «${esc(DK_TO[nx.k]||dkName(nx))}»</button>`:"")
+    +`<button type="button" role="menuitem" data-dkm="open">Открыть сделку</button>`;
+  ov.appendChild(lift); ov.appendChild(m); document.body.appendChild(ov);
+  const vw=innerWidth/z, vh=innerHeight/z, mw=m.offsetWidth, mh=m.offsetHeight; let x=Math.min(Math.max(8,r.left/z),vw-mw-8), y=r.bottom/z+10; if(y+mh>vh-8) y=Math.max(8,r.top/z-mh-10);
+  m.style.left=Math.max(8,x)+"px"; m.style.top=y+"px";
+  ov.addEventListener("click",ev=>{ const it=ev.target.closest&&ev.target.closest("[data-dkm]");
+    if(!it){ if(Date.now()-(+ov.dataset.t||0)>350&&!(ev.target.closest&&ev.target.closest(".dk-menu"))) dkMenuClose(); return; }
+    const a=it.dataset.dkm; if(a==="tel"){ setTimeout(dkMenuClose,50); return; } ev.preventDefault(); dkMenuClose();
+    if(a==="chat"){ S.shop.focusChat=true; S.shop.otab="chat"; shpGo("order",o.id); }
+    else if(a==="due") dkDueModal(o);
+    else if(a==="next"){ const n2=dkNext(o); if(n2) shpMoveStage(o,n2.k); }
+    else if(a==="open") shpGo("order",o.id); });
+  try{ const f=m.querySelector("a,button:not([disabled])"); if(f&&dkPT==="mouse") f.focus({preventScroll:true}); }catch(_){} }
+document.addEventListener("keydown",ev=>{ if(ev.key==="Escape"){ dkMenuClose(); dkTipHide(); } });
+let dkPT="";
+document.addEventListener("pointerdown",ev=>{ dkPT=ev.pointerType||""; dkTipHide(); },true);
+document.addEventListener("contextmenu",ev=>{ const c=ev.target.closest&&ev.target.closest("#shpKb.dk .shp-card"); if(!c||dkPT!=="mouse") return; ev.preventDefault(); dkMenu(c); });
+/* «Сменить срок» — тем же сохранением сделки, что и форма «Изменить» (shopSave: сервер сам сбрасывает согласие мастера и ставит задачи); только офис и технолог */
+function dkDueModal(o){ if(!S.shop.full) return; document.getElementById("dkDueM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="dkDueM";
+  m.innerHTML=`<form class="modal-card shp-mform" autocomplete="off"><h2>Сменить срок</h2><p class="note" style="margin:0">№ ${esc(o.num)} ${esc(o.client||"")}${o.deadline?" · сейчас срок "+esc(shpDM(o.deadline)):" · срока пока нет"}</p>
+    <label>Новый срок сдачи<input type="date" name="d" value="${esc(o.deadline||"")}" required></label>
+    <div class="shp-mb"><button class="btn primary" type="submit">Сохранить</button><button type="button" class="btn" data-x="1">Отмена</button></div></form>`;
+  m.addEventListener("click",ev=>{ if(ev.target===m||(ev.target.dataset&&ev.target.dataset.x)) m.remove(); });
+  m.querySelector("form").addEventListener("submit",async ev=>{ ev.preventDefault(); const f=ev.target, d=String(f.elements.d.value||""), b=f.querySelector("[type=submit]");
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ toast("Выберите дату"); return; } if(d===o.deadline){ m.remove(); return; }
+    b.disabled=true; b.textContent="Сохраняю…";
+    try{ if(typeof shpLoad==="function") await shpLoad(true); }catch(_){}   /* перед записью берём свежую сделку — чтобы не затереть чужую правку */
+    const cur=shpById(o.id)||o, j=await shpPost({action:"shopSave",order:Object.assign({},cur,{deadline:d,v3:1})});
+    if(!j){ b.disabled=false; b.textContent="Сохранить"; return; }
+    cur.deadline=d; m.remove(); toast("№ "+cur.num+" — срок до "+shpDM(d)); if(S.view==="shop") shpRenderKeep(); try{ shpLoad(true); }catch(_){} });
+  document.body.appendChild(m); }
+/* нормы «застряла»: директор (или технолог с правом «Настройки») — настройка компании dkNorm */
+function dkNormModal(){ if(!dkCanNorm()) return; document.getElementById("dkNormM")?.remove(); const N=dkNorms(), m=document.createElement("div"); m.className="modal"; m.id="dkNormM";
+  m.innerHTML=`<form class="modal-card shp-mform" autocomplete="off"><h2>Когда сделка «застряла»</h2><p class="note" style="margin:0">Сделка стоит на этапе дольше нормы — карточка на доске жёлтая, на ней число дней. 0 — не следить за этапом.</p>
+    <div class="dk-nf">${Object.keys(DK_NORM).map(k=>`<label>${esc(DK_N[k])}, дней<input name="${k}" inputmode="numeric" maxlength="3" value="${N[k]}"></label>`).join("")}</div>
+    <div class="shp-mb"><button class="btn primary" type="submit">Сохранить</button><button type="button" class="btn" data-x="1">Отмена</button></div></form>`;
+  m.addEventListener("click",ev=>{ if(ev.target===m||(ev.target.dataset&&ev.target.dataset.x)) m.remove(); });
+  m.querySelector("form").addEventListener("submit",async ev=>{ ev.preventDefault(); const f=ev.target, v={}, b=f.querySelector("[type=submit]");
+    Object.keys(DK_NORM).forEach(k=>{ v[k]=Math.min(365,Math.max(0,parseInt(f.elements[k].value,10)||0)); });
+    b.disabled=true; const j=await shpPost({action:"cfgSave",key:"dkNorm",value:v}); b.disabled=false; if(!j) return;
+    (S.shop.cfgAll||(S.shop.cfgAll={})).dkNorm=v; m.remove(); toast("Нормы сохранены"); if(S.view==="shop") shpRenderKeep(); });
+  document.body.appendChild(m); }
+/* ---- компьютер: навели мышку на карточку — окошко (ведёт, мастер, срок, оплата) ---- */
+let dkTipT=0, dkTipC=null;
+function dkTipHide(){ clearTimeout(dkTipT); dkTipC=null; const t=document.getElementById("dkTip"); if(t) t.remove(); }
+function dkTipShow(card){ if(dkTipC!==card||!card.isConnected||!dkWide()||document.getElementById("dkMenu")||(typeof SHP_DR!=="undefined"&&SHP_DR.st&&SHP_DR.st.on)) return;
+  const o=shpById(card.dataset.id); if(!o) return; const today=shpToday(), late=dkLate(o,today), st=late?null:dkStuck(o,dkNorms()), cl=shpClosed(o), payOk=dkPayOk(), sum=+o.sum||0, L=[];
+  L.push(`<b class="dk-tt">№${esc(o.num)} ${esc(o.client||"Без имени")}</b>`);
+  L.push(`<span>👤 ведёт: ${esc(o.owner||"никто")}${o.master?" · 🔨 "+esc(o.master):""}</span>`);
+  if(o.kind) L.push(`<span class="dk-tm">${esc(o.kind)}</span>`);
+  if(cl) L.push(`<span>${o.stage==="lost"?"отказ"+(o.reason?": "+esc(o.reason):""):"✓ сдано"+(o.stageAt?" "+esc(shpDM(shpToday(new Date(o.stageAt)))):"")}</span>`);
+  else if(o.deadline) L.push(`<span>📅 срок ${esc(shpDM(o.deadline))}${late&&late.dl?` — <em class="bad">${esc(late.t)}</em>`:""}</span>`); else L.push(`<span class="dk-tm">📅 срок не задан</span>`);
+  if(late&&!late.dl) L.push(`<span><em class="bad">⏰ ${esc(late.tip)}</em></span>`);
+  if(st) L.push(`<span><em class="warn">🟡 на этапе ${st.d} дн. — обычно до ${st.n}</em></span>`);
+  if(payOk&&sum>0){ const r=dkRest(o); L.push(`<span>💰 оплачено ${esc(dkRub(+o.prepay||0))} из ${esc(dkRub(sum))}</span>`); L.push(r>0?`<span class="dk-tr">осталось: <b>${esc(dkRub(r))} ₽</b></span>`:`<span class="dk-tr">оплачено полностью</span>`); }
+  else if(S.shop.sumSee&&sum>0) L.push(`<span>сумма ${esc(dkRub(sum))} ₽</span>`);
+  document.getElementById("dkTip")?.remove(); const t=document.createElement("div"); t.id="dkTip"; t.setAttribute("role","tooltip"); t.innerHTML=L.join(""); document.body.appendChild(t);
+  const z=dkZoom(), r=card.getBoundingClientRect(), vw=innerWidth/z, vh=innerHeight/z, w=t.offsetWidth, hh=t.offsetHeight; let x=r.right/z+8; if(x+w>vw-8) x=r.left/z-w-8; if(x<8) x=8;
+  t.style.left=x+"px"; t.style.top=Math.max(8,Math.min(r.top/z,vh-hh-8))+"px"; }
+document.addEventListener("mouseover",ev=>{ const c=ev.target.closest&&ev.target.closest("#shpKb.dk .shp-card"); if(c===dkTipC) return; dkTipHide();
+  if(!c||!dkWide()||dkPT==="touch"||dkPT==="pen") return; dkTipC=c; dkTipT=setTimeout(()=>dkTipShow(c),140); });
+document.addEventListener("scroll",()=>{ if(dkTipC) dkTipHide(); },true);
+/* ---- перетаскивание: карточка «в руке» того же вида; страница уменьшена (zoom) — ставим её ровно под курсор;
+   на телефоне карточка «в руке» крупнее и над пальцем (иначе её не видно); подержали и отпустили без движения — меню ---- */
+if(typeof shpDragBegin==="function"&&typeof shpDragMove==="function"&&typeof shpDragEnd==="function"&&typeof SHP_DR!=="undefined"){
   const _dkDB=shpDragBegin; shpDragBegin=function(){ const r=_dkDB.apply(this,arguments);
-    try{ const d=SHP_DR.st; if(d&&d.on&&d.g&&d.card&&d.card.classList.contains("dk-c")&&d.g.id!=="dkGhost"){ const g=d.g; g.id="dkGhost"; g.classList.add("dk-c"); g.style.setProperty("--dkc",getComputedStyle(d.card).getPropertyValue("--dkc"));
-      g.style.transform="translate(200px,200px)"; const z=g.getBoundingClientRect().left/200; d.dkZ=z>0.3&&z<3?z:1;
-      if(d.dkZ!==1) g.style.width=(d.card.getBoundingClientRect().width/d.dkZ)+"px"; shpDragMove(d.x,d.y); } }catch(_){} return r; };
+    try{ const d=SHP_DR.st; if(d&&d.on&&d.g&&d.card&&d.card.classList.contains("dk-c")&&d.g.id!=="dkGhost"){ dkTipHide(); const g=d.g, z=dkZoom(), cs=getComputedStyle(d.card), cr=d.card.getBoundingClientRect();
+      g.id="dkGhost"; g.classList.add("dk-c"); g.classList.remove("dk-dim","dk-over","dk-hit"); g.hidden=false; g.style.setProperty("--dkc",cs.getPropertyValue("--dkc")); d.dkZ=z; d.dkX0=d.x; d.dkY0=d.y; d.dkMoved=false;
+      if(dkWide()||d.type==="mouse"){ g.style.width=(cr.width/z)+"px"; g.style.setProperty("--dkw",(cr.width/z)+"px"); }
+      else { g.style.width="86px"; g.style.setProperty("--dkw","86px"); const gr=g.getBoundingClientRect(); d.dx=gr.width/2; d.dy=gr.height+18; }
+      if(!dkWide()){ const kb=document.getElementById("shpKb"), c0=kb&&[...kb.children].find(c=>c.offsetParent!==null); if(c0){ kb.style.setProperty("--dkw",c0.offsetWidth+"px"); dkFitNames(kb); } }
+      shpDragMove(d.x,d.y); } }catch(_){} return r; };
   const _dkDM=shpDragMove; shpDragMove=function(x,y){ const r=_dkDM.apply(this,arguments);
-    try{ const d=SHP_DR.st; if(d&&d.on&&d.g&&d.g.id==="dkGhost"&&d.dkZ&&d.dkZ!==1) d.g.style.transform=`translate(${(x-d.dx)/d.dkZ}px,${(y-d.dy)/d.dkZ}px) rotate(2deg)`; }catch(_){} return r; }; }
+    try{ const d=SHP_DR.st; if(d&&d.on&&d.g&&d.g.id==="dkGhost"){ if(!d.dkMoved&&Math.hypot(x-d.dkX0,y-d.dkY0)>10) d.dkMoved=true;
+      if(d.dkZ&&d.dkZ!==1) d.g.style.transform=`translate(${(x-d.dx)/d.dkZ}px,${(y-d.dy)/d.dkZ}px) rotate(2deg)`; } }catch(_){} return r; };
+  const _dkDE=shpDragEnd; shpDragEnd=function(drop){ const d=SHP_DR.st, held=!!(d&&d.on&&d.g&&d.g.id==="dkGhost"&&!d.dkMoved&&d.type!=="mouse");
+    if(held) d.to=d.from;   /* не двигали — это не перенос (колонки на телефоне узкие) */
+    const r=_dkDE.apply(this,arguments);
+    try{ if(d&&d.g&&d.g.id==="dkGhost"&&!dkWide()) dkSync(); }catch(_){}
+    try{ if(held&&drop&&d.card&&d.card.isConnected) dkMenu(d.card); }catch(e){ console.error(e); } return r; }; }
 { const st=document.createElement("style"); st.id="dkCss"; st.textContent=`
-html{--dk-lane:#E9EAF0;--dk-card:#FFFFFF;--dk-line:rgba(22,24,35,.09);--dk-ink:#1B1C22;--dk-mut:#767986;--dk-bad:#D92D20;--dk-sh:0 1px 2px rgba(22,24,35,.07)}
-html[data-vt="dark"]{--dk-lane:#1f1e1d;--dk-card:#30302e;--dk-line:rgba(255,255,255,.10);--dk-ink:#f0eee9;--dk-mut:#a6a39b;--dk-bad:#FF5A4E;--dk-sh:none}
+html{--dk-lane:#E9EAF0;--dk-card:#FFFFFF;--dk-line:rgba(22,24,35,.12);--dk-ink:#1B1C22;--dk-mut:#767986;--dk-bad:#D92D20;--dk-warn:#B27B00;--dk-ok:#1E8E4E;--dk-sh:0 1px 2px rgba(22,24,35,.07)}
+html[data-vt="dark"]{--dk-lane:#1f1e1d;--dk-card:#30302e;--dk-line:rgba(255,255,255,.12);--dk-ink:#f0eee9;--dk-mut:#a6a39b;--dk-bad:#FF5A4E;--dk-warn:#F2B824;--dk-ok:#34C77B;--dk-sh:none}
 .dk-head{align-items:center}.dk-ttl{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px}.dk-ttl h1{margin:0}
 .dk-sub{font-size:14px;color:var(--dk-mut);white-space:nowrap}
-.dk-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 0}.dk-bar .vx-bv{flex:1 1 auto}.dk-bar .vx-bv button{flex:1}
-.dk-bar .shp-tseg{flex:1 1 100%;overflow-x:auto;scrollbar-width:none}.dk-bar .shp-tseg button{flex:1 0 auto}
-.dk-bar .dk-find{flex:1 1 100%;margin:0}.dk-bar .dk-find input{width:100%;box-sizing:border-box;min-height:44px;padding:0 14px}
+#dkBar{display:flex;align-items:center;gap:6px;margin:8px -16px 0;padding:2px 16px;overflow-x:auto;scrollbar-width:none}#dkBar::-webkit-scrollbar{display:none}
+#dkBar>*{flex:none}#dkBar .vx-chips{display:contents}
+#dkBar .vx-bv{margin:0}#dkBar .vx-bv button{min-height:38px!important;padding:0 13px!important;font-size:14.5px!important}
+#dkBar .vx-chip{min-height:38px;border-radius:19px}
+#dkBar .dk-ch{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:42px;min-height:38px;margin:0;padding:0 13px;border:0!important;border-radius:19px;background:var(--surface,#fff);color:var(--dk-ink);box-shadow:inset 0 0 0 1.5px var(--dk-line);font:600 14.5px var(--f-brand,var(--f-body,system-ui));white-space:nowrap;cursor:pointer}
+#dkBar .dk-ch[aria-pressed="true"]{background:var(--dk-ink);color:var(--bg,#fff);box-shadow:none}
+#dkBar .dk-bell b{font-family:var(--f-num,inherit)}#dkBar .dk-bell.bad b{color:var(--dk-bad)}
+#dkBar .dk-find{display:flex;align-items:center;gap:6px;min-height:40px;padding:0 6px 0 12px;border-radius:12px;background:var(--surface,#fff);box-shadow:inset 0 0 0 1.5px var(--dk-line)}
+#dkBar .dk-find input{flex:1;min-width:0;min-height:38px;margin:0;padding:0;border:0!important;outline:0;background:none!important;box-shadow:none!important;color:var(--dk-ink);font:inherit}
+#dkBar .dk-find input::-webkit-search-cancel-button{display:none}
+#dkBar .dk-qx{min-width:36px;min-height:36px;border:0!important;background:none!important;box-shadow:none!important;color:var(--dk-mut);font-size:16px;cursor:pointer}
+#dkBar.dk-bar-q>:not(.dk-find){display:none}#dkBar.dk-bar-q .dk-find{flex:1 1 auto}
 .dk-note{margin:12px 0 0}
-#shpKb.dk{display:flex;gap:8px;align-items:stretch;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;margin:12px -16px 0;padding:2px 16px 14px;scroll-padding-inline:16px;-webkit-overflow-scrolling:touch;scrollbar-width:none;min-height:54vh}
-#shpKb.dk::-webkit-scrollbar{display:none}
-#shpKb.dk.dragging{scroll-snap-type:none}
-#shpKb.dk>.shp-col{flex:0 0 calc((100% - 16px)/2.5);min-width:0;max-width:none;box-sizing:border-box;display:flex;flex-direction:column;gap:0;padding:0 6px 8px;background:var(--dk-lane)!important;border:0!important;border-top:3px solid var(--dkc,#8E94A0)!important;border-radius:14px;box-shadow:none;scroll-snap-align:start;transition:background .12s,box-shadow .12s}
-#shpKb.dk>.shp-col.dk-off{display:none}#shpKb.dk.dragging>.shp-col.dk-off{display:flex}
-#shpKb.dk>.shp-col.drop{background:color-mix(in srgb,var(--dkc,#8E94A0) 16%,var(--dk-lane))!important;box-shadow:inset 0 0 0 2px var(--dkc,#8E94A0)}
-#shpKb.dk .shp-colh{display:flex;flex-direction:column;flex-wrap:nowrap;align-items:center;gap:1px;margin:0;padding:8px 2px 9px;min-width:0;text-align:center}
-#shpKb.dk .shp-colh h2{flex:none;max-width:100%;margin:0;font-family:inherit;font-size:14px;line-height:1.25;font-weight:700;letter-spacing:0;text-transform:none;color:var(--dk-ink)!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#shpKb.dk .dk-hn{display:flex;justify-content:center;align-items:baseline;gap:4px;max-width:100%;font-size:12px;line-height:1.3;color:var(--dk-mut);white-space:nowrap;overflow:hidden}
-#shpKb.dk .shp-cnt{padding:0;border-radius:0;background:none!important;box-shadow:none!important;font-family:inherit;font-size:12px;line-height:1.3;font-weight:600;color:var(--dk-mut)!important}
-#shpKb.dk .shp-csum{flex:0 1 auto;font-family:inherit;font-size:12px;line-height:1.3;font-weight:500;color:var(--dk-mut)!important;overflow:hidden;text-overflow:ellipsis}
-#shpKb.dk .shp-csum:not(:empty)::before{content:"· "}
-#shpKb.dk .shp-colb{display:flex;flex-direction:column;gap:0;min-height:72px;flex:1}
+#dkPay[hidden],#dkMs[hidden]{display:none}
+#dkPay{margin:8px 0 0}
+#dkPay .dk-payb{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;min-height:40px;margin:0;padding:0 12px;border:0!important;border-radius:12px;background:color-mix(in srgb,var(--dk-ok) 12%,var(--surface,#fff));box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--dk-ok) 45%,transparent);color:var(--dk-ink);font:600 14.5px var(--f-brand,var(--f-body,system-ui));text-align:left;cursor:pointer}
+#dkPay .dk-payb span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dkPay .dk-payb b{flex:none;color:var(--dk-ok);font-family:var(--f-num,inherit);white-space:nowrap}#dkPay .dk-payb i{font-style:normal}
+#dkPay .dk-payl{margin:6px 0 0;border-radius:12px;background:var(--surface,#fff);box-shadow:inset 0 0 0 1.5px var(--dk-line);overflow:hidden;max-height:46vh;overflow-y:auto}
+#dkPay .dk-pr{display:flex;width:100%;align-items:center;gap:10px;min-height:52px;margin:0;padding:7px 12px;border:0!important;border-radius:0;background:none;box-shadow:inset 0 1px 0 var(--dk-line);color:var(--dk-ink);font:inherit;text-align:left;cursor:pointer}
+#dkPay .dk-pr:first-child{box-shadow:none}
+#dkPay .dk-pl{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}#dkPay .dk-pl b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#dkPay .dk-pl small{font-size:12.5px;color:var(--dk-mut)}
+#dkPay .dk-ps{flex:none;font-family:var(--f-num,inherit);font-size:15px;white-space:nowrap}
+#dkMs{display:flex;align-items:center;gap:9px;margin:4px -16px 0;padding:6px 16px 2px;overflow-x:auto;scrollbar-width:none}#dkMs::-webkit-scrollbar{display:none}
+#dkMs .dk-msl{flex:none;font-size:13.5px;color:var(--dk-mut)}
+#dkMs .dk-mb{position:relative;flex:none;width:36px;height:36px;margin:0;padding:0;border:0!important;border-radius:50%;background:var(--mc,#8E94A0);color:#15161b;font:800 14.5px var(--f-brand,var(--f-body,system-ui));cursor:pointer}
+#dkMs .dk-mb[aria-pressed="true"]{box-shadow:0 0 0 2px var(--bg,#fff),0 0 0 4px var(--dk-ink)}
+#dkMs .dk-mb i{position:absolute;top:-5px;right:-6px;min-width:17px;height:17px;padding:0 4px;box-sizing:border-box;border-radius:9px;background:var(--dk-bad);color:#fff;font:700 11px/17px var(--f-num,system-ui);font-style:normal;text-align:center}
+#dkMs .dk-mx{flex:none;margin:0 0 0 auto;min-height:36px;padding:0 4px;border:0!important;background:none;box-shadow:none;color:var(--dk-mut);font:600 14px var(--f-body,system-ui);white-space:nowrap;cursor:pointer}
+#shpKb.dk{--dkw:52px;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:3px;align-items:stretch;margin:10px -12px 0;padding:0;height:42vh;min-height:260px;max-height:420px;overflow:visible}
+#shpKb.dk>.shp-col{min-width:0;max-width:none;box-sizing:border-box;display:flex;flex-direction:column;gap:0;margin:0;padding:0 2px 3px;background:var(--dk-lane)!important;border:0!important;border-top:3px solid var(--dkc,#8E94A0)!important;border-radius:11px 11px 8px 8px;box-shadow:none;overflow:hidden;cursor:pointer;transition:background .15s,box-shadow .15s}
+#shpKb.dk>.shp-col.dk-off,#shpKb.dk>.shp-col.dk-offp{display:none}#shpKb.dk.dragging>.shp-col.dk-off,#shpKb.dk.dragging>.shp-col.dk-offp{display:flex}
+#shpKb.dk>.shp-col.sel{background:color-mix(in srgb,var(--dkc,#8E94A0) 15%,var(--dk-lane))!important;box-shadow:inset 0 0 0 2px var(--dkc,#8E94A0)}
+#shpKb.dk>.shp-col.drop{background:color-mix(in srgb,var(--dkc,#8E94A0) 20%,var(--dk-lane))!important;box-shadow:inset 0 0 0 2px var(--dk-ink)}
+#shpKb.dk>.shp-col.no{opacity:.4;filter:grayscale(.6)}
+#shpKb.dk .shp-colh{display:flex;flex-direction:column;flex-wrap:nowrap;align-items:center;gap:0;margin:0;padding:5px 0 5px;min-width:0;text-align:center}
+#shpKb.dk .shp-colh h2{flex:none;max-width:100%;margin:0;font-family:inherit;font-size:max(8px,calc(var(--dkw)*.2));line-height:1.25;font-weight:700;letter-spacing:-.01em;text-transform:none;color:var(--dk-ink)!important;white-space:nowrap;overflow:hidden}
+#shpKb.dk .dk-hl{display:none}
+#shpKb.dk .shp-cnt{padding:0;border-radius:0;background:none!important;box-shadow:none!important;font-family:var(--f-num,inherit);font-size:max(13px,calc(var(--dkw)*.3));line-height:1.15;font-weight:800;color:var(--dk-ink)!important}
+#shpKb.dk .shp-csum{flex:none;max-width:100%;font-family:inherit;font-size:max(7.5px,calc(var(--dkw)*.175));line-height:1.3;font-weight:500;color:var(--dk-mut)!important;white-space:nowrap;overflow:hidden}
+#shpKb.dk .shp-csum:empty::before{content:"\\00a0"}
+#shpKb.dk .shp-colb{display:flex;flex-direction:column;gap:0;flex:1;min-height:0}
+#shpKb.dk .dk-cards{flex:1 1 auto;min-height:0;overflow:hidden;padding:2px 1px 0}
 #shpKb.dk .shp-none{display:none}
-#shpKb.dk .shp-card,#dkGhost{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:3px;width:100%;min-height:0;box-sizing:border-box;margin:0 0 6px!important;padding:8px 9px 9px!important;text-align:left;background:var(--dk-card)!important;color:var(--dk-ink);border:1px solid var(--dk-line)!important;border-radius:10px!important;box-shadow:var(--dk-sh)!important;font:inherit;cursor:pointer}
-#shpKb.dk .shp-card::before,#dkGhost::before{content:none!important}
-#shpKb.dk .shp-card[hidden]{display:none}
-#shpKb.dk .shp-card:hover{border-color:color-mix(in srgb,var(--dkc,#8E94A0) 60%,transparent)!important}
+#shpKb.dk .shp-card,#dkGhost,#dkMenu .dk-lift{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:0;width:100%;min-height:0;box-sizing:border-box;margin:0 0 3px!important;padding:3px 2px 4px 4px!important;text-align:left;background:var(--dk-card)!important;color:var(--dk-ink);border:1.5px solid transparent!important;border-left:2.5px solid var(--dkc,#8E94A0)!important;border-radius:7px!important;box-shadow:var(--dk-sh)!important;font:inherit;cursor:pointer;transition:opacity .15s}
+#shpKb.dk .shp-card::before,#dkGhost::before,#dkMenu .dk-lift::before{content:none!important}
+#shpKb.dk .shp-card[hidden],#shpKb.dk .shp-card.dk-over{display:none}
+#shpKb.dk .shp-card.dk-dim{opacity:.25}
+#shpKb.dk .shp-card.dk-hit{border-color:#FFD21A!important;box-shadow:0 0 0 1.5px #FFD21A!important}
+#shpKb.dk .shp-card.stuck,#dkGhost.stuck,#dkMenu .dk-lift.stuck{border-color:var(--dk-warn)!important;background:color-mix(in srgb,var(--dk-warn) 13%,var(--dk-card))!important}
+#shpKb.dk .shp-card.late,#dkGhost.late,#dkMenu .dk-lift.late{border-color:var(--dk-bad)!important;background:color-mix(in srgb,var(--dk-bad) 17%,var(--dk-card))!important;box-shadow:0 0 9px color-mix(in srgb,var(--dk-bad) 75%,transparent),inset 0 0 5px color-mix(in srgb,var(--dk-bad) 45%,transparent)!important}
+#shpKb.dk .shp-card.late{animation:dkBlink 1s ease-in-out infinite}
+@keyframes dkBlink{0%,100%{box-shadow:0 0 2px color-mix(in srgb,var(--dk-bad) 30%,transparent),inset 0 0 0 transparent;border-color:color-mix(in srgb,var(--dk-bad) 50%,transparent)}50%{box-shadow:0 0 10px color-mix(in srgb,var(--dk-bad) 85%,transparent),inset 0 0 6px color-mix(in srgb,var(--dk-bad) 50%,transparent);border-color:var(--dk-bad)}}
 #shpKb.dk .shp-card:focus-visible{outline:2px solid var(--dkc,#8E94A0);outline-offset:1px}
-#dkGhost{width:auto;box-shadow:0 12px 28px rgba(0,0,0,.35)!important;margin:0!important}
-.dk-c .dk-t{display:flex;align-items:center;gap:6px;min-width:0;padding-right:10px}
-.dk-c .dk-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--dkc,#8E94A0)}
-.dk-c .dk-t b{min-width:0;font-size:15px;line-height:1.2;font-weight:800;letter-spacing:0;color:var(--dk-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dk-c .dk-n{font-size:14px;line-height:1.25;font-weight:600;color:var(--dk-ink);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto}
-.dk-c .dk-st{font-size:12px;line-height:1.25;font-weight:500;color:var(--dk-mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dk-c .dk-m{min-width:0;margin-top:1px;font-size:12.5px;line-height:1.25;font-weight:500;color:var(--dk-mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dk-c .dk-who{font-size:12.5px;color:var(--dk-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dk-c .dk-late{font-size:12.5px;font-weight:700;color:var(--dk-bad)}.dk-c .dk-m.dk-lt{white-space:normal}
-.dk-c .dk-new{position:absolute;top:9px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--dk-bad)}
+.dk-c .dk-t{display:block;min-width:0}
+.dk-c .dk-t b{font-size:max(8.5px,calc(var(--dkw)*.215));line-height:1.2;font-weight:800;letter-spacing:-.01em;color:var(--dk-ink);white-space:nowrap}
+.dk-c .dk-z{display:none;font-style:normal}
+.dk-c .dk-n,.dk-c .dk-st,.dk-c .dk-who,.dk-c .dk-late em,.dk-c .dk-days em{display:none}
+.dk-c .dk-ns{display:block;font-size:max(7.5px,calc(var(--dkw)*.175));line-height:1.18;font-weight:500;color:var(--dk-ink);white-space:nowrap;overflow:hidden}
+.dk-c .dk-ns.dk-wr{white-space:normal;overflow-wrap:anywhere;-webkit-hyphens:auto;hyphens:auto}
+.dk-c .dk-m{display:block;margin-top:1px;font-size:max(7.5px,calc(var(--dkw)*.18));line-height:1.2;font-weight:500;color:var(--dk-mut);white-space:nowrap}
+.dk-c .dk-late{display:block;font-size:max(7px,calc(var(--dkw)*.15));line-height:1.3;font-weight:700;color:var(--dk-bad)}.dk-c .dk-late i{font-style:normal}
+.dk-c .dk-days{display:block;font-size:max(7px,calc(var(--dkw)*.16));line-height:1.3;font-weight:700;color:var(--dk-warn);white-space:nowrap}.dk-c .dk-days em{font-style:normal;font-weight:500}
+.dk-c .dk-ic{position:absolute;top:1px;right:1px;font-size:max(6.5px,calc(var(--dkw)*.14));line-height:1;font-style:normal}
+.dk-c .dk-new{position:absolute;right:3px;bottom:3px;width:5px;height:5px;border-radius:50%;background:var(--dk-bad)}
+#dkGhost{width:auto;margin:0!important;box-shadow:0 12px 28px rgba(0,0,0,.45)!important;border-color:var(--dk-ink)!important;opacity:1}
+#shpKb.dk .dk-more{flex:none;width:100%;min-height:22px;margin:0;padding:1px 0;border:0!important;border-radius:6px;background:none;box-shadow:none;color:var(--dk-mut);font:600 max(8px,calc(var(--dkw)*.18)) var(--f-body,system-ui);white-space:nowrap;cursor:pointer}
+#shpKb.dk .dk-more[hidden]{display:none}
+#shpKb.dk .dk-arch{flex:none;display:flex;flex-direction:column;min-height:0;margin-top:2px;box-shadow:inset 0 1px 0 var(--dk-line)}#shpKb.dk .dk-arch[hidden]{display:none}
+#shpKb.dk .dk-archb{width:100%;min-height:28px;margin:0;padding:3px 0;border:0!important;background:none;box-shadow:none;color:var(--dk-mut);font:500 max(8px,calc(var(--dkw)*.175)) var(--f-body,system-ui);line-height:1.2;cursor:pointer}
+#shpKb.dk .dk-archb b{display:block;font-weight:700}
+#shpKb.dk .dk-archl{display:none}
+#shpKb.dk.dk-q .dk-archl{display:block}#shpKb.dk.dk-q .dk-archl .dk-monh{display:none}#shpKb.dk.dk-q .dk-archl .shp-card:not(.dk-hit){display:none}
 #shpKb.dk .dk-mon{display:flex;flex-direction:column}#shpKb.dk .dk-mon[hidden]{display:none}
-#shpKb.dk .dk-monh{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 5px;width:100%;min-height:32px;margin:0 0 4px;padding:4px 16px 4px 3px;position:relative;border:0;border-radius:8px;background:none;color:var(--dk-mut);font:inherit;font-size:12px;line-height:1.3;text-align:left;cursor:pointer}
+#shpKb.dk .dk-monh{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 5px;width:100%;min-height:32px;margin:0 0 4px;padding:4px 16px 4px 3px;position:relative;border:0!important;border-radius:8px;background:none;box-shadow:none;color:var(--dk-mut);font:inherit;font-size:12.5px;line-height:1.3;text-align:left;cursor:pointer}
 #shpKb.dk .dk-monh b{font-weight:700;color:var(--dk-ink)}
-#shpKb.dk .dk-monh::after{content:"";position:absolute;right:5px;top:50%;width:5px;height:5px;margin-top:-4px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}
+#shpKb.dk .dk-monh::after{content:"";position:absolute;right:5px;top:50%;width:5px;height:5px;margin-top:-4px;border-right:1.5px solid var(--dk-mut)!important;border-bottom:1.5px solid var(--dk-mut)!important;transform:rotate(45deg)}
 #shpKb.dk .dk-mon.shut .dk-monh::after{transform:rotate(-45deg);margin-top:-3px}
 #shpKb.dk .dk-mon.shut .shp-card{display:none}
-#shpKb.dk.dk-q .dk-mon.shut .shp-card:not([hidden]){display:flex}
-.dk-hint{font-size:12px;margin:4px 0 0}
-@media (min-width:600px) and (max-width:899px){#shpKb.dk>.shp-col{flex-basis:calc((100% - 32px)/4.5)}}
+#dkPanel{margin:12px 0 0;min-height:150px}
+#dkPanel .dk-ph{margin:34px 0 0;text-align:center;font-size:15.5px;line-height:1.5;color:var(--dk-mut)}#dkPanel .dk-ph small{display:block;max-width:300px;margin:14px auto 0;font-size:12.5px;line-height:1.4;opacity:.8}
+#dkPanel .dk-pt{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 2px 8px}
+#dkPanel .dk-pt b{font:700 19px var(--f-brand,var(--f-body,system-ui));color:var(--dk-ink)}
+#dkPanel .dk-px{min-height:36px;margin:0;padding:0 2px;border:0!important;background:none;box-shadow:none;color:var(--dk-mut);font:500 14px var(--f-body,system-ui);white-space:nowrap;cursor:pointer}
+#dkPanel .dk-pn{margin:0 0 8px;padding:12px 14px;border-radius:12px;background:var(--surface,#fff);font-size:15px;color:var(--dk-mut)}
+#dkPanel .dk-pm{margin:12px 2px 6px;font:700 14px var(--f-brand,var(--f-body,system-ui));color:var(--dk-mut)}
+#dkPanel .dk-pa{display:flex;width:100%;align-items:center;justify-content:space-between;min-height:42px;margin:2px 0 8px;padding:0 12px;border:0!important;border-radius:12px;background:none;box-shadow:inset 0 0 0 1.5px var(--dk-line);color:var(--dk-mut);font:600 14.5px var(--f-body,system-ui);cursor:pointer}#dkPanel .dk-pa i{font-style:normal}
+#dkPanel .dk-big{display:flex;flex-direction:column;gap:3px;margin:0 0 8px;padding:10px 12px 12px 13px;border:0!important;border-left:4px solid var(--dkc,#8E94A0)!important;border-radius:12px;background:var(--surface,#fff);box-shadow:var(--dk-sh)}
+#dkPanel .dk-big.late{border-left-color:var(--dk-bad)!important}#dkPanel .dk-big.stuck{border-left-color:var(--dk-warn)!important}
+#dkPanel.dk-in .dk-pt,#dkPanel.dk-in .dk-big,#dkPanel.dk-in .dk-pn,#dkPanel.dk-in .dk-pa{animation:dkIn .3s ease both;animation-delay:calc(var(--dki,0)*45ms)}
+@keyframes dkIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+#dkPanel .dk-bh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;width:100%;margin:0;padding:0;border:0!important;background:none;box-shadow:none;color:var(--dk-ink);font:inherit;text-align:left;cursor:pointer}
+#dkPanel .dk-bh b{min-width:0;font:700 17px/1.3 var(--f-brand,var(--f-body,system-ui));overflow-wrap:anywhere}
+#dkPanel .dk-bh span{flex:none;font:700 16px/1.3 var(--f-num,var(--f-body,system-ui));white-space:nowrap}
+#dkPanel .dk-bw,#dkPanel .dk-bl{margin:0;font-size:14px;line-height:1.35;color:var(--dk-mut);overflow-wrap:anywhere}
+#dkPanel .dk-bl.bad{color:var(--dk-bad);font-weight:600}#dkPanel .dk-bl.warn{color:var(--dk-warn);font-weight:600}
+#dkPanel .dk-bb{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0}
+#dkPanel .dk-b{display:inline-flex;align-items:center;justify-content:center;min-height:42px;margin:0;padding:0 14px;border:0!important;border-radius:21px;background:var(--sunk,#eee);box-shadow:inset 0 0 0 1.5px var(--dk-line);color:var(--dk-ink)!important;font:700 14.5px var(--f-brand,var(--f-body,system-ui));text-decoration:none;white-space:nowrap;cursor:pointer}
+#dkPanel .dk-b:disabled{opacity:.55}
+.dk-hint{font-size:12px;margin:8px 0 0}
+#dkMenu{position:fixed;inset:0;z-index:9600;background:rgba(0,0,0,.6);-webkit-user-select:none;user-select:none}
+#dkMenu .dk-lift{position:fixed;margin:0!important;border-color:var(--dk-ink)!important;box-shadow:0 10px 28px rgba(0,0,0,.5)!important;transform:scale(1.18);transform-origin:50% 50%;pointer-events:none;animation:none}
+#dkMenu .dk-menu{position:fixed;left:8px;top:8px;display:flex;flex-direction:column;min-width:236px;max-width:calc(100% - 16px);border-radius:14px;background:var(--surface,#fff);box-shadow:0 16px 44px rgba(0,0,0,.55),inset 0 0 0 1px var(--dk-line);overflow:hidden;animation:dkPop .16s ease both}
+@keyframes dkPop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+#dkMenu .dk-mh{margin:0;padding:11px 14px;background:var(--sunk,#eee);color:var(--dk-ink);font:700 15px var(--f-brand,var(--f-body,system-ui));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dkMenu .dk-menu a,#dkMenu .dk-menu button{display:flex;align-items:center;gap:8px;width:100%;min-height:46px;margin:0;padding:0 14px;box-sizing:border-box;border:0!important;border-radius:0!important;background:none!important;box-shadow:inset 0 1px 0 var(--dk-line)!important;color:var(--dk-ink)!important;font:500 15.5px var(--f-body,system-ui);text-align:left;text-decoration:none;white-space:nowrap;cursor:pointer}
+#dkMenu .dk-menu button:disabled{color:var(--dk-mut)!important;cursor:default}
+#dkMenu .dk-menu a:hover,#dkMenu .dk-menu button:not(:disabled):hover,#dkMenu .dk-menu a:focus-visible,#dkMenu .dk-menu button:focus-visible{background:var(--sunk,#eee)!important;outline:0}
+#dkTip{position:fixed;left:8px;top:8px;z-index:9550;display:flex;flex-direction:column;gap:2px;min-width:210px;max-width:320px;padding:11px 14px 12px;border-radius:12px;background:var(--dk-ink);color:var(--bg,#fff);box-shadow:0 14px 36px rgba(0,0,0,.5);font-size:13.5px;line-height:1.45;pointer-events:none;animation:dkPop .12s ease both}
+#dkTip .dk-tt{font:700 15.5px/1.35 var(--f-brand,var(--f-body,system-ui));margin-bottom:2px}#dkTip .dk-tm{opacity:.65}
+#dkTip em{font-style:normal;font-weight:600}#dkTip em.bad{color:#D92D20}#dkTip em.warn{color:#9A6400}
+#dkTip .dk-tr{margin-top:3px;font-size:14px}#dkTip .dk-tr b{font:800 16px var(--f-num,var(--f-body,system-ui))}
+html:not([data-vt="dark"]) #dkTip em.bad{color:#FF8A80}html:not([data-vt="dark"]) #dkTip em.warn{color:#F2B824}
+.dk-nf{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}.dk-nf label{margin:0}
+@media (prefers-reduced-motion:reduce){#shpKb.dk .shp-card.late{animation:none}#dkPanel.dk-in *{animation:none!important}#dkMenu .dk-menu,#dkTip{animation:none}}
+@media (max-width:899px){.dk-head .dk-ttl h1{font-size:26px}.dk-sub{font-size:13px}}
 @media (min-width:900px){
-.dk-bar .vx-bv{flex:0 1 300px}.dk-bar .shp-tseg{flex:0 1 auto}.dk-bar .dk-find{flex:1 1 240px}.dk-fb{display:none!important}
-#shpKb.dk{gap:10px;margin:14px 0 0;padding:2px 0 14px;scroll-snap-type:none;min-height:62vh}
-#shpKb.dk>.shp-col{flex:1 1 0;min-width:108px;max-width:300px;padding:0 8px 10px;scroll-snap-align:none}
-#shpKb.dk .shp-colh{padding:10px 2px 10px}#shpKb.dk .shp-colh h2{font-size:14.5px}#shpKb.dk .dk-hn,#shpKb.dk .shp-cnt,#shpKb.dk .shp-csum{font-size:12.5px}
-#shpKb.dk .shp-card,#dkGhost{padding:9px 10px 10px!important;margin-bottom:8px!important;border-radius:11px!important}
-.dk-c .dk-t b{font-size:15.5px}.dk-c .dk-n{font-size:14.5px}.dk-c .dk-m{font-size:13px}.dk-c .dk-st{font-size:12.5px}
-#shpKb.dk .dk-monh{font-size:12.5px}}
+#dkBar{margin:10px 0 0;padding:2px 0;gap:8px;overflow:visible}#dkBar .dk-fb{display:none}
+#dkBar .dk-find{flex:0 1 320px;margin-left:auto}
+#dkPay{max-width:560px}#dkMs{margin:6px 0 0;padding:6px 0 2px}
+#dkPanel{display:none}
+#shpKb.dk{gap:10px;margin:12px 0 0;height:70vh;min-height:340px;max-height:none}
+#shpKb.dk>.shp-col{padding:0 8px 8px;border-radius:14px;cursor:default}
+#shpKb.dk>.shp-col.dk-offp{display:flex}
+#shpKb.dk .shp-colh{padding:9px 2px 9px}#shpKb.dk .shp-colh h2{font-size:14.5px;letter-spacing:0}#shpKb.dk .dk-hl{display:inline}#shpKb.dk .dk-hs{display:none}
+#shpKb.dk .shp-cnt{font-size:18px}#shpKb.dk .shp-csum{font-size:12.5px}
+#shpKb.dk .dk-cards{overflow-y:auto;padding:2px 1px 0;scrollbar-width:thin}
+#shpKb.dk .shp-card,#dkGhost,#dkMenu .dk-lift{gap:2px;margin:0 0 8px!important;padding:8px 10px 9px 10px!important;border-left-width:3px!important;border-radius:10px!important}
+#shpKb.dk .shp-card:hover{background:color-mix(in srgb,var(--dk-card) 90%,var(--dk-ink))!important}
+.dk-c .dk-t b{font-size:15.5px;letter-spacing:0}.dk-c .dk-z{display:inline}
+.dk-c .dk-ns{display:none}.dk-c .dk-n{display:block;font-size:14.5px;line-height:1.25;font-weight:600;color:var(--dk-ink);overflow-wrap:anywhere}
+.dk-c .dk-st,.dk-c .dk-who{display:block;font-size:12.5px;line-height:1.3;color:var(--dk-mut);overflow-wrap:anywhere}
+.dk-c .dk-m{font-size:13.5px}.dk-c .dk-late,.dk-c .dk-days{font-size:12.5px}.dk-c .dk-late em,.dk-c .dk-days em{display:inline;font-style:normal}
+.dk-c .dk-ic{top:7px;right:8px;font-size:12px}.dk-c .dk-new{right:8px;bottom:9px;width:7px;height:7px}
+.dk-c .dk-t{padding-right:18px}
+#shpKb.dk .dk-more{display:none}
+#shpKb.dk .dk-arch{flex:0 1 auto;overflow-y:auto;margin-top:4px;padding-top:2px}
+#shpKb.dk .dk-archb{min-height:34px;font-size:13px}#shpKb.dk .dk-archb b{display:inline}
+#shpKb.dk .dk-arch:not(.shut) .dk-archl,#shpKb.dk.dk-q .dk-archl{display:block}
+#shpKb.dk .dk-arch:not(.shut){flex:1 1 50%}
+#dkMenu{background:rgba(0,0,0,.35)}#dkMenu .dk-lift{transform:none}}
 `; document.head.appendChild(st); }
 })();
 
@@ -23993,7 +24320,7 @@ function wrPickModal(cb,opt){ opt=opt||{}; document.getElementById("wrPickM")?.r
   const dir=()=>wrDir().filter(r=>r&&r[5]!=="x"), hay=r=>w2Norm(r[1]+" "+r[0]+" "+(r[6]||"")+" "+W24_BLK[wrBlk(r)-1][2]+" "+((r[5]||"s")==="s"?"":wrSrcName(r[5])));
   const find=D=>{ const W=w2Norm(st.q).split(/\s+/).filter(Boolean); return D.filter(r=>{ const h=hay(r); return W.every(w=>h.includes(w.length>5?w.slice(0,5):w)); }); };
   const rowH=r=>{ const on=st.sel===r[0], own=(r[5]||"s")==="s";
-    return `<div class="wr-it${on?" on":""}"><button type="button" class="wr-b" data-c="${esc(r[0])}"><span class="wr-bt"><b>${esc(r[1])} <i class="wr-tag${r[10]?" me":""}">${esc(wrTag(r))}</i></b><small>${own?"мастеру":"закупка"} ${esc(w2P(own?r[3]:r[7]))} → клиенту ${esc(w2P(r[4]))} ₽ за ${esc(r[2])}${wrKind(r)}</small></span><span class="wr-pl" aria-hidden="true">${on?"✓":"+"}</span></button>${on?`<div class="wr-n"><span>Сколько, ${esc(r[2])}:</span><span class="wr-qty"><button type="button" data-n="-1" aria-label="Меньше">−</button><input class="wr-nn" inputmode="decimal" value="${esc(w2F(st.n))}" aria-label="Количество"><button type="button" data-n="1" aria-label="Больше">+</button></span></div>`:""}</div>`; };
+    return `<div class="wr-it${on?" on":""}"><button type="button" class="wr-b" data-c="${esc(r[0])}"><span class="wr-bt"><b>${esc(r[1])} <i class="wr-tag${r[10]?" me":""}">${esc(wrTag(r))}</i>${r[11]?` <i class="wr-tag wr-wait">ждёт проверки</i>`:""}</b><small>${own?"мастеру":"закупка"} ${esc(w2P(own?r[3]:r[7]))} → клиенту ${esc(w2P(r[4]))} ₽ за ${esc(r[2])}${wrKind(r)}</small></span><span class="wr-pl" aria-hidden="true">${on?"✓":"+"}</span></button>${on?`<div class="wr-n"><span>Сколько, ${esc(r[2])}:</span><span class="wr-qty"><button type="button" data-n="-1" aria-label="Меньше">−</button><input class="wr-nn" inputmode="decimal" value="${esc(w2F(st.n))}" aria-label="Количество"><button type="button" data-n="1" aria-label="Больше">+</button></span></div>`:""}</div>`; };
   const ownBtn=q=>can?`<button type="button" class="wr-own" data-x="own" data-q="${esc(q||"")}">+ Добавить свою работу${q?" «"+esc(q)+"»":""}</button>`:"";
   const bodyH=()=>{ const D=dir(), q=st.q.trim();
     if(q){ const L=find(D); return `<div class="wr-list">${L.length?W24_BLK.map((b,i)=>{ const R=L.filter(r=>wrBlk(r)===i+1); return R.length?`<p class="wr-g">${b[0]} ${b[2]} · ${R.length}</p>`+R.map(rowH).join(""):""; }).join(""):`<p class="muted wr-no">Такой работы в каталоге нет.${can?" Добавьте свою — она останется в каталоге фирмы.":" Новые работы — «Все разделы → Настройки компании → Работы»."}</p>`}${ownBtn(L.length?"":q.slice(0,80))}</div>`; }
@@ -24002,12 +24329,13 @@ function wrPickModal(cb,opt){ opt=opt||{}; document.getElementById("wrPickM")?.r
     return `<div class="wr-tiles" role="group" aria-label="Блоки работ">${W24_BLK.map((t,i)=>`<button type="button" class="wr-tile${st.blk===i+1?" on":""}" data-b="${i+1}" aria-label="${t[2]}, работ: ${cnt[i]}"${st.blk===i+1?' aria-current="true"':""}><span class="wr-te" aria-hidden="true">${t[0]}</span><span class="wr-tn">${t[1]}</span><span class="wr-tc">${cnt[i]}</span></button>`).join("")}</div>
       <div class="wr-list"><p class="wr-g">${b[2]} · ${R.length}</p>${R.map(rowH).join("")||`<p class="muted wr-no">В этом блоке пока нет работ.</p>`}${note}${ownBtn("")}</div>`; };
   const actsH=()=>{ const w=st.sel&&dir().find(r=>r[0]===st.sel); return `<button type="button" class="btn primary" data-x="add"${w?"":" disabled"}>${w?"+ Добавить: "+esc(w2F(st.n))+" "+esc(w[2]):"Выберите работу"}</button><button type="button" class="btn" data-x="close">Закрыть</button>`; };
-  const leftT=()=>{ const f=st.f, m=w2Num(f.m), c=w2Num(f.c), d=Math.round((c-m)*100)/100; return !(m>0||c>0)?["Впишите, сколько мастеру и сколько клиенту",0]:d<0?["Клиенту меньше, чем мастеру — фирма теряет "+w2P(-d)+" ₽ с каждой",1]:["Фирме остаётся "+w2P(d)+" ₽ с каждой",0]; };
+  const noM=()=>!!(window.smvNoM&&window.smvNoM());   /* плитки сметы (12.11): «Менять цену мастеру в своей работе» выключено — дизайнер вписывает только цену клиенту, работа «ждёт проверки» */
+  const leftT=()=>{ const f=st.f, m=noM()?0:w2Num(f.m), c=w2Num(f.c), d=Math.round((c-m)*100)/100; if(noM()) return c>0?["Цену мастеру поставит директор — до этого работа «ждёт проверки», бригаде за неё 0",0]:["Впишите цену клиенту",0]; return !(m>0||c>0)?["Впишите, сколько мастеру и сколько клиенту",0]:d<0?["Клиенту меньше, чем мастеру — фирма теряет "+w2P(-d)+" ₽ с каждой",1]:["Фирме остаётся "+w2P(d)+" ₽ с каждой",0]; };
   const formH=()=>{ const f=st.f, lt=leftT();
     return `<h2 style="margin:0 0 10px">Своя работа</h2><div class="wr-form">
       <label class="wr-fl">Название<input class="wr-fi" data-f="n" maxlength="120" value="${esc(f.n)}" placeholder="например: Кухонная база угловая" autocomplete="off" enterkeyhint="next"></label>
       <div class="wr-fl" id="wrFbL">Блок</div><div class="wr-tiles wr-fb" role="group" aria-labelledby="wrFbL">${W24_BLK.map((t,i)=>`<button type="button" class="wr-tile${f.blk===i+1?" on":""}" data-fb="${i+1}" aria-label="${t[2]}"${f.blk===i+1?' aria-current="true"':""}><span class="wr-te" aria-hidden="true">${t[0]}</span><span class="wr-tn">${t[1]}</span></button>`).join("")}</div>
-      <div class="wr-f3"><label class="wr-fl">Единица<select class="wr-fi" data-f="u">${W24_UN.map(u=>`<option${f.u===u?" selected":""}>${u}</option>`).join("")}</select></label><label class="wr-fl">Мастеру, ₽<input class="wr-fi" data-f="m" inputmode="decimal" maxlength="9" value="${esc(f.m)}" placeholder="0" autocomplete="off"></label><label class="wr-fl">Клиенту, ₽<input class="wr-fi" data-f="c" inputmode="decimal" maxlength="9" value="${esc(f.c)}" placeholder="0" autocomplete="off"></label></div>
+      <div class="wr-f3"><label class="wr-fl">Единица<select class="wr-fi" data-f="u">${W24_UN.map(u=>`<option${f.u===u?" selected":""}>${u}</option>`).join("")}</select></label>${noM()?"":`<label class="wr-fl">Мастеру, ₽<input class="wr-fi" data-f="m" inputmode="decimal" maxlength="9" value="${esc(f.m)}" placeholder="0" autocomplete="off"></label>`}<label class="wr-fl">Клиенту, ₽<input class="wr-fi" data-f="c" inputmode="decimal" maxlength="9" value="${esc(f.c)}" placeholder="0" autocomplete="off"></label></div>
       <p class="wr-left${lt[1]?" bad":""}" aria-live="polite">${esc(lt[0])}</p><p class="muted wr-fm"${f.blk===8?"":" hidden"}>Блок «Монтаж, техника»: при «Без монтажа» в смете такая работа не считается.</p></div>
       <div class="wr-acts"><button type="button" class="btn primary" data-x="fsave">Сохранить и добавить</button><button type="button" class="btn" data-x="fback">Отмена</button></div>
       <p class="muted wr-fn">Работа останется в каталоге фирмы — её увидят все, с меткой «добавил ${esc(shpWho())}». В смету добавится сразу, количество поменяете там.</p>`; };
@@ -24016,10 +24344,11 @@ function wrPickModal(cb,opt){ opt=opt||{}; document.getElementById("wrPickM")?.r
     const B=c.querySelector(".wr-body"), y=top?0:B.scrollTop; B.innerHTML=bodyH(); B.scrollTop=y; c.querySelector(".wr-acts").innerHTML=actsH(); };
   const save=async()=>{ const f=st.f; if(!f||st.busy) return; const n=String(f.n||"").replace(/\s+/g," ").trim(), m=w2Num(f.m), c=w2Num(f.c);
     if(n.length<2){ toast("Впишите название работы"); const i=card().querySelector('[data-f="n"]'); if(i) i.focus(); return; }
-    if(!(m>0||c>0)||m<0||c<0){ toast("Впишите, сколько мастеру и сколько клиенту"); return; }
+    if(noM()&&!(c>0)){ toast("Впишите цену клиенту"); return; }
+    if(!noM()&&(!(m>0||c>0)||m<0||c<0)){ toast("Впишите, сколько мастеру и сколько клиенту"); return; }
     if(c<m&&!(await appConfirm("Клиенту ("+w2P(c)+" ₽) меньше, чем мастеру ("+w2P(m)+" ₽) — фирма теряет "+w2P(m-c)+" ₽ с каждой. Всё равно сохранить?","Сохранить"))) return;
     st.busy=true; const b=card().querySelector('[data-x="fsave"]'); if(b){ b.disabled=true; b.textContent="Сохраняю…"; }
-    const j=await shpPostRaw({action:"wrAdd",n,u:f.u,m,c,blk:f.blk}); st.busy=false; if(!document.body.contains(x)) return;
+    const j=await shpPostRaw({action:"wrAdd",n,u:f.u,m:noM()?0:m,c,blk:f.blk}); st.busy=false; if(!document.body.contains(x)) return;
     if(!j||!j.ok||!Array.isArray(j.row)){ if(b){ b.disabled=false; b.textContent="Сохранить и добавить"; }
       if(j&&j.error==="pin") return shpBadPin(); return toast(!j?"Нет связи с таблицей. Работа не сохранилась.":j.msg||(j.error==="role"?"Свою работу добавляют дизайнер, офис, технолог и директор":"Не сохранилось. Обновите скрипт таблицы или попробуйте ещё раз.")); }
     wrOwnPut(j.row); S.wrBlk=wrBlk(j.row); x.remove(); cb(String(j.row[0]),1,j.row); if(j.dup) setTimeout(()=>toast("Такая работа уже есть в каталоге — добавил её в смету"),0); };
@@ -24053,10 +24382,10 @@ function wrCfgHtml(D,ro){ const st=S.shop.wrF||(S.shop.wrF={q:"",src:""}), cnt=k
   return h; }
 function wrCfgListHtml(D,ro){ const st=S.shop.wrF||{q:"",src:""}, L=wrFilter(D.wr,st.q,st.src,""), G=wrGroups(L);
   return G.map(g=>`<p class="wr-g">${esc(g)} · ${L.filter(r=>(r[6]||"Прочее")===g).length}</p>`+L.filter(r=>(r[6]||"Прочее")===g).map(r=>{ const own=(r[5]||"s")==="s", i=D.wr.indexOf(r);
-      return `<button type="button" class="wr-row" data-act="cfg-wed" data-i="${i}"${ro?" disabled":""}><span class="wr-rn"><b>${esc(r[1])}</b><small>${esc(r[2])} · ${own?(r[10]?"добавил "+esc(r[10]):"свои"):esc(wrSrcName(r[5],D))}${wrKind(r)}</small></span><span class="wr-rp"><small>${own?"мастеру":"закупка"}</small><b>${esc(w2F(own?r[3]:r[7]))}</b></span><span class="wr-rp"><small>клиенту</small><b>${esc(w2F(r[4]))}</b></span></button>`; }).join("")).join("")||`<p class="muted" style="padding:12px">Ничего не нашлось.</p>`; }
+      return `<button type="button" class="wr-row" data-act="cfg-wed" data-i="${i}"${ro?" disabled":""}><span class="wr-rn"><b>${esc(r[1])}</b><small>${esc(r[2])} · ${own?(r[10]?"добавил "+esc(r[10]):"свои"):esc(wrSrcName(r[5],D))}${wrKind(r)}${r[11]?` · <b class="wr-wait">⏳ ждёт проверки — поставьте цену мастеру</b>`:""}</small></span><span class="wr-rp"><small>${own?"мастеру":"закупка"}</small><b>${esc(w2F(own?r[3]:r[7]))}</b></span><span class="wr-rp"><small>клиенту</small><b>${esc(w2F(r[4]))}</b></span></button>`; }).join("")).join("")||`<p class="muted" style="padding:12px">Ничего не нашлось.</p>`; }
 function wrEditModal(D,i){ const isNew=i<0, r=isNew?["U"+Date.now().toString(36).slice(-5).toUpperCase(),"","шт",0,0,"s","Свои добавленные",0,0,9]:D.wr[i].slice(); document.getElementById("wrEdM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="wrEdM";
   const G=wrGroups(D.wr), T=tarCfg(D);
-  m.innerHTML=`<form class="modal-card wr-ed" autocomplete="off"><h2 style="margin:0 0 10px">${isNew?"Новая работа":"Работа"}</h2>${r[10]?`<p class="muted" style="margin:-4px 0 10px;font-size:12.5px">добавил ${esc(r[10])} — из сметы</p>`:""}<div class="form" style="grid-template-columns:1fr;margin:0">
+  m.innerHTML=`<form class="modal-card wr-ed" autocomplete="off"><h2 style="margin:0 0 10px">${isNew?"Новая работа":"Работа"}</h2>${r[10]?`<p class="muted" style="margin:-4px 0 10px;font-size:12.5px">добавил ${esc(r[10])} — из сметы${r[11]?" · ждёт проверки: впишите, сколько мастеру, и нажмите «Готово»":""}</p>`:""}<div class="form" style="grid-template-columns:1fr;margin:0">
     <label>Название<input name="n" required maxlength="120" value="${esc(r[1])}" placeholder="например: Сборка шкафа-купе"></label>
     <div class="wr-f2"><label>Единица<input name="u" maxlength="12" value="${esc(r[2])}" list="wrUL"></label><label>Чья работа<select name="s">${Object.keys(W24_SRC).map(k=>`<option value="${k}"${(r[5]||"s")===k?" selected":""}>${esc(wrSrcName(k,D))}</option>`).join("")}</select></label></div><datalist id="wrUL">${["шт","м","м²","лист","компл.","заказ"].map(u=>`<option value="${u}">`).join("")}</datalist>
     <label>Группа<input name="g" maxlength="40" value="${esc(r[6]||"")}" list="wrGL"></label><label>Блок в смете<select name="b">${W24_BLK.map((t,k)=>`<option value="${k+1}"${wrBlk(r)===k+1?" selected":""}>${t[0]} ${t[2]}</option>`).join("")}</select></label><datalist id="wrGL">${G.map(g=>`<option value="${esc(g)}">`).join("")}</datalist>
@@ -24069,7 +24398,7 @@ function wrEditModal(D,i){ const isNew=i<0, r=isNew?["U"+Date.now().toString(36)
   m.addEventListener("click",e=>{ const t=e.target.closest("[data-t]"); if(t){ const v=Math.round(w2Num(f.elements.m.value)*(+t.dataset.t)*100)/100; f.elements.c.value=w2F(v); return; }
     if(e.target.closest('[data-x="del"]')){ D.wr.splice(i,1); m.remove(); return shpRenderKeep(); }
     if(e.target===m||e.target.closest('[data-x="close"]')) m.remove(); });
-  f.addEventListener("submit",e=>{ e.preventDefault(); const own=f.elements.s.value==="s", mv=w2Num(f.elements.m.value), nr=[r[0],f.elements.n.value.trim(),f.elements.u.value.trim()||"шт",own?mv:0,w2Num(f.elements.c.value),f.elements.s.value,f.elements.g.value.trim()||"Прочее",own?0:mv,+f.elements.mt.value||0,+f.elements.b.value||9].concat(r[10]?[r[10]]:[]);   /* блок и «кто добавил» не теряем */
+  f.addEventListener("submit",e=>{ e.preventDefault(); const own=f.elements.s.value==="s", mv=w2Num(f.elements.m.value), nr=[r[0],f.elements.n.value.trim(),f.elements.u.value.trim()||"шт",own?mv:0,w2Num(f.elements.c.value),f.elements.s.value,f.elements.g.value.trim()||"Прочее",own?0:mv,+f.elements.mt.value||0,+f.elements.b.value||9].concat(r[10]||(r[11]&&!(own&&mv>0))?[r[10]||""]:[]).concat(r[11]&&!(own&&mv>0)?[1]:[]);   /* блок и «кто добавил» не теряем; 13.11: «мастеру» так и 0 — метка «ждёт проверки» остаётся */
     if(!nr[1]){ toast("Впишите название"); return; } if(isNew) D.wr.push(nr); else D.wr[i]=nr; m.remove(); shpRenderKeep(); }); }
 
 /* ===== «Наценки»: группы материалов, заказные фасады, услуги поставщиков, тарифы работ ===== */
@@ -24332,7 +24661,359 @@ if(typeof viewShop==="function"){ const _exV=viewShop; viewShop=function(){ if(S
 .exp-ml{display:flex;flex-direction:column;gap:10px}.exp-m{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;background:var(--surface,rgba(127,127,127,.07));border:1px solid var(--line,rgba(127,127,127,.22));border-radius:12px;padding:10px 12px}.exp-m label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted,#888);min-width:0}.exp-m .exp-w{grid-column:1/-1}.exp-m small{font-size:11px}.exp-x{grid-column:1/-1;justify-self:end}
 .exp-f{width:min(480px,100%);box-sizing:border-box}.exp-f input:not([type=file]){width:100%;box-sizing:border-box}.exp-kinds{display:flex;gap:6px;margin-top:8px}.exp-kinds[hidden]{display:none}
 .qk-bw .qk-bwf{margin-top:8px;padding-top:8px;border-top:1px dashed rgba(127,127,127,.3);font-size:13px;display:flex;flex-direction:column;gap:3px}.qk-bw .qk-bwf div{display:flex;justify-content:space-between;gap:10px}.qk-bw .qk-off{opacity:.5;text-decoration:line-through}.mk-ref .qk-tot{font-size:13px}
-html.vt.sk[data-vt="dark"] .dlv-box{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}`; document.head.appendChild(st); })();
+html.vt.sk[data-vt="dark"] .dlv-box{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
+.wr-wait{color:#d08a10;font-weight:700}.wr-tag.wr-wait{background:rgba(242,165,36,.18)}`; document.head.appendChild(st); })();
+
+/* ===== ПЛИТКИ СМЕТЫ (Кирилл 12.11, вариант «Д+»: «Тут где смета значка добавить работы вообще не видно не понятно сделай сбоку разделы»;
+   «Д плитки выбираем и еще улучши»; «добав еще функции раздел редактор… могут добавть доп плитки могут цвет выбрать… чтобы очень гибким был… должен настраиваться кому как под себя»).
+   Быстрая смета, шаг «Материалы»:
+   - главный экран — итог (клиенту, коэффициент, бригаде) и плитки разделов 2 в ряд: значок, название, «N поз. · сумма», полоска доли, кружок «+»;
+     рамка красная — пусто и «напоминать, если пусто»; оранжевая — замечание из «Проверьте» (site_qkwarn.js: запас ЛДСП, кромка, петли, ручки); серая — пусто;
+   - внутри плитки — «← Раздел», вкладки других плиток, подсказки с кнопками, «+ Добавить…» первой строкой, те же строки, что раньше (site_qk.js рисует их сам);
+   - компьютер (≥ 900 px): слева плитки столбиком, справа выбранный раздел;
+   - вид «Списком» (большие сметы): разделы свёрнуты, «Развернуть всё», «Только пустые и с замечаниями», поиск по смете с «− / +»;
+   - редактор ✏️: порядок (перетащить или ↑↓), показать / скрыть, название, значок, цвет, «что в плитке», «напоминать, если пусто», широкая, кнопка «+», своя плитка, «Вернуть как было»;
+     «Для меня» (сервер smViewSave, за человеком — на всех его устройствах) / «Для всей фирмы» (только технолог и директор, «Настройки компании», ключ smView);
+   - «Настройки компании → Смета»: вид для фирмы, кто что может (права проверяет сервер: smViewSave_, wrAdd_).
+   Деньги и формулы не трогаем: каждая строка сметы попадает ровно в одну плитку (не нашла своей — в «Прочее»), считает её site_qk.js, как раньше. ===== */
+(function(){
+if(window.__plitki) return; window.__plitki=1;
+const X=()=>window.__qk&&window.__qk.x;
+const pN=v=>Math.round(+v||0).toLocaleString("ru-RU"), pF=v=>(Math.round((+v||0)*100)/100).toLocaleString("ru-RU"), pNum=v=>{ v=String(v==null?"":v).replace(/\s/g,"").replace(",","."); return v===""||!isFinite(+v)?0:+v; };
+const PL_IC=["🪵","🔩","🔨","🎨","🍽️","🪟","💡","🔌","🚪","🚚","📦","⭐"];
+const PL_COL=["#4ea8ff","#a78bfa","#f2b824","#30c27b","#f472b6","#ff5a4e","#8e8e93","#f2862a"];
+const PL_WK=["w:1","w:2","w:3","w:4","w:5","w:6","w:7","w:8","w:9"];
+/* стандартные плитки — по разделам быстрой сметы (site_qk.js: QK_MATSEC, QK_SEC) и блокам работ (site_works.js: W24_BLK). Коды — как на сервере (SMV_STD_). */
+const PL_STD=[{id:"mat",n:"Материалы",ic:"🪵",col:0,g:["m:ldsp","m:edge"],rem:1},{id:"furn",n:"Фурнитура",ic:"🔩",col:1,g:["hinge","drw","lift","handle","kitchen","ward","fix","plinth","c:*"],rem:1},
+  {id:"works",n:"Работы",ic:"🔨",col:2,g:PL_WK.concat(["w:mont"])},{id:"fas",n:"Фасады",ic:"🎨",col:4,g:["m:mdf","m:pvh"]},{id:"top",n:"Столешница",ic:"🍽️",col:7,g:["top","apron"]},
+  {id:"glass",n:"Стекло, зеркало",ic:"🪟",col:0,g:["glass"]},{id:"led",n:"Подсветка",ic:"💡",col:3,g:["led","prof"]},{id:"doors",n:"Двери-купе и в профиле",ic:"🚪",col:6,g:["doors"]},
+  {id:"dlv",n:"Доставка",ic:"🚚",col:6,g:["w:dlv"]},{id:"other",n:"Прочее",ic:"📦",col:6,g:["other"]}];
+const plStd=id=>PL_STD.find(x=>x.id===id)||null;
+const PL_DEF={view:"tiles",own:true,who:"all",addT:true,hideT:true,addW:true,wM:false};
+const PL_WHAT={zap:"запас ЛДСП",edge:"кромка",hinge:"петли",handle:"ручки"}, PL_WCH={zap:"запас ЛДСП?",edge:"кромка?",hinge:"нет петель",handle:"нет ручек"};
+
+/* ---------- настройки: фирма (cfg smView) и свои (qkSet → view) ---------- */
+function plFirm(){ const v=(S.shop&&S.shop.cfgAll&&S.shop.cfgAll.smView)||{}, f=k=>v[k]===undefined||v[k]===null?PL_DEF[k]:!!v[k];
+  return {view:v.view==="list"?"list":"tiles",own:f("own"),who:/^(all|glav|none)$/.test(String(v.who))?v.who:"all",addT:f("addT"),hideT:f("hideT"),addW:f("addW"),wM:f("wM"),tiles:v.tiles&&Array.isArray(v.tiles.L)?v.tiles:null}; }
+function plDes(){ return !!window.APP_DES; }
+function plMine(){ if(plDes()){ try{ return JSON.parse(localStorage.getItem("w24-smv")||"null"); }catch(_){ return null; } } const s=X()&&X().set(); return (s&&s.view)||null; }
+function plTech(){ return !!(S.shop&&S.shop.tech)||plDes(); }
+function plCanTiles(F){ F=F||plFirm(); return plTech()||F.who==="all"||(F.who==="glav"&&!!(S.shop&&S.shop.glav)); }   /* настраивать плитки себе */
+function plCanView(F){ F=F||plFirm(); return plTech()||F.own; }   /* выбирать себе «Плитки / Список» */
+function plView(){ const F=plFirm(), U=plMine(); return plCanView(F)&&U&&(U.view==="list"||U.view==="tiles")?U.view:F.view; }
+/* «Менять цену мастеру в своей работе» выключено (по умолчанию) — дизайнер её не вписывает: работа «ждёт проверки», цену ставит технолог / директор (сервер wrAdd_) */
+window.smvNoM=function(){ return !!(S.shop&&S.shop.full&&!S.shop.tech&&!plDes()&&!plFirm().wM); };
+if(typeof wrAddCan==="function"){ const _wac=wrAddCan; wrAddCan=function(){ const r=_wac.apply(this,arguments); try{ if(r&&S.shop&&!S.shop.tech&&!plFirm().addW) return false; }catch(_){} return r; }; }
+
+function plFromSaved(x){ const s=plStd(x.id)||{}; return {id:x.id,n:x.n||s.n||"Плитка",ic:x.ic||s.ic||"📦",col:+x.col>=0&&+x.col<8?+x.col:(s.col||0),g:Array.isArray(x.g)?x.g.slice():[],gx:Array.isArray(x.g)&&x.g.length>0,hide:!!x.hide,rem:!!x.rem,wide:!!x.wide,plus:x.plus!==0&&x.plus!==false,own:!!x.own&&!s.id}; }
+function plFromStd(s){ return {id:s.id,n:s.n,ic:s.ic,col:s.col,g:[],gx:false,hide:false,rem:!!s.rem,wide:false,plus:true,own:false}; }
+function plMerge(L){ const out=(L||[]).filter(x=>x&&x.id).map(plFromSaved); PL_STD.forEach(s=>{ if(!out.some(x=>x.id===s.id)) out.push(plFromStd(s)); }); return out; }
+/* какие плитки показывать: свои (если можно) → фирмы → стандартные */
+function plLayout(){ const F=plFirm(), U=plMine(); if(plCanTiles(F)&&U&&U.tiles&&U.tiles.L&&U.tiles.L.length) return {L:plMerge(U.tiles.L),src:"me"}; if(F.tiles&&F.tiles.L.length) return {L:plMerge(F.tiles.L),src:"firm"}; return {L:plMerge([]),src:"std"}; }
+function plOut(L){ return {L:L.map(t=>{ const o={id:t.id,n:String(t.n||"").slice(0,30),ic:t.ic,col:t.col,g:t.gx?t.g.slice(0,80):[]}; if(t.hide) o.hide=1; if(t.rem) o.rem=1; if(t.wide) o.wide=1; if(!t.plus) o.plus=0; if(t.own) o.own=1; return o; })}; }
+
+/* ---------- раскладка строк сметы по плиткам ---------- */
+const plHas=(g,k)=>g.includes(k)||(/^c:/.test(k)&&g.includes("c:*"));
+function plOwner(L,keys){ for(const k of keys){ let t=L.find(t=>t.gx&&plHas(t.g,k)); if(t) return t; t=L.find(t=>!t.gx&&!t.own&&plStd(t.id)&&plHas(plStd(t.id).g,k)); if(t) return t; } return L.find(t=>t.id==="other")||L[L.length-1]; }
+function plDirRow(id){ try{ return (typeof wrDir==="function"?wrDir():[]).find(r=>String(r[0])===String(id))||null; }catch(_){ return null; } }
+function plWorkKeys(x){ const r=plDirRow(x.id), k=[]; if(x.dlvW) k.push("w:dlv"); if(x.mont) k.push("w:mont"); k.push("w:"+(r&&typeof wrBlk==="function"?wrBlk(r):9)); return k; }
+function plModel(c,q){ const x=X(), {E,cfg}=x.secMap(c,q), L=plLayout().L, T={};
+  L.forEach(t=>{ T[t.id]={t,secs:[],works:[],doors:false,cnt:0,sum:0,br:0,warn:[],wkKeys:[]}; });
+  const order=x.secAll(q).map(z=>z[0]); Object.keys(E).forEach(k=>{ if(!order.includes(k)) order.push(k); });
+  order.forEach(k=>{ if(!E[k]) return; const m=T[plOwner(L,[k]).id]; m.secs.push(k); m.cnt+=E[k].cnt; m.sum+=E[k].sum; });
+  ((c.BW&&c.BW.L)||[]).forEach(w=>{ const m=T[plOwner(L,plWorkKeys(w)).id]; m.works.push(w); if(w.q>0){ m.cnt++; m.br+=w.sum; } });
+  PL_WK.concat(["w:mont","w:dlv"]).forEach(k=>T[plOwner(L,[k]).id].wkKeys.push(k));
+  { const m=T[plOwner(L,["doors"]).id], P=c.P||{L:[]}, n=(q.kp||[]).length+(q.dr||[]).filter(d=>+d.n>0).length; m.doors=true; m.dn=n; m.cnt+=n; m.sum+=(P.L||[]).reduce((a,z)=>a+(+z.sum||0),0); }
+  let W=[]; try{ W=typeof qwList==="function"?qwList(c,q).filter(z=>!z.ok):[]; }catch(_){ W=[]; }
+  W.forEach(w=>{ const key={zap:"m:ldsp",edge:"m:edge",hinge:"hinge",handle:"handle"}[w.k]; if(!key) return; T[plOwner(L,[key]).id].warn.push(w); });
+  const all=L.reduce((a,t)=>a+T[t.id].sum,0);
+  L.forEach(t=>{ const m=T[t.id]; m.share=all>0?m.sum/all:0;
+    m.st=m.cnt===0&&t.rem&&!t.hide?"red":m.warn.length?"warn":m.cnt===0?"dim":"";
+    m.show=(!t.hide||m.cnt>0)&&!(t.id==="other"&&m.cnt===0)&&!(m.works.length===0&&!m.secs.length&&!m.doors&&!c.BW&&m.wkKeys.length&&m.cnt===0); });
+  return {E,cfg,L,T}; }
+function plSub(m){ if(m.cnt===0) return m.st==="red"?"пусто"+(m.warn.length?" — нужны "+[...new Set(m.warn.map(w=>PL_WHAT[w.k]||w.t))].join(", "):""):"нет";
+  const p=[]; if(m.sum>0||!m.works.length) p.push(m.cnt+" поз. · "+pN(m.sum)); else p.push(m.cnt+" поз."); if(m.br>0) p.push("бригаде "+pN(m.br)); return p.join(" · "); }
+function plTileStyle(t){ return `--plc:${PL_COL[t.col]||PL_COL[0]}`; }
+
+/* что добавить в плитку: разделы, работы, двери */
+function plTargets(m,E){ const T=[];
+  m.secs.forEach(k=>{ const e=E[k]; if(!e||e.extra) return; if(/^m:pvh$/.test(k)) T.push({k,n:e.n,a:`data-qk="pvh" data-i="-1"`}); else if(/^m:/.test(k)) T.push({k,n:e.n,a:`data-qk="add" data-c="${esc(e.cat)}"`}); else T.push({k,n:e.n,a:`data-qsp="${esc(k)}"`}); });
+  const wk=m.wkKeys.filter(k=>/^w:\d$/.test(k)); if(m.wkKeys.length&&typeof wrPickModal==="function") T.push({k:"w",n:m.wkKeys.includes("w:dlv")&&!wk.length?"Доставка и подъём (работа)":"Работа",a:`data-pl="addw" data-blk="${wk.length?wk[0].slice(2):9}"`,w:1});
+  if(m.doors){ T.push({k:"kupe",n:"Двери-купе",a:`data-qk="kupe" data-i="-1"`}); T.push({k:"door",n:"Дверь в алюминиевом профиле",a:`data-qk="door" data-i="-1"`}); }
+  if(m.secs.some(k=>/^c:/.test(k))||plHas(m.t.gx?m.t.g:((plStd(m.t.id)||{}).g||[]),"c:x")) T.push({k:"sec",n:"Свой раздел…",a:`data-qsecadd="1"`});
+  return T; }
+function plAddAttr(m,E){ const T=plTargets(m,E).filter(x=>x.k!=="sec"); return T.length===1?T[0].a:`data-pl="pick" data-t="${esc(m.t.id)}"`; }
+function plAddLabel(m,E){ const T=plTargets(m,E).filter(x=>x.k!=="sec"); if(T.length===1) return T[0].w?"+ Добавить работу":"+ Добавить: "+T[0].n; return "+ Добавить в «"+m.t.n+"»"; }
+
+/* ---------- главный экран: плитки ---------- */
+function plBarHtml(view){ const F=plFirm(), sw=plCanView(F), ed=plCanTiles(F)||plTech();
+  if(!sw&&!ed) return ""; return `<div class="smt-bar">${sw?`<div class="smt-seg" role="group" aria-label="Вид сметы"><button type="button" data-pl="view" data-v="tiles" aria-pressed="${view==="tiles"}">▦ Плитки</button><button type="button" data-pl="view" data-v="list" aria-pressed="${view==="list"}">☰ Список</button></div>`:"<span></span>"}${ed?`<button type="button" class="smt-ed" data-pl="ed" aria-label="Настроить плитки">✏️</button>`:""}</div>`; }
+function plTopHtml(c){ const B=c.BW, br=B&&B.on?B.sum:Math.round((c.M/0.45)*0.21), k=(Math.round(c.k*100)/100).toFixed(2).replace(".",",");
+  return `<section class="smt-top"><div><small>Клиенту</small><b>${c.total>0?pN(c.total)+" ₽":"—"}</b></div><div class="smt-tr"><small>коэфф.</small><b class="smt-k">${k}</b><small>бригаде ${B&&B.on?"":"21 % · "}${pN(br)}</small></div></section>`; }
+function plTileHtml(m,E,small){ const t=m.t, add=t.plus&&!small&&plTargets(m,E).some(x=>x.k!=="sec")?`<button type="button" class="smt-plus" ${plAddAttr(m,E)} aria-label="Добавить в «${esc(t.n)}»">+</button>`:"";
+  const w=m.warn.length&&m.cnt>0?`<span class="smt-wch">⚠ ${esc([...new Set(m.warn.map(x=>PL_WCH[x.k]||x.t))].join(", "))}</span>`:"";
+  if(small) return `<button type="button" class="smt-ts${m.st?" smt-s-"+m.st:""}${S.plOpen&&S.plOpen.id===t.id?" on":""}" style="${plTileStyle(t)}" data-pl="open" data-t="${esc(t.id)}"><span class="smt-ic" aria-hidden="true">${t.ic}</span><b>${esc(t.n)}</b><span class="smt-tsr">${m.cnt?(m.sum?pN(m.sum):"бригаде "+pN(m.br)):m.st==="red"?"пусто":"—"}</span></button>`;
+  return `<div class="smt-t${m.st?" smt-s-"+m.st:""}${t.wide?" wide":""}${t.hide?" hid":""}" style="${plTileStyle(t)}"><button type="button" class="smt-tb" data-pl="open" data-t="${esc(t.id)}"><span class="smt-ic" aria-hidden="true">${t.ic}</span><b>${esc(t.n)}${t.hide?` <small>· скрыта</small>`:""}</b><small class="smt-ts2">${esc(plSub(m))}</small>${m.sum>0?`<i class="smt-share"><i style="width:${Math.max(3,Math.round(m.share*100))}%"></i></i>`:""}${w}</button>${add}</div>`; }
+function plHomeHtml(c,q,M){ const vis=M.L.filter(t=>M.T[t.id].show);
+  return plBarHtml("tiles")+plTopHtml(c)+`<div class="smt-grid">${vis.map(t=>plTileHtml(M.T[t.id],M.E)).join("")}</div>`+plFinHtml(); }
+function plFinHtml(){ return `<button type="button" class="smt-fin" data-qk="stp" data-v="price">🧾 Итог и КП клиенту →</button>`; }
+
+/* ---------- внутри плитки ---------- */
+const plStripAdd=h=>h.replace(/<button type="button" class="qk-add" data-(?:qk="add" data-c="[^"]*"|qsp="[^"]*"|qk="pvh" data-i="-1")>[^<]*<\/button>/g,"");
+function plWarnHtml(m){ return m.warn.map(x=>`<div class="smt-warn"><span>⚠ <b>${esc(x.t)}</b>${x.s?" — "+esc(x.s):""}</span><span class="smt-wb">${x.add?`<button type="button" class="btn sm" ${x.addq?`data-qk="add" data-c="${esc(x.addq)}"`:`data-qw="add" data-k="${esc(x.k)}"`}>${esc(x.add)}</button>`:""}<button type="button" class="btn sm" data-qw="no" data-k="${esc(x.k)}">${esc(x.no||"Не нужно")}</button></span></div>`).join(""); }
+function plBodyHtml(m,c,q,E){ const x=X(), one=m.secs.filter(k=>E[k]&&(E[k].cnt>0)).length, single=plTargets(m,E).filter(t=>t.k!=="sec").length===1; let h="";
+  m.secs.forEach(k=>{ const e=E[k]; if(!e) return; if(!e.cnt&&!single) return; const b=e.body(); h+=(m.secs.length>1&&(one>1||!single)?`<h3 class="smt-sh">${esc(e.n)}<span>${e.cnt?e.cnt+" поз. · "+pN(e.sum):""}</span></h3>`:"")+`<div class="smt-sb">${single?plStripAdd(b):b}</div>`; });
+  if(m.works.length){ h+=(m.secs.some(k=>E[k]&&E[k].cnt)?`<h3 class="smt-sh">Работы<span>бригаде ${pN(m.br)}</span></h3>`:"")+`<div class="smt-sb qk-bw">${m.works.map(w=>x.bwRow(w,q)).join("")}${m.t.id==="works"||m.wkKeys.length>=5?x.bwFoot(c):""}</div>`; }
+  else if(m.wkKeys.length>=5&&c.BW) h+=`<p class="smt-empty">Сборку, установку и монтаж добавьте кнопкой выше — тогда бригада получит сумму «мастеру» по работам. Пока своих работ нет — бригаде 21 %, как раньше.</p>`;
+  if(m.doors&&((q.kp||[]).length||(q.dr||[]).length)) h+=((q.kp||[]).length?x.kupe(c,q):"")+((q.dr||[]).length?x.prof(c,q):"");
+  if(!m.cnt&&!h) h+=`<p class="smt-empty">Пока пусто</p>`;
+  return h; }
+function plInHtml(m,c,q,M,desk){ const t=m.t, vis=M.L.filter(z=>M.T[z.id].show||z.id===t.id);
+  const head=desk?`<div class="smt-dh"><h2>${esc(t.n)}${m.cnt?` · ${m.cnt}`:""}</h2><span class="smt-dt"><small>Клиенту</small> <b>${c.total>0?pN(c.total)+" ₽":"—"}</b> <span class="smt-k">${(Math.round(c.k*100)/100).toFixed(2).replace(".",",")}</span></span></div>`
+    :`<div class="smt-hd"><button type="button" class="smt-back" data-pl="home">← ${esc(t.n)}</button><span>${esc(m.cnt?plSub(m):"")}</span></div><nav class="smt-tabs" aria-label="Разделы сметы">${vis.map(z=>`<button type="button" data-pl="open" data-t="${esc(z.id)}" class="${z.id===t.id?"on":""}${M.T[z.id].st?" smt-s-"+M.T[z.id].st:""}" style="${plTileStyle(z)}"${z.id===t.id?' aria-current="true"':""}>${z.ic} ${esc(z.n)}</button>`).join("")}</nav>`;
+  const add=plTargets(m,M.E).some(x=>x.k!=="sec")?`<button type="button" class="qk-add smt-add1" ${plAddAttr(m,M.E)}>${esc(plAddLabel(m,M.E))}</button>`:`<p class="smt-empty">В плитке пока ничего нет — нажмите ✏️ и выберите «Что в плитке».</p>`;
+  return head+plWarnHtml(m)+add+plBodyHtml(m,c,q,M.E); }
+function plDeskHtml(c,q,M){ const vis=M.L.filter(t=>M.T[t.id].show); let id=S.plOpen&&S.plOpen.id; if(!id||!M.T[id]||(!M.T[id].show)) id=(vis[0]||M.L[0]).id;
+  S.plOpen={sm:S.shop.sm,id};
+  return plBarHtml("tiles")+`<div class="smt-desk"><aside class="smt-side">${vis.map(t=>plTileHtml(M.T[t.id],M.E,true)).join("")}${plFinHtml().replace('class="smt-fin"','class="smt-fin smt-ts"').replace("Итог и КП клиенту →",`Итог и КП <span class="smt-tsr">${pN(c.total)}</span>`)}</aside><main class="smt-main">${plInHtml(M.T[id],c,q,M,true)}</main></div>`; }
+
+/* ---------- вид «Списком» ---------- */
+function plPos(m,c,q,E){ const out=[];   /* все строки плитки: {k, n, q, u, sum, a — открыть подробно, ref — «− / +»} */
+  m.secs.forEach(k=>{ const e=E[k]; if(!e) return; const rows=(e.G||[]).flatMap(g=>g.rows||[]).concat(e.rows||[]);
+    rows.forEach(x=>{ const man=x.i>=0&&!x.prod, au=x.cat==="edge"&&x.au; out.push({k:(x.prod?"p:"+x.cat+":"+x.n:"i:"+x.cat+":"+x.i),n:x.n||"без названия",q:x.q,u:x.u,sum:x.sum,a:man?(x.pvh?`data-qk="pvh" data-i="${x.i}"`:`data-qk="ed" data-c="${esc(x.cat)}" data-i="${x.i}"`):"",det:man?null:()=>X().rowHtml(x,x.cat),ref:man&&!au?"it:"+x.cat+":"+x.i:"",sec:e.n}); }); });
+  m.works.forEach(w=>out.push({k:"w:"+w.id,n:w.n,q:w.q,u:w.u,sum:w.sum,a:"",det:()=>X().bwRow(w,q),ref:"bw:"+w.id,w:1,sec:"Работы"}));
+  if(m.doors){ (q.kp||[]).forEach((d,i)=>out.push({k:"kp:"+i,n:"Купе "+pN(d.k&&d.k.W)+" × "+pN(d.k&&d.k.H),q:+d.n||1,u:"шт",sum:0,a:`data-qk="kupe" data-i="${i}"`,ref:"",sec:"Двери"}));
+    (q.dr||[]).forEach((d,i)=>out.push({k:"dr:"+i,n:"Дверь "+pN(d.w)+" × "+pN(d.h),q:+d.n||0,u:"шт",sum:0,a:`data-qk="door" data-i="${i}"`,ref:"dr:"+i,sec:"Двери"})); }
+  return out.filter(p=>p.q>0||p.ref); }
+function plCrHtml(p,st){ if(st.det[p.k]&&p.det) return `<div class="smt-det">${p.det()}<button type="button" class="linkbtn" data-pl="det" data-k="${esc(p.k)}">свернуть</button></div>`;
+  return `<button type="button" class="smt-cr" ${p.a||`data-pl="det" data-k="${esc(p.k)}"`}><span>${esc(p.n)}</span><span class="smt-crq">${pF(p.q)} ${esc(p.u||"")}${p.sum?" · "+pN(p.sum):""}</span></button>`; }
+function plListSt(){ if(!S.plL||S.plL.sm!==S.shop.sm) S.plL={sm:S.shop.sm,open:{},more:{},full:{},det:{},q:"",all:false,only:false}; return S.plL; }
+function plListHtml(c,q,M){ const st=plListSt(), vis=M.L.filter(t=>M.T[t.id].show), tot=vis.reduce((a,t)=>a+M.T[t.id].cnt,0);
+  let h=plBarHtml("list")+`<div class="smt-find"><input type="search" class="smt-q" data-pl-q="1" value="${esc(st.q)}" placeholder="🔍 Найти в смете: петли, кромка…" aria-label="Найти в смете" enterkeyhint="search" autocomplete="off"></div>
+    <div class="smt-chips"><button type="button" data-pl="lall" aria-pressed="${st.all}">${st.all?"Свернуть всё":"Развернуть всё"}</button><button type="button" data-pl="lonly" aria-pressed="${st.only}">Только пустые и с замечаниями</button></div><div id="plRes">`;
+  h+=st.q.trim()?plSearchHtml(c,q,M,st.q):vis.filter(t=>!st.only||M.T[t.id].st==="red"||M.T[t.id].warn.length||M.T[t.id].cnt===0).map(t=>plGroupHtml(M.T[t.id],c,q,M,st)).join("")||`<p class="smt-empty">Всё заполнено, замечаний нет</p>`;
+  return h+`</div><p class="smt-cnt">${tot} ${tot%10===1&&tot%100!==11?"позиция":tot%10>=2&&tot%10<=4&&(tot%100<10||tot%100>=20)?"позиции":"позиций"}</p>`+plFinHtml(); }
+function plGroupHtml(m,c,q,M,st){ const t=m.t, op=st.all||!!st.open[t.id], P=plPos(m,c,q,M.E);
+  const first=P.slice(0,2).map(p=>p.n+(p.q>1?" ×"+pF(p.q):"")).join(", ")+(P.length>2?" … и ещё "+(P.length-2):"");
+  let h=`<div class="smt-g${op?" on":""}${m.st?" smt-s-"+m.st:""}" style="${plTileStyle(t)}"><div class="smt-gh"><button type="button" class="smt-gt" data-pl="ltog" data-t="${esc(t.id)}" aria-expanded="${op}"><span class="smt-gn">${op?"▾":"▸"} ${t.ic} <b>${esc(t.n)} · ${m.cnt}</b></span><span class="smt-gs${m.cnt===0&&m.st==="red"?" bad":""}">${m.cnt?(m.sum?pN(m.sum):"бригаде "+pN(m.br)):m.st==="red"?"пусто":"—"}</span>${!op?(m.warn.length?`<small class="smt-gw">⚠ ${esc(m.warn.map(w=>w.t).join(", "))}</small>`:first?`<small>${esc(first)}</small>`:""):""}</button>${t.plus?`<button type="button" class="smt-plus" ${plAddAttr(m,M.E)} aria-label="Добавить в «${esc(t.n)}»">+</button>`:""}</div>`;
+  if(op){ h+=`<div class="smt-gb">${plWarnHtml(m)}`;
+    if(st.full[t.id]) h+=`<button type="button" class="qk-add smt-add1" ${plAddAttr(m,M.E)}>${esc(plAddLabel(m,M.E))}</button>`+plBodyHtml(m,c,q,M.E)+`<button type="button" class="linkbtn smt-more" data-pl="lfull" data-t="${esc(t.id)}">Коротко ▴</button>`;
+    else { const lim=st.more[t.id]?P.length:10; h+=P.slice(0,lim).map(p=>plCrHtml(p,st)).join("")||`<p class="smt-empty">Пока пусто</p>`;
+      if(P.length>lim) h+=`<button type="button" class="linkbtn smt-more" data-pl="lmore" data-t="${esc(t.id)}">Показать все ${P.length} ▾</button>`;
+      h+=`<div class="smt-gf"><button type="button" class="qk-add" ${plAddAttr(m,M.E)}>${esc(plAddLabel(m,M.E))}</button><button type="button" class="linkbtn" data-pl="lfull" data-t="${esc(t.id)}">Подробно — весь раздел</button></div>`; }
+    h+=`</div>`; }
+  return h+`</div>`; }
+function plSearchHtml(c,q,M,s){ const W=String(s).toLowerCase().replace(/ё/g,"е").split(/\s+/).filter(Boolean), R=[];
+  M.L.forEach(t=>plPos(M.T[t.id],c,q,M.E).forEach(p=>{ const h=String(p.n+" "+(p.sec||"")).toLowerCase().replace(/ё/g,"е"); if(W.every(w=>h.includes(w))) R.push([t,p]); }));
+  const secs=new Set(R.map(r=>r[0].id)).size;
+  return `<p class="smt-fnd">Найдено ${R.length}${R.length?" · в "+secs+" "+(secs===1?"разделе":"разделах"):""}</p>`+R.slice(0,60).map(([t,p])=>`<div class="smt-sr"><button type="button" class="smt-srn" ${p.a||`data-pl="det" data-k="${esc(p.k)}"`}><small>${t.ic} ${esc(t.n)}${p.sec&&p.sec!==t.n?" · "+esc(p.sec):""}</small><b>${esc(p.n)}</b></button><span class="smt-qty">${p.ref?`<button type="button" data-pl="qty" data-ref="${esc(p.ref)}" data-d="-1" aria-label="Меньше">−</button>`:""}<span>${pF(p.q)}</span>${p.ref?`<button type="button" data-pl="qty" data-ref="${esc(p.ref)}" data-d="1" aria-label="Больше">+</button>`:""}</span></div>`).join(""); }
+
+/* ---------- встраиваемся в шаг «Материалы» ---------- */
+function plDesk(){ return window.innerWidth>=900; }
+function plOn(sm,q){ return !!(sm&&sm.data&&sm.data.qk&&!S.shop.smClient&&(q.stp||"what")==="mat"&&X()); }
+function plMain(c,q){ const M=plModel(c,q), view=plView();
+  if(S.plOpen&&S.plOpen.sm!==S.shop.sm) S.plOpen=null;
+  if(view==="list") return plListHtml(c,q,M);
+  if(plDesk()) return plDeskHtml(c,q,M);
+  const id=S.plOpen&&S.plOpen.id; if(id&&M.T[id]) return plInHtml(M.T[id],c,q,M,false);
+  return plHomeHtml(c,q,M); }
+const _plWrap=window.__qkStepsWrap;
+window.__qkStepsWrap=function(fn,c,q,d,sm){ if(!plOn(sm,q)) return _plWrap?_plWrap(fn,c,q,d,sm):fn(c,q,d,sm);
+  const h=fn(c,q,d,sm); let body; try{ body=plMain(c,q); }catch(e){ console.log("LOG plitki "+e.message); return _plWrap?_plWrap(fn,c,q,d,sm):h; }
+  const i=h.indexOf('<div class="qk">'), j=h.lastIndexOf('<div class="smn-stn">'); if(i<0||j<i) return h;
+  return h.slice(0,i).replace(/<p class="smn-hint2">[\s\S]*?<\/p>/,"")+`<div class="qk qk-smt">`+body+`</div>`+h.slice(j); };
+
+window.__smt={model:(c,q)=>plModel(c,q),layout:()=>plLayout(),check:()=>{ const d=S.shop.sm.data, c=smCalc(d), q=d.qk, M=plModel(c,q), seen={}, wk={}; let cnt=0, sum=0;
+  M.L.forEach(t=>{ const m=M.T[t.id]; m.secs.forEach(k=>seen[k]=(seen[k]||0)+1); m.works.forEach(w=>wk[w.id]=(wk[w.id]||0)+1); sum+=m.sum; });
+  const items=c.items.reduce((a,x)=>a+x.sum,0), PL=((c.P&&c.P.L)||[]).reduce((a,x)=>a+(+x.sum||0),0), eS=Object.values(M.E).reduce((a,e)=>a+e.sum,0), eN=Object.values(M.E).reduce((a,e)=>a+e.cnt,0);
+  return {keysOnce:Object.values(seen).every(v=>v===1)&&Object.keys(seen).length===Object.keys(M.E).length,worksOnce:Object.values(wk).every(v=>v===1)&&Object.keys(wk).length===((c.BW&&c.BW.L)||[]).length,
+    itemsSum:items,secSum:eS,itemsCnt:c.items.length,secCnt:eN,tilesSum:sum,tilesExpect:eS+PL,total:c.total,M:c.M,
+    where:Object.fromEntries(M.L.map(t=>[t.id,M.T[t.id].secs.filter(k=>M.E[k].cnt).concat(M.T[t.id].works.map(w=>"w:"+w.id))]).filter(x=>x[1].length))}; }};   /* для проверки на стенде: каждая строка — ровно в одной плитке */
+/* ---------- нажатия ---------- */
+function plScroll(){ setTimeout(()=>{ const el=document.querySelector(".qk-smt"); if(!el) return; const y=el.getBoundingClientRect().top+window.scrollY-76; if(plDesk()?window.scrollY>y:Math.abs(window.scrollY-y)>8) window.scrollTo(0,Math.max(0,y)); },30); }   /* раздел открылся — его заголовок сверху экрана */
+function plRender(){ if(typeof shpRenderKeep==="function") shpRenderKeep(); }
+function plDirty(){ try{ X().dirty(); }catch(_){ S.shop.sm.dirty=true; } }
+function plAddWork(blk){ const sm=S.shop&&S.shop.sm, q=sm&&sm.data&&sm.data.qk; if(!q||typeof wrPickModal!=="function") return; if(+blk>=1&&+blk<=9) S.wrBlk=+blk;
+  wrPickModal((code,n,w)=>{ q.bw=q.bw||{}; q.bw[code]=Math.round((pNum(q.bw[code])+n)*100)/100; plDirty(); toast("Работа добавлена: "+w[1]); plRender(); }); }
+function plPick(id){ const sm=S.shop.sm, c=smCalc(sm.data), q=sm.data.qk, M=plModel(c,q), m=M.T[id]; if(!m) return; const T=plTargets(m,M.E);
+  document.getElementById("plPick")?.remove(); const x=document.createElement("div"); x.className="modal"; x.id="plPick";
+  x.innerHTML=`<div class="modal-card smt-pk" role="dialog" aria-label="Добавить в «${esc(m.t.n)}»"><h2>${m.t.ic} Добавить в «${esc(m.t.n)}»</h2><div class="smt-pkl">${T.map(t=>{ const e=M.E[t.k]; return `<button type="button" class="smt-pkb" ${t.a}><b>${esc(t.n)}</b><span>${e&&e.cnt?e.cnt+" поз.":""} ›</span></button>`; }).join("")}</div><button type="button" class="btn" data-pl="pkx" style="width:100%;margin-top:10px">Закрыть</button></div>`;
+  document.body.appendChild(x); x.addEventListener("click",e=>{ if(e.target===x) x.remove(); }); }
+function plQty(ref,d){ const sm=S.shop.sm, q=sm.data.qk, a=ref.split(":");
+  if(a[0]==="it"){ const o=(q.it[a[1]]||[])[+a[2]]; if(!o) return; o.q=Math.max(0,Math.round((pNum(o.q)+d)*100)/100); if(a[1]==="edge") delete o.au; }
+  else if(a[0]==="bw"){ const c=smCalc(sm.data), w=((c.BW&&c.BW.L)||[]).find(z=>String(z.id)===a.slice(1).join(":")); const cur=w?w.q:pNum((q.bw||{})[a.slice(1).join(":")]); q.bw=q.bw||{}; q.bw[a.slice(1).join(":")]=Math.max(0,Math.round((cur+d)*100)/100); }
+  else if(a[0]==="dr"){ const o=(q.dr||[])[+a[1]]; if(o) o.n=Math.max(0,(+o.n||0)+d); }
+  plDirty(); plRender(); }
+async function plSetView(v){ const F=plFirm(); if(!plCanView(F)) return;
+  if(plDes()){ const U=plMine()||{}; U.view=v; try{ localStorage.setItem("w24-smv",JSON.stringify(U)); }catch(_){} return plRender(); }
+  const s=X()&&X().set(); if(!s) return; const old=s.view?JSON.parse(JSON.stringify(s.view)):null; s.view=Object.assign({},s.view||{},{view:v}); plRender();
+  const j=await shpPost({action:"smViewSave",value:{view:v}}); if(!j){ s.view=old; plRender(); } }
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-pl]"); if(!b){ if(e.target.closest&&e.target.closest("#plPick .smt-pkb")) setTimeout(()=>document.getElementById("plPick")?.remove(),0); return; }
+  const a=b.dataset.pl, sm=S.shop&&S.shop.sm; if(/^cf/.test(a)) return; e.preventDefault(); e.stopPropagation();
+  if(a==="pkx"){ document.getElementById("plPick")?.remove(); return; }
+  if(a==="ed") return plEditor(plTech()&&!plDes()&&b.dataset.v==="firm"?"firm":"me");
+  if(!sm||!sm.data||!sm.data.qk) return;
+  const id=b.dataset.t, st=plListSt();
+  if(a==="open"){ S.plOpen={sm,id}; plRender(); plScroll(); return; }
+  if(a==="home"){ S.plOpen=null; plRender(); plScroll(); return; }
+  if(a==="pick") return plPick(id);
+  if(a==="addw") return plAddWork(b.dataset.blk);
+  if(a==="view") return plSetView(b.dataset.v);
+  if(a==="ltog"){ if(st.all){ st.all=false; st.open={}; st.open[id]=1; } else if(st.open[id]) delete st.open[id]; else st.open[id]=1; return plRender(); }
+  if(a==="lall"){ st.all=!st.all; if(!st.all) st.open={}; return plRender(); }
+  if(a==="lonly"){ st.only=!st.only; return plRender(); }
+  if(a==="lmore"){ st.more[id]=1; return plRender(); }
+  if(a==="lfull"){ if(st.full[id]) delete st.full[id]; else st.full[id]=1; return plRender(); }
+  if(a==="det"){ const k=b.dataset.k; if(st.det[k]) delete st.det[k]; else st.det[k]=1; return plRender(); }
+  if(a==="qty") return plQty(b.dataset.ref,+b.dataset.d); },true);
+document.addEventListener("input",e=>{ const t=e.target; if(!(t&&t.dataset&&t.dataset.plQ)) return; const sm=S.shop&&S.shop.sm; if(!sm||!sm.data||!sm.data.qk) return; const st=plListSt(); st.q=t.value;
+  clearTimeout(st.tm); st.tm=setTimeout(()=>{ const box=document.getElementById("plRes"); if(!box) return; const c=smCalc(sm.data), q=sm.data.qk, M=plModel(c,q);
+    box.innerHTML=st.q.trim()?plSearchHtml(c,q,M,st.q):M.L.filter(z=>M.T[z.id].show).filter(z=>!st.only||M.T[z.id].st==="red"||M.T[z.id].warn.length||M.T[z.id].cnt===0).map(z=>plGroupHtml(M.T[z.id],c,q,M,st)).join(""); },150); });
+let plW=plDesk(); window.addEventListener("resize",()=>{ const d=plDesk(); if(d===plW) return; plW=d; try{ if(S.view==="shop"&&S.shop&&S.shop.mode==="smeta"&&!document.querySelector(".modal")) plRender(); }catch(_){} });
+
+/* ---------- редактор плиток ---------- */
+function plGroupsAll(){ const q=S.shop&&S.shop.sm&&S.shop.sm.data&&S.shop.sm.data.qk||null, G=[];
+  try{ X().secAll(q).forEach(([k,n])=>G.push([k,n])); }catch(_){}
+  G.push(["c:*","Свои разделы (все)"],["doors","Двери-купе и в профиле"]);
+  const B=typeof W24_BLK!=="undefined"?W24_BLK:[]; PL_WK.forEach((k,i)=>G.push([k,"Работа: "+(B[i]?B[i][2]:"блок "+(i+1))]));
+  G.push(["w:mont","Работа: монтаж (без монтажа — не идёт)"],["w:dlv","Работа: доставка и подъём"]);
+  return G; }
+function plEditor(scope){ const F=plFirm(), tech=plTech(), firmOk=tech&&!plDes();
+  if(scope==="me"&&!plCanTiles(F)&&firmOk) scope="firm";
+  if(scope==="me"&&!plCanTiles(F)){ toast(F.who==="glav"?"Плитки себе настраивают главный дизайнер и директор":"Плитки настраивает директор — для всей фирмы"); return; }
+  const load=sc=>{ if(sc==="firm") return plMerge(F.tiles&&F.tiles.L); const U=plMine(); return U&&U.tiles&&U.tiles.L&&U.tiles.L.length?plMerge(U.tiles.L):plMerge(F.tiles&&F.tiles.L); };
+  const st={sc:scope,L:load(scope),ed:null,busy:false}, lim=()=>!tech&&st.sc==="me", canHide=t=>!(lim()&&!F.hideT&&!t.own), canAdd=()=>!(lim()&&!F.addT);
+  document.getElementById("plEdM")?.remove(); const x=document.createElement("div"); x.className="modal"; x.id="plEdM"; x.innerHTML=`<div class="modal-card smt-em" role="dialog" aria-label="Настроить плитки"></div>`; document.body.appendChild(x);
+  const card=()=>x.querySelector(".smt-em");
+  const listH=()=>`<div class="smt-eh"><h2>✏️ Настроить плитки</h2><button type="button" class="btn sm primary" data-e="done">${st.busy?"Сохраняю…":"Готово"}</button></div>
+    ${firmOk?`<div class="smt-seg smt-esc" role="group" aria-label="Для кого"><button type="button" data-e="sc" data-v="me" aria-pressed="${st.sc==="me"}"${plCanTiles(F)?"":" disabled"}>Для меня</button><button type="button" data-e="sc" data-v="firm" aria-pressed="${st.sc==="firm"}">Для всей фирмы</button></div>`:""}
+    <p class="smt-en">${st.sc==="firm"?"Вид для всех, кто делает сметы. У кого свои плитки — у того остаются свои.":"Только у вас — на всех ваших устройствах."} Перетащите ≡ или ↑↓ — порядок; переключатель — показывать; нажмите на плитку — название, значок, цвет, что в ней.${lim()&&(!F.addT||!F.hideT)?` ${!F.addT?"Свои плитки директор не разрешил. ":""}${!F.hideT?"Скрывать стандартные плитки директор не разрешил.":""}`:""}</p>
+    <ul class="smt-el">${st.L.map((t,i)=>`<li class="${t.hide?"off":""}" data-i="${i}" style="${plTileStyle(t)}"><span class="smt-dr" data-e="drag" aria-hidden="true">≡</span><button type="button" class="smt-en2" data-e="edit" data-i="${i}"><span aria-hidden="true">${t.ic}</span><i class="smt-dot" aria-hidden="true"></i><b>${esc(t.n)}</b>${t.own?`<small>· своя</small>`:""}</button><button type="button" class="smt-mv" data-e="up" data-i="${i}" ${i?"":"disabled"} aria-label="Выше">↑</button><button type="button" class="smt-mv" data-e="dn" data-i="${i}" ${i<st.L.length-1?"":"disabled"} aria-label="Ниже">↓</button><button type="button" class="smt-sw" role="switch" data-e="vis" data-i="${i}" aria-checked="${!t.hide}" aria-label="Показывать «${esc(t.n)}»"${canHide(t)?"":" disabled"}><i></i></button></li>`).join("")}</ul>
+    ${canAdd()?`<button type="button" class="qk-add smt-add1" data-e="new">+ Своя плитка</button>`:""}<button type="button" class="linkbtn smt-reset" data-e="reset">↺ Вернуть как было</button>`;
+  const editH=()=>{ const t=st.ed.t, G=plGroupsAll(), mine=new Set(t.gx?t.g:((plStd(t.id)||{}).g||[]));
+    return `<div class="smt-eh"><h2>${st.ed.i<0?"Своя плитка":"Плитка"}</h2><button type="button" class="btn sm" data-e="cancel">Отмена</button></div>
+      <label class="smt-fl">Название<input class="smt-fi" data-ef="n" maxlength="30" value="${esc(t.n)}" autocomplete="off"></label>
+      <p class="smt-fl">Значок</p><div class="smt-ics">${PL_IC.map(ic=>`<button type="button" data-e="ic" data-v="${ic}" aria-pressed="${t.ic===ic}">${ic}</button>`).join("")}</div>
+      <p class="smt-fl">Цвет</p><div class="smt-cols">${PL_COL.map((c0,k)=>`<button type="button" data-e="col" data-v="${k}" style="--plc:${c0}" aria-pressed="${t.col===k}" aria-label="Цвет ${k+1}"></button>`).join("")}</div>
+      <p class="smt-fl">Что в плитке (группы материалов и работ)</p><div class="smt-gch">${G.map(([k,n])=>`<button type="button" data-e="g" data-v="${esc(k)}" aria-pressed="${mine.has(k)}">${esc(n)}</button>`).join("")}</div>
+      <p class="smt-en">Группа, выбранная здесь, уходит из других плиток. Что не попало ни в одну плитку — в «Прочее».</p>
+      ${[["rem","Напоминать, если пусто"],["wide","Широкая плитка (на всю строку)"],["plus","Кнопка «+» на плитке"]].map(([f,n])=>`<div class="smt-row"><span>${n}</span><button type="button" class="smt-sw" role="switch" data-e="flag" data-v="${f}" aria-checked="${!!t[f]}"><i></i></button></div>`).join("")}
+      <button type="button" class="btn primary" data-e="tsave" style="width:100%;margin-top:10px">Сохранить плитку</button>${t.own&&st.ed.i>=0?`<button type="button" class="btn smt-tdel" data-e="tdel" style="width:100%;margin-top:8px">Удалить плитку</button>`:""}`; };
+  const draw=()=>{ card().innerHTML=st.ed?editH():listH(); };
+  draw();
+  const save=async()=>{ if(st.busy) return; st.busy=true; draw(); const out=plOut(st.L); let ok=false;
+    if(plDes()){ const U=plMine()||{}; U.tiles=out; try{ localStorage.setItem("w24-smv",JSON.stringify(U)); ok=true; }catch(_){} }
+    else if(st.sc==="firm"){ const v=Object.assign({},F,{tiles:out}); const j=await shpPost({action:"cfgSave",key:"smView",value:v}); if(j){ (S.shop.cfgAll||(S.shop.cfgAll={})).smView=v; ok=true; } }
+    else { const j=await shpPost({action:"smViewSave",value:{tiles:out}}); if(j){ const s=X()&&X().set(); if(s) s.view=j.view||Object.assign({},s.view||{},{tiles:out}); ok=true; } }
+    st.busy=false; if(!ok){ draw(); return; } x.remove(); plRender(); toast(st.sc==="firm"?"Плитки сохранены для всей фирмы":"Плитки сохранены"); };
+  x.addEventListener("input",e=>{ const t=e.target; if(t.dataset&&t.dataset.ef&&st.ed) st.ed.t[t.dataset.ef]=t.value; });
+  x.addEventListener("click",async e=>{ const b=e.target.closest("[data-e]"); if(e.target===x&&!st.ed){ x.remove(); return; } if(!b||b.disabled) return; const a=b.dataset.e, i=+b.dataset.i;
+    if(a==="done") return save();
+    if(a==="sc"){ if(b.dataset.v===st.sc) return; st.sc=b.dataset.v; st.L=load(st.sc); return draw(); }
+    if(a==="up"&&i>0){ const t=st.L.splice(i,1)[0]; st.L.splice(i-1,0,t); return draw(); }
+    if(a==="dn"&&i<st.L.length-1){ const t=st.L.splice(i,1)[0]; st.L.splice(i+1,0,t); return draw(); }
+    if(a==="vis"){ const t=st.L[i]; t.hide=!t.hide; return draw(); }
+    if(a==="edit"){ st.ed={i,t:JSON.parse(JSON.stringify(st.L[i]))}; return draw(); }
+    if(a==="new"){ if(st.L.filter(t=>t.own).length>=20) return toast("Своих плиток уже 20 — хватит"); st.ed={i:-1,t:{id:"u"+Date.now().toString(36).slice(-6),n:"",ic:"⭐",col:3,g:[],gx:false,hide:false,rem:false,wide:false,plus:true,own:true}}; draw(); const f=card().querySelector("[data-ef=n]"); if(f) f.focus(); return; }
+    if(a==="reset"){ if(!(await appConfirm(st.sc==="firm"?"Вернуть стандартные плитки для всей фирмы?":"Вернуть плитки как у фирмы? Ваши настройки плиток пропадут.","Вернуть",true))) return;
+      if(st.sc==="firm"||plDes()){ st.L=plMerge([]); return draw(); }
+      const j=await shpPost({action:"smViewSave",value:{tiles:null}}); if(!j) return; const s=X()&&X().set(); if(s) s.view=j.view||Object.assign({},s.view||{},{tiles:null}); st.L=load("me"); toast("Плитки — как у фирмы"); plRender(); return draw(); }
+    if(!st.ed) return; const t=st.ed.t;
+    if(a==="cancel"){ st.ed=null; return draw(); }
+    if(a==="ic"){ t.ic=b.dataset.v; x.querySelectorAll('[data-e="ic"]').forEach(z=>z.setAttribute("aria-pressed",String(z===b))); return; }
+    if(a==="col"){ t.col=+b.dataset.v; x.querySelectorAll('[data-e="col"]').forEach(z=>z.setAttribute("aria-pressed",String(z===b))); return; }
+    if(a==="g"){ if(!t.gx){ t.g=((plStd(t.id)||{}).g||[]).slice(); t.gx=true; } const k=b.dataset.v, on=t.g.includes(k); t.g=on?t.g.filter(z=>z!==k):t.g.concat([k]); if(!t.g.length&&!t.own){ t.g=[]; t.gx=false; } b.setAttribute("aria-pressed",String(!on)); return; }
+    if(a==="flag"){ const f=b.dataset.v; t[f]=!t[f]; b.setAttribute("aria-checked",String(!!t[f])); return; }
+    if(a==="tdel"){ st.L.splice(st.ed.i,1); st.ed=null; return draw(); }
+    if(a==="tsave"){ t.n=String(t.n||"").replace(/[<>]/g,"").replace(/\s+/g," ").trim().slice(0,30); if(!t.n){ toast("Впишите название плитки"); return; }
+      if(t.gx) st.L.forEach((o,k)=>{ if(k===st.ed.i) return; const og=o.gx?o.g:null; if(og){ o.g=og.filter(z=>!t.g.includes(z)); if(!o.g.length&&!o.own) o.gx=false; } });
+      if(st.ed.i<0) st.L.push(t); else st.L[st.ed.i]=t; st.ed=null; return draw(); } });
+  /* перетаскивание за ≡ (мышь и палец) */
+  x.addEventListener("pointerdown",e=>{ const h=e.target.closest('[data-e="drag"]'); if(!h||st.ed) return; const li=h.closest("li"), ul=li.parentNode; e.preventDefault(); li.classList.add("drag"); try{ h.setPointerCapture(e.pointerId); }catch(_){}
+    const mv=ev=>{ const y=ev.clientY, sib=[...ul.children].filter(z=>z!==li); const after=sib.find(z=>{ const r=z.getBoundingClientRect(); return y<r.top+r.height/2; }); if(after) ul.insertBefore(li,after); else ul.appendChild(li); };
+    const up=()=>{ h.removeEventListener("pointermove",mv); h.removeEventListener("pointerup",up); h.removeEventListener("pointercancel",up); li.classList.remove("drag");
+      const ord=[...ul.children].map(z=>+z.dataset.i); st.L=ord.map(k=>st.L[k]); draw(); };
+    h.addEventListener("pointermove",mv); h.addEventListener("pointerup",up); h.addEventListener("pointercancel",up); }); }
+
+/* ---------- «Настройки компании → Смета» ---------- */
+if(typeof CFG_TABS!=="undefined"&&Array.isArray(CFG_TABS)&&!CFG_TABS.some(t=>t[0]==="sm")) CFG_TABS.splice(1,0,["sm","Смета"]);
+function plCfgHtml(){ const F=plFirm(), ro=!S.shop.tech, R=typeof ofRights==="function"?ofRights():((S.shop.cfgAll||{}).officeRights||{}), dis=ro?" disabled":"";
+  const sw=(k,n,on,sub)=>`<div class="smt-row"><span>${n}${sub?`<small>${sub}</small>`:""}</span><button type="button" class="smt-sw" role="switch" data-pl="cf" data-k="${k}" aria-checked="${!!on}"${dis}><i></i></button></div>`;
+  const wait=(typeof wrDir==="function"?wrDir():[]).filter(r=>r&&r[11]).length;
+  return `<div class="smt-cfg">${ro?`<p class="muted">Меняют технолог и директор.</p>`:""}
+    <p class="smt-ch">Вид сметы по умолчанию (для всей фирмы)</p><div class="smt-vw">${[["tiles","Плитками"],["list","Списком"]].map(([v,n])=>`<button type="button" data-pl="cfv" data-v="${v}" aria-pressed="${F.view===v}"${dis}><span class="smt-vi ${v}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><b>${n}</b></button>`).join("")}</div>
+    ${sw("own","Каждый может выбрать себе свой вид",F.own)}
+    <p class="smt-ch">Кто может настраивать плитки себе</p><div class="smt-rad" role="radiogroup">${[["all","Все, кто делает сметы"],["glav","Только главный дизайнер и директор"],["none","Никто — у всех вид фирмы"]].map(([v,n])=>`<button type="button" role="radio" data-pl="cfw" data-v="${v}" aria-checked="${F.who===v}"${dis}><i aria-hidden="true"></i>${n}</button>`).join("")}</div>
+    <p class="smt-ch">Что можно менять в смете (дизайнерам)</p>
+    ${sw("addT","Добавлять свои плитки",F.addT)}${sw("hideT","Скрывать стандартные плитки",F.hideT)}${sw("addW","Добавлять свои работы в каталог",F.addW)}
+    ${sw("wM","Менять цену мастеру в своей работе",F.wM,F.wM?"":"выключено: своя работа дизайнера сохраняется без цены мастеру и ждёт проверки — цену ставите вы во вкладке «Работы»")}
+    ${sw("markup","Менять наценки",R.markup===true,"то же право, что в «Права сотрудников → Дизайнеру»")}
+    ${wait?`<p class="smt-wait">⏳ Ждут проверки: ${wait} ${wait===1?"работа":wait<5?"работы":"работ"} — <button type="button" class="linkbtn" data-act="cfg-tab" data-v="wr">открыть «Работы»</button></p>`:""}
+    ${ro?"":`<button type="button" class="btn" data-pl="ed" data-v="firm" style="width:100%;margin-top:6px">✏️ Плитки для всей фирмы</button>`}</div>`; }
+if(typeof cfgHtml==="function"){ const _plCfg=cfgHtml; cfgHtml=function(){ const h=_plCfg.apply(this,arguments); try{ if(S.shop.cfgOk===true&&S.shop.full&&(S.shop.cfgTab||"wr")==="sm") return h+plCfgHtml(); }catch(e){ console.log("LOG plcfg "+e.message); } return h; }; }
+async function plCfgSave(patch){ const F0=plFirm(), v=Object.assign({},F0,patch); const all=S.shop.cfgAll||(S.shop.cfgAll={}), old=all.smView; all.smView=v; plRender();
+  const j=await shpPost({action:"cfgSave",key:"smView",value:v}); if(!j){ all.smView=old; plRender(); return; } toast("Сохранено"); }
+document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.closest('[data-pl^="cf"]'); if(!b||b.disabled) return; e.preventDefault(); e.stopPropagation(); if(!S.shop||!S.shop.tech) return; const a=b.dataset.pl, F=plFirm();
+  if(a==="cfv") return plCfgSave({view:b.dataset.v});
+  if(a==="cfw") return plCfgSave({who:b.dataset.v});
+  if(a==="cf"){ const k=b.dataset.k;
+    if(k==="markup"){ const R=Object.assign({},typeof ofRights==="function"?ofRights():{}), v=!(R.markup===true); R.markup=v; b.disabled=true; const j=await shpPost({action:"cfgSave",key:"officeRights",value:R}); b.disabled=false; if(!j) return; (S.shop.cfgAll||(S.shop.cfgAll={})).officeRights=R; toast(v?"Дизайнеры могут менять наценки":"Наценки меняет только директор"); return plRender(); }
+    return plCfgSave({[k]:!F[k]}); } },true);
+
+/* ---------- вид ---------- */
+const st=document.createElement("style"); st.textContent=`
+.qk.qk-smt{max-width:760px}.qk.qk-smt:has(.smt-desk){max-width:1180px}
+.smt-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 10px}
+.smt-seg{display:flex;flex:1;max-width:340px;background:rgba(127,127,127,.12);border-radius:12px;padding:3px;gap:3px}.smt-seg button{flex:1;font:inherit;font-size:14px;font-weight:600;padding:7px 8px;border:0;border-radius:9px;background:none;color:inherit;cursor:pointer;opacity:.75}.smt-seg button[aria-pressed="true"]{background:var(--surface,#fff);opacity:1;box-shadow:0 1px 3px rgba(0,0,0,.12)}.smt-seg button:disabled{opacity:.35;cursor:default}
+.smt-ed{font-size:20px;background:none;border:0;cursor:pointer;padding:6px 8px;border-radius:10px}
+.smt-top{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;padding:12px 16px;border-radius:16px;background:rgba(127,127,127,.08);box-shadow:inset 0 0 0 1px rgba(127,127,127,.18);margin:0 0 12px}.smt-top small{display:block;font-size:13px;opacity:.7}.smt-top b{font-size:26px;letter-spacing:-.3px}.smt-tr{text-align:right}.smt-k{color:#30a46c;font-weight:800}.smt-tr .smt-k{font-size:24px}
+.smt-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.smt-t{position:relative;border-radius:16px;background:rgba(127,127,127,.08);box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 1px rgba(127,127,127,.18);min-height:118px;display:flex}.smt-t.wide{grid-column:1/-1;min-height:96px}
+.smt-t.smt-s-red{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px #e5484d}.smt-t.smt-s-warn{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px #f2a524}.smt-t.smt-s-dim{opacity:.62}.smt-t.hid{opacity:.7}
+.smt-tb{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;font:inherit;color:inherit;background:none;border:0;padding:12px 44px 12px 16px;cursor:pointer;min-width:0}.smt-tb b{font-size:16px;line-height:1.2}.smt-tb b small{font-weight:400;opacity:.7}.smt-ic{font-size:24px;line-height:1}.smt-ts2{font-size:13px;opacity:.75}.smt-s-red .smt-ts2{color:#e5484d;opacity:1}
+.smt-share{display:block;width:100%;height:4px;border-radius:2px;background:rgba(127,127,127,.2);margin-top:6px;overflow:hidden}.smt-share i{display:block;height:100%;background:var(--plc);border-radius:2px}
+.smt-wch{margin-top:6px;font-size:12px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(242,165,36,.2);color:#b7791f}
+.smt-plus{position:absolute;right:8px;top:8px;width:32px;height:32px;border-radius:50%;border:0;background:rgba(127,127,127,.16);color:inherit;font-size:21px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.smt-fin{display:block;width:100%;margin:12px 0 4px;padding:14px;border-radius:14px;border:0;background:rgba(127,127,127,.14);color:inherit;font:inherit;font-size:16px;font-weight:700;cursor:pointer}
+.smt-hd{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 8px}.smt-back{font:inherit;font-size:19px;font-weight:700;background:none;border:0;color:inherit;padding:4px 0;cursor:pointer;text-align:left}.smt-hd>span{font-size:13px;opacity:.7;text-align:right}
+.smt-tabs{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;margin:0 0 6px;scrollbar-width:none}.smt-tabs::-webkit-scrollbar{display:none}.smt-tabs button{flex:none;height:36px;box-sizing:border-box;display:inline-flex;flex-direction:row;align-items:center;gap:5px;min-height:0;height:auto;line-height:1.2;font:inherit;font-size:13.5px;font-weight:600;padding:6px 12px;border-radius:18px;border:0;background:rgba(127,127,127,.12);color:inherit;cursor:pointer;white-space:nowrap}.smt-tabs button.on{box-shadow:inset 0 0 0 2px var(--plc)}.smt-tabs button.smt-s-red:not(.on){color:#e5484d}.smt-tabs button.smt-s-warn:not(.on){color:#d08a10}
+.smt-warn{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:12px;background:rgba(242,165,36,.14);box-shadow:inset 0 0 0 1px rgba(242,165,36,.45);margin:0 0 8px;font-size:14px}.smt-wb{display:flex;gap:6px;flex-wrap:wrap}
+.smt-add1{display:block;width:100%;margin:0 0 10px;padding:12px;border-radius:14px;border-style:dashed;font-size:16px;font-weight:700}
+.smt-sh{display:flex;justify-content:space-between;gap:8px;font-size:15px;margin:14px 0 4px}.smt-sh span{font-weight:400;font-size:13px;opacity:.7}.smt-sb{margin:0 0 6px}.smt-empty{opacity:.7;font-size:14px;margin:8px 0}
+.smt-desk{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;align-items:start}.smt-side{display:flex;flex-direction:column;gap:8px;position:sticky;top:70px}.smt-main{min-width:0;padding:4px 0 0}
+.smt-ts{display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;border-radius:12px;border:0;background:rgba(127,127,127,.08);box-shadow:inset 4px 0 0 var(--plc,transparent),inset 0 0 0 1px rgba(127,127,127,.16);color:inherit;font:inherit;font-size:15px;cursor:pointer;text-align:left;margin:0}.smt-ts b{flex:1}.smt-ts .smt-ic{font-size:19px}.smt-tsr{font-size:13px;opacity:.7;font-weight:400}.smt-ts.on{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px #4ea8ff}.smt-ts.smt-s-red{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px #e5484d}.smt-ts.smt-s-red .smt-tsr{color:#e5484d;opacity:1}.smt-ts.smt-s-warn{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px #f2a524}.smt-ts.smt-s-dim{opacity:.6}.smt-ts.on.smt-s-red,.smt-ts.on.smt-s-warn{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px #4ea8ff}
+.smt-dh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:0 0 10px}.smt-dh h2{margin:0;font-size:22px}.smt-dt b{font-size:22px}.smt-dt small{opacity:.7}
+.smt-find{margin:0 0 8px}.smt-q{width:100%;box-sizing:border-box;font:inherit;font-size:15px;padding:10px 12px;border-radius:12px;border:0;background:rgba(127,127,127,.12);color:inherit}
+.smt-chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.smt-chips button{font:inherit;font-size:13.5px;font-weight:600;padding:6px 12px;border-radius:16px;border:0;background:rgba(127,127,127,.12);color:inherit;cursor:pointer}.smt-chips button[aria-pressed="true"]{background:#4ea8ff;color:#fff}
+.smt-g{border-radius:14px;background:rgba(127,127,127,.08);box-shadow:inset 0 0 0 1px rgba(127,127,127,.18);margin:0 0 8px}.smt-g.smt-s-red{box-shadow:inset 0 0 0 2px #e5484d}.smt-g.smt-s-warn{box-shadow:inset 0 0 0 2px #f2a524}.smt-g.smt-s-dim{opacity:.7}
+.smt-gh{display:flex;align-items:center;gap:6px;position:relative}.smt-g.on .smt-gh{position:sticky;top:56px;z-index:3;background:var(--bg,#f6f6f7);border-radius:14px 14px 0 0;box-shadow:inset 4px 0 0 var(--plc)}
+.smt-gt{flex:1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center;text-align:left;font:inherit;color:inherit;background:none;border:0;padding:11px 6px 11px 14px;cursor:pointer;min-width:0}.smt-gn{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.smt-gs{font-size:15px;opacity:.8}.smt-gs.bad{color:#e5484d;opacity:1}.smt-gt small{grid-column:1/-1;font-size:13px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.smt-gt small.smt-gw{color:#d08a10;opacity:1}
+.smt-gh .smt-plus{position:static;flex:none;margin-right:8px}
+.smt-gb{padding:2px 12px 10px}.smt-cr{display:flex;justify-content:space-between;gap:10px;width:100%;font:inherit;font-size:14.5px;color:inherit;background:none;border:0;border-top:1px solid rgba(127,127,127,.16);padding:9px 2px;cursor:pointer;text-align:left}.smt-cr>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smt-crq{flex:none;opacity:.8}
+.smt-det{border-top:1px solid rgba(127,127,127,.16);padding:2px 0 6px}.smt-more{display:block;margin:8px auto 0;color:#4ea8ff}.smt-gf{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
+.smt-fnd{font-size:13px;opacity:.7;margin:0 0 6px}.smt-sr{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:12px;background:rgba(127,127,127,.08);margin:0 0 6px}.smt-srn{flex:1;min-width:0;text-align:left;font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}.smt-srn small{display:block;font-size:12.5px;opacity:.7}.smt-srn b{display:block;font-size:15px}
+.smt-qty{display:flex;align-items:center;gap:4px;flex:none}.smt-qty span{min-width:30px;text-align:center;font-weight:700}.smt-qty button{width:34px;height:34px;border-radius:50%;border:0;background:rgba(127,127,127,.16);color:inherit;font-size:19px;cursor:pointer}
+.smt-cnt{font-size:13px;opacity:.6;text-align:center;margin:8px 0 0}
+.smt-pk h2{margin:0 0 10px;font-size:19px}.smt-pkl{display:flex;flex-direction:column;gap:6px}.smt-pkb{display:flex;justify-content:space-between;gap:8px;padding:13px 14px;border-radius:12px;border:0;background:rgba(127,127,127,.1);color:inherit;font:inherit;font-size:15px;cursor:pointer;text-align:left}.smt-pkb span{opacity:.7}
+.smt-em{max-height:88vh;overflow:auto}.smt-eh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 10px}.smt-eh h2{margin:0;font-size:20px}.smt-esc{max-width:none;margin:0 0 8px}.smt-en{font-size:13px;opacity:.75;margin:0 0 10px}
+.smt-el{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:6px}.smt-el li{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:12px;background:rgba(127,127,127,.1);touch-action:pan-y}.smt-el li.off{opacity:.5}.smt-el li.drag{box-shadow:0 6px 18px rgba(0,0,0,.3);opacity:.95}
+.smt-dr{cursor:grab;font-size:20px;opacity:.6;padding:4px 6px;touch-action:none;user-select:none}.smt-en2{flex:1;display:flex;align-items:center;gap:8px;min-width:0;font:inherit;font-size:15.5px;color:inherit;background:none;border:0;padding:6px 2px;cursor:pointer;text-align:left}.smt-en2 b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smt-en2 small{opacity:.6;font-size:12px}.smt-dot{width:12px;height:12px;border-radius:50%;background:var(--plc);flex:none}
+.smt-mv{width:30px;height:30px;border-radius:8px;border:0;background:rgba(127,127,127,.14);color:inherit;cursor:pointer;font-size:15px}.smt-mv:disabled{opacity:.3}
+.smt-sw{position:relative;flex:none;width:48px;height:28px;border-radius:14px;border:0;background:rgba(127,127,127,.4);cursor:pointer;padding:0}.smt-sw i{position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:left .15s}.smt-sw[aria-checked="true"]{background:#30c27b}.smt-sw[aria-checked="true"] i{left:23px}.smt-sw:disabled{opacity:.4;cursor:default}
+.smt-reset{display:block;margin:6px auto 0;opacity:.8}.smt-fl{display:block;font-size:13px;opacity:.75;margin:10px 0 5px}.smt-fi{display:block;width:100%;box-sizing:border-box;margin-top:4px;font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:0;background:rgba(127,127,127,.12);color:inherit}
+.smt-ics{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}.smt-ics button{font-size:22px;padding:8px 0;border-radius:10px;border:0;background:rgba(127,127,127,.12);cursor:pointer}.smt-ics button[aria-pressed="true"]{box-shadow:inset 0 0 0 2px #4ea8ff}
+.smt-cols{display:flex;gap:10px;flex-wrap:wrap}.smt-cols button{width:34px;height:34px;border-radius:50%;border:0;background:var(--plc);cursor:pointer}.smt-cols button[aria-pressed="true"]{box-shadow:0 0 0 3px var(--bg,#fff),0 0 0 5px var(--plc)}
+.smt-gch{display:flex;gap:6px;flex-wrap:wrap}.smt-gch button{font:inherit;font-size:13px;padding:6px 10px;border-radius:14px;border:0;background:rgba(127,127,127,.12);color:inherit;cursor:pointer}.smt-gch button[aria-pressed="true"]{background:rgba(48,194,123,.22);color:#1f9d5c;font-weight:600}
+.smt-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px;border-radius:12px;background:rgba(127,127,127,.08);margin:0 0 6px;font-size:15px}.smt-row small{display:block;font-size:12.5px;opacity:.7;margin-top:2px}.smt-tdel{color:#e5484d}
+.smt-cfg{max-width:560px}.smt-ch{font-size:13.5px;font-weight:700;opacity:.7;margin:14px 0 6px}.smt-vw{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px}.smt-vw button{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px;border-radius:14px;border:0;background:rgba(127,127,127,.08);color:inherit;font:inherit;font-size:15px;cursor:pointer}.smt-vw button[aria-pressed="true"]{box-shadow:inset 0 0 0 2px #4ea8ff}.smt-vw button:disabled{cursor:default}
+.smt-vi{display:grid;gap:4px;width:100%;max-width:150px;height:56px;padding:6px;box-sizing:border-box;border-radius:10px;background:rgba(127,127,127,.12)}.smt-vi i{border-radius:4px;background:rgba(127,127,127,.3)}.smt-vi.tiles{grid-template-columns:1fr 1fr}.smt-vi.list{grid-template-rows:repeat(4,1fr)}
+.smt-rad{display:flex;flex-direction:column;gap:6px}.smt-rad button{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;border:0;background:rgba(127,127,127,.08);color:inherit;font:inherit;font-size:15px;cursor:pointer;text-align:left}.smt-rad i{flex:none;width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(127,127,127,.6)}.smt-rad button[aria-checked="true"] i{box-shadow:inset 0 0 0 5px #4ea8ff}.smt-rad button:disabled{cursor:default}
+.smt-wait{padding:10px 12px;border-radius:12px;background:rgba(242,165,36,.14);font-size:14px}
+html.vt[data-vt="dark"] .smt-seg button[aria-pressed="true"]{background:#4a4945}html.vt[data-vt="dark"] .smt-g.on .smt-gh{background:#30302e}html.vt[data-vt="dark"] .smt-wch{color:#f5c26b}html.vt[data-vt="dark"] .smt-gch button[aria-pressed="true"]{color:#7ee2a8}
+html.vt.sk.sk.sk.sk[data-vt="dark"] .smt-add1{border:1.5px dashed rgba(255,255,255,.28)!important}
+@media (max-width:380px){.smt-tb{padding:10px 40px 10px 13px}.smt-top b{font-size:23px}}`;
+document.head.appendChild(st);
+})();
 
 /* ---------- Р3 (12.11.2026): экраны директора — по замечаниям Кирилла из ночного обхода ----------
    Всё — обёртки поверх готового, подключается самым последним (после site_works.js).
@@ -25336,7 +26017,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="8586b93bc3";/*cehqr-build*/
+  const BUILD="4d7cd44fb9";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
