@@ -8015,7 +8015,7 @@ function smCfgNow(){ const c=(S.shop&&S.shop.cfg)||{}; return {wr:+c.wrV===2?und
 async function smSave(setSum,quiet){ const sm=S.shop.sm; if(!sm||!sm.data) return; if(setSum&&sm.status==="trial") sm.status=sm.deal?"deal":""; if(!sm.data.cfg&&S.shop.cfgOk) sm.data.cfg=JSON.parse(JSON.stringify(smCfgNow())); const c=smCalc(sm.data);
   const j=await shpPost({action:"smetaSave",id:sm.id,deal:sm.deal,client:sm.client,phone:sm.phone,kind:sm.kind,status:sm.status,data:sm.data,total:c.total,mats:c.mats+(c.giftC||0),k:"",br:c.br,works:c.qk&&c.BW?c.BW.works:undefined,fzP:c.fzP||0,fz:c.fz||0,mg:c.furnD>0?c.mgP:"",setSum:!!setSum});   /* Р2 (12.11): works — работы сметы [код, сколько]; сумму бригаде по ним считает сервер */   /* 12.11: fz — закупка заказных фасадов (остальным проценты только с наценки fzP − fz) */ if(!j) return false;
   if(j.id) sm.id=j.id; if(c.furnD>0) (S.shop.smMg||(S.shop.smMg={}))[sm.id]=c.mgP; sm.saved={who:shpWho(),when:Date.now(),total:c.total}; sm.dirty=false;
-  if(setSum){ const brS=j.br!=null?j.br:c.br, o=shpById(sm.deal); if(o){ o.sum=c.total; o.zpBr=brS; } toast("Сумма заказа "+shpRub(c.total)+(brS>0?", бригаде по работам "+shpRub(brS):", бригаде — процент (работы не выбраны)")); } else if(!quiet) toast("Смета сохранена"); shpRenderKeep(); return true; }
+  if(setSum){ const wt=!!(j.bw&&j.bw.wt), brS=j.br!=null?j.br:c.br, o=shpById(sm.deal); if(o){ o.sum=c.total; if(!wt) o.zpBr=brS; } toast("Сумма заказа "+shpRub(c.total)+(wt?", ЗП бригаде не пересчитана — работа ждёт проверки директора":brS>0?", бригаде по работам "+shpRub(brS):", бригаде — процент (работы не выбраны)")); } else if(!quiet) toast("Смета сохранена"); shpRenderKeep(); return true; }
 /* Кирилл 07.11: новая смета — «пробная»: учиться и настраивать, в договоры и «Разбор договоров» не идёт, сообщений нет.
    Настоящей становится: «Сделать настоящей», «Клиент согласен → в сделку», «Сумму и ЗП — в сделку» или когда клиент согласовал по ссылке. */
 function smTrialHtml(){ const sm=S.shop.sm; if(!sm||sm.status!=="trial"||S.shop.smClient) return "";
@@ -19248,11 +19248,12 @@ function qkBwCalc(q,items,sh,em,noMont,dlvOn){ const bw=qkBwFix(q), dir=typeof w
     const auto=au?Math.round((AUTO[au]||0)*100)/100:0, qq=set?num(bw[id]):auto; if(!set&&!(auto>0)) return;
     const own=(r[5]||"s")==="s", mont=+r[8]===1, dlvW=own&&+r[8]===2, off=(!!noMont&&mont)||(!!dlvOn&&dlvW), rate=own?+r[3]||0:+r[7]||0, raw=off?0:qq*rate;
     if(own) sum+=raw; else zak+=raw; if(!off) cl+=qq*(+r[4]||0);
-    L.push({id,wait:!!r[11],n:r[1],u:r[2],r:rate,cl:+r[4]||0,src:r[5]||"s",own,mont,dlvW,off,au:!set&&!!au,canAu:!!au,auto:au?auto:null,q:qq,sum:Math.round(raw)}); });
+    L.push({id,wait:!!r[11]&&own,n:r[1],u:r[2],r:rate,cl:+r[4]||0,src:r[5]||"s",own,mont,dlvW,off,au:!set&&!!au,canAu:!!au,auto:au?auto:null,q:qq,sum:Math.round(raw)}); });
   sum=Math.round(sum); zak=Math.round(zak); cl=Math.round(cl);
   /* «по работам» включается, когда дизайнер сам вписал хоть одну свою работу (сборку, установку…) или поправил количество; одни «само»-строки (листы, петли) — это ещё не все работы, бригаде остаётся 21 % */
   const on=sum>0&&L.some(x=>x.own&&!x.au&&!x.off&&x.q>0)&&!L.some(x=>x.wait&&!x.off&&x.q>0);   /* 13.11: есть работа «ждёт проверки» — бригаде по работам не считаем (как на сервере) */
-  return {L,sum,zak,cl,on,works:on?L.filter(x=>x.q>0).map(x=>[x.id,x.q]):L.filter(x=>x.q>0&&!x.own).map(x=>[x.id,x.q]),asm:L.some(x=>x.own&&!x.canAu&&!x.off&&x.q>0)}; }
+  const hasW=L.some(x=>x.wait&&!x.off&&x.q>0);   /* 13.11: есть работа «ждёт проверки» — шлём все работы, сервер сам оставит прежнюю «ЗП бригаде» */
+  return {L,sum,zak,cl,on,hasW,works:(on||hasW)?L.filter(x=>x.q>0).map(x=>[x.id,x.q]):L.filter(x=>x.q>0&&!x.own).map(x=>[x.id,x.q]),asm:L.some(x=>x.own&&!x.canAu&&!x.off&&x.q>0)}; }
 function qkBwRowHtml(x,q){ const SRC=typeof wrSrcName==="function"?{a:wrSrcName("a"),r:wrSrcName("r")}:{a:"Азуми",r:"Ремстрой"};
   return `<div class="qk-r qk-r2${x.off?" qk-off":""}"><span class="qk-tl">${esc(x.n)}<small>${x.wait?"ждёт проверки директора — мастеру пока 0":x.own?N(x.r)+" ₽ мастеру за "+esc(x.u):esc(SRC[x.src]||"услуга")+": закупка "+N(x.r)+" ₽ за "+esc(x.u)}${x.au?" · само":""}${x.off?(x.dlvW?" · везёт водитель — бригаде не идёт":" · монтаж — не идёт"):x.dlvW?" · если в сделке выберут водителя — бригаде не идёт":""}</small></span>${inp("bw."+x.id,x.au?"":(q.bw[x.id]==null?"":q.bw[x.id]),"n",x.au?F(x.q):"0","qk-q","Сколько: "+x.n)}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${x.sum?N(x.sum):"—"}</b>${x.canAu?`<span class="qk-x" style="visibility:hidden" aria-hidden="true">×</span>`:`<button type="button" class="qk-x" data-qbw="del" data-c="${esc(x.id)}" aria-label="Убрать работу">×</button>`}</div>`; }
 function qkBwFootHtml(c){ const B=c.BW, old=Math.round((c.M/0.45)*0.21); if(!B) return "";
@@ -22620,7 +22621,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="4d7cd44fb9";
+const CHK_BUILD="a20b7dee86";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -24398,7 +24399,7 @@ function wrEditModal(D,i){ const isNew=i<0, r=isNew?["U"+Date.now().toString(36)
   m.addEventListener("click",e=>{ const t=e.target.closest("[data-t]"); if(t){ const v=Math.round(w2Num(f.elements.m.value)*(+t.dataset.t)*100)/100; f.elements.c.value=w2F(v); return; }
     if(e.target.closest('[data-x="del"]')){ D.wr.splice(i,1); m.remove(); return shpRenderKeep(); }
     if(e.target===m||e.target.closest('[data-x="close"]')) m.remove(); });
-  f.addEventListener("submit",e=>{ e.preventDefault(); const own=f.elements.s.value==="s", mv=w2Num(f.elements.m.value), nr=[r[0],f.elements.n.value.trim(),f.elements.u.value.trim()||"шт",own?mv:0,w2Num(f.elements.c.value),f.elements.s.value,f.elements.g.value.trim()||"Прочее",own?0:mv,+f.elements.mt.value||0,+f.elements.b.value||9].concat(r[10]||(r[11]&&!(own&&mv>0))?[r[10]||""]:[]).concat(r[11]&&!(own&&mv>0)?[1]:[]);   /* блок и «кто добавил» не теряем; 13.11: «мастеру» так и 0 — метка «ждёт проверки» остаётся */
+  f.addEventListener("submit",e=>{ e.preventDefault(); const own=f.elements.s.value==="s", mv=w2Num(f.elements.m.value), nr=[r[0],f.elements.n.value.trim(),f.elements.u.value.trim()||"шт",own?mv:0,w2Num(f.elements.c.value),f.elements.s.value,f.elements.g.value.trim()||"Прочее",own?0:mv,+f.elements.mt.value||0,+f.elements.b.value||9].concat(r[10]||(r[11]&&own&&!(mv>0))?[r[10]||""]:[]).concat(r[11]&&own&&!(mv>0)?[1]:[]);   /* блок и «кто добавил» не теряем; 13.11: «мастеру» так и 0 — метка «ждёт проверки» остаётся */
     if(!nr[1]){ toast("Впишите название"); return; } if(isNew) D.wr.push(nr); else D.wr[i]=nr; m.remove(); shpRenderKeep(); }); }
 
 /* ===== «Наценки»: группы материалов, заказные фасады, услуги поставщиков, тарифы работ ===== */
@@ -26017,7 +26018,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="4d7cd44fb9";/*cehqr-build*/
+  const BUILD="a20b7dee86";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
