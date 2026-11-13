@@ -16063,7 +16063,7 @@ function prAllHtml(h){
   const take=(keys,name,id)=>{ const L=rows.filter(r=>!used.has(r)&&keys.includes(r.key)); if(id==="mine") L.sort((a,b)=>keys.indexOf(a.key)-keys.indexOf(b.key)); L.forEach(r=>used.add(r)); if(L.length) G.push([id,name,L]); };
   take(mine,"Чаще всего нужно","mine"); PR_GR.forEach(g=>take(g[2],g[1],g[0]));
   const other=rows.filter(r=>!used.has(r)); if(other.length) G.splice(Math.max(0,G.length-1),0,["other","Другое",other]);
-  const okDo=x=>x.act==="shp-tab"?have.has(x.v):x.act==="shp-new"?!!(S.shop&&S.shop.loaded):x.act==="shp-tnew"?!!(S.shop&&S.shop.v2):x.act==="pr-part"?true:true;
+  const okDo=x=>x.act==="shp-tab"?have.has(x.v):x.act==="shp-new"?!!(S.shop&&S.shop.loaded):x.act==="shp-tnew"?!!(S.shop&&S.shop.v2):x.act==="pr-part"?true:x.act==="cexp-open"?(typeof cxCan==="function"&&cxCan()):true;
   const doRows=PR_DO.filter(okDo).map(x=>`<li data-s="${prEsc(x.t+" "+x.s+" "+x.k)}" hidden><button type="button" class="shp-row pr-do" data-act="pr-do" data-do="${x.act}"${x.v?` data-dv="${x.v}"`:""}><span class="shp-av" aria-hidden="true">${prIco(x.act==="pr-part"?"qr":x.act==="pr-font"?"font":x.act==="help-open"?"help":x.act==="pr-find"?"search":"plus",20)}</span><span class="shp-rb"><b>${x.t}</b><span class="muted">${x.s}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`).join("");
   const q=S.prQ||"", mode=document.documentElement.getAttribute("data-vt-mode")||"";
   const SYN={zp:"деньги получка",money:"деньги сумма прибыль",pnl:"прибыль выручка расходы",clients:"позвонить телефон",cal:"когда дата монтаж замер",stock:"остатки материалы ЛДСП",ctr:"рынок магазин долг",chess:"этапы доска загрузка график шахматка",feed:"события история",help:"ошибки вопросы поддержка",smetas:"цена расчёт",zamers:"размеры фото",staff:"люди работники телефоны",notes:"записи напоминания"};
@@ -23117,7 +23117,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="7702f1c04d";
+const CHK_BUILD="859104e8a7";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -28110,6 +28110,411 @@ ${S(".shp-rr,.shp-rr *,.shp-mmore>summary,.shp-mmore>summary::after,.shp-exp-b")
   if(document.readyState!=="complete") addEventListener("load",later);
 })();
 
+/* ===== «Профиль цеха» — мастер настройки при первом входе директора или технолога (Кирилл 13.11 10:12 «Делай», ответ на Akeda Studio) =====
+   Это НЕ новые настройки денег, а один понятный проход по тому, что уже есть + справочные сведения цеха на будущее:
+     1 Компания — название (ключ kp.name, как в «Для клиента и КП»), логотип (ключ logo), город (профиль), валюта — только показ (меняется в «Настройки компании → Общие»).
+     2 Материалы — поставщики ЛДСП, основной декор, толщина (профиль); кромка корпуса и задняя стенка — те же поля, что «Настройки конструкции» (ключ constr.gEdge / gBack, справочные).
+     3 Фурнитура по умолчанию — петли, направляющие, ручки (профиль; потом их будут ставить классы сметы).
+     4 Присадка и станки — система 32, крепёж, шкант, отступ, станки, версия Базиса (профиль на будущее: конструктор, раскрой; на расчёты не влияет).
+     5 Как считаете цену — только показ (схема цены фирмы, проценты, пороги) и кнопка «Изменить в Настройки компании → Смета». Деньги здесь НЕ меняются.
+   Хранение: «Настройки компании», ключ cexProf (cfgSave, как «Общие цены»). Записывать может только технолог/директор — проверяет сервер (cfgSave_: не tech → role;
+   технолог без права «Настройки» → dirGate_). Профиль пустой — всё работает как раньше: ни одна смета и ни один расчёт ключ cexProf не читают.
+   Показ: при первом входе директора/технолога, если профиль не заполнен — карточка «Настроить цех за 3 минуты · Позже»; строка во «Все разделы» и в «⚙ Мои цены». ===== */
+const CXP={step:0,d:null,saving:0,scale:null,open:false};
+const CXP_LATER="w24-cexp-later", CXP_DAYS=3;
+const cxE=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cxN=v=>String(Math.round((+v||0)*100)/100).replace(".",","), cxK=v=>(Math.round((+v||0)*100)/100).toFixed(2).replace(".",",");
+const CXP_STEPS=[["co","Компания"],["mat","Материалы"],["furn","Фурнитура"],["drill","Присадка и станки"],["price","Как считаете цену"]];
+const CXP_LDSP=["Egger","Kronospan","Kastamonu","Lamarty","Увадрев","Swiss Krono","Nordeco"];
+const CXP_FURN=["Blum","Hettich","Boyard","Makmart","GTV","Samet","Firmax"];
+function cxAll(){ return (S.shop&&S.shop.cfgAll)||{}; }
+function cxProf(){ const p=cxAll().cexProf; return p&&typeof p==="object"?p:null; }
+function cxCan(){ try{ return !!(S.shop&&S.shop.tech)&&!window.APP_DES&&(typeof techCan!=="function"||techCan("cfg")); }catch(_){ return false; } }
+function cxFilled(){ const p=cxProf(); return !!(p&&(p.done||p.at)); }
+function cxDraft(){ if(!CXP.d){ const p=cxProf()||{}, kp=cxAll().kp||{}, c=cxAll().constr||{};
+    CXP.d=Object.assign({city:"",ldsp:[],ldspMain:"",th:"",edgeF:"",hinge:"",slide:"",handle:"",s32:"",fix:"",dowel:"",off:"",mach:{},bazis:""},JSON.parse(JSON.stringify(p)));
+    CXP.d.name=kp.name||""; CXP.d.edgeB=c.gEdge!=null&&c.gEdge!==""?String(c.gEdge):(p.edgeB||""); CXP.d.back=p.back||c.gBack||"";
+    if(!Array.isArray(CXP.d.ldsp)) CXP.d.ldsp=[]; if(!CXP.d.mach||typeof CXP.d.mach!=="object") CXP.d.mach={}; }
+  return CXP.d; }
+function cxCur(){ try{ return (typeof smCfg==="function"&&smCfg().cur)||"₽"; }catch(_){ return "₽"; } }
+function cxLogo(){ const v=cxAll().logo; return typeof v==="string"&&/^data:image\/(png|jpeg);base64,/.test(v)?v:""; }
+
+/* ---------- части экрана ---------- */
+const cxHint=t=>`<p class="cxp-hint">${t}</p>`;
+function cxChips(key,list,opt){ opt=opt||{}; const D=cxDraft(), v=D[key], multi=Array.isArray(v), ro=!cxCan();
+  return `<div class="cxp-chips" role="${multi?"group":"radiogroup"}" aria-label="${cxE(opt.label||"")}">${list.map(x=>{ const val=Array.isArray(x)?x[0]:x, nm=Array.isArray(x)?x[1]:x, on=multi?v.includes(val):String(v)===String(val);
+    return `<button type="button" class="cxp-chip" data-cx="chip" data-k="${key}" data-v="${cxE(val)}" ${multi?`aria-pressed="${on}"`:`role="radio" aria-checked="${on}"`}${ro?" disabled":""}>${cxE(nm)}</button>`; }).join("")}</div>`; }
+function cxField(lbl,inner,hint){ return `<div class="cxp-f"><div class="cxp-l">${lbl}</div>${inner}${hint?cxHint(hint):""}</div>`; }
+function cxInput(key,ph,opt){ opt=opt||{}; const D=cxDraft(); return `<input class="cxp-in" data-cx="in" data-k="${key}" value="${cxE(D[key]||"")}" placeholder="${cxE(ph)}" maxlength="${opt.max||60}"${opt.num?' inputmode="numeric"':""}${cxCan()?"":" disabled"} aria-label="${cxE(opt.label||ph)}">`; }
+function cxSw(key,lbl,hint){ const D=cxDraft(), on=!!D.mach[key]; return `<label class="cxp-sw"><span><b>${lbl}</b>${hint?`<small>${hint}</small>`:""}</span><input type="checkbox" role="switch" data-cx="mach" data-k="${key}"${on?" checked":""}${cxCan()?"":" disabled"}></label>`; }
+function cxStepHtml(i){ const D=cxDraft(), id=CXP_STEPS[i][0];
+  if(id==="co"){ const L=cxLogo();
+    return `<p class="cxp-priv">Ваши данные остаются у вас и не идут на обучение чужих нейросетей.</p>
+      ${cxField("Название цеха",cxInput("name","Например: Мастерская «Кедр»",{max:80}),"Попадёт в шапку КП для клиента — то же поле, что в «Настройки компании → Для клиента и КП».")}
+      ${cxField("Логотип",`<div class="cxp-logo"><span class="cxp-lp">${L?`<img src="${L}" alt="Логотип">`:`<span>нет</span>`}</span><label class="cxp-btn${cxCan()?"":" dis"}">${L?"Заменить":"Выбрать картинку"}<input type="file" accept="image/*" id="cxpLogo" hidden${cxCan()?"":" disabled"}></label></div>`,"Будет в КП в PDF. Картинка с телефона уменьшится сама.")}
+      ${cxField("Город",cxInput("city","Например: Якутск",{max:40}),"Пока сохраняется в профиль — для КП и доставки позже.")}
+      ${cxField("Валюта",`<div class="cxp-ro"><b>${cxE(cxCur())}</b><button type="button" class="cxp-link" data-cx="go" data-v="gen">Изменить ›</button></div>`,"В этой валюте считаются сметы и КП. Меняется в «Настройки компании → Общие».")}`; }
+  if(id==="mat") return `${cxField("Поставщики ЛДСП",cxChips("ldsp",CXP_LDSP,{label:"Поставщики ЛДСП"}),"Можно несколько. Пока сохраняется в профиль — потом по ним будем подсказывать декоры в смете.")}
+      ${cxField("Основной ЛДСП (декор)",cxInput("ldspMain","Например: Egger W980 белый",{max:80}),"Пока сохраняется в профиль — потом станет ЛДСП по умолчанию в новой смете.")}
+      ${cxField("Толщина корпуса",cxChips("th",[["16","16 мм"],["18","18 мм"]],{label:"Толщина корпуса"}),"Пока сохраняется в профиль — для конструктора и раскроя.")}
+      ${cxField("Кромка корпуса",cxChips("edgeB",[["0.4","0,4 мм"],["1","1 мм"],["2","2 мм"]],{label:"Кромка корпуса"}),"То же поле, что в «Сметы → Настройки конструкции». На цену сметы не влияет.")}
+      ${cxField("Кромка фасадов и видимых торцов",cxChips("edgeF",[["0.4","0,4 мм"],["1","1 мм"],["2","2 мм"]],{label:"Кромка фасадов"}),"Пока сохраняется в профиль — для раскроя.")}
+      ${cxField("Задняя стенка",cxChips("back",["ДВПО","ХДФ","ЛДСП"],{label:"Задняя стенка"}),"ДВПО и ЛДСП — то же поле, что в «Настройки конструкции». На цену сметы не влияет.")}`;
+  if(id==="furn") return `${cxField("Петли",cxChips("hinge",CXP_FURN.concat(["Другие"]),{label:"Петли"}),"Пока сохраняется в профиль — потом попадёт в смету как петли по умолчанию (классы Эконом / Стандарт / Премиум).")}
+      ${cxField("Направляющие ящиков",cxChips("slide",CXP_FURN.concat(["Шариковые","Другие"]),{label:"Направляющие"}),"Пока сохраняется в профиль — потом попадёт в смету как направляющие по умолчанию.")}
+      ${cxField("Ручки",cxChips("handle",["Boyard","Makmart","GTV","Gola без ручек","Push-to-open","Свои / по проекту"],{label:"Ручки"}),"Пока сохраняется в профиль — потом попадёт в смету как ручки по умолчанию.")}
+      <p class="cxp-note">Цены фурнитуры здесь не меняются — они в «⚙ Мои цены» и в базе цен.</p>`;
+  if(id==="drill") return `${cxField("Система 32",cxChips("s32",[["1","Да"],["0","Нет"]],{label:"Система 32"}),"Пока сохраняется для конструктора и присадки — на расчёты не влияет.")}
+      ${cxField("Крепёж корпуса",cxChips("fix",["Эксцентрик","Конфирмат","Шкант + эксцентрик"],{label:"Крепёж корпуса"}),"Пока сохраняется для конструктора: какой крепёж ставить в модулях.")}
+      ${cxField("Шкант",cxChips("dowel",["8×30","8×35","6×30","Без шканта"],{label:"Шкант"}),"Пока сохраняется для присадки.")}
+      ${cxField("Отступ присадки от края, мм",cxInput("off","Например: 37",{max:4,num:true,label:"Отступ присадки"}),"Пока сохраняется для присадки (обычно 37 мм).")}
+      <div class="cxp-f"><div class="cxp-l">Станки в цехе</div><div class="cxp-grp">${cxSw("cnc","ЧПУ","раскрой и присадка на станке")}${cxSw("drl","Присадочный станок")}${cxSw("edg","Кромочный станок")}${cxSw("saw","Форматно-раскроечный")}</div>${cxHint("Пока сохраняется для раскроя: под какой станок готовить карты и файлы.")}</div>
+      ${cxField("Версия Базиса",cxChips("bazis",["10","11","2022","2023","2024","Нет Базиса"],{label:"Версия Базиса"}),"Пока сохраняется — чтобы скрипты «Технолог 3D» подходили к вашему Базису.")}`;
+  return cxPriceHtml(); }
+function cxPriceHtml(){ if(!CXP.scale) cxScaleLoad();
+  const sc=CXP.scale, K=Object.assign({k:0.40,kb:0.45,min:300000,bonus:10,kAsk:0.42,kLow:0.40,dLow:2,kF:0.70},(sc&&sc.zk)||{}), dp=sc&&sc.dpct!=null?sc.dpct:3;
+  let pc=null; try{ const s=window.__qk&&window.__qk.set&&window.__qk.set(); pc=(s&&s.firm&&s.firm.pcF)||{}; if(!s&&window.__qk&&window.__qk.load) setTimeout(()=>{ Promise.resolve(window.__qk.load()).then(()=>{ if(CXP.open&&CXP.step===4) cxPaint(); }).catch(()=>{}); },0); }catch(_){ pc={}; }
+  const sch=(pc&&pc.sch)||"div", kk=Math.min(0.6,Math.max(0.2,+(pc&&pc.k)||0.38)), mm=+(pc&&pc.m)>0?+pc.m:2.5;
+  const how=pc&&pc.old===true?"как раньше (до новой цены)":sch==="mul"?"материал × "+cxN(mm):sch==="pm"?"за погонный метр":sch==="grp"?"по группам материалов (наценки)":"(материал + расходы) ÷ "+cxK(kk);
+  const row=(t,v)=>`<div class="cxp-rr"><span>${t}</span><b>${v}</b></div>`;
+  const rows=sc&&Array.isArray(sc.rows)?sc.rows.slice(0,6):[];
+  return `<p class="cxp-sub2">Так фирма считает сейчас. Здесь только показ — деньги в профиле не меняются.</p>
+    <div class="cxp-grp cxp-ro2">${row("Цена клиенту",cxE(how))}
+      ${row("Проценты офису и бригаде","от (материал + расходы) ÷ "+cxK(K.kb)+"; продано хуже — от настоящей суммы")}
+      ${row("Согласие директора","если коэффициент выше "+cxK(K.kAsk))}
+      ${row("Дизайнеру",cxN(dp)+" % · "+cxN(K.dLow)+" %, если хуже "+cxK(K.kLow))}
+      ${row("Премия дизайнеру",cxN(K.bonus)+" % сверх нормы, лучше "+cxK(K.k)+", договор от "+Math.round(K.min).toLocaleString("ru-RU")+"\u00a0"+cxE(cxCur()))}
+      ${row("Заказные фасады ПВХ","÷ "+cxK(K.kF))}
+      ${rows.map(r=>row(cxE(r.name),cxN(r.pct)+" %")).join("")}</div>
+    ${sc===null?`<p class="cxp-note">Загружаю проценты фирмы…</p>`:sc&&sc.off?`<p class="cxp-note">Проценты не загрузились — показаны обычные. Точные — в «Настройки компании».</p>`:""}
+    <button type="button" class="cxp-btn wide" data-cx="go" data-v="sm">Изменить в «Настройки компании → Смета»</button>
+    ${cxHint("Схема цены, наценки и проценты меняются только там — с проверкой директора, как раньше.")}`; }
+async function cxScaleLoad(){ if(CXP.scaleBusy) return; CXP.scaleBusy=true; let j=null; try{ j=await shpGet("action=smScale",true); }catch(_){} CXP.scaleBusy=false;
+  CXP.scale=j&&j.ok?j:{off:true}; if(CXP.open&&CXP.step===4) cxPaint(); }
+
+/* ---------- окно мастера ---------- */
+function cxOpen(step){ if(!cxCan()) return; CXP.warned=0; cxPromptHide(); document.getElementById("cexM")?.remove(); CXP.d=null; cxDraft(); CXP.step=Math.max(0,Math.min(4,+step||0)); CXP.open=true;
+  if(S.shop&&!S.shop.cfgTried&&typeof cfgLoad==="function") cfgLoad().then(()=>{ CXP.d=null; if(CXP.open) cxPaint(); });
+  const m=document.createElement("div"); m.className="modal cxp-m"; m.id="cexM"; m.setAttribute("role","dialog"); m.setAttribute("aria-label","Профиль цеха");
+  m.innerHTML=`<div class="modal-card cxp-card" data-no-sheet><div class="cxp-top"><button type="button" class="cxp-rb" data-cx="back" aria-label="Назад">${cxArrow()}</button><div class="cxp-prog" aria-hidden="true">${CXP_STEPS.map((_,i)=>`<i data-i="${i}"></i>`).join("")}</div><button type="button" class="cxp-rb" data-cx="x" aria-label="Закрыть">${cxX()}</button></div>
+    <div class="cxp-body" id="cxpBody"></div><div class="cxp-bar" id="cxpBar"></div></div>`;
+  document.body.appendChild(m); cxPaint(); requestAnimationFrame(()=>m.classList.add("on"));
+  m.addEventListener("click",cxClick); m.addEventListener("input",cxInputEv); m.addEventListener("change",cxChange); }
+function cxArrow(){ return `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>`; }
+function cxX(){ return `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`; }
+function cxPaint(){ const m=document.getElementById("cexM"); if(!m) return; const i=CXP.step, last=i===4, ro=!cxCan();
+  m.querySelectorAll(".cxp-prog i").forEach(x=>x.classList.toggle("on",+x.dataset.i<=i));
+  const bk=m.querySelector('[data-cx="back"]'); bk.style.visibility=i?"visible":"hidden";
+  const b=m.querySelector("#cxpBody"); b.innerHTML=`<p class="cxp-step">Шаг ${i+1} из 5</p><h2 class="cxp-h">${CXP_STEPS[i][1]}</h2>${i===0?`<p class="cxp-sub">Настройте один раз — дальше это работает в смете, деталях и раскрое. Любой шаг можно пропустить.</p>`:""}${ro?`<p class="cxp-note">Менять профиль может директор или технолог. Вы видите, как настроено.</p>`:""}${cxStepHtml(i)}`;
+  b.scrollTop=0;
+  m.querySelector("#cxpBar").innerHTML=`<button type="button" class="cxp-next" data-cx="next">${last?"Готово":"Дальше"}</button>${last||ro?"":`<button type="button" class="cxp-skip" data-cx="skip">Пропустить</button>`}`; }
+function cxClose(){ const m=document.getElementById("cexM"); CXP.open=false; if(!cxFilled()){ try{ localStorage.setItem(CXP_LATER,String(Date.now())); }catch(_){} } if(!m) return; m.classList.remove("on"); setTimeout(()=>m.remove(),200); }
+function cxClick(e){ const m=e.currentTarget, t=e.target.closest("[data-cx]"); if(e.target===m) return cxClose(); if(!t) return; const a=t.dataset.cx, D=cxDraft();
+  if(a==="x") return cxClose();
+  if(a==="back"){ if(CXP.step>0){ CXP.step--; cxPaint(); } return; }
+  if(a==="chip"){ if(!cxCan()) return; const k=t.dataset.k, v=t.dataset.v;
+    if(Array.isArray(D[k])){ const on=D[k].includes(v); D[k]=on?D[k].filter(x=>x!==v):D[k].concat([v]); t.setAttribute("aria-pressed",String(!on)); }
+    else { D[k]=String(D[k])===v?"":v; t.parentNode.querySelectorAll(".cxp-chip").forEach(x=>x.setAttribute("aria-checked",String(x.dataset.v===String(D[k])))); }
+    return; }
+  if(a==="go"){ const v=t.dataset.v; cxClose(); if(S.shop) S.shop.cfgTab=v; const x=document.createElement("button"); x.type="button"; x.hidden=true; x.dataset.act="shp-tab"; x.dataset.v="cfg"; (document.getElementById("view")||document.body).appendChild(x); x.click(); x.remove(); if(S.shop) S.shop.cfgTab=v; return; }
+  if(a==="next"||a==="skip"){ const i=CXP.step; if(a==="next"&&cxCan()) cxSave(i); if(i>=4){ if(cxCan()&&!cxFilled()) cxSave(4,true); cxClose(); if(a==="next"&&cxCan()) toast("Профиль цеха сохранён"); return; } CXP.step++; cxPaint(); return; } }
+function cxInputEv(e){ const t=e.target.closest('[data-cx="in"]'); if(!t||!cxCan()) return; cxDraft()[t.dataset.k]=t.dataset.k==="off"?t.value.replace(/\D/g,"").slice(0,3):t.value; }
+async function cxChange(e){ const t=e.target; if(!cxCan()) return;
+  if(t.dataset&&t.dataset.cx==="mach"){ cxDraft().mach[t.dataset.k]=t.checked; return; }
+  if(t.id==="cxpLogo"&&t.files&&t.files[0]){ let d; try{ d=typeof kpLogoShrink==="function"?await kpLogoShrink(t.files[0]):await cxLogoShrink(t.files[0]); }catch(err){ toast(err&&err.message==="big"?"Картинка слишком сложная — выберите попроще":"Картинка не читается — выберите другую"); return; }
+    const all=S.shop.cfgAll||(S.shop.cfgAll={}), old=all.logo; all.logo=d; cxPaint();   // сразу на экране; не сохранилось — откат
+    const j=await shpPost({action:"cfgSave",key:"logo",value:d}); if(!j){ all.logo=old; cxPaint(); return; } toast("Логотип сохранён — он будет в КП"); } }
+function cxLogoShrink(file){ return new Promise((ok,no)=>{ const u=URL.createObjectURL(file), im=new Image(); im.onload=()=>{ URL.revokeObjectURL(u);
+  for(const px of [400,320,240]){ const k=Math.min(1,px/Math.max(im.width,im.height)), c=document.createElement("canvas"); c.width=Math.max(1,Math.round(im.width*k)); c.height=Math.max(1,Math.round(im.height*k)); const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(im,0,0,c.width,c.height);
+    for(const q of [0.9,0.75,0.6]){ const d=c.toDataURL("image/jpeg",q); if(d.length<=44000) return ok(d); } } no(new Error("big")); }; im.onerror=()=>{ URL.revokeObjectURL(u); no(new Error("bad")); }; im.src=u; }); }
+
+/* ---------- запись (в фоне; экран уже перешёл дальше). Только ключи cexProf, kp (название), constr (кромка, задняя стенка) ---------- */
+function cxClean(D){ const t=(v,n)=>String(v==null?"":v).replace(/[<>]/g,"").trim().slice(0,n||60);
+  const o={v:1,city:t(D.city,40),ldsp:(D.ldsp||[]).filter(x=>CXP_LDSP.includes(x)).slice(0,10),ldspMain:t(D.ldspMain,80),th:/^(16|18)$/.test(D.th)?D.th:"",edgeB:/^(0\.4|1|2)$/.test(D.edgeB)?D.edgeB:"",edgeF:/^(0\.4|1|2)$/.test(D.edgeF)?D.edgeF:"",
+    back:["ДВПО","ХДФ","ЛДСП"].includes(D.back)?D.back:"",hinge:t(D.hinge,30),slide:t(D.slide,30),handle:t(D.handle,30),s32:/^[01]$/.test(D.s32)?D.s32:"",fix:t(D.fix,30),dowel:t(D.dowel,20),off:String(D.off||"").replace(/\D/g,"").slice(0,3),
+    mach:{cnc:!!D.mach.cnc,drl:!!D.mach.drl,edg:!!D.mach.edg,saw:!!D.mach.saw},bazis:t(D.bazis,20)};
+  return o; }
+async function cxSave(i,done){ if(!(S.shop&&S.shop.cfgOk===true)){ if(!CXP.warned){ CXP.warned=1; toast("Настройки фирмы не загрузились — профиль не сохранился. Проверьте связь и откройте ещё раз"); } return false; }   // иначе затёрли бы КП и конструкцию пустыми
+  const D=cxDraft(), all=S.shop.cfgAll||(S.shop.cfgAll={}), id=CXP_STEPS[i][0];
+  const P=Object.assign({},cxProf()||{},cxClean(D),{at:Date.now(),who:(typeof shpWho==="function"?shpWho():"")}); if(done||i===4) P.done=1;
+  const oldP=all.cexProf; all.cexProf=P; CXP.saving++;
+  const jobs=[shpPostRaw({action:"cfgSave",key:"cexProf",value:P}).then(j=>({k:"cexProf",j,old:oldP}))];
+  if(id==="co"){ const kp=all.kp||{}, nm=String(D.name||"").trim().slice(0,80); if(nm!==String(kp.name||"")){ const nk=Object.assign({},kp,{name:nm}); const old=all.kp; all.kp=nk; jobs.push(shpPostRaw({action:"cfgSave",key:"kp",value:nk}).then(j=>({k:"kp",j,old}))); } }
+  if(id==="mat"){ const c=all.constr||{}, nc=Object.assign({},c); let ch=false;
+    if(P.edgeB&&String(c.gEdge==null?"":c.gEdge)!==P.edgeB){ nc.gEdge=+P.edgeB; ch=String(c.gEdge)!==String(nc.gEdge); }
+    if((P.back==="ДВПО"||P.back==="ЛДСП")&&c.gBack!==P.back){ nc.gBack=P.back; ch=true; }
+    if(ch){ const old=all.constr; all.constr=nc; jobs.push(shpPostRaw({action:"cfgSave",key:"constr",value:nc}).then(j=>({k:"constr",j,old}))); } }
+  const R=await Promise.all(jobs); CXP.saving--;
+  const bad=R.filter(r=>!(r.j&&r.j.ok)); if(!bad.length) return true;
+  bad.forEach(r=>{ if(r.old===undefined) delete all[r.k]; else all[r.k]=r.old; });   // откат
+  const e=bad[0].j; toast(!e?"Нет связи — профиль не сохранился. Откройте его ещё раз позже":e.error==="role"||e.error==="dir"?"Профиль цеха меняет директор или технолог":e.error==="pin"?"Войдите заново — профиль не сохранился":"Профиль не сохранился — попробуйте ещё раз");
+  return false; }
+
+/* ---------- первый вход: «Настроить цех за 3 минуты · Позже» (не окно .modal — не мешает обновлению экрана) ---------- */
+function cxLaterOk(){ try{ const t=+localStorage.getItem(CXP_LATER)||0; return Date.now()-t<CXP_DAYS*864e5; }catch(_){ return false; } }
+function cxPromptHide(){ document.documentElement.classList.remove("cxp-asking"); const p=document.getElementById("cxpAsk"); if(p){ p.classList.remove("on"); setTimeout(()=>p.remove(),200); } }
+function cxCheck(){ try{ if(!S.shop||!S.shop.loaded||!cxCan()||S.demo||window.APP_DES) return; if(navigator.webdriver&&!window.__cxpTest) return;   // стенды других проверок — без карточки
+    if(S.shop.cfgOk!==true){ if(!S.shop.cfgTried&&typeof cfgLoad==="function") cfgLoad().then(()=>setTimeout(cxCheck,300)); return; }
+    if(cxFilled()||cxLaterOk()||CXP.open||document.getElementById("cxpAsk")||S.view!=="shop"||document.querySelector(".modal")) return;
+    const p=document.createElement("div"); p.id="cxpAsk"; p.className="cxp-ask"; p.setAttribute("role","region"); p.setAttribute("aria-label","Профиль цеха");
+    p.innerHTML=`<div class="cxp-at"><b>Настроить цех за 3 минуты</b><span>Материалы, фурнитура, присадка — один раз, дальше это работает в смете, деталях и раскрое.</span></div><div class="cxp-ab"><button type="button" class="cxp-later" data-cxa="later">Позже</button><button type="button" class="cxp-go" data-cxa="go">Настроить</button></div>`;
+    document.body.appendChild(p); document.documentElement.classList.add("cxp-asking"); requestAnimationFrame(()=>requestAnimationFrame(()=>p.classList.add("on")));
+  }catch(e){ console.log("cxp",e); } }
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-cxa]"); if(!b) return; e.preventDefault(); e.stopPropagation();
+  if(b.dataset.cxa==="later"){ try{ localStorage.setItem(CXP_LATER,String(Date.now())); }catch(_){} cxPromptHide(); return; }
+  cxOpen(0); },true);
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="cexp-open"]'); if(!t) return; e.preventDefault(); e.stopPropagation(); const d=t.closest("details"); if(d) d.open=false;
+  const mm=document.getElementById("qkSetM"); if(mm&&t.closest("#qkSetM")) mm.remove(); cxOpen(0); },true);
+document.addEventListener("w24-cexp-check",()=>{ window.__cxpTest=1; try{ localStorage.removeItem(CXP_LATER); }catch(_){} cxCheck(); });   // сценарий стенда
+if(typeof shpLoad==="function"){ const _cxL=shpLoad; shpLoad=async function(){ const r=await _cxL.apply(this,arguments); setTimeout(cxCheck,1800); return r; }; }
+/* «Ещё / Все разделы»: строка «Профиль цеха» (директор и технолог); группа «Настройки и помощь» */
+if(typeof shpMoreHtml==="function"){ const _cxMore=shpMoreHtml; shpMoreHtml=function(){ let h=_cxMore.apply(this,arguments); if(!cxCan()) return h;
+  try{ const ok=cxFilled(), li=`<li><button type="button" class="shp-row" data-act="cexp-open" data-v=""><span class="shp-av" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span><span class="shp-rb"><b>Профиль цеха</b><span class="muted">${ok?"Материалы, фурнитура, присадка, станки":"Не настроен — 3 минуты: материалы, фурнитура, присадка"}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
+    h=h.replace('<ul class="shp-list">','<ul class="shp-list">'+li); }catch(_){} return h; }; }
+try{ if(typeof PR_GR!=="undefined"&&Array.isArray(PR_GR)){ const g=PR_GR.find(x=>x[0]==="set"); if(g&&!g[2].includes("cexp-open")) g[2].unshift("cexp-open"); } }catch(_){}
+try{ if(typeof PR_DO!=="undefined"&&Array.isArray(PR_DO)) PR_DO.push({t:"Настроить профиль цеха",s:"Материалы, фурнитура, присадка — один раз",k:"профиль цех настроить материалы фурнитура присадка станки базис петли лдсп кромка",act:"cexp-open"}); }catch(_){}
+/* «⚙ Мои цены / Общие цены» (окно #qkSetM из site_qk.js): строка «Профиль цеха» сверху — директору и технологу */
+(function(){ const add=()=>{ const m=document.getElementById("qkSetM"); if(!m||!cxCan()||m.querySelector(".cxp-qk")) return; const c=m.querySelector(".modal-card"), h=c&&c.querySelector("h2"); if(!h) return;
+    const b=document.createElement("button"); b.type="button"; b.className="cxp-qk"; b.dataset.act="cexp-open"; b.innerHTML=`<span><b>Профиль цеха</b><small>${cxFilled()?"Материалы, фурнитура, присадка, станки":"Не настроен — 3 минуты"}</small></span><span aria-hidden="true">›</span>`; h.after(b); };
+  try{ new MutationObserver(()=>{ if(document.getElementById("qkSetM")) add(); }).observe(document.body,{childList:true}); }catch(_){} })();
+
+(function(){ const st=document.createElement("style"); st.id="cxpCss"; st.textContent=`
+#cexM.cxp-m{position:fixed;inset:0;z-index:390;display:flex;align-items:stretch;justify-content:center;padding:0;background:var(--w-bg,#0b0b0b);opacity:0;transition:opacity 200ms var(--w-ease,ease)}
+#cexM.cxp-m.on{opacity:1}
+#cexM .cxp-card{box-sizing:border-box;width:100%;max-width:620px;height:100dvh;max-height:none;margin:0;padding:0;border:0!important;border-radius:0!important;background:var(--w-bg,#0b0b0b)!important;color:var(--w-ink,#fff)!important;box-shadow:none!important;display:flex;flex-direction:column;transform:translateY(16px);transition:transform 220ms var(--w-ease,ease)}
+#cexM.on .cxp-card{transform:none}
+#cexM .cxp-card::before{display:none!important}
+@media (min-width:900px){#cexM.cxp-m{background:var(--w-scrim,rgba(0,0,0,.55));align-items:center}#cexM .cxp-card{height:min(860px,92dvh);border-radius:22px!important;background:var(--w-bg,#0b0b0b)!important;box-shadow:var(--w-shade,0 20px 60px rgba(0,0,0,.6)),0 0 0 1px var(--w-line,rgba(255,255,255,.08))!important}}
+.cxp-top{flex:none;display:flex;align-items:center;gap:12px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px}
+.cxp-rb{flex:none;width:44px;height:44px;border-radius:50%;border:1px solid var(--w-btn-line,rgba(255,255,255,.06))!important;display:grid;place-items:center;background:var(--w-btn,rgba(44,44,46,.7))!important;color:var(--w-ink,#fff)!important;cursor:pointer;padding:0}
+.cxp-rb:active,.cxp-next:active,.cxp-chip:active,.cxp-go:active{transform:scale(.97)}
+.cxp-prog{flex:1;display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.cxp-prog i{height:4px;border-radius:2px;background:rgba(255,255,255,.12);transition:background 200ms}.cxp-prog i.on{background:var(--w-ink,#fff)}
+.cxp-body{flex:1;overflow:auto;padding:4px 16px 16px;-webkit-overflow-scrolling:touch}
+.cxp-step{margin:6px 0 2px;font-size:13px;color:var(--w-t2,var(--ink))}
+.cxp-h{margin:0 0 14px;font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.15;color:var(--w-ink,#fff)}
+.cxp-sub,.cxp-sub2{margin:0 0 14px;font-size:15px;line-height:1.4;color:var(--w-t2,var(--ink))}
+.cxp-priv{display:flex;gap:8px;align-items:flex-start;margin:4px 0 14px;padding:12px 14px;border-radius:14px;background:var(--w-l1,#1c1c1e);font-size:14px;line-height:1.4;color:var(--w-ink,#fff)}
+.cxp-f{margin:0 0 18px}.cxp-l{font-size:15px;font-weight:600;margin:0 0 8px;color:var(--w-ink,#fff)}
+.cxp-hint{margin:6px 2px 0;font-size:12.5px;line-height:1.35;color:var(--w-t3,var(--ink))}
+.cxp-note{margin:0 0 14px;font-size:13px;line-height:1.4;color:var(--w-t2,var(--ink))}
+.cxp-chips{display:flex;flex-wrap:wrap;gap:8px}
+.cxp-chip{min-height:44px;padding:0 16px;border-radius:22px;border:1px solid var(--w-line,rgba(255,255,255,.08))!important;background:var(--w-l1,#1c1c1e)!important;color:var(--w-ink,#fff)!important;font:500 15px/1 var(--f-body,system-ui);cursor:pointer;transition:background 150ms,color 150ms}
+.cxp-chip[aria-pressed="true"],.cxp-chip[aria-checked="true"]{background:var(--w-ink,#fff)!important;color:var(--w-bg,#000)!important;border-color:transparent!important}
+.cxp-chip:disabled{opacity:.6;cursor:default}
+.cxp-in{box-sizing:border-box;width:100%;min-height:48px;padding:0 14px;border-radius:12px;border:1px solid var(--w-line,rgba(255,255,255,.08))!important;background:var(--w-l1,#1c1c1e)!important;color:var(--w-ink,#fff)!important;font:16px/1.3 var(--f-body,system-ui);outline:none}
+.cxp-in:focus{border-color:rgba(255,255,255,.22)!important}.cxp-in::placeholder{color:var(--w-t3,var(--ink))}
+.cxp-logo{display:flex;align-items:center;gap:12px}.cxp-lp{flex:none;width:64px;height:64px;border-radius:14px;background:var(--w-l1,#1c1c1e);display:grid;place-items:center;overflow:hidden;font-size:13px;color:var(--w-t3,var(--ink))}.cxp-lp img{width:100%;height:100%;object-fit:contain;background:#fff}
+.cxp-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;border-radius:22px;border:0;background:var(--w-l2,#2a2a2c)!important;color:var(--w-ink,#fff)!important;font:600 15px/1 var(--f-body,system-ui);cursor:pointer}.cxp-btn.wide{width:100%;margin-top:4px}.cxp-btn.dis{opacity:.5;pointer-events:none}
+.cxp-ro{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:0 6px 0 14px;border-radius:12px;background:var(--w-l1,#1c1c1e)}.cxp-ro b{font-size:17px}
+.cxp-link{min-height:44px;padding:0 10px;border:0;background:none!important;color:var(--w-ink,#fff)!important;font:500 15px/1 var(--f-body,system-ui);opacity:.75;cursor:pointer}
+.cxp-grp{border-radius:var(--w-r-grp,22px);background:var(--w-l1,#1c1c1e);overflow:hidden}
+.cxp-sw{display:flex;align-items:center;gap:12px;min-height:52px;padding:6px 16px;cursor:pointer}.cxp-sw+.cxp-sw{box-shadow:inset 16px 1px 0 -15px var(--w-line,rgba(255,255,255,.08)),inset 0 1px 0 var(--w-line,rgba(255,255,255,.08))}
+.cxp-sw>span{flex:1;display:flex;flex-direction:column;gap:2px}.cxp-sw b{font-size:15px;font-weight:500}.cxp-sw small{font-size:12.5px;color:var(--w-t2,var(--ink))}
+.cxp-sw input{appearance:none;-webkit-appearance:none;flex:none;width:51px;height:31px;border-radius:16px;background:rgba(120,120,128,.32);position:relative;margin:0;cursor:pointer;transition:background 200ms}
+.cxp-sw input::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25);transition:transform 200ms var(--w-ease,ease)}
+.cxp-sw input:checked{background:var(--w-g,#30d158)}.cxp-sw input:checked::after{transform:translateX(20px)}
+.cxp-ro2{margin:0 0 14px}.cxp-rr{display:flex;flex-direction:column;gap:3px;padding:12px 16px}.cxp-rr+.cxp-rr{border-top:1px solid var(--w-line,rgba(255,255,255,.08))}.cxp-rr span{font-size:13px;color:var(--w-t2,var(--ink))}.cxp-rr b{font-size:15px;font-weight:600;line-height:1.35}
+.cxp-bar{flex:none;display:flex;flex-direction:column;gap:4px;padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));background:var(--w-glass,rgba(11,11,11,.55));-webkit-backdrop-filter:var(--w-blur,blur(24px));backdrop-filter:var(--w-blur,blur(24px));border-top:1px solid var(--w-line,rgba(255,255,255,.08))}
+.cxp-next{min-height:52px;border:0;border-radius:26px;background:var(--w-ink,#fff)!important;color:var(--w-bg,#000)!important;font:600 17px/1 var(--f-body,system-ui);cursor:pointer}
+.cxp-skip{min-height:44px;border:0;background:none!important;color:var(--w-t2,var(--ink))!important;font:500 15px/1 var(--f-body,system-ui);cursor:pointer}
+.cxp-ask{position:fixed;z-index:300;left:12px;right:12px;bottom:calc(var(--apbar,64px) + 12px + env(safe-area-inset-bottom,0px));max-width:520px;margin:0 auto;box-sizing:border-box;padding:14px 14px 12px;border-radius:20px;background:var(--w-l1,#1c1c1e);color:var(--w-ink,#fff);box-shadow:var(--w-shade,0 20px 60px rgba(0,0,0,.6)),0 0 0 1px var(--w-line,rgba(255,255,255,.08));opacity:0;transform:translateY(16px);transition:opacity 200ms var(--w-ease,ease),transform 220ms var(--w-ease,ease)}
+.cxp-ask.on{opacity:1;transform:none}
+html.cxp-asking .ai-fab{opacity:0!important;pointer-events:none!important}   /* микрофон помощника не налезает на карточку, пока она видна */
+.cxp-at{display:flex;flex-direction:column;gap:4px;margin:0 2px 10px}.cxp-at b{font-size:17px}.cxp-at span{font-size:13.5px;line-height:1.4;color:var(--w-t2,var(--ink))}
+.cxp-ab{display:flex;gap:8px}.cxp-ab button{flex:1;min-height:44px;border-radius:22px;border:0;font:600 15px/1 var(--f-body,system-ui);cursor:pointer}
+.cxp-later{background:var(--w-l2,#2a2a2c)!important;color:var(--w-ink,#fff)!important}.cxp-go{background:var(--w-ink,#fff)!important;color:var(--w-bg,#000)!important}
+.cxp-qk{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:56px;margin:0 0 10px;padding:8px 16px;border-radius:16px;border:0;background:var(--w-l2,#2a2a2c)!important;color:var(--w-ink,#fff)!important;text-align:left;font:inherit;cursor:pointer}
+.cxp-qk>span:first-child{display:flex;flex-direction:column;gap:2px}.cxp-qk b{font-size:15px}.cxp-qk small{font-size:12.5px;color:var(--w-t2,var(--ink))}
+html[data-vt="light"] .cxp-prog i{background:rgba(0,0,0,.12)}
+@media (prefers-reduced-motion:reduce){#cexM.cxp-m,#cexM .cxp-card,.cxp-ask{transition:none}}
+`; document.head.appendChild(st); })();
+
+/* ===== «Сообщить об ошибке или идее» (Кирилл 13.11 10:12 «Делай», ответ на Akeda Studio: кнопка прямо в программе со снимком экрана) =====
+   Окно снизу: тип (Ошибка / Идея / Другое), текст, снимок экрана, галочка «Приложить сведения для разбора».
+   Снимок — без внешних библиотек: копия страницы рисуется в картинку через SVG (foreignObject) в момент нажатия, пока окна ещё нет.
+   Не получилось (iPhone не даёт так снять) — «Выбрать картинку» из галереи. Снимок сжимается до ≤ 300 КБ (jpeg).
+   Куда: POST fbAdd → главная таблица Кирилла, лист «Обратная связь» + бот технологу/директору. Старый сервер или тестировщик (нет fbAdd) —
+   уходит прежним путём helpAdd (лист «Поддержка»), человеку всё равно «Отправлено, спасибо».
+   Сведения — только экран, роль, версия сайта, телефон или компьютер; без телефонов, адресов и сумм клиентов.
+   Подключение: «Ещё / Все разделы» (строка «Техподдержка» → «Сообщить об ошибке или идее»), меню «⋯» на «Сегодня» и «Доске»,
+   все прежние кнопки data-act="help-open" (helpOpen из site_support.js теперь открывает это окно). ===== */
+const OTZ={snap:"",snapBusy:false,kind:"bug",draft:null,busy:false};
+const OTZ_MAXB64=400000;   // ≈ 300 КБ картинки
+const otzE=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const OTZ_I={bug:'<path d="M8 9a4 4 0 0 1 8 0v5a4 4 0 0 1-8 0z"/><path d="M12 9v9M4 13h4M16 13h4M5 7l3 2M19 7l-3 2M5 19l3-2M19 19l-3-2"/>',
+  idea:'<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
+  other:'<path d="M4 6h16v10H8l-4 4z"/>',img:'<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>',
+  shot:'<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>'};
+function otzI(n,sz){ return `<svg viewBox="0 0 24 24" width="${sz||20}" height="${sz||20}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${OTZ_I[n]||""}</svg>`; }
+function otzUrl(){ return (S.site&&S.site.stagesUrl)||""; }
+function otzWho(){ try{ return String(S.who||(typeof shpWho==="function"&&S.shop?shpWho():"")||"").slice(0,40); }catch(_){ return String(S.who||""); } }
+function otzRole(){ try{ return typeof helpRole==="function"?helpRole():""; }catch(_){ return ""; } }
+/* экран — только названия разделов (без имён клиентов, телефонов, сумм): «Сделки · доска», «Смета», «Технолог 3D · заказ» */
+function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
+    const MN={board:"сделки",order:"сделка",smeta:"смета",smetas:"сметы",tasks:"задачи",chats:"чаты",general:"общий чат",cal:"календарь",zp:"зарплата",money:"деньги",cfg:"настройки компании",more:"все разделы",stock:"склад",zamers:"замеры",clients:"клиенты",staff:"сотрудники",feed:"лента",help:"обращения",kassa:"касса",pnl:"итог месяца"};
+    if(v==="shop") return "Work24link · "+(MN[m]||m||"главная")+(m==="cfg"&&S.shop.cfgTab?" ("+S.shop.cfgTab+")":"");
+    return "Технолог 3D · "+({orders:"заказы",order:"заказ",part:"деталь",help:"помощь",supply:"снабжение"}[v]||v||"главная")+(S.current&&S.current.orderId?" "+String(S.current.orderId).slice(0,20):""); }catch(_){ return ""; } }
+function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
+  const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
+  return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
+function otzVer(){ const b="859104e8a7"; return /^__/.test(b)?"стенд":b; }
+function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
+
+/* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
+function otzCss(){ if(OTZ.css&&Date.now()-OTZ.cssAt<120000) return OTZ.css; let css=""; for(const sh of Array.from(document.styleSheets)){ try{ for(const r of Array.from(sh.cssRules||[])) css+=r.cssText+"\n"; }catch(_){} }
+  OTZ.css=css.replace(/:root\b/g,"html").replace(/@font-face\s*\{[^}]*\}/g,""); OTZ.cssAt=Date.now(); return OTZ.css; }
+function otzClone(){   // синхронно, в момент нажатия — пока окна отзыва ещё нет
+  const W=window.innerWidth, H=window.innerHeight, sy=window.scrollY||0, sx=window.scrollX||0, body=document.body, cl=body.cloneNode(true);
+  const pair=(sel,fn)=>{ const a=body.querySelectorAll(sel), b=cl.querySelectorAll(sel); for(let i=0;i<a.length&&i<b.length;i++){ try{ fn(a[i],b[i]); }catch(_){} } };
+  pair("input,textarea,select",(a,b)=>{ if(a.type==="checkbox"||a.type==="radio"){ if(a.checked) b.setAttribute("checked",""); else b.removeAttribute("checked"); }
+    else if(a.tagName==="TEXTAREA") b.textContent=a.value; else if(a.tagName==="SELECT"){ Array.from(b.options).forEach((o,i)=>{ if(i===a.selectedIndex) o.setAttribute("selected",""); else o.removeAttribute("selected"); }); }
+    else if(a.type!=="file"&&a.type!=="password") b.setAttribute("value",a.value); else b.setAttribute("value",""); });
+  pair("canvas",(a,b)=>{ const r=a.getBoundingClientRect(); if(r.bottom<0||r.top>H||!r.width) { b.replaceWith(document.createElement("span")); return; }
+    const im=document.createElement("img"); im.setAttribute("src",a.toDataURL("image/jpeg",0.6)); im.setAttribute("class",a.getAttribute("class")||""); im.setAttribute("style",(a.getAttribute("style")||"")+";width:"+r.width+"px;height:"+r.height+"px"); b.replaceWith(im); });
+  let n=0; pair("img",(a,b)=>{ const src=a.currentSrc||a.src||""; if(/^data:/.test(src)) return; const r=a.getBoundingClientRect();
+    if(n<40&&a.complete&&a.naturalWidth&&r.bottom>0&&r.top<H&&r.width){ n++; const c=document.createElement("canvas"), k=Math.min(1,600/Math.max(a.naturalWidth,a.naturalHeight)); c.width=Math.max(1,Math.round(a.naturalWidth*k)); c.height=Math.max(1,Math.round(a.naturalHeight*k));
+      try{ c.getContext("2d").drawImage(a,0,0,c.width,c.height); b.setAttribute("src",c.toDataURL("image/png")); b.removeAttribute("srcset"); return; }catch(_){} }
+    b.setAttribute("src","data:image/gif;base64,R0lGODlhAQABAAAAACw="); b.removeAttribute("srcset"); });
+  cl.querySelectorAll("script,noscript,iframe,video,audio,object,embed,#otzM,.toast,#toast,link").forEach(e=>e.remove());
+  cl.querySelectorAll("details[open]").forEach(()=>{});   // открытые меню остаются как на экране
+  cl.style.position="relative"; cl.style.top=(-sy)+"px"; cl.style.left=(-sx)+"px"; cl.style.margin=getComputedStyle(body).margin;
+  const he=document.documentElement, at=Array.from(he.attributes).filter(x=>x.name!=="style"&&x.name!=="xmlns").map(x=>` ${x.name}="${otzE(x.value)}"`).join("");
+  const bg=getComputedStyle(body).backgroundColor||getComputedStyle(he).backgroundColor||"#0b0b0b";
+  return {W,H,at,bg,hs:he.getAttribute("style")||"",cl}; }
+function otzRaster(c){ return new Promise((ok,no)=>{
+  try{ const xs=new XMLSerializer(), css=otzCss().replace(/<\/style/gi,"<\\/style");
+    const html=`<html xmlns="http://www.w3.org/1999/xhtml"${c.at} style="${otzE(c.hs)};width:${c.W}px;height:${c.H}px;overflow:hidden;background:${otzE(c.bg)}"><head><style>${css.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</style></head>${xs.serializeToString(c.cl)}</html>`;
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${c.W}" height="${c.H}"><foreignObject x="0" y="0" width="100%" height="100%">${html}</foreignObject></svg>`;
+    const im=new Image(); let done=false; const t=setTimeout(()=>{ if(!done){ done=true; no(new Error("time")); } },9000);
+    im.onload=()=>{ if(done) return; done=true; clearTimeout(t);
+      try{ const k=Math.min(Math.max(1,window.devicePixelRatio||1),1.5,1400/Math.max(c.W,c.H)), cv=document.createElement("canvas"); cv.width=Math.round(c.W*k); cv.height=Math.round(c.H*k);
+        const g=cv.getContext("2d"); g.fillStyle=c.bg||"#0b0b0b"; g.fillRect(0,0,cv.width,cv.height); g.drawImage(im,0,0,cv.width,cv.height);
+        ok(otzJpeg(cv)); }catch(e){ no(e); } };   // iPhone (Safari) запрещает так снимать — ошибка безопасности, тогда «Выбрать картинку»
+    im.onerror=()=>{ if(!done){ done=true; clearTimeout(t); no(new Error("img")); } };
+    im.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
+  }catch(e){ no(e); } }); }
+function otzJpeg(cv){ let c=cv;
+  for(let i=0;i<5;i++){ for(const q of [0.82,0.7,0.58,0.46]){ const d=c.toDataURL("image/jpeg",q).split(",")[1]||""; if(d.length<=OTZ_MAXB64) return d; }
+    const n=document.createElement("canvas"); n.width=Math.max(1,Math.round(c.width*0.75)); n.height=Math.max(1,Math.round(c.height*0.75)); n.getContext("2d").drawImage(c,0,0,n.width,n.height); c=n; }
+  return ""; }
+function otzFile(file){ return new Promise((ok,no)=>{ const u=URL.createObjectURL(file), im=new Image();
+  im.onload=()=>{ URL.revokeObjectURL(u); try{ const k=Math.min(1,1400/Math.max(im.width,im.height)), c=document.createElement("canvas"); c.width=Math.max(1,Math.round(im.width*k)); c.height=Math.max(1,Math.round(im.height*k));
+      const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(im,0,0,c.width,c.height); const d=otzJpeg(c); d?ok(d):no(new Error("big")); }catch(e){ no(e); } };
+  im.onerror=()=>{ URL.revokeObjectURL(u); no(new Error("bad")); }; im.src=u; }); }
+
+/* ---------- окно ---------- */
+function otzOpen(opt){ opt=opt||{}; if(document.getElementById("otzM")) return;
+  let clone=null; if(!opt.keep){ OTZ.snap=""; OTZ.snapErr=false; try{ clone=otzClone(); }catch(e){ console.log("otz clone",e); OTZ.snapErr=true; } }
+  const D=OTZ.draft||{}; OTZ.kind=D.kind||OTZ.kind||"bug";
+  const m=document.createElement("div"); m.className="modal otz-m"; m.id="otzM"; m.setAttribute("role","dialog"); m.setAttribute("aria-label","Сообщить об ошибке или идее");
+  const PH={bug:"Что случилось? Например: нажал «Сохранить» в смете — ничего не произошло",idea:"Что улучшить? Например: хочу видеть остаток плиты прямо в смете",other:"Напишите, что хотите сказать"};
+  const who=otzWho();
+  m.innerHTML=`<form class="modal-card otz-card" autocomplete="off" novalidate>
+    <div class="otz-h"><h2>Сообщить об ошибке или идее</h2><button type="button" class="otz-x" data-otz="x" aria-label="Закрыть">${otzI("x",20)}</button></div>
+    <div class="otz-seg" role="radiogroup" aria-label="Что это" data-on="${OTZ.kind}">${[["bug","Ошибка"],["idea","Идея"],["other","Другое"]].map(([k,n])=>`<button type="button" role="radio" data-otz="kind" data-v="${k}" aria-checked="${OTZ.kind===k}">${otzI(k,18)}<span>${n}</span></button>`).join("")}</div>
+    <textarea name="text" rows="4" maxlength="2000" placeholder="${otzE(PH[OTZ.kind])}" aria-label="Текст">${otzE(D.text||"")}</textarea>
+    ${who?"":`<input name="who" maxlength="40" placeholder="Ваше имя (можно не писать)" aria-label="Ваше имя" value="${otzE(D.who||"")}">`}
+    <div class="otz-shot" id="otzShot">${otzShotHtml()}</div>
+    <label class="otz-sw"><span><b>Приложить сведения для разбора</b><small>Экран, роль, версия сайта, телефон или компьютер. Без телефонов, адресов и сумм клиентов.</small></span><input type="checkbox" name="det" role="switch"${D.det===false?"":" checked"}></label>
+    <button type="submit" class="otz-send">Отправить</button>
+    <input type="file" accept="image/*" id="otzPick" hidden>
+  </form>`;
+  document.body.appendChild(m); requestAnimationFrame(()=>m.classList.add("on"));
+  const f=m.querySelector("form");
+  const close=()=>{ OTZ.draft=otzRead(f); m.classList.remove("on"); setTimeout(()=>m.remove(),200); };
+  m.addEventListener("click",e=>{ const b=e.target.closest("[data-otz]");
+    if(e.target===m) return close();
+    if(!b) return; const a=b.dataset.otz;
+    if(a==="x") return close();
+    if(a==="kind"){ OTZ.kind=b.dataset.v; m.querySelector(".otz-seg").dataset.on=OTZ.kind; m.querySelectorAll('[data-otz="kind"]').forEach(x=>x.setAttribute("aria-checked",String(x.dataset.v===OTZ.kind))); f.text.placeholder=PH[OTZ.kind]; return; }
+    if(a==="pick") return m.querySelector("#otzPick").click();
+    if(a==="del"){ OTZ.snap=""; OTZ.snapErr=false; OTZ.snapGone=true; otzShotPaint(); return; } });
+  m.querySelector("#otzPick").addEventListener("change",async e=>{ const fl=e.target.files&&e.target.files[0]; if(!fl) return; OTZ.snapBusy=true; otzShotPaint();
+    try{ OTZ.snap=await otzFile(fl); OTZ.snapErr=false; OTZ.snapGone=false; }catch(_){ toast("Картинка не читается — выберите другую"); }
+    OTZ.snapBusy=false; e.target.value=""; otzShotPaint(); });
+  f.addEventListener("submit",e=>{ e.preventDefault(); otzSend(f,m); });
+  if(!opt.keep) setTimeout(()=>{ try{ f.text.focus({preventScroll:true}); }catch(_){} },260);
+  if(clone){ OTZ.snapBusy=true; OTZ.snapGone=false; otzShotPaint();
+    setTimeout(()=>{ otzRaster(clone).then(d=>{ OTZ.snap=d||""; OTZ.snapErr=!d; },e=>{ console.log("otz snap",e&&e.message); OTZ.snap=""; OTZ.snapErr=true; }).then(()=>{ OTZ.snapBusy=false; otzShotPaint(); }); },260); }   // после того как окно выехало (220 мс) — движение не дёргается
+}
+function otzShotHtml(){
+  if(OTZ.snapBusy) return `<div class="otz-th otz-sk" aria-label="Снимаю экран"></div><div class="otz-st"><b>Снимок экрана</b><small>Снимаю…</small></div>`;
+  if(OTZ.snap) return `<img class="otz-th" src="data:image/jpeg;base64,${OTZ.snap}" alt="Снимок экрана"><div class="otz-st"><b>Снимок экрана</b><small>Приложится к сообщению</small><span class="otz-sb"><button type="button" class="otz-lk" data-otz="pick">Другая картинка</button><button type="button" class="otz-lk" data-otz="del">Убрать</button></span></div>`;
+  return `<div class="otz-th otz-no">${otzI("img",26)}</div><div class="otz-st"><b>${OTZ.snapErr?"Снимок не получился":"Без снимка"}</b><small>${OTZ.snapErr?"Сделайте снимок кнопками телефона и выберите его":"Можно приложить картинку из галереи"}</small><span class="otz-sb"><button type="button" class="otz-lk" data-otz="pick">Выбрать картинку</button></span></div>`; }
+function otzShotPaint(){ const b=document.getElementById("otzShot"); if(b) b.innerHTML=otzShotHtml(); }
+function otzRead(f){ return {kind:OTZ.kind,text:f.text.value,who:f.who?f.who.value:"",det:f.det.checked}; }
+async function otzSend(f,m){ if(OTZ.busy) return; const D=otzRead(f), text=D.text.trim();
+  if(!text&&!OTZ.snap){ f.text.focus(); toast("Напишите пару слов — что случилось или что улучшить"); return; }
+  if(OTZ.snapBusy){ toast("Секунду — снимаю экран"); return; }
+  const u=otzUrl(); if(!u){ toast("Нет связи с таблицей — не отправилось"); return; }
+  const who=otzWho()||String(D.who||"").trim(), det=D.det?otzDet():null, photo=OTZ.snap||"";
+  const body={action:"fbAdd",kind:OTZ.kind,text,who,det:det||undefined,photo:photo||undefined};
+  try{ if(typeof shpPin==="function"&&S.shop&&shpPin()) body.pin=shpPin(); }catch(_){}
+  // экран меняется сразу: окно закрывается, отправка — в фоне; не ушло — окно возвращается с тем же текстом
+  OTZ.busy=true; OTZ.draft=D; m.classList.remove("on"); setTimeout(()=>m.remove(),200);
+  /* демо (?demo=1): все запросы там подменены и никуда не уходят — отзыв из демо идёт напрямую Кириллу (метка «[демо]», без PIN) — это будущие клиенты */
+  const demo=!!window.APP_DEMO&&typeof window.__fetch0==="function"; if(demo){ delete body.pin; body.text="[демо] "+text; body.who=who||"Гость демо"; }
+  const post=async b=>{ try{ const r=await (demo?window.__fetch0:fetch)(u,{method:"POST",body:JSON.stringify(b)}); return await r.json(); }catch(_){ return null; } };
+  let j=await post(body);
+  if(j&&!j.ok&&(j.error==="action"||j.error==="tester")){   // старый сервер / тестировщик / фирма без подписки — прежний путь «Техподдержка»
+    const nm={bug:"Ошибка",idea:"Идея",other:"Другое"}[OTZ.kind];
+    const hb={action:"helpAdd",text:"["+nm+"] "+body.text,who:body.who||"",role:det?det.role:"",app:typeof helpApp==="function"?helpApp():"",view:det?det.view:"",ua:det?det.dev+" · версия "+det.ver:""};
+    if(body.pin) hb.pin=body.pin;   /* снимок сюда не идёт: helpAdd открывает файл по ссылке */
+    j=await post(hb); }
+  OTZ.busy=false;
+  if(j&&j.ok){ OTZ.draft=null; OTZ.snap=""; OTZ.kind="bug"; toast("Отправлено, спасибо"); return; }
+  toast(j&&j.error==="often"?"Слишком много сообщений — попробуйте через 10 минут":"Не отправилось — проверьте интернет и нажмите «Отправить» ещё раз");
+  otzOpen({keep:true}); }
+
+/* все прежние «Техподдержка» (data-act="help-open", helpOpen из site_support.js) — это окно */
+if(typeof helpOpen==="function"){ helpOpen=function(){ otzOpen(); }; }
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="otz-open"]'); if(!t) return; ev.preventDefault(); ev.stopPropagation();
+  const d=t.closest("details"); if(d) d.open=false; otzOpen(); },true);
+/* «Ещё / Все разделы»: строка «Техподдержка» → «Сообщить об ошибке или идее» */
+if(typeof shpMoreHtml==="function"){ const _otzMore=shpMoreHtml; shpMoreHtml=function(){ let h=_otzMore.apply(this,arguments);
+  try{ h=h.replace(/(data-act="help-open"[^>]*>[\s\S]*?<b>)Техподдержка(<\/b><span class="muted">)[^<]*/,"$1Сообщить об ошибке или идее$2Со снимком экрана — разберём и ответим"); }catch(_){} return h; }; }
+try{ if(typeof PR_DO!=="undefined"&&Array.isArray(PR_DO)){ const x=PR_DO.find(o=>o.act==="help-open"); if(x){ x.t="Сообщить об ошибке или идее"; x.s="Со снимком экрана — разберём и ответим"; x.k+=" идея предложение отзыв снимок скрин"; } } }catch(_){}
+/* меню «⋯» на «Сегодня» и «Доске» */
+if(typeof sgHeadBtns==="function"){ const _otzHB=sgHeadBtns; sgHeadBtns=function(menu,find){ let add="";
+  try{ add=`<button type="button" role="menuitem" data-act="otz-open">${typeof sgI==="function"?sgI("help",18):otzI("other",18)} Сообщить об ошибке или идее</button>`; }catch(_){}
+  return _otzHB.call(this,(menu||"")+add,find); }; }
+
+(function(){ const st=document.createElement("style"); st.id="otzCss"; st.textContent=`
+#otzM.otz-m{position:fixed;inset:0;z-index:400;display:flex;align-items:flex-end;justify-content:center;padding:0;background:var(--w-scrim,rgba(0,0,0,.55));opacity:0;transition:opacity 200ms var(--w-ease,ease)}
+#otzM.otz-m.on{opacity:1}
+#otzM .otz-card{position:relative;box-sizing:border-box;width:100%;max-width:560px;max-height:calc(100dvh - 24px);overflow:auto;margin:0;padding:20px 16px calc(16px + env(safe-area-inset-bottom,0px));border-radius:22px 22px 0 0!important;border:0!important;
+  background:var(--w-l1,#1c1c1e)!important;color:var(--w-ink,#fff)!important;box-shadow:0 -1px 0 var(--w-line,rgba(255,255,255,.08)),var(--w-shade,0 20px 60px rgba(0,0,0,.6))!important;transform:translateY(24px);transition:transform 220ms var(--w-ease,ease);display:flex;flex-direction:column;gap:12px}
+#otzM.on .otz-card{transform:none}
+@media (min-width:900px){.otz-th{width:150px;height:94px}#otzM.otz-m{align-items:center}#otzM .otz-card{border-radius:22px!important;padding-bottom:18px}}
+.otz-grab{width:36px;height:5px;border-radius:3px;background:var(--w-t3,var(--w2-soft));margin:0 auto 2px}
+.otz-h{display:flex;align-items:center;gap:8px}.otz-h h2{flex:1;margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;line-height:1.25;color:var(--w-ink,#fff)}
+.otz-x{flex:none;width:44px;height:44px;border-radius:50%;border:0;display:grid;place-items:center;background:var(--w-btn,rgba(44,44,46,.7));color:var(--w-ink,#fff);cursor:pointer;padding:0}
+.otz-x:active,.otz-send:active,.otz-seg button:active{transform:scale(.97)}
+.otz-seg{position:relative;display:grid;grid-template-columns:repeat(3,1fr);padding:3px;border-radius:14px;background:var(--w-l2,#2a2a2c);isolation:isolate}
+.otz-seg::before{content:"";position:absolute;z-index:-1;top:3px;bottom:3px;left:3px;width:calc((100% - 6px)/3);border-radius:11px;background:var(--w-ink,#fff);transition:transform 200ms var(--w-ease,ease)}
+.otz-seg[data-on="idea"]::before{transform:translateX(100%)}.otz-seg[data-on="other"]::before{transform:translateX(200%)}
+.otz-seg button{min-height:44px;border:0;background:none!important;color:var(--w-ink,#fff)!important;font:600 15px/1 var(--f-body,system-ui);display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;border-radius:11px;transition:color 200ms}
+.otz-seg button[aria-checked="true"]{color:var(--w-bg,#000)!important}
+#otzM textarea,#otzM input[name=who]{box-sizing:border-box;width:100%;font:16px/1.4 var(--f-body,system-ui);padding:12px 14px;border:1px solid var(--w-line,rgba(255,255,255,.08))!important;border-radius:12px;background:var(--w-l2,#2a2a2c)!important;color:var(--w-ink,#fff)!important;resize:none;outline:none}
+#otzM textarea{min-height:104px}#otzM textarea:focus,#otzM input[name=who]:focus{border-color:rgba(255,255,255,.22)!important}
+#otzM textarea::placeholder,#otzM input::placeholder{color:var(--w-t3,var(--ink))}
+.otz-shot{display:flex;gap:12px;align-items:center;min-height:120px;padding:10px;border-radius:14px;background:var(--w-l2,#2a2a2c)}
+.otz-th{flex:none;width:68px;height:100px;border-radius:10px;object-fit:cover;object-position:top;background:rgba(255,255,255,.06);border:1px solid var(--w-line,rgba(255,255,255,.08));box-sizing:border-box}
+.otz-no{display:grid;place-items:center;color:var(--w-t2,var(--ink))}
+.otz-sk{background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.12),rgba(255,255,255,.05));background-size:200% 100%;animation:otzSk 1.2s linear infinite}
+@keyframes otzSk{to{background-position:-200% 0}}
+.otz-st{min-width:0;display:flex;flex-direction:column;gap:3px}.otz-st b{font-size:15px;color:var(--w-ink,#fff)}.otz-st small{font-size:13px;line-height:1.35;color:var(--w-t2,var(--ink))}
+.otz-sb{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
+.otz-lk{min-height:44px;padding:0 12px;border:0;border-radius:22px;background:rgba(255,255,255,.08)!important;color:var(--w-ink,#fff)!important;font:600 14px/1 var(--f-body,system-ui);cursor:pointer}
+.otz-sw{display:flex;align-items:center;gap:12px;min-height:44px;cursor:pointer}.otz-sw>span{flex:1;display:flex;flex-direction:column;gap:3px}.otz-sw b{font-size:15px;font-weight:600}.otz-sw small{font-size:13px;line-height:1.35;color:var(--w-t2,var(--ink))}
+.otz-sw input{appearance:none;-webkit-appearance:none;flex:none;width:51px;height:31px;border-radius:16px;background:rgba(120,120,128,.32);position:relative;margin:0;cursor:pointer;transition:background 200ms}
+.otz-sw input::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25);transition:transform 200ms var(--w-ease,ease)}
+.otz-sw input:checked{background:var(--w-g,#30d158)}.otz-sw input:checked::after{transform:translateX(20px)}
+.otz-send{min-height:50px;border:0;border-radius:25px;background:var(--w-ink,#fff)!important;color:var(--w-bg,#000)!important;font:600 17px/1 var(--f-body,system-ui);cursor:pointer;margin-top:2px}
+html[data-vt="light"] .otz-lk{background:rgba(0,0,0,.06)!important}html[data-vt="light"] .otz-th{background:rgba(0,0,0,.04)}
+@media (prefers-reduced-motion:reduce){#otzM.otz-m,#otzM .otz-card,.otz-seg::before{transition:none}}
+`; document.head.appendChild(st); })();
+
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
   const t=ev.target.closest("[data-act],[data-view]"); if(!t) return;
@@ -28514,7 +28919,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="7702f1c04d";/*cehqr-build*/
+  const BUILD="859104e8a7";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
