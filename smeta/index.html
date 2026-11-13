@@ -19738,6 +19738,17 @@ function qkBwCalc(q,items,sh,em,noMont,dlvOn){ const bw=qkBwFix(q), dir=typeof w
   const on=sum>0&&L.some(x=>x.own&&!x.au&&!x.off&&x.q>0)&&!L.some(x=>x.wait&&!x.off&&x.q>0);   /* 13.11: есть работа «ждёт проверки» — бригаде по работам не считаем (как на сервере) */
   const hasW=L.some(x=>x.wait&&!x.off&&x.q>0);   /* 13.11: есть работа «ждёт проверки» — шлём все работы, сервер сам оставит прежнюю «ЗП бригаде» */
   return {L,sum,zak,cl,clO:Math.round(clO),on,hasW,works:(on||hasW)?L.filter(x=>x.q>0).map(x=>[x.id,x.q]):L.filter(x=>x.q>0&&!x.own).map(x=>[x.id,x.q]),asm:L.some(x=>x.own&&!x.canAu&&!x.off&&x.q>0)}; }
+/* 13.11 (Кирилл 10:35: «поменьше кликов ещё на работе»): «+ Работа» — выбор сразу нескольких (site_works.js wrPickModal).
+   Каждая отмеченная работа пишется так же, как раньше по одной: q.bw[код] += сколько (те же деньги); смета перерисовывается один раз, «Вернуть» — как было до окна.
+   Количество подставляется само только там, где смета его уже считает (листы, кромка, петли, ручки, направляющие — «само»; сборка ящика — по направляющим). */
+function qkWrPick(sm,dirty,rend,after){ const q=sm.data.qk; let o={};
+  try{ const c=smCalc(sm.data), A={}, I={}; ((c.BW&&c.BW.L)||[]).forEach(x=>{ if(x.canAu&&+x.auto>0) A[x.id]=+x.auto; }); if(A["TM-09"]>0) A["S-02"]=A["TM-09"];
+    Object.keys(q.bw||{}).forEach(k=>{ const v=num(q.bw[k]); if(q.bw[k]!==""&&q.bw[k]!=null&&v>0) I[k]=v; }); o={auto:A,inS:I,noMont:!!sm.data.noMont}; }catch(_){}
+  let snap=null; const names=[];
+  return wrPickModal((code,n,w,more)=>{ if(snap===null) snap=JSON.stringify(q.bw||{}); q.bw=q.bw||{}; q.bw[code]=Math.round((num(q.bw[code])+n)*100)/100; names.push(w?w[1]:code); if(more) return;
+    dirty(); if(after) after(); rend(); const k=names.length, t=k>1?"Добавлено "+k+" "+(k%10>=2&&k%10<=4&&(k%100<10||k%100>=20)?"работы":"работ")+" в смету":"Работа добавлена: "+names[0];
+    if(typeof supUndoBar==="function") supUndoBar(t,()=>{ if(!S.shop.sm||S.shop.sm.data.qk!==q) return; q.bw=JSON.parse(snap); dirty(); rend(); }); else toast(t); },o); }
+window.qkWrPick=qkWrPick;
 function qkBwRowHtml(x,q){ const SRC=typeof wrSrcName==="function"?{a:wrSrcName("a"),r:wrSrcName("r")}:{a:"Азуми",r:"Ремстрой"};
   return `<div class="qk-r qk-r2${x.off?" qk-off":""}"><span class="qk-tl">${esc(x.n)}<small>${x.wait?"ждёт проверки директора — мастеру пока 0":x.own?N(x.r)+" ₽ мастеру за "+esc(x.u):esc(SRC[x.src]||"услуга")+": закупка "+N(x.r)+" ₽ за "+esc(x.u)}${x.au?" · само":""}${x.off?(x.dlvW?" · везёт водитель — бригаде не идёт":" · монтаж — не идёт"):x.dlvW?" · если в сделке выберут водителя — бригаде не идёт":""}</small></span>${inp("bw."+x.id,x.au?"":(q.bw[x.id]==null?"":q.bw[x.id]),"n",x.au?F(x.q):"0","qk-q","Сколько: "+x.n)}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${x.sum?N(x.sum):"—"}</b>${x.canAu?`<span class="qk-x" style="visibility:hidden" aria-hidden="true">×</span>`:`<button type="button" class="qk-x" data-qbw="del" data-c="${esc(x.id)}" aria-label="Убрать работу">×</button>`}</div>`; }
 function qkBwFootHtml(c){ const B=c.BW, old=Math.round((c.M/0.45)*0.21); if(!B) return "";
@@ -19748,7 +19759,7 @@ function qkBwHtml(c,q){ const B=c.BW; if(!B) return ""; const op=S.qkBwOpen!==fa
     <button type="button" class="qk-add" data-qbw="add">+ Работа из справочника</button>
     ${qkBwFootHtml(c)}`:""}</section>`; }
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qbw]"); if(!b) return; e.preventDefault(); e.stopPropagation(); const a=b.dataset.qbw, sm=S.shop&&S.shop.sm, q=sm&&sm.data&&sm.data.qk;
-  if(a==="add"){ if(!q||typeof wrPickModal!=="function") return; return wrPickModal((code,n,w)=>{ q.bw=q.bw||{}; q.bw[code]=Math.round((num(q.bw[code])+n)*100)/100; qkDirty(); S.qkBwOpen=true; toast("Работа добавлена: "+w[1]); shpRenderKeep(); }); }
+  if(a==="add"){ if(!q||typeof wrPickModal!=="function") return; return qkWrPick(sm,qkDirty,shpRenderKeep,()=>{ S.qkBwOpen=true; }); }
   if(a==="del"){ if(!q) return; delete q.bw[b.dataset.c]; qkDirty(); return shpRenderKeep(); }
   S.qkBwOpen=S.qkBwOpen===false; shpRenderKeep(); },true);
 })();
@@ -23107,7 +23118,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="3bb1e019f2";
+const CHK_BUILD="004e68c13a";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -25293,21 +25304,41 @@ function wrAddCan(){ return !!(S.shop&&S.shop.full&&!window.APP_DES); }
 /* сервер сохранил работу — кладём её и в справочник на экране (и в черновик настроек, если он открыт), чтобы смета сразу считала по ней */
 function wrOwnPut(row){ const L=wrDir().filter(r=>r[0]!==row[0]).map(r=>r.slice()); L.push(row.slice()); S.shop.cfg=Object.assign({},S.shop.cfg||{},{wr:L,wrV:2}); if(S.shop.cfgAll) S.shop.cfgAll.smeta=S.shop.cfg;
   const D=S.shop.cfgD; if(D&&Array.isArray(D.wr)&&!D.wr.some(r=>r[0]===row[0])) D.wr.push(row.slice()); }
-/* «+ Работа»: блоки-плитки, поиск по всем блокам, количество → cb(код, сколько, строка) */
+/* «+ Работа» (13.11, Кирилл 10:35: «поменьше кликов ещё на работе») — как выбор материалов: поиск сверху, «★ Мои / Частые / Все», блоки — чипами,
+   галочками сразу несколько, количество — в строке (ничего не выезжает), внизу одна кнопка «Добавить N работ · бригаде · клиенту».
+   Количество по смете подставляется само только там, где смета его уже считает (листы, кромка, петли, ручки, направляющие, ящики) — opt.auto от сметы.
+   Запись — как раньше: cb(код, сколько, строка) по одной на каждую работу (те же q.bw, те же деньги); 4-й аргумент — «будут ещё» (смета перерисуется один раз).
+   Свои наборы: отметили работы → «Сохранить набор» → в следующий раз одной кнопкой (на этом телефоне). Готовых наборов «Кухня», «Купе» нет — норм для них в справочнике нет. */
+const WR_LS=(k,d)=>{ try{ const v=JSON.parse(localStorage.getItem(k)||"null"); return v==null?d:v; }catch(_){ return d; } }, WR_LSS=(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(_){} };
+const wrPl=(n,a,b,c)=>n%10===1&&n%100!==11?a:n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?b:c;
 function wrPickModal(cb,opt){ opt=opt||{}; document.getElementById("wrPickM")?.remove(); const x=document.createElement("div"); x.className="modal"; x.id="wrPickM";
-  const st={q:"",blk:+S.wrBlk>=1&&+S.wrBlk<=9?+S.wrBlk:1,sel:null,n:1,f:null,busy:false}, can=wrAddCan(), card=()=>x.querySelector(".modal-card");
+  const freq0=WR_LS("w24-wrfreq",{}), fav0=WR_LS("w24-wrfav",[]), me=typeof shpWho==="function"?String(shpWho()||""):"";
+  const st={q:"",src:"",blk:+S.wrBlk>=1&&+S.wrBlk<=9?+S.wrBlk:0,sel:new Map(),f:null,busy:false,fav:new Set(fav0)}, can=wrAddCan(), card=()=>x.querySelector(".modal-card"), AU=opt.auto||{}, IN=opt.inS||{};
   const dir=()=>wrDir().filter(r=>r&&r[5]!=="x"), hay=r=>w2Norm(r[1]+" "+r[0]+" "+(r[6]||"")+" "+W24_BLK[wrBlk(r)-1][2]+" "+((r[5]||"s")==="s"?"":wrSrcName(r[5])));
+  const isMy=r=>st.fav.has(String(r[0]))||(!!me&&r[10]===me);
+  S.wrBlk=0;   /* блок задаёт только плитка этого раздела, и только на это открытие */
+  st.src=dir().some(isMy)?"my":Object.keys(freq0).length?"freq":"all"; if(st.blk) st.src="all";
+  const dq=r=>{ const a=+AU[r[0]]; return a>0?a:1; };
+  const off=r=>!!opt.noMont&&+r[8]===1;
   const find=D=>{ const W=w2Norm(st.q).split(/\s+/).filter(Boolean); return D.filter(r=>{ const h=hay(r); return W.every(w=>h.includes(w.length>5?w.slice(0,5):w)); }); };
-  const rowH=r=>{ const on=st.sel===r[0], own=(r[5]||"s")==="s";
-    return `<div class="wr-it${on?" on":""}"><button type="button" class="wr-b" data-c="${esc(r[0])}"><span class="wr-bt"><b>${esc(r[1])} <i class="wr-tag${r[10]?" me":""}">${esc(wrTag(r))}</i>${r[11]?` <i class="wr-tag wr-wait">ждёт проверки</i>`:""}</b><small>${own?"мастеру":"закупка"} ${esc(w2P(own?r[3]:r[7]))} → клиенту ${esc(w2P(r[4]))} ₽ за ${esc(r[2])}${wrKind(r)}</small></span><span class="wr-pl" aria-hidden="true">${on?"✓":"+"}</span></button>${on?`<div class="wr-n"><span>Сколько, ${esc(r[2])}:</span><span class="wr-qty"><button type="button" data-n="-1" aria-label="Меньше">−</button><input class="wr-nn" inputmode="decimal" value="${esc(w2F(st.n))}" aria-label="Количество"><button type="button" data-n="1" aria-label="Больше">+</button></span></div>`:""}</div>`; };
-  const ownBtn=q=>can?`<button type="button" class="wr-own" data-x="own" data-q="${esc(q||"")}">+ Добавить свою работу${q?" «"+esc(q)+"»":""}</button>`:"";
-  const bodyH=()=>{ const D=dir(), q=st.q.trim();
-    if(q){ const L=find(D); return `<div class="wr-list">${L.length?W24_BLK.map((b,i)=>{ const R=L.filter(r=>wrBlk(r)===i+1); return R.length?`<p class="wr-g">${b[0]} ${b[2]} · ${R.length}</p>`+R.map(rowH).join(""):""; }).join(""):`<p class="muted wr-no">Такой работы в каталоге нет.${can?" Добавьте свою — она останется в каталоге фирмы.":" Новые работы — «Все разделы → Настройки компании → Работы»."}</p>`}${ownBtn(L.length?"":q.slice(0,80))}</div>`; }
-    const cnt=W24_BLK.map((_,i)=>D.filter(r=>wrBlk(r)===i+1).length), R=D.filter(r=>wrBlk(r)===st.blk), b=W24_BLK[st.blk-1];
-    const note=st.blk===2&&D.some(r=>wrBlk(r)===1&&/баз/i.test(r[1]))?`<p class="muted wr-note">Сборка и установка базы — одна работа на низ и на верх, она в блоке <button type="button" class="linkbtn" data-b="1">«Нижние модули»</button>.</p>`:"";
-    return `<div class="wr-tiles" role="group" aria-label="Блоки работ">${W24_BLK.map((t,i)=>`<button type="button" class="wr-tile${st.blk===i+1?" on":""}" data-b="${i+1}" aria-label="${t[2]}, работ: ${cnt[i]}"${st.blk===i+1?' aria-current="true"':""}><span class="wr-te" aria-hidden="true">${t[0]}</span><span class="wr-tn">${t[1]}</span><span class="wr-tc">${cnt[i]}</span></button>`).join("")}</div>
-      <div class="wr-list"><p class="wr-g">${b[2]} · ${R.length}</p>${R.map(rowH).join("")||`<p class="muted wr-no">В этом блоке пока нет работ.</p>`}${note}${ownBtn("")}</div>`; };
-  const actsH=()=>{ const w=st.sel&&dir().find(r=>r[0]===st.sel); return `<button type="button" class="btn primary" data-x="add"${w?"":" disabled"}>${w?"+ Добавить: "+esc(w2F(st.n))+" "+esc(w[2]):"Выберите работу"}</button><button type="button" class="btn" data-x="close">Закрыть</button>`; };
+  const rowH=r=>{ const c=String(r[0]), on=st.sel.has(c), own=(r[5]||"s")==="s", n=on?st.sel.get(c):dq(r), au=+AU[c]>0, ins=IN[c];
+    return `<div class="wr-it${on?" on":""}" data-c="${esc(c)}"><button type="button" class="wr-cbb" data-t="1" aria-pressed="${on}" aria-label="Выбрать: ${esc(r[1])}"><i class="wr-cb" aria-hidden="true"></i></button>
+      <button type="button" class="wr-b" data-t="1"><span class="wr-bt"><b>${esc(r[1])} <i class="wr-tag${r[10]?" me":""}">${esc(wrTag(r))}</i>${r[11]?` <i class="wr-tag wr-wait">ждёт проверки</i>`:""}</b><small class="wr-pr">${own?"мастеру":"закупка"} ${esc(w2P(own?r[3]:r[7]))} → клиенту ${esc(w2P(r[4]))} ₽ за ${esc(r[2])}${wrKind(r)}</small>${au||ins?`<small class="wr-au">${ins?"в смете уже "+esc(w2F(ins)):"по смете: "+esc(w2F(AU[c]))+" "+esc(r[2])}${off(r)?" · без монтажа — не считается":""}</small>`:off(r)?`<small class="wr-au">без монтажа — не считается</small>`:""}</span></button>
+      <span class="wr-st"><button type="button" data-n="-1" aria-label="Меньше">−</button><input class="wr-nn" inputmode="decimal" value="${esc(w2F(n))}" aria-label="Сколько, ${esc(r[2])}"><button type="button" data-n="1" aria-label="Больше">+</button></span>
+      <button type="button" class="wr-fav${st.fav.has(c)?" on":""}" data-fav="1" aria-label="${st.fav.has(c)?"Убрать из моих":"В мои"}">★</button></div>`; };
+  const ownBtn=q=>can?`<button type="button" class="wr-own" data-x="own" data-q="${esc(q||"")}">+ Своя работа${q?" «"+esc(q)+"»":" — нет в каталоге"}</button>`:"";
+  const listR=()=>{ let D=dir(); const q=st.q.trim();
+    if(q) D=find(D); else if(st.src==="my") D=D.filter(isMy); else if(st.src==="freq"){ const F=WR_LS("w24-wrfreq",{}); D=D.filter(r=>F[r[0]]>0).sort((a,b)=>(F[b[0]]||0)-(F[a[0]]||0)).slice(0,40); }
+    if(st.blk&&!q) D=D.filter(r=>wrBlk(r)===st.blk); return D; };
+  const listH=()=>{ const D=listR(), q=st.q.trim();
+    if(!D.length) return `<p class="muted wr-no">${q?"Такой работы в каталоге нет."+(can?" Добавьте свою — она останется в каталоге фирмы.":""):st.src==="my"?"В «Моих» пока пусто — отметьте ★ у работы, и она будет здесь.":st.src==="freq"?"Частых пока нет — здесь будут работы, которые вы добавляете чаще.":"В этом блоке пока нет работ."}</p>${ownBtn(q.slice(0,80))}`;
+    if(st.src==="freq"&&!q) return D.map(rowH).join("")+ownBtn("");
+    return W24_BLK.map((b,i)=>{ const R=D.filter(r=>wrBlk(r)===i+1); return R.length?(st.blk?"":`<p class="wr-g">${b[2]} · ${R.length}</p>`)+R.map(rowH).join(""):""; }).join("")+ownBtn(q?"":""); };
+  const setsH=()=>{ const L=WR_LS("w24-wrsets",[]).filter(s=>s&&s.n&&Array.isArray(s.L)&&s.L.length); return L.length?`<div class="wr-chips wr-sets" role="group" aria-label="Мои наборы">${L.map((s,i)=>`<button type="button" class="wr-chip wr-set" data-set="${i}">${esc(s.n)} <small>${s.L.length}</small></button>`).join("")}</div>`:""; };
+  const chipsH=()=>{ const D=dir(); return `<div class="wr-chips" role="group" aria-label="Какие работы">${[["my","★ Мои"],["freq","Частые"],["all","Все"]].map(([v,n])=>`<button type="button" class="wr-chip" data-src="${v}" aria-pressed="${st.src===v}">${n}</button>`).join("")}</div>
+    <div class="wr-chips wr-blks" role="group" aria-label="Блоки работ"><button type="button" class="wr-chip" data-b="0" aria-pressed="${!st.blk}">Все блоки</button>${W24_BLK.map((t,i)=>{ const n=D.filter(r=>wrBlk(r)===i+1).length; return n?`<button type="button" class="wr-chip" data-b="${i+1}" aria-pressed="${st.blk===i+1}">${t[1]} <small>${n}</small></button>`:""; }).join("")}</div>${setsH()}`; };
+  const tot=()=>{ let n=0, br=0, cl=0; const D=dir(); st.sel.forEach((q,c)=>{ const r=D.find(z=>String(z[0])===c); if(!r||!(q>0)) return; n++; if(off(r)) return; if((r[5]||"s")==="s"&&!r[11]) br+=q*(+r[3]||0); cl+=q*(+r[4]||0); }); return {n,br:Math.round(br),cl:Math.round(cl)}; };
+  const actsH=()=>{ const T=tot(); return `<button type="button" class="btn primary wr-ok" data-x="add"${T.n?"":" disabled"}>${T.n?`<b>Добавить ${T.n} ${wrPl(T.n,"работу","работы","работ")}</b><small>бригаде ${w2N(T.br)} ₽ · клиенту ${w2N(T.cl)} ₽</small>`:"Отметьте работы"}</button>${st.sel.size>1?`<button type="button" class="linkbtn wr-sv" data-x="set">Сохранить набор</button>`:""}`; };
   const noM=()=>!!(window.smvNoM&&window.smvNoM());   /* плитки сметы (12.11): «Менять цену мастеру в своей работе» выключено — дизайнер вписывает только цену клиенту, работа «ждёт проверки» */
   const leftT=()=>{ const f=st.f, m=noM()?0:w2Num(f.m), c=w2Num(f.c), d=Math.round((c-m)*100)/100; if(noM()) return c>0?["Цену мастеру поставит директор — до этого работа «ждёт проверки», бригаде за неё 0",0]:["Впишите цену клиенту",0]; return !(m>0||c>0)?["Впишите, сколько мастеру и сколько клиенту",0]:d<0?["Клиенту меньше, чем мастеру — фирма теряет "+w2P(-d)+" ₽ с каждой",1]:["Фирме остаётся "+w2P(d)+" ₽ с каждой",0]; };
   const formH=()=>{ const f=st.f, lt=leftT();
@@ -25319,8 +25350,12 @@ function wrPickModal(cb,opt){ opt=opt||{}; document.getElementById("wrPickM")?.r
       <div class="wr-acts"><button type="button" class="btn primary" data-x="fsave">Сохранить и добавить</button><button type="button" class="btn" data-x="fback">Отмена</button></div>
       <p class="muted wr-fn">Работа останется в каталоге фирмы — её увидят все, с меткой «добавил ${esc(shpWho())}». В смету добавится сразу, количество поменяете там.</p>`; };
   const draw=top=>{ const c=card(); if(st.f){ c.innerHTML=formH(); return; }
-    if(!c.querySelector(".wr-body")) c.innerHTML=`<h2 style="margin:0 0 8px">Добавить работу</h2><input class="wr-q" type="search" placeholder="Поиск: сборка, вырез, распил…" aria-label="Поиск работы по всем блокам" value="${esc(st.q)}" enterkeyhint="search" autocomplete="off"><div class="wr-body"></div><div class="wr-acts"></div>`;
-    const B=c.querySelector(".wr-body"), y=top?0:B.scrollTop; B.innerHTML=bodyH(); B.scrollTop=y; c.querySelector(".wr-acts").innerHTML=actsH(); };
+    if(!c.querySelector(".wr-body")) c.innerHTML=`<div class="wr-hd"><h2>Добавить работу</h2><button type="button" class="wr-x" data-x="close" aria-label="Закрыть">✕</button></div><input class="wr-q" type="search" placeholder="Поиск: сборка, вырез, распил…" aria-label="Поиск работы" value="${esc(st.q)}" enterkeyhint="search" autocomplete="off"><div class="wr-chw"></div><div class="wr-body"></div><div class="wr-acts wr-foot"></div>`;
+    c.querySelector(".wr-chw").innerHTML=chipsH(); const B=c.querySelector(".wr-body"), y=top?0:B.scrollTop; B.innerHTML=`<div class="wr-list">${listH()}</div>`; B.scrollTop=y; c.querySelector(".wr-acts").innerHTML=actsH(); };
+  const foot=()=>{ const a=card().querySelector(".wr-acts"); if(a) a.innerHTML=actsH(); };
+  const commit=()=>{ const D=dir(), L=[...st.sel].filter(([c,q])=>q>0&&D.some(r=>String(r[0])===c)); if(!L.length) return; x.remove();
+    const F=WR_LS("w24-wrfreq",{}); L.forEach(([c])=>{ F[c]=(F[c]||0)+1; }); const K=Object.keys(F).sort((a,b)=>F[b]-F[a]).slice(0,80), F2={}; K.forEach(k=>{ F2[k]=F[k]; }); WR_LSS("w24-wrfreq",F2);
+    L.forEach(([c,q],i)=>{ const r=D.find(z=>String(z[0])===c); cb(c,q,r,i<L.length-1,L.length); }); };
   const save=async()=>{ const f=st.f; if(!f||st.busy) return; const n=String(f.n||"").replace(/\s+/g," ").trim(), m=w2Num(f.m), c=w2Num(f.c);
     if(n.length<2){ toast("Впишите название работы"); const i=card().querySelector('[data-f="n"]'); if(i) i.focus(); return; }
     if(noM()&&!(c>0)){ toast("Впишите цену клиенту"); return; }
@@ -25330,25 +25365,60 @@ function wrPickModal(cb,opt){ opt=opt||{}; document.getElementById("wrPickM")?.r
     const j=await shpPostRaw({action:"wrAdd",n,u:f.u,m:noM()?0:m,c,blk:f.blk}); st.busy=false; if(!document.body.contains(x)) return;
     if(!j||!j.ok||!Array.isArray(j.row)){ if(b){ b.disabled=false; b.textContent="Сохранить и добавить"; }
       if(j&&j.error==="pin") return shpBadPin(); return toast(!j?"Нет связи с таблицей. Работа не сохранилась.":j.msg||(j.error==="role"?"Свою работу добавляют дизайнер, офис, технолог и директор":"Не сохранилось. Обновите скрипт таблицы или попробуйте ещё раз.")); }
-    wrOwnPut(j.row); S.wrBlk=wrBlk(j.row); x.remove(); cb(String(j.row[0]),1,j.row); if(j.dup) setTimeout(()=>toast("Такая работа уже есть в каталоге — добавил её в смету"),0); };
+    wrOwnPut(j.row); S.wrBlk=wrBlk(j.row); st.sel.set(String(j.row[0]),1); commit(); if(j.dup) setTimeout(()=>toast("Такая работа уже есть в каталоге — добавил её в смету"),0); };   /* своя работа + уже отмеченные — одной записью, как раньше по одной */
   x.innerHTML=`<div class="modal-card wr-m" role="dialog" aria-label="Добавить работу"></div>`; document.body.appendChild(x); draw();
+  const rowOf=el=>{ const it=el.closest(".wr-it"); return it?{it,c:it.dataset.c,r:dir().find(z=>String(z[0])===it.dataset.c)}:null; };
+  const setOn=(R,on,q)=>{ if(on){ st.sel.set(R.c,q); R.it.classList.add("on"); } else { st.sel.delete(R.c); R.it.classList.remove("on"); }
+    R.it.querySelector(".wr-cbb")?.setAttribute("aria-pressed",String(on)); const i=R.it.querySelector(".wr-nn"); if(i&&document.activeElement!==i) i.value=w2F(on?q:dq(R.r)); foot(); };   /* меняется только строка и кнопка внизу — список не перерисовывается и не ездит */
   x.addEventListener("input",e=>{ const t=e.target;
-    if(t.classList.contains("wr-q")){ st.q=t.value; return draw(true); }
-    if(t.classList.contains("wr-nn")){ st.n=Math.max(0,w2Num(t.value)); const b=x.querySelector('[data-x="add"]'), w=dir().find(r=>r[0]===st.sel); if(b&&w) b.textContent="+ Добавить: "+w2F(st.n)+" "+w[2]; return; }
+    if(t.classList.contains("wr-q")){ st.q=t.value; clearTimeout(st.tm); st.tm=setTimeout(()=>draw(true),100); return; }
+    if(t.classList.contains("wr-nn")){ const R=rowOf(t); if(!R||!R.r) return; const v=Math.max(0,Math.round(w2Num(t.value)*100)/100); if(v>0) setOn(R,true,v); else if(String(t.value).trim()!==""&&st.sel.has(R.c)) setOn(R,false,0); return; }
     if(t.dataset.f&&st.f){ st.f[t.dataset.f]=t.value; const p=x.querySelector(".wr-left"), lt=leftT(); if(p){ p.textContent=lt[0]; p.classList.toggle("bad",!!lt[1]); } } });
   x.addEventListener("change",e=>{ const t=e.target; if(t.dataset&&t.dataset.f&&st.f) st.f[t.dataset.f]=t.value; });
-  x.addEventListener("keydown",e=>{ if(e.key==="Enter"&&st.f&&e.target.dataset&&e.target.dataset.f&&e.target.tagName==="INPUT"){ e.preventDefault(); const F=[...x.querySelectorAll("input[data-f]")], i=F.indexOf(e.target); if(i>=0&&i<F.length-1) F[i+1].focus(); else save(); } });
-  x.addEventListener("click",e=>{ const T=e.target;
+  x.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!st.f){ x.remove(); return; } if(e.key==="Enter"&&st.f&&e.target.dataset&&e.target.dataset.f&&e.target.tagName==="INPUT"){ e.preventDefault(); const F=[...x.querySelectorAll("input[data-f]")], i=F.indexOf(e.target); if(i>=0&&i<F.length-1) F[i+1].focus(); else save(); } });
+  x.addEventListener("click",async e=>{ const T=e.target;
     const fb=T.closest("[data-fb]"); if(fb&&st.f){ st.f.blk=+fb.dataset.fb; x.querySelectorAll("[data-fb]").forEach(el=>{ const on=el===fb; el.classList.toggle("on",on); if(on) el.setAttribute("aria-current","true"); else el.removeAttribute("aria-current"); }); const fm=x.querySelector(".wr-fm"); if(fm) fm.hidden=st.f.blk!==8; return; }
     if(T.closest('[data-x="fsave"]')) return save();
     if(T.closest('[data-x="fback"]')){ st.f=null; return draw(); }
     if(st.f) return;   /* в форме нажатие мимо окна ничего не закрывает — чтобы не потерять вписанное */
-    const bl=T.closest("[data-b]"); if(bl){ st.blk=+bl.dataset.b; S.wrBlk=st.blk; st.sel=null; return draw(); }
-    if(T.closest('[data-x="own"]')&&can){ st.f={n:T.closest('[data-x="own"]').dataset.q||"",u:"шт",m:"",c:"",blk:st.blk}; draw(); const i=card().querySelector('[data-f="n"]'); if(i&&!st.f.n) i.focus(); return; }
-    const r=T.closest("[data-c]"); if(r){ st.sel=st.sel===r.dataset.c?null:r.dataset.c; st.n=1; draw(); const el=x.querySelector(".wr-it.on"); if(el&&el.scrollIntoView) el.scrollIntoView({block:"nearest"}); return; }
-    const nn=T.closest("[data-n]"); if(nn){ st.n=Math.max(0,Math.round((st.n+(+nn.dataset.n))*100)/100); return draw(); }
-    if(T.closest('[data-x="add"]')&&st.sel&&st.n>0){ const w=dir().find(z=>z[0]===st.sel); x.remove(); if(w) cb(st.sel,st.n,w); return; }
-    if(T===x||T.closest('[data-x="close"]')) x.remove(); }); }
+    if(T===x||T.closest('[data-x="close"]')){ x.remove(); return; }
+    const sr=T.closest("[data-src]"); if(sr){ st.src=sr.dataset.src; if(st.src!=="all") st.blk=0; return draw(true); }
+    const bl=T.closest("[data-b]"); if(bl){ st.blk=+bl.dataset.b; if(st.blk) st.src="all"; return draw(true); }
+    const ss=T.closest("[data-set]"); if(ss){ const s=WR_LS("w24-wrsets",[])[+ss.dataset.set]; if(!s) return; const D=dir(); let k=0; s.L.forEach(([c,q])=>{ const r=D.find(z=>String(z[0])===String(c)); if(!r) return; const v=q==="a"?dq(r):+q||dq(r); st.sel.set(String(c),v); k++; }); st.src="all"; st.blk=0; draw(true); toast(k===s.L.length?"Отмечено из набора: "+k:"Отмечено "+k+" из "+s.L.length+" — остальных работ уже нет в каталоге"); return; }
+    if(T.closest('[data-x="set"]')){ const nm=typeof appPrompt==="function"?await appPrompt("Название набора — например «Кухня: сборка и монтаж»",""):prompt("Название набора",""); const n=String(nm||"").trim().slice(0,40); if(!n) return;
+      const L=WR_LS("w24-wrsets",[]).filter(s=>s&&s.n!==n); L.unshift({n,L:[...st.sel].map(([c,q])=>[c,+AU[c]>0&&q===+AU[c]?"a":q])}); WR_LSS("w24-wrsets",L.slice(0,12)); toast("Набор «"+n+"» сохранён — в следующий раз одной кнопкой"); return draw(); }
+    if(T.closest('[data-x="own"]')&&can){ st.f={n:T.closest('[data-x="own"]').dataset.q||"",u:"шт",m:"",c:"",blk:st.blk||9}; draw(); const i=card().querySelector('[data-f="n"]'); if(i&&!st.f.n) i.focus(); return; }
+    const fv=T.closest("[data-fav]"); if(fv){ const R=rowOf(fv); if(!R) return; if(st.fav.has(R.c)) st.fav.delete(R.c); else st.fav.add(R.c); WR_LSS("w24-wrfav",[...st.fav].slice(0,200)); fv.classList.toggle("on",st.fav.has(R.c)); toast(st.fav.has(R.c)?"★ В «Моих»":"Убрано из «Моих»"); return; }
+    const nn=T.closest("[data-n]"); if(nn){ const R=rowOf(nn); if(!R||!R.r) return; if(!st.sel.has(R.c)) return setOn(R,true,dq(R.r)); const v=Math.max(0,Math.round((st.sel.get(R.c)+(+nn.dataset.n))*100)/100); return setOn(R,v>0,v); }
+    const tg=T.closest("[data-t]"); if(tg){ const R=rowOf(tg); if(!R||!R.r) return; if(st.sel.has(R.c)) return setOn(R,false,0); const i=R.it.querySelector(".wr-nn"); return setOn(R,true,w2Num(i&&i.value)||dq(R.r)); }
+    if(T.closest('[data-x="add"]')) return commit(); }); }
+
+{ const st5=document.createElement("style"); st5.textContent=`
+#wrPickM .wr-m{padding-bottom:0}.wr-hd{display:flex;align-items:center;gap:8px;margin:0 0 8px}.wr-hd h2{flex:1;margin:0;font-size:21px}.wr-x{flex:none;width:44px;height:44px;border-radius:22px;border:0;background:rgba(127,127,127,.16);color:inherit;font-size:17px;cursor:pointer}
+#wrPickM .wr-q{min-height:46px}
+#wrPickM .wr-chips{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;margin:8px -2px 0;padding:0 2px;scrollbar-width:none}#wrPickM .wr-chips::-webkit-scrollbar{display:none}
+#wrPickM .wr-chip{flex:none;min-height:40px;font-size:14.5px;font-weight:600;padding:8px 14px;border-radius:20px;border:1px solid rgba(127,127,127,.28);background:transparent;color:inherit;white-space:nowrap}
+#wrPickM .wr-chip small{opacity:.55;font-weight:500}#wrPickM .wr-chip[aria-pressed="true"]{background:#fff;color:#000;border-color:#fff}
+#wrPickM .wr-blks .wr-chip{min-height:36px;font-size:13.5px;padding:6px 12px}#wrPickM .wr-blks .wr-chip[aria-pressed="true"]{background:rgba(127,127,127,.3);color:inherit;border-color:transparent}
+#wrPickM .wr-sets .wr-chip{border-style:dashed}
+#wrPickM .wr-body{margin-top:8px}
+#wrPickM .wr-it{display:flex;align-items:center;gap:4px;padding:4px 4px 4px 0;margin:0 0 6px;border-radius:14px;box-shadow:none;border:1px solid rgba(127,127,127,.18);transition:border-color .15s,background-color .15s}
+#wrPickM .wr-it.on{border-color:#30a46c;background:rgba(48,164,108,.1)}
+#wrPickM .wr-cbb{flex:none;width:44px;height:48px;border:0;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+#wrPickM .wr-cb{display:block;width:24px;height:24px;border-radius:7px;border:2px solid rgba(127,127,127,.6)!important;box-sizing:border-box;position:relative}
+html.vt.sk.sk.sk[data-vt="dark"] #wrPickM .wr-cb{border-color:rgba(255,255,255,.4)!important}
+#wrPickM .wr-it.on .wr-cb{background:#30a46c;border-color:#30a46c!important}#wrPickM .wr-it.on .wr-cb::after{content:"";position:absolute;left:7px;top:3px;width:6px;height:11px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
+#wrPickM .wr-b{flex:1;min-width:0;padding:6px 2px;min-height:48px}
+#wrPickM .wr-b b{font-size:16px;font-weight:500;line-height:1.25}
+#wrPickM .wr-b small.wr-pr{font-size:14.5px;opacity:.78;margin-top:3px}#wrPickM .wr-b small.wr-au{font-size:13px;opacity:.6;margin-top:2px}
+#wrPickM .wr-st{flex:none;display:flex;align-items:center;gap:2px}#wrPickM .wr-it:not(.on) .wr-st{visibility:hidden}
+#wrPickM .wr-st button{width:36px;height:44px;border-radius:10px;border:0;background:rgba(127,127,127,.18);color:inherit;font-size:18px;font-weight:700;cursor:pointer}
+#wrPickM .wr-st .wr-nn{width:50px;height:44px;box-sizing:border-box;text-align:center;font:inherit;font-size:16px;font-weight:700;border:0;background:transparent;color:inherit;padding:0}
+#wrPickM .wr-fav{flex:none;width:36px;height:44px;border:0;background:none;color:rgba(127,127,127,.5);font-size:18px;cursor:pointer}#wrPickM .wr-fav.on{color:#f2b824}
+#wrPickM .wr-foot{position:sticky;bottom:0;flex-direction:column;align-items:stretch;gap:4px;margin:8px -16px 0;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid rgba(127,127,127,.18);background:inherit}
+#wrPickM .wr-ok{width:100%;min-height:56px;font-size:16px!important;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;line-height:1.2}#wrPickM .wr-ok b{font-size:17px}#wrPickM .wr-ok small{font-size:13.5px;font-weight:600;opacity:.75}
+html.vt.sk.sk.sk[data-vt] #wrPickM .wr-blks .wr-chip[aria-pressed="true"]{background:rgba(127,127,127,.32)!important;color:inherit!important;border-color:transparent!important}#wrPickM .wr-ok:disabled{opacity:.45}#wrPickM .wr-sv{align-self:center;min-height:36px}
+@media(max-width:380px){#wrPickM .wr-st button{width:32px}#wrPickM .wr-st .wr-nn{width:42px}#wrPickM .wr-fav{width:30px}}`; document.head.appendChild(st5); }
 
 /* ===== Настройки компании → «Работы» ===== */
 function wrCfgHtml(D,ro){ const st=S.shop.wrF||(S.shop.wrF={q:"",src:""}), cnt=k=>D.wr.filter(r=>(r[5]||"s")===k).length;
@@ -25721,7 +25791,7 @@ function plTileStyle(t){ return `--plc:${PL_COL[t.col]||PL_COL[0]}`; }
 /* что добавить в плитку: разделы, работы, двери */
 function plTargets(m,E){ const T=[];
   m.secs.forEach(k=>{ const e=E[k]; if(!e||e.extra) return; if(/^m:pvh$/.test(k)) T.push({k,n:e.n,a:`data-qk="pvh" data-i="-1"`}); else if(/^m:/.test(k)) T.push({k,n:e.n,a:`data-qk="add" data-c="${esc(e.cat)}"${e.add||""}`}); else T.push({k,n:e.n,a:`data-qsp="${esc(k)}"`}); });
-  const wk=m.wkKeys.filter(k=>/^w:\d$/.test(k)); if(m.wkKeys.length&&typeof wrPickModal==="function") T.push({k:"w",n:m.wkKeys.includes("w:dlv")&&!wk.length?"Доставка и подъём (работа)":"Работа",a:`data-pl="addw" data-blk="${wk.length?wk[0].slice(2):9}"`,w:1});
+  const wk=m.wkKeys.filter(k=>/^w:\d$/.test(k)); if(m.wkKeys.length&&typeof wrPickModal==="function") T.push({k:"w",n:m.wkKeys.includes("w:dlv")&&!wk.length?"Доставка и подъём (работа)":"Работа",a:`data-pl="addw" data-blk="${wk.length===1?wk[0].slice(2):wk.length?0:9}"`,w:1});
   if(m.doors){ T.push({k:"kupe",n:"Двери-купе",a:`data-qk="kupe" data-i="-1"`}); T.push({k:"door",n:"Дверь в алюминиевом профиле",a:`data-qk="door" data-i="-1"`}); }
   if(m.secs.some(k=>/^c:/.test(k))||plHas(m.t.gx?m.t.g:((plStd(m.t.id)||{}).g||[]),"c:x")) T.push({k:"sec",n:"Свой раздел…",a:`data-qsecadd="1"`});
   return T; }
@@ -25818,7 +25888,8 @@ window.__smt={model:(c,q)=>plModel(c,q),layout:()=>plLayout(),check:()=>{ const 
 function plScroll(){ setTimeout(()=>{ const el=document.querySelector(".qk-smt"); if(!el) return; const y=el.getBoundingClientRect().top+window.scrollY-76; if(plDesk()?window.scrollY>y:Math.abs(window.scrollY-y)>8) window.scrollTo(0,Math.max(0,y)); },30); }   /* раздел открылся — его заголовок сверху экрана */
 function plRender(){ if(typeof shpRenderKeep==="function") shpRenderKeep(); }
 function plDirty(){ try{ X().dirty(); }catch(_){ S.shop.sm.dirty=true; } }
-function plAddWork(blk){ const sm=S.shop&&S.shop.sm, q=sm&&sm.data&&sm.data.qk; if(!q||typeof wrPickModal!=="function") return; if(+blk>=1&&+blk<=9) S.wrBlk=+blk;
+function plAddWork(blk){ const sm=S.shop&&S.shop.sm, q=sm&&sm.data&&sm.data.qk; if(!q||typeof wrPickModal!=="function") return; S.wrBlk=+blk>=1&&+blk<=9?+blk:0;   /* плитка из нескольких блоков (вся «Работы») — «Все блоки» */
+  if(typeof window.qkWrPick==="function") return window.qkWrPick(sm,plDirty,plRender);   /* 13.11: несколько работ сразу — site_qk.js qkWrPick (та же запись q.bw) */
   wrPickModal((code,n,w)=>{ q.bw=q.bw||{}; q.bw[code]=Math.round((pNum(q.bw[code])+n)*100)/100; plDirty(); toast("Работа добавлена: "+w[1]); plRender(); }); }
 function plPick(id){ const sm=S.shop.sm, c=smCalc(sm.data), q=sm.data.qk, M=plModel(c,q), m=M.T[id]; if(!m) return; const T=plTargets(m,M.E);
   document.getElementById("plPick")?.remove(); const x=document.createElement("div"); x.className="modal"; x.id="plPick";
@@ -26159,11 +26230,7 @@ document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.
 .smt-chips button[aria-pressed="true"]{background:#fff!important;color:#000!important}.smt-more{color:inherit!important;opacity:.75}.smt-gw{color:#f2b824!important}
 .smt-ics button[aria-pressed="true"],.smt-vw button[aria-pressed="true"]{box-shadow:inset 0 0 0 2px currentColor!important}.smt-rad button[aria-checked="true"] i{box-shadow:inset 0 0 0 5px #30a46c!important}
 html.vt.sk.sk.sk[data-vt] .smt-gs.bad,html.vt.sk.sk.sk[data-vt] .smt-ts2.bad,html.vt.sk.sk.sk[data-vt] .smt-gs.smt-gs.bad{color:inherit!important;opacity:.6!important}`; document.head.appendChild(st4); }
-/* 13.11 (сценарий bench/kirill/2026-11-13_rabota_0sht.js): «Добавить работу» — при количестве 0 кнопка не нажимается (серая «Укажите количество»), а не молчит.
-   Окно — site_works.js (wrPickModal, не моё): там нажатие при 0 уже ничего не делает; здесь только видно, что кнопка выключена. Прорабу: перенести в actsH — disabled при st.n<=0. */
-function plWr0(){ const x=document.getElementById("wrPickM"); if(!x) return; const b=x.querySelector('[data-x="add"]'), i=x.querySelector(".wr-it.on .wr-nn"); if(!b||!i) return;
-  const v=parseFloat(String(i.value||"").replace(",","."))||0; if(v<=0){ b.disabled=true; b.textContent="Укажите количество"; } }
-["input","click"].forEach(t=>document.addEventListener(t,()=>{ if(document.getElementById("wrPickM")) plWr0(); }));   /* после нажатия окно перерисовано — смотрим само окно, а не нажатую (уже снятую) кнопку */
+/* 13.11: «Добавить работу» при 0 — теперь в самом окне (site_works.js wrPickModal: при 0 строка снимается, без отмеченных кнопка выключена) */
 /* ---------- «Настройки компании → Смета» ---------- */
 if(typeof CFG_TABS!=="undefined"&&Array.isArray(CFG_TABS)&&!CFG_TABS.some(t=>t[0]==="sm")) CFG_TABS.splice(1,0,["sm","Смета"]);
 function plCfgHtml(){ const F=plFirm(), ro=!S.shop.tech, R=typeof ofRights==="function"?ofRights():((S.shop.cfgAll||{}).officeRights||{}), dis=ro?" disabled":"";
@@ -28171,7 +28238,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="3bb1e019f2";/*cehqr-build*/
+  const BUILD="004e68c13a";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
