@@ -1319,12 +1319,16 @@ function matColor(name){
   return 0xf4f3ef;
 }
 const TEX_TILE=1200, TEX_MAX=1024, texCache={};
+const W3OP={d:0.16,l:0.22}; try{ if(perfWeak()){ W3OP.d=0; W3OP.l=0.06; } window.W3OP=W3OP; }catch(_){}   /* слабый телефон (Android, 4 ядра и меньше) — как раньше: только контуры, без заливки (дешевле для видеокарты) */   // 13.11: «Каркас» — прозрачность деталей (тёмная / светлая тема), как у Akeda: детали видны, сквозь них — присадка и фурнитура
 function texFor(name){
   const d=S.textures[name]; if(!d||typeof THREE==="undefined") return null;
   const key=name+"|"+d.length;
   if(!texCache[key]){ const t=new THREE.TextureLoader().load(d,tx=>{ try{ const im=tx.image, w=im&&(im.naturalWidth||im.width), h=im&&(im.naturalHeight||im.height), mx=Math.max(w||0,h||0);
         if(mx>TEX_MAX){ const k=TEX_MAX/mx, c=document.createElement("canvas"); c.width=Math.max(1,Math.round(w*k)); c.height=Math.max(1,Math.round(h*k)); const g=c.getContext("2d"); g.imageSmoothingQuality="high"; g.drawImage(im,0,0,c.width,c.height); tx.image=c; tx.needsUpdate=true; } }catch(_){} });
-    t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=4; texCache[key]=t; }
+    t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=4; texCache[key]=t;
+    /* 13.11 (Кирилл: «в 3D фасадов нет»): пока картинка грузится или если она не загрузилась (нет файла на сайте) — пустая текстура
+       давала прозрачную деталь (фасады верхних шкафов пропадали). Теперь сразу — заглушка цветом материала, картинка встанет, когда придёт. */
+    try{ if(!t.image){ const c=document.createElement("canvas"); c.width=c.height=2; const g=c.getContext("2d"); g.fillStyle="#"+matColor(name).toString(16).padStart(6,"0"); g.fillRect(0,0,2,2); t.image=c; t.needsUpdate=true; } }catch(_){} }
   return texCache[key];
 }
 function grainAxis(p){
@@ -1516,11 +1520,21 @@ function mountAssembly(canvas, parts, opt){
   const krepGroup=new THREE.Group(); scene.add(krepGroup); const krepItems=[];
   const krepMat=new THREE.MeshLambertMaterial({color:0xc2a14a}), krepLine=new THREE.LineBasicMaterial({color:0x7a6326});
   const furnItems=[], furnMat=new THREE.MeshLambertMaterial({color:0x9da3a8,transparent:true,opacity:1}), furnLine=new THREE.LineBasicMaterial({color:0x5f666c,transparent:true,opacity:0.9});
+  // 13.11: петля в «Каркасе» — чашка Ø35 (у фасада) и плечо к стойке; видна только в «Каркасе», рисуется один раз
+  const hingeG=new THREE.Group(); hingeG.visible=false; scene.add(hingeG);
+  const hingeMat=new THREE.MeshLambertMaterial({color:0xb8bec5}), facBoxes=withBox.filter(p=>/фасад|дверь|дверц/i.test(p.name||"")).map(p=>p.box);
+  const hingeMesh=b=>{ const d=[b[3]-b[0],b[4]-b[1],b[5]-b[2]], a=d.indexOf(Math.max(...d)), c=[(b[0]+b[3])/2,(b[1]+b[4])/2,(b[2]+b[5])/2];
+    const F=facBoxes.find(q=>[0,1,2].every(i=>q[i]<=b[i+3]+3&&q[i+3]>=b[i]-3)), fc=F?(F[a]+F[a+3])/2:(a===2?hi[2]:c[a]);
+    const near=Math.abs(b[a]-fc)<Math.abs(b[a+3]-fc)?b[a]:b[a+3], dir=near===b[a]?1:-1, g=new THREE.Group();
+    const cup=new THREE.Mesh(new THREE.CylinderGeometry(17.5*K,17.5*K,12*K,20),hingeMat), cc=c.slice(); cc[a]=near+dir*6;
+    if(a===0) cup.rotation.z=Math.PI/2; else if(a===2) cup.rotation.x=Math.PI/2; cup.position.set((cc[0]-C[0])*K,(cc[1]-C[1])*K,(cc[2]-C[2])*K); g.add(cup);
+    const L=Math.max(10,d[a]-12), ad=[12,12,12]; ad[a]=L; const arm=new THREE.Mesh(new THREE.BoxGeometry(ad[0]*K,ad[1]*K,ad[2]*K),hingeMat), ac=c.slice(); ac[a]=near+dir*(12+L/2);
+    arm.position.set((ac[0]-C[0])*K,(ac[1]-C[1])*K,(ac[2]-C[2])*K); g.add(arm); return g; };
   (opt.fasteners||[]).forEach((f,fi)=>{
     const b=f.b, sx=b[3]-b[0], sy=b[4]-b[1], sz=b[5]-b[2], big=Math.max(sx,sy,sz)>=15&&Math.min(sx,sy,sz)>=1;
     // всё, что выходит далеко за изделие (комната, стены) — не показываем
     if(b[0]<lo[0]-300||b[1]<lo[1]-300||b[2]<lo[2]-300||b[3]>hi[0]+300||b[4]>hi[1]+300||b[5]>hi[2]+300) return;
-    if(/петл/i.test(f.n+" "+(f.g||""))) return;   // петли коробками не рисуем — не похоже; остаются чашки Ø35 на фасадах
+    if(/петл/i.test(f.n+" "+(f.g||""))){ if(!exact&&!/планк|заглушк|чашк|накладк/i.test(f.n+" "+(f.g||""))) try{ hingeG.add(hingeMesh(b)); }catch(_){} return; }   // петли коробками не рисуем — не похоже; в «Каркасе» (13.11) — чашка Ø35 и плечо, как у Akeda
     const pos=[((b[0]+b[3])/2-C[0])*K,((b[1]+b[4])/2-C[1])*K,((b[2]+b[5])/2-C[2])*K];
     if(isKrep(f)){
       // крепёж: в точном виде — модель из Базиса, иначе — аккуратный цилиндр по его габариту (ось — самая длинная сторона)
@@ -1544,12 +1558,21 @@ function mountAssembly(canvas, parts, opt){
     sp.position.set(...pos);
     fgroup.add(sp);
   });
+  /* 13.11: в «Каркасе» крепёж и петли видны — рисуем их ОДНОЙ сеткой каждый (сотни цилиндров по отдельности тормозили вращение);
+     сами цилиндры остаются невидимыми — для нажатия и подсветки */
+  const mergeInto=(list,mat,parent)=>{ try{ const P=[], N=[]; list.forEach(o=>{ o.updateMatrixWorld(true); o.traverse(x=>{ if(!x.isMesh||!x.geometry) return; const g=(x.geometry.index?x.geometry.toNonIndexed():x.geometry.clone()); g.applyMatrix4(x.matrixWorld); if(!g.attributes.normal) g.computeVertexNormals();
+      P.push(g.attributes.position.array); N.push(g.attributes.normal.array); g.dispose(); }); });
+    if(!P.length) return null; let n=0; P.forEach(a=>n+=a.length); const pa=new Float32Array(n), na=new Float32Array(n); let o=0; P.forEach((a,i)=>{ pa.set(a,o); na.set(N[i],o); o+=a.length; });
+    const G=new THREE.BufferGeometry(); G.setAttribute("position",new THREE.BufferAttribute(pa,3)); G.setAttribute("normal",new THREE.BufferAttribute(na,3));
+    const M=new THREE.Mesh(G,mat); M.raycast=()=>{}; M.userData.merged=true; parent.add(M); return M; }catch(e){ console.warn("merge",e); return null; } };
+  let krepOne=null; if(!exact&&krepItems.length){ krepOne=mergeInto(krepItems,krepMat,krepGroup); }
+  if(hingeG.children.length){ const L=hingeG.children.slice(); const one=mergeInto(L,hingeMat,scene); if(one){ L.forEach(c=>{ hingeG.remove(c); c.traverse(x=>{ if(x.geometry) x.geometry.dispose(); }); }); scene.remove(one); hingeG.add(one); } }
   // камера: орбита вокруг центра
   const camP=new THREE.PerspectiveCamera(35,1,0.01,100), camO=new THREE.OrthographicCamera(-1,1,1,-1,0.01,100);
   let cam=camP; const TAN=Math.tan(35/2*Math.PI/180);
   const st=opt.state||{};
   // узкий высокий экран (телефон) — отодвигаем камеру, чтобы изделие влезло по ширине
-  const fitD=()=>{ const a=(canvas.clientWidth||1)/(canvas.clientHeight||1); return size*1.75*Math.max(1,0.9/Math.max(0.3,a)); };
+  const fitD=()=>{ const a=(canvas.clientWidth||1)/(canvas.clientHeight||1); return size*1.75*Math.max(1,0.9/Math.max(0.3,a))*(opt.focus?1:a<0.8?1.12:1.15); };   // 13.11: на телефоне чуть дальше — габаритные размеры по краям видны
   if(st.yaw==null){ st.yaw=-0.55; st.pitch=0.28; st.dist=fitD(); st.explode=0; st.hideFacades=false; }
   if(!st.hidden) st.hidden={};
   if(!st.multi) st.multi={};
@@ -1595,7 +1618,7 @@ function mountAssembly(canvas, parts, opt){
       m.children[0].material.color=sel?hiC:lineC;
       // выбрана одна деталь — остальные каркасом (контуры), чтобы её было видно сквозь корпус
       const wire=!!st.wire||(!!st.selected&&!sel&&!st.steps&&!dim);
-      m.material.opacity=wire?(sel?0.6:(dk3?0.0:(st.wire?0.2:0.06))):dim?(u.glass?0.1:0.18):u.glass?(sel?0.45:0.22):sel?0.72:1; if(sel) m.material.transparent=true; m.material.depthWrite=!(dim||wire||u.glass);
+      m.material.opacity=wire?(sel?0.6:(st.wire?(dk3?W3OP.d:W3OP.l):(dk3?0.0:0.06))):dim?(u.glass?0.1:0.18):u.glass?(sel?0.45:0.22):sel?0.72:1; if(sel) m.material.transparent=true; m.material.depthWrite=!(dim||wire||u.glass);
       m.children[0].material.opacity=wire?(dk3&&!sel?(w3v===3?0.5:0.7):0.95):dim?0.25:0.8;
       if(wire&&!sel) m.children[0].material.color=wireC;
       if(m.children[1]) m.children[1].visible=!wire&&!dim&&st.holes!==false;
@@ -1682,8 +1705,8 @@ function mountAssembly(canvas, parts, opt){
   }
   const placeBase=place, applyBase=apply;
   const place2=()=>{ placeBase(); dirty=true; }, apply2=()=>{ applyBase(); fgroup.visible=!!st.wire&&!st.explode; furnGroup.visible=st.furn!==false&&!st.explode; if(opt._exactGroup) opt._exactGroup.visible=furnGroup.visible;
-    krepGroup.visible=krepGroupX.visible=false;
-    krepItems.forEach(m=>{ const sel=isSel(m.userData.code); m.material=sel?(exact?furnSelGhost:furnSel):(exact?furnHidden:krepMat); });
+    krepGroup.visible=krepGroupX.visible=!!st.wire&&!st.explode&&st.krep!==false; hingeG.visible=!!st.wire&&!st.explode;   // 13.11: в «Каркасе» видно стяжки, шканты, петли — как у Akeda
+    krepItems.forEach(m=>{ const sel=isSel(m.userData.code); m.material=sel?(exact?furnSelGhost:furnSel):(exact||krepOne?furnHidden:krepMat); });
     furnItems.forEach(m=>{ const sel=isSel(m.userData.code);
       if(m.userData.shape){ m.material=furnHidden; m.traverse(o=>{ if(o!==m&&o.isMesh&&o.userData.mat) o.material=sel?furnSel:o.userData.mat; }); return; }
       m.material=sel?(exact?furnSelGhost:furnSel):(exact?furnHidden:furnMat); }); dirty=true; };
@@ -1941,9 +1964,55 @@ function mountAssembly(canvas, parts, opt){
     const step=()=>{ const k=Math.min(1,(performance.now()-s0)/350), e=1-Math.pow(1-k,3); st.yaw=y0+dy*e; st.pitch=p0+(pitch-p0)*e; st.target.copy(t0).multiplyScalar(1-e); st.dist=d0+(d1-d0)*e; place2(); if(k<1) orf=requestAnimationFrame(step); }; orf=requestAnimationFrame(step); }
   asm={renderer,ro,raf:0,st, measPanel, rebuildMeas, placeTag, orient, parts, fst:S.current&&S.current.fasteners, fm:opt.furnMesh,
     snap(){ renderer.render(scene,cam); return renderer.domElement.toDataURL("image/png"); },
+    // проверка для стенда (bench/kirill): фасады видны — деталь показана, не прозрачная, у текстуры есть картинка (или заглушка цветом)
+    facades(){ const F=items.filter(m=>m.userData.facade); return {n:F.length, ok:F.filter(m=>m.visible&&m.material.opacity>0.5&&(!m.material.map||!!(m.material.map.image&&(m.material.map.image.width||m.material.map.image.naturalWidth)))).length}; },
     center(){ st.yaw=-0.55; st.pitch=0.28; st.dist=fitD(); st.target.set(0,0,0); st.ortho=false; st.view="3d"; syncViewBtns(); place2(); },
     view(v){ const a=VIEWS[v]||VIEWS["3d"]; st.view=v; st.yaw=a[0]; st.pitch=a[1]; st.ortho=v!=="3d"; st.target.set(0,0,0); st.dist=size*(v==="3d"?1.75:1.25); syncViewBtns(); place2(); }};
   syncViewBtns();
+  /* 13.11 (Кирилл: «как у Akeda»): габарит изделия на 3D — ширина, высота, глубина: тонкие размерные линии и подписи.
+     Линии и подписи — обычные объекты сцены (едут вместе с моделью, без пересчёта страницы на каждом кадре — плавность не страдает).
+     Видны, когда показано всё изделие: прячутся при разборе, сборке по шагам, скрытых деталях и выборе детали. */
+  if(!opt.focus){ try{ const G=new THREE.Group(); G.userData.dims=true; scene.add(G); asm.dimG=G;
+    const P=(x,y,z)=>new THREE.Vector3((x-C[0])*K,(y-C[1])*K,(z-C[2])*K), W0=hi[0]-lo[0], H0=hi[1]-lo[1], D0=hi[2]-lo[2], off=Math.max(30,Math.max(W0,H0,D0)*0.04), tk=off*0.22;
+    const col=dk3?0xf2f2f2:0x1d1f1e, seg=[];
+    const ln=(a,b)=>seg.push(a,b), dim=(a,b,ex,t)=>{ ln(a,b); ln(a.clone().add(ex),a.clone().sub(ex.clone().multiplyScalar(0.2))); ln(b.clone().add(ex),b.clone().sub(ex.clone().multiplyScalar(0.2))); ln(a.clone().add(t),a.clone().sub(t)); ln(b.clone().add(t),b.clone().sub(t)); };
+    const k=K;
+    dim(P(lo[0],lo[1],hi[2]+off),P(hi[0],lo[1],hi[2]+off),new THREE.Vector3(0,0,-off*k*0.9),new THREE.Vector3(tk*k*0.7,0,tk*k*0.7));           // ширина — по полу перед изделием
+    dim(P(lo[0]-off,lo[1],hi[2]),P(lo[0]-off,hi[1],hi[2]),new THREE.Vector3(off*k*0.9,0,0),new THREE.Vector3(tk*k*0.7,tk*k*0.7,0));            // высота — слева у переднего ребра (камера смотрит спереди-слева)
+    dim(P(lo[0]-off,lo[1]-off,lo[2]),P(lo[0]-off,lo[1]-off,hi[2]),new THREE.Vector3(off*k*0.9,off*k*0.9,0),new THREE.Vector3(tk*k*0.7,0,tk*k*0.7));   // глубина — по полу слева
+    const lg=new THREE.BufferGeometry().setFromPoints(seg), lines=new THREE.LineSegments(lg,new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.9,depthTest:false}));
+    lines.renderOrder=30; G.add(lines);
+    /* подписи — обычные надписи поверх 3D (13–14 px, как подписи iPhone), а не картинки в сцене: так они всегда одного размера,
+       целиком в экране и не ложатся под кнопки и микрофон. Место — на своей размерной линии (середина, потом ближе к концам); некуда — подпись прячется */
+    const lay=canvas.parentElement&&canvas.parentElement.querySelector(".asm-labels"), tags=[];
+    if(lay&&!document.getElementById("asmDimCss")){ const cs=document.createElement("style"); cs.id="asmDimCss";
+      cs.textContent=".asm-labels .asm-dim{position:absolute;left:0;top:0;transform:none;z-index:2;pointer-events:none;font:600 13px/1 -apple-system,system-ui,'Segoe UI',Arial,sans-serif;padding:5px 9px;border-radius:999px;white-space:nowrap;background:rgba(28,28,30,.86);color:#fff;border:1px solid rgba(255,255,255,.16);box-shadow:none;will-change:transform}.asm-labels .asm-dim.lt{background:rgba(255,255,255,.94);color:#111;border-color:rgba(0,0,0,.14)}";
+      document.head.appendChild(cs); }
+    const mkTag=(t,a,b)=>{ if(!lay) return; const el=document.createElement("span"); el.className="asm-dim"+(dk3?"":" lt"); el.textContent=t; el.style.visibility="hidden"; lay.appendChild(el); tags.push({el,a,b,w:0,h:0,on:false}); };
+    const r0=v=>String(Math.round(v));
+    mkTag(r0(W0),P(lo[0],lo[1],hi[2]+off),P(hi[0],lo[1],hi[2]+off)); mkTag(r0(H0),P(lo[0]-off,lo[1],hi[2]),P(lo[0]-off,hi[1],hi[2])); mkTag(r0(D0),P(lo[0]-off,lo[1]-off,lo[2]),P(lo[0]-off,lo[1]-off,hi[2]));
+    let geo=null, geoT=0; const V3=new THREE.Vector3();
+    const geoGet=()=>{ const now=performance.now(); if(geo&&now-geoT<400) return geo; geoT=now;   // размеры окна и кнопок читаем не чаще 2–3 раз в секунду (без пересчёта страницы на каждом кадре)
+      const L=lay.getBoundingClientRect(), C=canvas.getBoundingClientRect(), m=6, ob=[];
+      document.querySelectorAll("#appBar,.shp-tabs.bottom.app-bar,.dq-bar button,.dq-bar .dq-b,.ai-fab,.dq-cube,.dq-help,.asm-pick,.asm-tools button,.gest-hint,.asm-unhide,.asm-xbar,.dq-menu:not([hidden]),.op-pbtns button").forEach(e=>{ const r=e.getBoundingClientRect(); if(r.width<2||r.height<2) return; const cs=getComputedStyle(e); if(cs.visibility==="hidden"||cs.display==="none"||+cs.opacity<0.05) return; ob.push([r.left-L.left-m,r.top-L.top-m,r.right-L.left+m,r.bottom-L.top+m]); });
+      const bx=[Math.max(0,-L.left)+m,Math.max(0,-L.top)+m,Math.min(L.width,innerWidth-L.left)-m,Math.min(L.height,innerHeight-L.top)-m];
+      tags.forEach(t=>{ if(!t.w){ t.w=t.el.offsetWidth; t.h=t.el.offsetHeight; } });
+      return geo={ox:C.left-L.left,oy:C.top-L.top,cw:C.width,ch:C.height,ob,bx}; };
+    const hit=(r,L)=>L.some(q=>r[0]<q[2]&&r[2]>q[0]&&r[1]<q[3]&&r[3]>q[1]);
+    const dimPlace=c=>{ if(!tags.length) return; if(!G.visible||!canvas.isConnected){ tags.forEach(t=>{ if(t.on){ t.on=false; t.el.style.visibility="hidden"; } }); return; }
+      const g=geoGet(), used=[];
+      tags.forEach(t=>{ const pr=v=>{ V3.copy(v).project(c); return [g.ox+(V3.x+1)/2*g.cw, g.oy+(1-V3.y)/2*g.ch, V3.z]; }, A=pr(t.a), B=pr(t.b); let pk=null;
+        if(A[2]<1&&B[2]<1) for(const f of [0.5,0.4,0.6,0.3,0.7,0.2,0.8,0.12,0.88]){ const x=A[0]+(B[0]-A[0])*f, y=A[1]+(B[1]-A[1])*f, r=[x-t.w/2,y-t.h/2,x+t.w/2,y+t.h/2];
+          if(r[0]<g.bx[0]||r[1]<g.bx[1]||r[2]>g.bx[2]||r[3]>g.bx[3]||hit(r,g.ob)||hit(r,used)) continue; pk=r; break; }
+        if(!pk){ if(t.on){ t.on=false; t.el.style.visibility="hidden"; } return; }
+        used.push([pk[0]-4,pk[1]-4,pk[2]+4,pk[3]+4]); t.el.style.transform=`translate(${pk[0].toFixed(1)}px,${pk[1].toFixed(1)}px)`; if(!t.on){ t.on=true; t.el.style.visibility="visible"; } }); };
+    { const rr=renderer.render.bind(renderer); renderer.render=function(sc,c){ rr(sc,c); if(sc===scene) try{ dimPlace(c); }catch(_){} }; }
+    asm.dimPlace=()=>{ geo=null; };
+    { const onR=()=>{ geo=null; if(!canvas.isConnected) window.removeEventListener("resize",onR); }; window.addEventListener("resize",onR,{passive:true}); }
+    lines.raycast=()=>{};
+    const vis=()=>{ G.visible=!st.explode&&!st.steps&&!st.selected&&!Object.keys(st.hidden||{}).length&&!(st.multi&&Object.keys(st.multi).length)&&S.asmDims!==false; };
+    { const ap=st.apply; st.apply=function(){ const r=ap.apply(this,arguments); try{ vis(); }catch(_){} return r; }; } vis();
+  }catch(e){ console.warn("dims",e); } }
   asm.relabel=()=>{ dirty=true; if(asm&&asm.loop) asm.loop.poke(300); };
   // навести камеру на коробку (мм): для сборки по шагам — модуль крупно по центру
   asm.focusBox=(lo,hi)=>{ st.target.set(((lo[0]+hi[0])/2-C[0])*K,((lo[1]+hi[1])/2-C[1])*K,((lo[2]+hi[2])/2-C[2])*K);
@@ -3989,10 +4058,10 @@ function viewOrder(){
   if(clientMode()) return h+clientMats()+`<p class="home-foot"><button type="button" class="linkbtn" data-act="full-mode">Режим мастера: чертежи и детали</button></p>`;
   if(S.site&&!S.canEdit&&!S.pin&&!(typeof siteIsAdmin==="function"&&siteIsAdmin())) h+=`<p class="note" style="text-align:right;margin:4px 0 10px"><button class="btn sm" data-act="client-mode">Вид для клиента</button></p>`;
   if(S.current.parts.some(p=>p.box)){ const fvm=S.fvMode||"mid", fvw=S.fvWire!==false, views=moduleViews(S.current.parts, curFasteners(), fvm, fvw, !!S.fvHinge, S.fvPos!==false, S.fvGap===true);
-    const tip=matchMedia("(pointer:fine)").matches?"Колесо мыши — приблизить к курсору, зажать и тянуть — сдвинуть, двойной щелчок — весь чертёж.":"Одним пальцем — листать страницу, двумя — приблизить и сдвинуть чертёж. ⤢ — весь чертёж, ⛶ — во весь экран.";
+    const tip=matchMedia("(pointer:fine)").matches?"Колесо мыши — приблизить, зажать и тянуть — сдвинуть, двойной щелчок — весь чертёж.":"Двумя пальцами — приблизить и сдвинуть. Двойное касание — весь чертёж.";
     const box=v=>`<div class="mapbox fv-box" data-key="${esc(S.current.orderId+"|"+v.title+"|"+(S.fvHinge?"h":"n"))}">${v.svg}<div class="fv-zoom"><button type="button" data-z="meas" title="Поставить свой размер: две точки" aria-label="Поставить размер" aria-pressed="false">📏</button><button type="button" data-z="in" title="Приблизить" aria-label="Приблизить">+</button><button type="button" data-z="out" title="Отдалить" aria-label="Отдалить">−</button><button type="button" data-z="reset" title="Весь чертёж" aria-label="Весь чертёж">⤢</button><button type="button" data-z="full" title="Во весь экран" aria-label="Во весь экран">⛶</button></div></div>`;
     if(views.length&&!S.fvWin) h+=`<button type="button" class="btn fv-btn" data-act="fv-open"><span class="fv-ic">📐</span><span><b>Вид спереди с размерами</b><small>${views.length>1?`${views.length} модул${views.length<5?"я":"ей"} · `:""}открыть чертёж на весь экран</small></span></button>`;
-    if(views.length&&S.fvWin) h+=`<div class="fv-win" role="dialog" aria-label="Вид спереди с размерами"><div class="fv-wbar"><button type="button" class="fv-back" data-act="fv-close" aria-label="Назад">‹ Назад</button><h2>Вид спереди${views.length>1?` · ${views.length} модул${views.length<5?"я":"ей"}`:""}</h2><button type="button" class="fv-x fv-pr" data-act="fv-print" aria-label="Печать чертежа" title="Печать / PDF">🖨</button></div><div class="fv-wbody"><div class="card-head" style="margin:8px 0"><span class="note">Фасады и задняя стенка скрыты. Высоты — от низа стойки, по горизонтали — от внутренней стороны стойки до оси перегородки, мм. Высоты полок:</span>
+    if(views.length&&S.fvWin) h+=`<div class="fv-win" role="dialog" aria-label="Вид спереди с размерами"><div class="fv-wbar"><button type="button" class="fv-back" data-act="fv-close" aria-label="Назад">‹ Назад</button><h2>Вид спереди${views.length>1?` · ${views.length} модул${views.length<5?"я":"ей"}`:""}</h2><button type="button" class="fv-x fv-pr" data-act="fv-print" aria-label="Печать чертежа" title="Печать / PDF">🖨</button></div><div class="fv-wbody"><div class="fv-note"><span>Размеры в мм · высоты от низа стойки</span><button type="button" class="fv-q" aria-expanded="false" aria-label="Как читать чертёж">?</button></div><div class="fv-more" hidden>Фасады и задняя стенка скрыты. Высоты — от низа стойки, по горизонтали — от внутренней стороны стойки до оси перегородки. Кнопки «до низа / до середины / до верха» — до какой грани полки меряем. Двумя пальцами — приблизить и сдвинуть чертёж.</div><div class="card-head fv-opts" style="margin:8px 0">
       <div class="seg" role="group" aria-label="До какой грани полки"><button type="button" data-act="fv-mode" data-m="bottom" aria-pressed="${fvm==="bottom"}">до низа полки</button><button type="button" data-act="fv-mode" data-m="mid" aria-pressed="${fvm==="mid"}">до середины</button><button type="button" data-act="fv-mode" data-m="top" aria-pressed="${fvm==="top"}">до верха</button></div>
       <div class="seg" role="group" aria-label="Вид чертежа"><button type="button" data-act="fv-wire" data-w="1" aria-pressed="${fvw&&!S.fvHinge}">Каркас</button><button type="button" data-act="fv-wire" data-w="0" aria-pressed="${!fvw&&!S.fvHinge}">Заливка</button><button type="button" data-act="fv-hinge" aria-pressed="${!!S.fvHinge}">Петли на фасадах</button></div>
       <div class="seg" role="group" aria-label="Подписи на чертеже"><button type="button" data-act="fv-pos" aria-pressed="${S.fvPos!==false}">Позиции</button><button type="button" data-act="fv-gap" aria-pressed="${S.fvGap===true}">Просветы</button><button type="button" data-act="fv-same" aria-pressed="${!!S.fvSame}" title="Нажмите на деталь — подсветятся все такие же">Такие же</button></div></div>
@@ -9927,6 +9996,66 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&document.getElemen
 window.addEventListener("resize",()=>{ if(document.getElementById("drw")) drwZoom(0); });
 try{ Object.assign(window,{drwOpen,drwPrintHtml,fvPrintHtml,drwPlan,DRWS}); }catch(_){}
 
+/* ---------- «Вид спереди» — печать / PDF по ЕСКД (Кирилл 13.11 12:37: «чертёж мелкий, рамка боком, вторая страница пустая») ----------
+   Один блок = один лист. А4, если изделие помещается не мельче 1:20, иначе А3. Альбомный — если чертёж широкий.
+   Рамка: слева 20 мм (подшивка), остальные 5 мм. Штамп 185×30 снизу справа: название, блок, габариты, заказ, дата, «лист N из M».
+   Чертёж — крупно на всё свободное место листа. На телефоне и компьютере — настоящий PDF (одна страница на блок, без поворотов Safari). */
+const FVP_ST={w:185,h:30};
+function fvSheet2(v, n, N, name, oid){
+  const vb=fvVB(v); let s0=0; try{ const m=String(v.svg).match(/data-meas="([^"]+)"/); if(m) s0=+JSON.parse(m[1].replace(/&quot;/g,'"').replace(/&amp;/g,"&")).s||0; }catch(_){}
+  const land=vb[2]>=vb[3]*0.95;
+  const areaOf=(PW,PH)=>{ const L=20,T=5,R=PW-5,B=PH-5, sx=R-FVP_ST.w, sy=B-FVP_ST.h, pad=4;
+    const A=[[L+pad,T+pad,R-pad,sy-pad],[L+pad,T+pad,sx-pad,B-pad]].map(a=>({a,k:Math.min((a[2]-a[0])/vb[2],(a[3]-a[1])/vb[3])})).filter(o=>o.k>0).sort((p,q)=>q.k-p.k)[0];
+    return A; };
+  let fmtN="A4", PW=land?297:210, PH=land?210:297, A=areaOf(PW,PH);
+  // мельче 1:20 (реальные мм изделия → мм листа) — берём А3
+  if(s0&&A.k*s0<1/20){ fmtN="A3"; PW=land?420:297; PH=land?297:420; A=areaOf(PW,PH); }
+  const k=A.k, a=A.a, w=vb[2]*k, h=vb[3]*k, x=a[0]+(a[2]-a[0]-w)/2, y=a[1]+(a[3]-a[1]-h)/2;
+  let body=String(v.svg).replace(/^<svg[^>]*>/,"").replace(/<\/svg>\s*$/,"");
+  // линии не тоньше 0,18 мм; цифры не мельче 2,5 мм (ЕСКД), но не больше чем в 1,8 раза — чтобы не налезали
+  const sws=[...body.matchAll(/stroke-width="([\d.]+)"/g)].map(q=>+q[1]).filter(q=>q>0), fss=[...body.matchAll(/font-size="([\d.]+)"/g)].map(q=>+q[1]);
+  const fS=Math.min(2.5,Math.max(1,0.18/(Math.min(...sws,0.5)*k))), fF=Math.min(1.8,Math.max(1,2.5/(Math.min(...fss,11)*k)));
+  body=body.replace(/stroke-width="([\d.]+)"/g,(_,q)=>`stroke-width="${(+q*fS).toFixed(3)}"`).replace(/font-size="([\d.]+)"/g,(_,q)=>`font-size="${(+q*fF).toFixed(2)}"`);
+  const R=PW-5, B=PH-5, X0=R-FVP_ST.w, Y0=B-FVP_ST.h, L=(x1,y1,x2,y2,sw)=>drwL(x1,y1,x2,y2,sw||0.35);
+  const fit=(t,wd,fs,b)=>{ t=String(t); if(drwTW(t,fs,b)<=wd) return t; while(t.length>2&&drwTW(t+"…",fs,b)>wd) t=t.slice(0,-1); return t+"…"; };
+  const ttl=v.title||name||"Изделие", sub=[v.title&&name?name:"", v.size?"габариты "+v.size+" мм":""].filter(Boolean).join(" · ");
+  let g=`<rect width="${PW}" height="${PH}" fill="#fff"/><rect x="20" y="5" width="${PW-25}" height="${PH-10}" fill="none" stroke="#111" stroke-width="0.7"/>`;
+  g+=`<svg x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" viewBox="${vb.join(" ")}" overflow="visible">${body}</svg>`;
+  // штамп
+  g+=`<rect x="${X0}" y="${Y0}" width="${FVP_ST.w}" height="${FVP_ST.h}" fill="#fff" stroke="#111" stroke-width="0.7"/>`;
+  const cB=X0+110, cC=X0+140, cD=X0+162.5;
+  g+=L(cB,Y0,cB,B,0.5)+L(cC,Y0,cC,B,0.5)+L(cD,Y0,cD,B,0.5)+L(cB,Y0+8,R,Y0+8,0.35)+L(X0,Y0+20,cB,Y0+20,0.35);
+  g+=drwT(X0+3,Y0+8,fit(ttl,104,5,1),{fs:5,b:1})+drwT(X0+3,Y0+15.5,fit(sub||"Вид спереди",104,3.2),{fs:3.2});
+  g+=drwT(X0+3,Y0+26.6,"Вид спереди · дата "+new Date().toLocaleDateString("ru-RU"),{fs:2.8})+drwT(cB-3,Y0+26.6,"Work24link",{fs:2.8,a:"end"});
+  g+=drwT((cB+cC)/2,Y0+5.6,"Заказ",{fs:2.6,a:"middle"})+drwT((cC+cD)/2,Y0+5.6,"Лист",{fs:2.6,a:"middle"})+drwT((cD+R)/2,Y0+5.6,"Листов",{fs:2.6,a:"middle"});
+  g+=drwT((cB+cC)/2,Y0+21,fit(oid||"",28,4.2,1),{fs:4.2,b:1,a:"middle"})+drwT((cC+cD)/2,Y0+21,String(n),{fs:5,b:1,a:"middle"})+drwT((cD+R)/2,Y0+21,String(N),{fs:5,b:1,a:"middle"});
+  return {land, fmt:fmtN, PW, PH, svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PW} ${PH}" width="${PW}mm" height="${PH}mm" font-family="Arial,'Liberation Sans',sans-serif" fill="#111">${g}</svg>`};
+}
+function fvSheets(which){ const o=S.orders[S.current.orderId]||{}, name=o.name||S.current.orderId, views=fvViewsNow();
+  const idx=which==null?views.map((_,i)=>i):[which].filter(i=>views[i]); return idx.map((i,j)=>fvSheet2(views[i],which==null?j+1:i+1,views.length,name,S.current.orderId)); }
+// запасной путь (нет jsPDF) — HTML: каждый лист своего размера, без поворотов
+function fvPrintHtml2(sh){ const pg=sh.map(s=>`<section class="pg" style="width:${s.PW}mm;height:${s.PH}mm">${s.svg.replace(/ width="[\d.]+mm" height="[\d.]+mm"/,"")}</section>`).join("");
+  const f=sh[0]; return `<!doctype html><html><head><meta charset="utf-8"><title>Вид спереди</title><style>@page{size:${f.fmt} ${f.land?"landscape":"portrait"};margin:0}html,body{margin:0;background:#fff}.pg{page-break-after:always;break-after:page;overflow:hidden}.pg:last-child{page-break-after:auto;break-after:auto}.pg>svg{width:100%;height:100%;display:block}@media screen{body{background:#888}.pg{margin:10px auto;background:#fff}}</style></head><body>${pg}<script>setTimeout(function(){try{print()}catch(e){}},600)<\/script></body></html>`; }
+async function fvPdfMake(which, opt){ opt=opt||{}; const sh=fvSheets(which); if(!sh.length) return null;
+  if(typeof needLib==="function") await needLib("jspdf"); const J=window.jspdf&&window.jspdf.jsPDF; if(!J) throw new Error("nojspdf");
+  let doc=null;
+  for(const s of sh){ const fmt=s.fmt.toLowerCase(), ori=s.land?"landscape":"portrait";
+    if(!doc) doc=new J({orientation:ori,unit:"mm",format:fmt}); else doc.addPage(fmt,ori);
+    const px=opt.px||Math.round(3200*Math.max(s.PW,s.PH)/420*(s.fmt==="A4"?1.25:1)), kk=px/Math.max(s.PW,s.PH), cw=Math.round(s.PW*kk), ch=Math.round(s.PH*kk);
+    const svg=s.svg.replace(/ width="[\d.]+mm" height="[\d.]+mm"/,` width="${cw}" height="${ch}"`);
+    const img=await new Promise((ok,no)=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=no; im.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg); });
+    const c=document.createElement("canvas"); c.width=cw; c.height=ch; const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,cw,ch); g.drawImage(img,0,0,cw,ch);
+    doc.addImage(c.toDataURL("image/jpeg",0.9),"JPEG",0,0,s.PW,s.PH); c.width=c.height=1; }
+  return {doc, pages:doc.getNumberOfPages(), blocks:sh.length, sheets:sh.map(s=>s.fmt+(s.land?" альбом":" книжн."))}; }
+async function fvPrint2(which){
+  const w=window.open("","_blank");   // окно — сразу по нажатию (иначе телефон запретит), PDF положим в него, когда соберётся
+  try{ if(w) w.document.write('<meta name="viewport" content="width=device-width,initial-scale=1"><p style="font:16px system-ui;padding:24px;color:#333">Готовлю PDF…</p>');
+    const r=await fvPdfMake(which); if(!r){ if(w) w.close(); toast("Чертёж ещё не построен"); return; }
+    const url=r.doc.output("bloburl"); if(w&&!w.closed) w.location.href=url; else window.open(url,"_blank"); }
+  catch(e){ const sh=fvSheets(which); if(w&&!w.closed) w.close(); if(sh.length) drwPrintOpen(fvPrintHtml2(sh)); else toast("Чертёж ещё не построен"); } }
+try{ fvPrint=function(){ fvPrint2(null); }; fvPrintOne=function(i){ fvPrint2(i); }; }catch(_){}
+try{ Object.assign(window,{fvPdfMake,fvSheets}); }catch(_){}
+
 /* ---------- ОФОРМЛЕНИЕ: «Светлая разметка» (светлая, по умолчанию) и «Цеховая разметка» (тёмная) ---------- */
 /* Слой оформления поверх всего: переменные цветов + точечные правки. Свой <style> всегда держим последним в <head>,
    поэтому он побеждает стили, которые разделы добавляют позже. Выбор: Авто (как в телефоне) / Тёмная / Светлая,
@@ -15392,6 +15521,48 @@ function frontViewV(parts, opt){
     const s=r&&r.map&&r.map.s; if(s&&FV_FS/s>FV_MM){ const k=Math.max(6/FV_FS,FV_MM*s/FV_FS); DK.fs=Math.round(FV_FS*k*10)/10; DK.fsS=Math.round(FV_FSS*k*10)/10; DK.aL=Math.max(2.8,4.5*k); DK.aW=Math.max(1,1.7*k); r=frontViewV0(parts,opt); }
     return r; } finally{ DK.fs=sv[0]; DK.fsS=sv[1]; DK.noTick=sv[2]; DK.aL=sv[3]; DK.aW=sv[4]; DK.openArrow=sv[5]; }
 }
+/* ---- условные значки фурнитуры на «Виде спереди» (r — прямоугольник в пикселях чертежа [x0,y0,x1,y1], s — пикселей на мм) ---- */
+function fvKind(n,k0){ n=String(n||"");
+  if(/петл/i.test(n)&&!/планк|заглушк|рычаг|накладк|чашк/i.test(n)) return "hinge";
+  if(/направл|tandem|movento|legrabox|unihopper|actro|quadro|метабокс|movix|шариков/i.test(n)) return "run";
+  if(/ручк|кноб|knob/i.test(n)) return "handle";
+  if(/опор|ножк|регулир/i.test(n)) return "leg";
+  if(/эксцентр|minifix|минификс|rafix|рафикс|стяжк.*эксц/i.test(n)) return "ecc";
+  if(/шкант|dowel/i.test(n)) return "dowel";
+  if(/евровинт|конфирмат|confirmat|стяжк|^\s*7\s*[xх×]\s*50/i.test(n)) return "conf";
+  if(/полкодерж|полкоде/i.test(n)) return "shelf";
+  if(/^\s*\d+([.,]\d+)?\s*[xх×]\s*\d|саморез|шуруп|^\s*\d+\s*$/i.test(n)) return "screw";
+  if(k0==="run"||k0==="leg") return k0;
+  return "other"; }
+function fvSym(kind,r,nm,s,verts,sp){ const ink="#000", cx=(r[0]+r[2])/2, cy=(r[1]+r[3])/2, w=r[2]-r[0], h=r[3]-r[1], f=v=>v.toFixed(1);
+  const L=(x1,y1,x2,y2,sw,da)=>`<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="${ink}" stroke-width="${sw}"${da?` stroke-dasharray="${da}"`:""} stroke-linecap="round"/>`;
+  const C=(x,y,rr,sw,fill)=>`<circle cx="${f(x)}" cy="${f(y)}" r="${f(rr)}" fill="${fill||"#fff"}" stroke="${ink}" stroke-width="${sw}"/>`;
+  const tt=`<title>${esc(String(nm||""))}</title>`;
+  if(kind==="screw") return "";
+  if(kind==="hinge"){ const R=Math.max(2.2,17.5*s), small=R<4;
+    // стойка рядом: чашка — у стойки (над её торцом), планка — на внутренней стороне стойки
+    let st=null, bd=1e9; (verts||[]).forEach(v=>{ if(v.y0>cy+2||v.y1<cy-2) return; const d=Math.max(0,v.x0-r[2],r[0]-v.x1); if(d<bd&&d<=Math.max(6,40*s)){ bd=d; st=v; } });
+    let ux=cx, g=""; if(st){ const left=(st.x0+st.x1)/2<cx; if(w>R*2.6) ux=left?Math.max(r[0],st.x1)-R*0.15:Math.min(r[2],st.x0)+R*0.15;   // в габарите и рычаг — чашку к стойке; габарит с чашку — по центру
+      if(!small){ const pw=Math.max(1.6,10*s), ph=Math.max(4,40*s), px=left?st.x1:st.x0-pw; g+=`<rect x="${f(px)}" y="${f(cy-ph/2)}" width="${f(pw)}" height="${f(ph)}" fill="#fff" stroke="${ink}" stroke-width="0.6"/>`+L(left?px+pw:px,cy,ux,cy,0.6); } }
+    g+=C(ux,cy,R,small?0.6:0.8); if(!small) g+=L(ux-R-1.5,cy,ux+R+1.5,cy,0.35)+L(ux,cy-R-1.5,ux,cy+R+1.5,0.35);
+    if(sp&&sp.P) sp.P.add([ux-R,cy-R,ux+R,cy+R]); return `<g class="fv-sym fv-hinge">${tt}${g}</g>`; }
+  if(kind==="run"){ const ln=Math.max(w,6), y=cy, x0=cx-ln/2, x1=cx+ln/2, tk=Math.max(1.8,Math.min(4,h*0.25));
+    if(sp&&sp.P) sp.P.add([x0,y-tk,x1,y+tk]);
+    return `<g class="fv-sym fv-run">${tt}${L(x0,y,x1,y,0.9)+L(x0,y-tk,x0,y+tk,0.9)+L(x1,y-tk,x1,y+tk,0.9)}</g>`; }
+  if(kind==="handle"){ const g=`<rect x="${f(r[0])}" y="${f(r[1])}" width="${f(Math.max(1.5,w))}" height="${f(Math.max(1.5,h))}" rx="${f(Math.min(w,h)/2)}" fill="#fff" stroke="${ink}" stroke-width="0.8"/>`;
+    const m=String(nm||"").match(/(?:^|\D)(64|96|128|160|192|224|256|288|320|352|384|416|448|480|512|544|576|608|640|736|832|896|960|1024)(?:\D|$)/); let t="";
+    if(m&&sp){ const fs=Math.max(6,Math.min(9,Math.max(w,h)*0.35)), tx=cx, ty=r[1]-2, bx=[tx-dkTW(m[1],fs)/2,ty-fs*0.8,tx+dkTW(m[1],fs)/2,ty+1];
+      if(!sp.hit(bx,1)){ sp.add(bx); t=dkText(tx,ty,m[1],{fs,w:600}); } }
+    return `<g class="fv-sym fv-handle">${tt}${g}${t}</g>`; }
+  if(kind==="leg"){ return `<g class="fv-sym fv-leg">${tt}<rect x="${f(r[0])}" y="${f(r[1])}" width="${f(Math.max(1.5,w))}" height="${f(Math.max(1.5,h))}" fill="#fff" stroke="${ink}" stroke-width="0.7"/>${h>8?L(cx,r[1]+1,cx,r[3]-1,0.35,"3 1.5 1 1.5"):""}</g>`; }
+  if(kind==="ecc"||kind==="conf"||kind==="dowel"||kind==="shelf"){ const hor=w>=h, len=Math.max(w,h);
+    const R=kind==="ecc"?Math.max(2,7.5*s):kind==="shelf"?Math.max(1.4,2.5*s):Math.max(1.5,(kind==="conf"?3.5:4)*s);
+    let g=""; if(len>R*2.6) g+=hor?L(r[0],cy,r[2],cy,0.45,"3 1.5 1 1.5"):L(cx,r[1],cx,r[3],0.45,"3 1.5 1 1.5");   // ось крепежа
+    const hx=hor?(kind==="conf"?r[0]+R:cx):cx, hy=hor?cy:(kind==="conf"?r[1]+R:cy);
+    g+=C(hx,hy,R,0.6); if(R>=2.4) g+=L(hx-R,hy,hx+R,hy,0.35)+L(hx,hy-R,hx,hy+R,0.35);
+    return `<g class="fv-sym fv-${kind}">${tt}${g}</g>`; }
+  if(w<2&&h<2) return "";
+  return `<g class="fv-sym fv-oth">${tt}<rect x="${f(r[0])}" y="${f(r[1])}" width="${f(Math.max(1,w))}" height="${f(Math.max(1,h))}" fill="none" stroke="${ink}" stroke-width="0.5" stroke-dasharray="2 1.5"/></g>`; }
 function frontViewV0(parts, opt){
   opt=opt||{};
   const m=fvModel(parts,opt); if(!m) return "";
@@ -15405,18 +15576,23 @@ function frontViewV0(parts, opt){
   let sp=dkSpace2(); let g="";
   // каркас: белые детали (или серые — «Заливка»), чёрный контур
   body.slice().sort((a,b)=>a.z0-b.z0).forEach(q=>{ g+=`<rect${q.p&&q.p.code?` data-pc="${esc(q.p.code)}"`:""} x="${X(q.x0).toFixed(1)}" y="${Y(q.y1).toFixed(1)}" width="${Math.max(0.6,q.sx*s).toFixed(1)}" height="${Math.max(0.6,q.sy*s).toFixed(1)}" fill="${wire?"#fff":"#e2e2e2"}"${wire?' fill-opacity="0.12"':""} stroke="#000" stroke-width="${isDrawer(q)?0.5:0.9}"${isDrawer(q)&&!wire?' opacity="0.7"':""}/>`; });
-  /* направляющие ящиков — видно на чертеже (Кирилл 05.11): контур зелёным там, где стоит направляющая у боковины */
+  /* фурнитура и крепёж — условными значками, как на сборочных чертежах (Кирилл 13.11: «петли и направляющие каракулями, стяжки серыми полосками»):
+     петля — чашка Ø35 и планка, направляющая — тонкая линия с концами, конфирмат / эксцентрик / шкант — кружок с осью,
+     ручка — прямоугольник и межцентр, опора — контур. Мелкие саморезы не рисуем. При мелком масштабе значки проще. */
   const fmOn=typeof bzFmInst==="function"&&bzFmInst().length>0&&!(typeof window!=="undefined"&&window.__noFm);
+  const vertsPx=body.filter(q=>q.sx<=40&&q.sy>=60&&!isDrawer(q)).map(q=>({x0:X(q.x0),x1:X(q.x1),y0:Y(q.y1),y1:Y(q.y0)}));
+  const symAt=(kind,r,nm)=>fvSym(kind,r,nm,s,vertsPx,sp);
   if(fmOn){ const PT=opt.ptf||null, BT=opt.btf||(q=>q);   /* модуль боковой стены повёрнут лицом к нам — фурнитуру поворачиваем так же */
-    const inB=q=>{ const r=BT(q), cx=(r[0]+r[3])/2, cy=(r[1]+r[4])/2, cz=(r[2]+r[5])/2; return cx>=X0-5&&cx<=X1+5&&cy>=Y0-120&&cy<=Y1+5&&(!PT||(cz>=m.P.reduce((a,q2)=>Math.min(a,q2.z0),1e9)-30&&cz<=m.P.reduce((a,q2)=>Math.max(a,q2.z1),-1e9)+30))&&bzFmInstKind(q)&&(!PT||m.P.some(q2=>cx>=q2.x0-60&&cx<=q2.x1+60&&cy>=q2.y0-130&&cy<=q2.y1+60&&cz>=q2.z0-60&&cz<=q2.z1+60)); };   /* у стены с угловым рамка большая — фурнитура только рядом с её деталями */
-    g+=bzFmSvg(PT?(x,y,z)=>{ const r=PT(x,y,z); return [X(r[0]),Y(r[1])]; }:(x,y,z)=>[X(x),Y(y)],q=>inB(q),0.7).replace(/<circle[^>]*\/>/g,""); }   /* Кирилл 05.11: без кружков-точек фурнитуры (зелёные «кляксы») — только тонкий контур */
-  if(!fmOn) (opt.fasteners||[]).filter(f=>/направл|tandem|movento|legrabox|unihopper|actro|quadro|метабокс/i.test(String(f.n||"")+" "+String(f.g||""))&&Math.max(f.b[3]-f.b[0],f.b[5]-f.b[2])>=200&&f.b[0]>=X0-5&&f.b[3]<=X1+5)
-    .forEach(f=>{ const b=f.b; g+=`<rect x="${X(b[0]).toFixed(1)}" y="${Y(b[4]).toFixed(1)}" width="${Math.max(1,(b[3]-b[0])*s).toFixed(1)}" height="${Math.max(1,(b[4]-b[1])*s).toFixed(1)}" fill="#000" fill-opacity="0.25" stroke="#000" stroke-width="0.8"/>`; });
-  /* Кирилл 05.11: «Каркас» — детали прозрачные, поверх виден ВЕСЬ крепёж и фурнитура: петли синие, направляющие зелёные, ручки жёлтые, остальной крепёж тёмно-серый */
-  if(wire&&!HM) (opt.fasteners||[]).forEach(f=>{ const b=f.b; if(!b) return; const w=b[3]-b[0], h=b[4]-b[1]; if(w<=0||h<=0||Math.max(w,h)>1200||b[3]<X0-5||b[0]>X1+5||b[4]<Y0-5||b[1]>Y1+5) return;
-    const nm=String(f.n||"")+" "+String(f.g||""); if(fmOn&&/направл|tandem|movento|legrabox|unihopper|actro|quadro|метабокс|петл/i.test(nm)) return;   // их уже нарисовали настоящими
-    const c="#000";   // вся фурнитура и крепёж — одним цветом
-    g+=`<rect x="${X(b[0]).toFixed(1)}" y="${Y(b[4]).toFixed(1)}" width="${Math.max(1.6,w*s).toFixed(1)}" height="${Math.max(1.6,h*s).toFixed(1)}" rx="0.8" fill="${c}" fill-opacity="0.35" stroke="${c}" stroke-width="0.6"><title>${esc(String(f.n||""))}</title></rect>`; });
+    const inB=q=>{ const r=BT(q), cx=(r[0]+r[3])/2, cy=(r[1]+r[4])/2, cz=(r[2]+r[5])/2; return cx>=X0-5&&cx<=X1+5&&cy>=Y0-120&&cy<=Y1+5&&(!PT||(cz>=m.P.reduce((a,q2)=>Math.min(a,q2.z0),1e9)-30&&cz<=m.P.reduce((a,q2)=>Math.max(a,q2.z1),-1e9)+30))&&(!PT||m.P.some(q2=>cx>=q2.x0-60&&cx<=q2.x1+60&&cy>=q2.y0-130&&cy<=q2.y1+60&&cz>=q2.z0-60&&cz<=q2.z1+60)); };   /* у стены с угловым рамка большая — фурнитура только рядом с её деталями */
+    const pr=PT?(x,y,z)=>{ const r=PT(x,y,z); return [X(r[0]),Y(r[1])]; }:(x,y,z)=>[X(x),Y(y)];
+    bzFmInst().forEach(it=>{ if(!inB(it.bb)) return; const b=it.bb; let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+      for(let k=0;k<8;k++){ const q=pr(b[k&1?3:0],b[k&2?4:1],b[k&4?5:2]); x0=Math.min(x0,q[0]); x1=Math.max(x1,q[0]); y0=Math.min(y0,q[1]); y1=Math.max(y1,q[1]); }
+      g+=symAt(fvKind(it.n,it.kind),[x0,y0,x1,y1],it.n); }); }
+  if(wire&&!HM) (opt.fasteners||[]).forEach(f=>{ const b=f.b; if(!b) return; const w=b[3]-b[0], h=b[4]-b[1]; if(Math.max(w,h,b[5]-b[2])>1200||b[3]<X0-5||b[0]>X1+5||b[4]<Y0-5||b[1]>Y1+5) return;
+    const nm=String(f.n||"")+" "+String(f.g||""), kind=fvKind(nm); if(fmOn&&(kind==="run"||kind==="hinge")) return;   // их уже нарисовали по точной модели
+    if(!wire&&kind!=="run") return;
+    g+=symAt(kind,[X(b[0]),Y(b[4]),X(b[3]),Y(b[1])],f.n); });
+  else if(!fmOn) (opt.fasteners||[]).filter(f=>fvKind(String(f.n||"")+" "+String(f.g||""))==="run"&&f.b[0]>=X0-5&&f.b[3]<=X1+5).forEach(f=>{ const b=f.b; g+=symAt("run",[X(b[0]),Y(b[4]),X(b[3]),Y(b[1])],f.n); });
   const iBody=g.length;   // номера позиций потом вставим сюда — под размеры: цифра размера всегда читается
   body.filter(q=>q.sy<=40&&q.sx>=60).forEach(q=>sp.P.add([X(q.x0),Y(q.y1)-0.5,X(q.x1),Y(q.y0)+0.5]));
   body.filter(q=>q.sx<=40&&q.sy>=60).forEach(q=>sp.P.add([X(q.x0)-0.5,Y(q.y1),X(q.x1)+0.5,Y(q.y0)]));
@@ -15618,6 +15794,67 @@ if(typeof document!=="undefined"){
     const p=partByCode(el.getAttribute("data-pc")); if(!p) return; S.fvSameKey=sameKey(p); const n=fvSameMark(S.fvSameKey);
     typeof toast==="function"&&toast((p.art?"Поз. "+p.art+" · ":"")+p.name+" "+fmt(p.L)+"×"+fmt(p.W)+(n>1?` — таких ${n} шт.`:" — одна")); },true);
 }
+
+/* ---- «Вид спереди» на телефоне (Кирилл 13.11 12:37: «у нас всё криво… у них всё чётко»):
+   кнопки зума — одной полоской ПОД чертежом (не поверх размеров), подсказка — одной строкой и «?»,
+   переключатели — одной прокручиваемой строкой, чертёж при открытии вписан целиком в экран. ---- */
+(function(){ if(typeof document==="undefined"||document.getElementById("fvUiCss")) return;
+  const st=document.createElement("style"); st.id="fvUiCss";
+  st.textContent=`
+.fv-win .fv-note{display:flex;align-items:center;gap:6px;margin:6px 2px 0;font-size:13px;line-height:1.3;color:var(--muted,#8e8e93)}
+.fv-win .fv-note>span{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fv-win .fv-q{flex:none;width:44px;height:44px;margin:-6px -8px -6px 0;border:0;border-radius:50%;background:transparent;color:inherit;font:600 15px/1 system-ui,-apple-system,sans-serif;cursor:pointer;position:relative}
+.fv-win .fv-q::before{content:"";position:absolute;left:9px;top:9px;width:26px;height:26px;border-radius:50%;border:1px solid rgba(142,142,147,.45)}
+.fv-win .fv-q[aria-expanded="true"]::before{background:rgba(142,142,147,.22)}
+.fv-win .fv-more{font-size:13px;line-height:1.4;color:var(--muted,#8e8e93);margin:2px 2px 4px}
+.fv-win .fv-opts{display:flex!important;flex-wrap:nowrap!important;align-items:center;gap:8px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin:6px -12px 8px!important;padding:0 12px}
+.fv-win .fv-opts::-webkit-scrollbar{display:none}
+.fv-win .fv-opts>.seg{flex:none;margin:0!important;white-space:nowrap}
+.fv-win .fv-opts>.seg button{white-space:nowrap;font-size:14px}
+.fv-win .seg.fv-tabs{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;max-width:100%;width:max-content;margin:0 0 8px;border-radius:999px}
+.fv-win .seg.fv-tabs::-webkit-scrollbar{display:none}
+.fv-win .seg.fv-tabs button{flex:none;white-space:nowrap;font-size:14px}
+.fv-win .seg.fv-tabs .fv-wn{display:none}
+.fv-win .fv-box:not(.full){overflow:visible;background:transparent!important;border:0!important;box-shadow:none!important}
+.fv-win .fv-box:not(.full) svg{border-radius:14px;background:#fff}
+html body .fv-win .fv-box:not(.full) .fv-zoom{position:static!important;inset:auto!important;transform:none!important;display:flex;justify-content:center;flex-wrap:nowrap;gap:6px;width:max-content;max-width:100%;margin:10px auto 0;padding:5px;border-radius:999px;background:rgba(28,28,30,.78)!important;border:1px solid rgba(255,255,255,.10);box-shadow:none!important;-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
+html body .fv-win .fv-zoom button{width:44px!important;min-width:44px!important;height:44px!important;padding:0!important;border-radius:50%!important;display:inline-flex;align-items:center;justify-content:center;font-size:18px;transition:transform .15s ease,opacity .15s ease}
+html body .fv-win .fv-zoom button:active{transform:scale(.92)}
+html.w24-lt body .fv-win .fv-box .fv-zoom{background:rgba(242,242,247,.92)!important;border-color:rgba(0,0,0,.10)!important}
+html.w24-lt body .fv-win .fv-box .fv-zoom button{background:#fff!important;color:#000!important;border:1px solid rgba(0,0,0,.10)!important}
+html.w24-dk body .fv-win .fv-box .fv-zoom button{color:#fff!important}
+html body .fv-zoom button svg{display:block;width:22px!important;height:22px!important;min-width:0!important;max-width:none!important;max-height:none!important;background:none!important;border-radius:0!important;flex:none!important;pointer-events:none}
+html body .fv-box.full .fv-zoom{top:auto!important;right:auto!important;left:50%!important;bottom:calc(14px + env(safe-area-inset-bottom,0px))!important;transform:translateX(-50%)!important;display:flex;gap:6px;padding:5px;border-radius:999px;background:rgba(28,28,30,.78)!important;border:1px solid rgba(255,255,255,.10);box-shadow:none!important;-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
+html body .fv-box.full .fv-zoom button{width:44px!important;min-width:44px!important;height:44px!important;padding:0!important;border-radius:50%!important}
+html body .fv-box.full{padding-bottom:calc(74px + env(safe-area-inset-bottom,0px))!important;background:#fff!important}
+.fv-win .fv-tip{text-align:center;font-size:12px;margin:8px 2px 0}
+body.fv-on .ai-fab,body:has(.fv-win) .ai-fab{visibility:hidden!important;opacity:0!important;pointer-events:none!important}
+html.pc .fv-win .fv-wbody>.fv-box:not(.full){flex-direction:column}
+html.pc .fv-win .fv-box:not(.full) .fv-zoom{flex:none}`;
+  document.head.appendChild(st);
+  // «?» — полная подсказка (без перерисовки экрана)
+  document.addEventListener("click",e=>{ const q=e.target.closest&&e.target.closest(".fv-win .fv-q"); if(!q) return; e.preventDefault(); e.stopPropagation();
+    const m=q.closest(".fv-win").querySelector(".fv-more"); if(!m) return; const on=m.hidden; m.hidden=!on; q.setAttribute("aria-expanded",String(on)); S.fvMore=on; fvFit(); },true);
+})();
+/* чертёж при открытии — целиком на экране телефона: высота рисунка = от его верха до низа экрана минус полоска кнопок */
+function fvFit(){ try{ if(document.documentElement.classList.contains("pc")) return; const win=document.querySelector(".fv-win"); if(!win) return;
+  const m=win.querySelector(".fv-more"); if(m&&S.fvMore&&m.hidden){ m.hidden=false; const q=win.querySelector(".fv-q"); if(q) q.setAttribute("aria-expanded","true"); }
+  win.querySelectorAll(".fv-box:not(.full)").forEach(box=>{ const svg=box.querySelector("svg"); if(!svg||box.closest("details:not([open])")) return;
+    const z=box.querySelector(".fv-zoom"), bar=z?z.getBoundingClientRect().height+10:0, top=svg.getBoundingClientRect().top-win.getBoundingClientRect().top+(win.querySelector(".fv-wbody")||{scrollTop:0}).scrollTop;
+    const H=Math.max(240,window.innerHeight-top-bar-14-(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sab"))||0));
+    svg.style.maxHeight=H+"px"; }); }catch(_){} }
+try{ const _fvR=render; render=function(){ const r=_fvR.apply(this,arguments); try{ if(document.querySelector(".fv-win")){ fvFit(); requestAnimationFrame(fvFit); } }catch(_){} return r; }; }catch(_){}
+if(typeof window!=="undefined") window.addEventListener("resize",()=>{ if(document.querySelector(".fv-win")) fvFit(); });
+/* значки кнопок чертежа — тонкие линии, как у iPhone (вместо цветных эмодзи 📏 ⛶ 🖨) */
+const FV_IC={meas:'<path d="M3.5 16.5 16.5 3.5l4 4-13 13z"/><path d="M7.5 12.5l2 2M10.5 9.5l2 2M13.5 6.5l2 2"/>',in:'<path d="M12 5v14M5 12h14"/>',out:'<path d="M5 12h14"/>',
+  reset:'<path d="M4 10V4h6M20 14v6h-6M4 4l6 6M20 20l-6-6"/>',full:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',close:'<path d="M6 6l12 12M18 6 6 18"/>',
+  print:'<path d="M7 9V3.5h10V9"/><path d="M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v6.5H7z"/>',clr:'<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>'};
+const fvIco=k=>`<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${FV_IC[k]||""}</svg>`;
+function fvIcons(){ document.querySelectorAll(".fv-win .fv-zoom button, .fv-win .fv-pr").forEach(b=>{
+  let k=b.classList.contains("fv-pr")||b.dataset.dra==="fvp"?"print":b.dataset.z; if(k==="full"&&b.closest(".fv-box.full")) k="close"; if(!FV_IC[k]||b.dataset.ic===k) return;
+  b.innerHTML=fvIco(k); b.dataset.ic=k; }); }
+try{ const _fvR2=render; render=function(){ const r=_fvR2.apply(this,arguments); try{ if(document.querySelector(".fv-win")) fvIcons(); }catch(_){} return r; }; }catch(_){}
+if(typeof document!=="undefined") document.addEventListener("click",e=>{ if(e.target.closest&&e.target.closest(".fv-win .fv-zoom")) setTimeout(fvIcons,0); });
 
 /* ---------- «ВХОДЯЩИЕ»: переписка с клиентами одним списком (офис и технолог) ----------
    Чаты → вкладка «Входящие»: кто ждёт ответа дольше — сверху, значок «ждёт N мин» (жёлтый > 5 мин, красный > 15 мин).
@@ -22902,6 +23139,81 @@ function bzWholeView(mode,wire,pos,gaps,wi){ try{
   const svg=fv.svg.replace(/viewBox="0 0 ([\d.]+) ([\d.]+)"/,`viewBox="${-ML} 0 ${VW+ML+MR} ${VH}"`).replace(/<rect width="([\d.]+)" height="([\d.]+)" fill="#fff"\/>/,`<rect x="${-ML}" width="${VW+ML+MR}" height="${VH}" fill="#fff"/>`).replace(/<\/svg>\s*$/,notes+"</svg>");
   return {title:"Вся кухня",size:"",svg}; }catch(e){ console.error(e); return null; } }
 
+/* ---------- Автопроверки конструкции после загрузки заказа (Кирилл 13.11 12:37, «как шесть проверок у Akeda») ----------
+   Только показ: ничего не правит. Строка на странице заказа «Проверки: 5 из 5 ✓» или список замечаний с кнопкой «Показать на 3D».
+   Правила подобраны так, чтобы на тестовых заказах (1111, KUH01, 4444) не было ложных тревог:
+   1) детали корпуса не пересекаются больше чем на 0,5 мм (фасады, ДВП/ХДФ в пазу, фигурные, стекло, профили, столешницы — не сравниваем);
+   2) отверстие не выходит за край панели (касание края — это вырез под фурнитуру, не ошибка);
+   3) ряды отверстий Ø5 под полкодержатели — шаг кратен 32 мм;
+   4) габарит = сумма деталей: полка/перегородка встык со стойкой — щель 0,5–3 мм считаем ошибкой длины детали;
+   5) задняя стенка не выходит за корпус больше чем на 2 мм.
+   Фасады «за габаритом» не проверяем: накладные боковины и цокольные планки в Базисе тоже называются «Фасад» — ложные тревоги. */
+function kchkRun(parts){ const P=(parts||[]).filter(p=>p.box&&!(typeof isTech==="function"&&isTech(p))&&!/^\s*стена/i.test(String(p.material||"")));
+  const isFac=p=>/фасад|двер/i.test(p.name||""), thin=p=>(+p.T||99)<=6, sz=p=>[p.box[3]-p.box[0],p.box[4]-p.box[1],p.box[5]-p.box[2]], nm=p=>(p.art?"поз. "+p.art+" ":"")+String(p.name||"деталь").replace(/#\d+$/,"");
+  const R1=v=>String(Math.round(v*10)/10).replace(".",","), res=[];
+  // 1
+  { const B=P.filter(p=>!isFac(p)&&!thin(p)&&!p.shape&&!/стекл|зеркал|профил|столешн|ручк/i.test((p.name||"")+" "+(p.material||""))), L=[];
+    for(let i=0;i<B.length;i++){ const a=B[i].box; for(let j=i+1;j<B.length;j++){ const b=B[j].box; if(a[0]>=b[3]-0.5||b[0]>=a[3]-0.5||a[1]>=b[4]-0.5||b[1]>=a[4]-0.5||a[2]>=b[5]-0.5||b[2]>=a[5]-0.5) continue;
+      const ov=[0,1,2].map(k=>Math.min(a[k+3],b[k+3])-Math.max(a[k],b[k])); L.push({t:`${nm(B[i])} и ${nm(B[j])} заходят друг в друга на ${R1(Math.min(...ov))} мм`,codes:[B[i].code,B[j].code]}); } }
+    res.push({k:"inter",name:"Детали встык, без пересечений",L}); }
+  // 2, 3
+  { const L2=[], L3=[];
+    P.forEach(p=>{ const H=p.holes||[]; let bad=null;
+      H.forEach(h=>{ const r=(+h.d||0)/2; let g; if(h.face==="A"||h.face==="B") g=Math.min(h.x-r,p.L-h.x-r,h.y-r,p.W-h.y-r); else { const a=(h.face==="W1"||h.face==="W2")?h.y:h.x, lim=(h.face==="W1"||h.face==="W2")?p.W:p.L; g=Math.min(a-r,lim-a-r); }
+        if(g<-0.5&&(!bad||g<bad.g)) bad={g,h}; });
+      if(bad) L2.push({t:`${nm(p)}: отверстие Ø${R1(bad.h.d)} выходит за край на ${R1(-bad.g)} мм`,codes:[p.code]});
+      const rows=new Map(); H.filter(h=>(h.face==="A"||h.face==="B")&&Math.abs(h.d-5)<0.3&&h.depth<=13&&h.depth<p.T).forEach(h=>{ [["x",h.x,h.y],["y",h.y,h.x]].forEach(([ax,k,v])=>{ const key=ax+(Math.round(k*2)/2)+h.face; if(!rows.has(key)) rows.set(key,[]); rows.get(key).push(v); }); });
+      for(const vs0 of rows.values()){ const vs=[...new Set(vs0.map(v=>Math.round(v*10)/10))].sort((a,b)=>a-b); if(vs.length<3) continue; let off=null;
+        for(let i=1;i<vs.length;i++){ const d=vs[i]-vs[i-1], m=d%32; if(d<200&&Math.min(m,32-m)>0.5){ off=d; break; } }
+        if(off!=null){ L3.push({t:`${nm(p)}: отверстия под полкодержатели с шагом ${R1(off)} мм — не кратно 32`,codes:[p.code]}); break; } } });
+    res.push({k:"edge",name:"Отверстия не на краю панели",L:L2}); res.push({k:"s32",name:"Шаг 32 мм у присадки под полки",L:L3}); }
+  // 4
+  { const V=P.filter(p=>{ const s=sz(p); return s[0]<=40&&s[1]>=60&&!isFac(p)&&!thin(p); }), Hh=P.filter(p=>{ const s=sz(p); return s[1]<=40&&s[0]>=80&&!isFac(p)&&!thin(p)&&!/ящик/i.test(p.name||""); }), L=[];
+    Hh.forEach(h=>{ const b=h.box; [[0,-1],[3,1]].forEach(([k,dir])=>{ let best=null;
+      V.forEach(v=>{ const c=v.box; if(c[4]<b[1]-1||c[1]>b[4]+1) return; const zo=Math.min(c[5],b[5])-Math.max(c[2],b[2]); if(zo<Math.min(c[5]-c[2],b[5]-b[2])*0.5) return;
+        const g=dir<0?b[k]-c[3]:c[0]-b[k]; if(g>=-0.5&&(!best||g<best.g)) best={g,v}; });
+      if(best&&best.g>0.5&&best.g<=3) L.push({t:`${nm(h)} не доходит до ${nm(best.v)} на ${R1(best.g)} мм`,codes:[h.code,best.v.code]}); }); });
+    res.push({k:"sum",name:"Габарит = сумма деталей",L}); }
+  // 5
+  { const body=P.filter(p=>!isFac(p)&&!thin(p)), L=[];
+    P.filter(p=>thin(p)&&sz(p).filter(v=>v>100).length===2&&!/дно|ящик/i.test(p.name||"")).forEach(B=>{ const s=sz(B), ax=s.indexOf(Math.min(...s)), u=[0,1,2].filter(i=>i!==ax);
+      const nb=body.filter(q=>u.every(i=>Math.min(q.box[i+3],B.box[i+3])-Math.max(q.box[i],B.box[i])>-2)&&Math.min(q.box[ax+3],B.box[ax+3])-Math.max(q.box[ax],B.box[ax])>-30); if(nb.length<2) return;
+      const lo=u.map(i=>Math.min(...nb.map(q=>q.box[i]))), hi=u.map(i=>Math.max(...nb.map(q=>q.box[i+3]))), o=Math.max(...u.map((i,k)=>Math.max(lo[k]-B.box[i],B.box[i+3]-hi[k])));
+      if(o>2) L.push({t:`${nm(B)} выходит за корпус на ${R1(o)} мм`,codes:[B.code]}); });
+    res.push({k:"back",name:"Задняя стенка в габарите",L}); }
+  return res; }
+const KCHK={key:"",res:null,open:false};
+function kchkGet(){ const oid=S.current&&S.current.orderId, ps=S.current&&S.current.parts||[]; const key=oid+"|"+ps.length+"|"+(ps[0]&&ps[0].code);
+  if(KCHK.key!==key){ KCHK.key=key; KCHK.open=false; try{ KCHK.res=ps.some(p=>p.box)?kchkRun(ps):null; }catch(e){ console.warn("kchk",e); KCHK.res=null; } } return KCHK.res; }
+function kchkHtml(){ const R=kchkGet(); if(!R) return ""; const ok=R.filter(r=>!r.L.length).length, n=R.length, bad=R.reduce((a,r)=>a+r.L.length,0);
+  const ic=v=>v?`<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`:`<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/><circle cx="12" cy="12" r="9.5"/></svg>`;
+  let h=`<button type="button" class="kchk-h" data-kchk="tog" aria-expanded="${KCHK.open}"><span class="kchk-i ${bad?"bad":"ok"}">${ic(!bad)}</span><b>Проверки: ${ok} из ${n}${bad?"":" ✓"}</b><span class="kchk-s">${bad?`${bad} замечани${bad===1?"е":bad<5?"я":"й"}`:"конструкция в порядке"}</span><i class="kchk-ch" aria-hidden="true">›</i></button>`;
+  if(KCHK.open) h+=`<div class="kchk-b">${R.map(r=>`<div class="kchk-r"><div class="kchk-n"><span class="kchk-i sm ${r.L.length?"bad":"ok"}">${ic(!r.L.length)}</span>${esc(r.name)}${r.L.length?` <span class="kchk-c">${r.L.length}</span>`:""}</div>${r.L.slice(0,12).map(x=>`<div class="kchk-x"><span>${esc(x.t)}</span><button type="button" class="kchk-go" data-kchk="show" data-codes="${esc(x.codes.join(","))}">Показать на 3D</button></div>`).join("")}${r.L.length>12?`<div class="kchk-more">и ещё ${r.L.length-12}</div>`:""}</div>`).join("")}<p class="kchk-note">Только подсказка: приложение ничего не меняет в заказе. Исправить — в Базисе и выгрузить заново.</p></div>`;
+  return h; }
+function kchkSync(){ try{ if(S.view!=="order"||!S.current||S.current.loading) return; const t=document.querySelector(".op .op-tiles"); if(!t) return;
+  let el=document.querySelector(".op .kchk"); const h=kchkHtml(); if(!h){ if(el) el.remove(); return; }
+  if(!el){ el=document.createElement("div"); el.className="kchk"; t.insertAdjacentElement("afterend",el); }
+  if(el.dataset.h!==h){ el.innerHTML=h; el.dataset.h=h; } }catch(e){ console.warn("kchk",e); } }
+try{ const _kcR=render; render=function(){ const r=_kcR.apply(this,arguments); kchkSync(); return r; }; }catch(_){}
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest("[data-kchk]"); if(!t) return; e.preventDefault(); e.stopPropagation();
+  if(t.dataset.kchk==="tog"){ KCHK.open=!KCHK.open; kchkSync(); return; }
+  if(t.dataset.kchk==="show"){ const codes=String(t.dataset.codes||"").split(",").filter(Boolean); if(codes.length&&typeof posShow3D==="function") posShow3D(codes); } },true);
+(function(){ if(document.getElementById("kchkCss")) return; const st=document.createElement("style"); st.id="kchkCss"; st.textContent=`
+.kchk{margin:12px 0 0;border:1px solid rgba(142,142,147,.28);border-radius:16px;overflow:hidden;background:var(--surface,transparent)}
+.kchk-h{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:10px 14px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.kchk-h b{font-size:15px;font-weight:600;white-space:nowrap}.kchk-s{flex:1;min-width:0;font-size:13px;color:var(--muted,#8e8e93);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kchk-ch{font-style:normal;font-size:20px;color:var(--muted,#8e8e93);transition:transform .2s ease}.kchk-h[aria-expanded="true"] .kchk-ch{transform:rotate(90deg)}
+.kchk-i{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%}.kchk-i.sm{width:22px;height:22px;margin-right:8px}.kchk-i.sm svg{width:14px;height:14px}
+.kchk-i.ok{background:rgba(48,209,88,.16);color:#30d158}.kchk-i.bad{background:rgba(255,214,10,.16);color:#ffd60a}
+html:not(.w24-dk) .kchk-i.ok{color:#1f9d45}html:not(.w24-dk) .kchk-i.bad{color:#a07800}
+.kchk-b{padding:2px 14px 12px;border-top:1px solid rgba(142,142,147,.2)}
+.kchk-r{padding:8px 0;border-bottom:1px solid rgba(142,142,147,.14)}.kchk-r:last-of-type{border-bottom:0}
+.kchk-n{display:flex;align-items:center;font-size:14px;font-weight:600}.kchk-c{margin-left:6px;font-size:12px;font-weight:600;color:var(--muted,#8e8e93)}
+.kchk-x{display:flex;align-items:center;gap:10px;margin:6px 0 0 30px;font-size:13px;line-height:1.35}.kchk-x span{flex:1;min-width:0}
+.kchk-go{flex:none;min-height:44px;padding:0 12px;border-radius:999px;border:1px solid rgba(142,142,147,.35);background:transparent;color:inherit;font:600 13px/1 inherit;cursor:pointer}
+.kchk-more{margin:6px 0 0 30px;font-size:12px;color:var(--muted,#8e8e93)}.kchk-note{margin:8px 0 0;font-size:12px;color:var(--muted,#8e8e93)}`; document.head.appendChild(st); })();
+try{ window.kchkRun=kchkRun; }catch(_){}
+
 /* ===== Карты раскроя на весь экран (Кирилл 05.11): у каждого листа кнопка «На весь экран»,
    внутри — «‹ Назад», листать соседние листы, приблизить/отдалить. Плюс: шапка раздела («← К заказу»)
    больше не залезает под верхнюю полосу приложения. ===== */
@@ -23117,7 +23429,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="859104e8a7";
+const CHK_BUILD="5bb1668d4f";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -28357,7 +28669,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="859104e8a7"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="5bb1668d4f"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -28919,7 +29231,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="859104e8a7";/*cehqr-build*/
+  const BUILD="5bb1668d4f";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
