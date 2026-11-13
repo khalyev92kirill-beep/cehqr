@@ -23118,7 +23118,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="004e68c13a";
+const CHK_BUILD="7702f1c04d";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -27236,6 +27236,283 @@ html[data-vt="dark"] .sv-m .sv-kc,html[data-vt="dark"] .sv-m .sv-ol,html[data-vt
 document.head.appendChild(st);
 })();
 
+/* ===== СМЕТА, часть Г (Кирилл 12.11 22:42 «Давайте все будет эти»; макеты fm6_3, fm13_2, fm14, fm21) =====
+   1) Шаг «Отправить» быстрой сметы: «Так увидит клиент» — карточка из kpData (только то, что можно клиенту: материалы, итог, скидка, работы строкой, если «отдельно»;
+      НИКАКИХ зарплат, процентов, прибыли, себестоимости, «Куда идут деньги»); ниже — «Клиент согласен», ссылка клиенту / КП, «Сохранить как мой шаблон».
+   2) «Клиент согласен → сделка» (быстрая смета): сделка создаётся как раньше (shopSave), а сумму, работы, «ждёт проверки», fzP / fz / fzW и br отправляет
+      ТОТ ЖЕ smSave(true), что и «Записать сумму в сделку» (13.11 ночью другое окно не отправило работы — и сервер стёр ЗП бригаде). Раньше после создания шёл smSave(false).
+   3) Ссылка клиенту (smnOffer): в каждый вариант добавляем для сервера zf {p,z,w} (как fzP / fz / fzW в smetaSave) и wk (работы) — при «Согласовать» на странице
+      клиента сервер (clientAgree_) пишет в сделку _fzP / _fz / _fzW и не трогает «ЗП бригаде», если работа «ждёт проверки». Клиенту сервер это не отдаёт (clientOffer_).
+   4) «Мои шаблоны»: «Сохранить как мой шаблон» (для меня / для всей фирмы — технолог и директор, проверка на сервере), список на шаге 1 и в «Моя смета».
+      Хранятся отдельным листом «Шаблоны смет» (smTpl / smTplSave / smTplDel; у дизайнера по подписке — desTpl*), не в свойствах (предел ~8 500 знаков).
+   5) «⚙ Моя смета» — одно место для всех настроек сметы (плитки, способ счёта, готовые схемы, мои цены, классы, шаблоны, вид предложения, плитки/список, подписка);
+      «для меня / для всей фирмы» — только технолог и директор; замок директора — пороги шкалы. Сами настройки — те же окна, что уже есть (site_plitki, site_cena, site_qk, site_smetav, site_kpdf).
+   6) Подписка дизайнера: экран тарифа и пробного срока (оплата — как в site_sub.js, переводом; «Мастер — бесплатно по приглашению»).
+   Деньги смет не считает и не меняет: только показывает kpData / smCalc и вызывает smSave. ===== */
+(function(){
+if(window.__smotp||typeof smCalc!=="function"||typeof smSave!=="function") return; window.__smotp=1;
+const E=v=>esc(String(v==null?"":v)), N=v=>Math.round(+v||0).toLocaleString("ru-RU");
+const SM=()=>S.shop&&S.shop.sm, DES=()=>!!window.APP_DES, TECH=()=>!!(S.shop&&S.shop.tech)&&!DES();
+const pl=(n,a,b,c)=>{ n=Math.abs(n)%100; const m=n%10; return n>10&&n<20?c:m===1?a:m>=2&&m<=4?b:c; };
+const SG_I={star:'<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',send:'<path d="M4 12l16-8-6 16-2.5-6.5z"/><path d="M11.5 13.5L20 4"/>',doc:'<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/>',
+  cube:'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',eye:'<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  ok:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M4.2 6.5l2.6 1.5M17.2 16l2.6 1.5M4.2 17.5l2.6-1.5M17.2 8l2.6-1.5"/>',
+  grid:'<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  div:'<path d="M5 12h14"/><circle cx="12" cy="6.5" r="1.3"/><circle cx="12" cy="17.5" r="1.3"/>',sq:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 10h16M10 10v10"/>',rub:'<path d="M8 20V4h5a4 4 0 010 8H6M6 16h8"/>',
+  tag:'<path d="M3.5 12.5V4h8.5l8.5 8.5-8.5 8.5z"/><circle cx="8" cy="8.5" r="1.4"/>',list:'<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  lock:'<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/>',card:'<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/>',
+  trash:'<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/>',chev:'<path d="M9 5l7 7-7 7"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',plus:'<path d="M12 5v14M5 12h14"/>',user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'};
+const ic=(n,sz)=>`<svg viewBox="0 0 24 24" width="${sz||20}" height="${sz||20}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${SG_I[n]||""}</svg>`;
+function tap(attrs){ const b=document.createElement("button"); b.type="button"; b.style.display="none"; Object.keys(attrs).forEach(k=>b.setAttribute(k,attrs[k])); document.body.appendChild(b); try{ b.click(); }finally{ setTimeout(()=>b.remove(),0); } }
+function sheet(id,html){ document.getElementById(id)?.remove(); const m=document.createElement("div"); m.className="modal smg-m"; m.id=id; m.innerHTML=`<div class="modal-card smg-card" role="dialog">${html}</div>`;
+  document.body.appendChild(m); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-smgx]")) m.remove(); }); return m; }
+
+/* ---------- 1. Мои шаблоны ---------- */
+/* Список шаблонов (названия и суммы) запоминается на телефоне — только под ключом «фирма + PIN + имя» (отпечаток, PIN в ключе не виден, как в site_cache.js);
+   другой вход или другая фирма — чужой список стирается и не показывается; «Выйти из всех режимов» — стирается сразу; с сервера перечитываем раз за вход. */
+const TP={list:null,firm:false,busy:false,err:false,fresh:false,key:null}, TPP="w24-sgtpl";
+function tpHs(str){ let h1=0xdeadbeef^11, h2=0x41c6ce57^11; for(let i=0,ch;i<str.length;i++){ ch=str.charCodeAt(i); h1=Math.imul(h1^ch,2654435761); h2=Math.imul(h2^ch,1597334677); }
+  h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909); h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909); return (4294967296*(2097151&h2)+(h1>>>0)).toString(36); }
+function tpKeyNow(){ let pin="",who=""; try{ pin=typeof shpPin==="function"?String(shpPin()||""):""; }catch(_){} try{ who=typeof shpWho==="function"?String(shpWho()||""):""; }catch(_){} return pin?TPP+"-"+tpHs("smg|"+(window.APP_FIRM||"")+"|"+(DES()?"d":"")+"|"+pin+"|"+who.trim().toLowerCase()):""; }
+function tpPurge(keep){ try{ const L=localStorage; for(let i=L.length-1;i>=0;i--){ const k=L.key(i); if(k&&k.indexOf(TPP)>=0&&!(keep&&(k===keep||k.slice(-keep.length-1)==="/"+keep))) L.removeItem(k); } }catch(_){} }
+function tpSync(){ const k=tpKeyNow(); if(k===TP.key) return !!k; TP.key=k; TP.list=null; TP.firm=false; TP.fresh=false; tpPurge(k);
+  if(k){ try{ const c=JSON.parse(localStorage.getItem(k)||"null"); if(c&&Array.isArray(c.list)){ TP.list=c.list; TP.firm=!!c.firm; } }catch(_){} } return !!k; }
+document.addEventListener("click",e=>{ if(e.target.closest&&e.target.closest('[data-acc="all"]')){ tpPurge(""); TP.list=null; TP.key="-"; TP.fresh=false; } },true);   /* «Выйти из всех режимов» (site_account.js) */
+const tpAct=a=>DES()?{smTpl:"desTpl",smTplSave:"desTplSave",smTplDel:"desTplDel"}[a]:a;
+function tpKeep(){ if(!TP.key||TP.key==="-") return; try{ localStorage.setItem(TP.key,JSON.stringify({list:TP.list||[],firm:TP.firm})); }catch(_){} }
+async function tpLoad(redraw){ if(!tpSync()||TP.busy||typeof shpGet!=="function") return; const k=TP.key; TP.busy=true; let j=null; try{ j=await shpGet("action="+tpAct("smTpl"),true); }catch(_){ j=null; } TP.busy=false;
+  if(k!==TP.key) return;   /* пока ждали — вошёл другой человек */
+  if(j&&Array.isArray(j.list)){ const was=JSON.stringify(TP.list); TP.list=j.list; TP.firm=!!j.firm; TP.err=false; TP.fresh=true; tpKeep(); if(redraw&&was!==JSON.stringify(TP.list)) redraw(); } else { TP.err=true; if(!TP.list) TP.list=[]; } }
+function tpSub(t){ return [t.kind,t.sum>0?N(t.sum)+" ₽":"",t.firm?"для всей фирмы":""].filter(Boolean).join(" · "); }
+function tpCleanData(d){ const D=JSON.parse(JSON.stringify(d||{})); ["cfg","vers","agreed","offer","saved"].forEach(k=>delete D[k]); if(D.qk){ delete D.qk.fresh; } return D; }
+function tpSaveModal(){ const sm=SM(); if(!sm||!sm.data) return; tpSync(); const c=smCalc(sm.data), firmOk=TECH();
+  const def=String(sm.kind||sm.data.kind||"Смета").slice(0,40)+(c.total>0?" · "+Math.round(c.total/1000)+" т":"");
+  const m=sheet("smgTplM",`<div class="smg-hd"><h2>Сохранить как мой шаблон</h2><button type="button" class="w-btn smg-xb" data-smgx="1" aria-label="Закрыть">${ic("x",18)}</button></div>
+    <p class="smg-note">В шаблон попадут материалы, работы и цена. Клиент, телефон и сделка — нет.</p>
+    <label class="smg-fl"><span>Название</span><input id="smgTplN" class="smg-in" maxlength="60" value="${E(def)}" autocomplete="off"></label>
+    ${firmOk?`<div class="smg-seg" role="radiogroup" aria-label="Для кого"><button type="button" data-smgs="me" aria-pressed="true">для меня</button><button type="button" data-smgs="firm" aria-pressed="false">для всей фирмы</button></div>`:""}
+    <button type="button" class="w-pill smg-big" data-smgdo="save">${ic("star",18)} Сохранить шаблон</button>`);
+  let scope="me"; const inp=m.querySelector("#smgTplN"); setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(_){} },60);
+  m.addEventListener("click",async e=>{ const s=e.target.closest("[data-smgs]"); if(s){ scope=s.dataset.smgs; m.querySelectorAll("[data-smgs]").forEach(b=>b.setAttribute("aria-pressed",String(b===s))); return; }
+    const b=e.target.closest('[data-smgdo="save"]'); if(!b) return; const n=String(inp.value||"").trim(); if(!n){ toast("Впишите название шаблона"); inp.focus(); return; }
+    const tmp={id:"tmp"+Date.now(),n,kind:sm.kind||"",firm:scope==="firm",who:typeof shpWho==="function"?shpWho():"",when:Date.now(),sum:c.total}; TP.list=[tmp].concat(TP.list||[]); m.remove(); toast("Шаблон «"+n+"» сохранён");   /* сразу видно; ошибка — убираем и говорим */
+    const data=tpCleanData(sm.data); data._tot=Math.round(c.total||0);
+    const j=await shpPostRaw({action:tpAct("smTplSave"),name:n,kind:sm.kind||"",scope,data});
+    if(j&&j.ok){ tmp.id=j.id; tpKeep(); } else { TP.list=(TP.list||[]).filter(x=>x!==tmp); toast(!j?"Нет связи — шаблон не сохранился":(j.msg||(j.error==="role"?"Шаблон для всей фирмы сохраняет директор или технолог":j.error==="lic"?"Срок подписки закончился — продлите":"Шаблон не сохранился"))); }
+    redrawSoft(); }); }
+async function tpApply(id){ const t0=(TP.list||[]).find(x=>x.id===id); if(!t0||/^tmp/.test(id)) return toast("Шаблон ещё сохраняется — секунду");
+  const j=await shpGet("action="+tpAct("smTpl")+"&id="+encodeURIComponent(id),true); if(!j||!j.tpl||!j.tpl.data) return toast(j===null?"Не получилось открыть шаблон — проверьте связь":"Шаблон не найден");
+  let sm=SM(); if(!sm||!sm.data||S.view!=="shop"||S.shop.mode!=="smeta"){ if(typeof smLoad!=="function") return; S.view="shop"; S.shop.mode="smeta"; await smLoad("",{client:"",kind:j.tpl.kind||""}); sm=SM(); if(!sm) return; }
+  const snap=JSON.stringify(sm.data), kind0=sm.kind, D=tpCleanData(j.tpl.data); delete D._tot;
+  if(D.qk){ D.qk.src={k:"tpl",n:String(j.tpl.n||"шаблона").slice(0,80),det:0,at:Date.now()}; D.qk.fresh=0; D.qk.stp="mat"; } D.picked=1;
+  sm.data=D; if(!sm.kind&&j.tpl.kind) sm.kind=j.tpl.kind; sm.dirty=true; S.plOpen=null; document.getElementById("smgMyM")?.remove(); document.getElementById("smgTplL")?.remove(); document.getElementById("svTplM")?.remove();
+  shpRenderKeep(); window.scrollTo(0,0);
+  const undo=()=>{ sm.data=JSON.parse(snap); sm.kind=kind0; shpRenderKeep(); };
+  if(typeof window.__smetavSnack==="function") window.__smetavSnack("Из шаблона «"+j.tpl.n+"»",undo); else snack("Из шаблона «"+j.tpl.n+"»",undo); }
+function snack(txt,undo){ document.getElementById("smgSnack")?.remove(); const x=document.createElement("div"); x.id="smgSnack"; x.className="smg-snack"; x.setAttribute("role","status");
+  x.innerHTML=`<span>${E(txt)}</span>${undo?`<button type="button">Отменить</button>`:""}`; document.body.appendChild(x); requestAnimationFrame(()=>x.classList.add("on"));
+  const off=()=>{ x.classList.remove("on"); setTimeout(()=>x.remove(),220); }, tm=setTimeout(off,6000);
+  if(undo) x.querySelector("button").addEventListener("click",()=>{ clearTimeout(tm); off(); undo(); toast("Отменено"); }); }
+async function tpDel(id){ const t=(TP.list||[]).find(x=>x.id===id); if(!t) return; if(t.firm&&!TECH()) return toast("Шаблон для всей фирмы удаляет директор или технолог");
+  if(!(await appConfirm("Удалить шаблон «"+t.n+"»? Сметы, сделанные по нему, не изменятся.","Удалить",true))) return;
+  const keep=TP.list.slice(); TP.list=TP.list.filter(x=>x!==t); tpListDraw(); const j=await shpPostRaw({action:tpAct("smTplDel"),id});
+  if(!j||!j.ok){ TP.list=keep; tpListDraw(); toast(!j?"Нет связи — шаблон не удалён":(j.msg||"Не удалось удалить")); } else tpKeep(); }
+function tpRows(L,act){ return L.map(t=>`<div class="smg-tr"><button type="button" class="smg-tb" data-smg="${act}" data-id="${E(t.id)}"><span class="smg-ti">${ic("star",18)}</span><span class="smg-tt"><b>${E(t.n)}</b><small>${E(tpSub(t))}</small></span></button>${act==="tpl"&&(!t.firm||TECH())?`<button type="button" class="w-btn smg-del" data-smg="tdel" data-id="${E(t.id)}" aria-label="Удалить шаблон «${E(t.n)}»">${ic("trash",17)}</button>`:""}</div>`).join(""); }
+function tpListHtml(){ const L=TP.list;
+  if(!L) return `<div class="smg-skel"></div><div class="smg-skel"></div><div class="smg-skel"></div>`;
+  if(!L.length) return `<div class="smg-empty">${ic("star",28)}<b>Шаблонов пока нет</b><span>Сделайте смету, на шаге «Отправить» нажмите «Сохранить как мой шаблон» — в следующий раз начнёте с неё одним нажатием.</span></div>`;
+  const me=L.filter(t=>!t.firm), fi=L.filter(t=>t.firm);
+  return (me.length?`<p class="smg-cap">Мои</p><div class="smg-grp">${tpRows(me,"tpl")}</div>`:"")+(fi.length?`<p class="smg-cap">Для всей фирмы</p><div class="smg-grp">${tpRows(fi,"tpl")}</div>`:""); }
+function tpListDraw(){ const b=document.querySelector("#smgTplL .smg-tpb"); if(b) b.innerHTML=tpListHtml(); }
+function tpListOpen(){ sheet("smgTplL",`<div class="smg-hd"><h2>Мои шаблоны</h2><button type="button" class="w-btn smg-xb" data-smgx="1" aria-label="Закрыть">${ic("x",18)}</button></div><p class="smg-note">Нажмите на шаблон — смета начнётся с него. Отменить можно сразу.</p><div class="smg-tpb">${tpListHtml()}</div>`);
+  tpLoad(tpListDraw); }
+
+/* ---------- 2. Шаг «Отправить»: «Так увидит клиент» ---------- */
+function sgClientCard(c,q,d,sm){ const o=typeof shpById==="function"?shpById(sm.deal):null; let K=null; try{ K=kpData(sm,o); }catch(e){ K=null; }
+  const F=(K&&K.firm)||{}, me=(()=>{ try{ return JSON.parse(localStorage.getItem("w24-des-me")||"null"); }catch(_){ return null; } })();
+  const name=F.name||(DES()&&me?(me.firm||me.name):"")||(S.site&&S.site.firmName)||"Ваша фирма", logo=F.logo||"", P=(K&&K.price)||{total:c.total};
+  const mats=((K&&K.mats)||[]).slice(0,6).map(([g,n])=>`<li><span>${E(g)}</span><b>${E(n)}</b></li>`).join(""), more=Math.max(0,((K&&K.mats)||[]).length-6);
+  const extra=((K&&K.extra)||[]).slice(0,4).map(x=>`<li class="smg-wide"><b>${E(x)}</b></li>`).join("");
+  const wk=+P.wk>0&&P.wMode!=="mix", lines=[];
+  if(wk){ lines.push(["Мебель",N(P.total-P.wk)+" ₽"]); lines.push(["Работы: доставка, сборка, монтаж",N(P.wk)+" ₽"]); } else lines.push(["Изготовление, доставка, монтаж","включено"]);
+  if(+P.discA>0) lines.push([P.discL||"Скидка","− "+N(P.discA)+" ₽"]); if(P.gift&&P.gift.n) lines.push(["Подарок: "+P.gift.n,"бесплатно"]);
+  return `<div class="smg-caprow"><p class="smg-cap smg-cap0">Так увидит клиент — без зарплат, процентов и прибыли</p>${DES()||TECH()?`<button type="button" class="w-btn smg-gear" data-smg="kpset" aria-label="Вид предложения: логотип, имя">${ic("gear",18)}</button>`:""}</div><section class="smg-cv" aria-label="Так увидит клиент">
+    <div class="smg-cvh">${logo?`<img class="smg-lg" src="${E(logo)}" alt="">`:`<span class="smg-av" aria-hidden="true">${E(name.trim().charAt(0).toUpperCase()||"W")}</span>`}<span><b>${E(name)}</b><span class="smg-s">${E([sm.kind||d.kind,sm.client].filter(Boolean).join(" · ")||"Расчёт")}</span></span></div>
+    ${mats||extra?`<ul class="smg-cvl">${extra}${mats}${more?`<li class="smg-wide"><span class="smg-s">и ещё ${more}</span></li>`:""}</ul>`:`<p class="smg-cvn">Добавьте материалы — здесь появится, что входит.</p>`}
+    <div class="smg-cvp">${lines.map(([a,b])=>`<div><span>${E(a)}</span><span>${E(b)}</span></div>`).join("")}</div>
+    <div class="smg-cvt">${c.total>0?N(P.total||c.total)+" ₽":"—"}</div>
+    ${DES()?"":`<button type="button" class="smg-agree" data-act="${sm.deal?"sm-sum":"sm-deal"}"${c.total>0?"":" disabled"}>${ic("ok",20)} Клиент согласен</button>
+`}</section>${DES()?"":`<p class="smg-cvs">«Клиент согласен» ${sm.deal?"запишет сумму и ЗП бригаде в сделку":"создаст сделку и запишет сумму и ЗП бригаде"} — так же, как «Записать сумму в сделку». Клиенту эта строка не видна.</p>`}`; }
+function sgRow(attrs,icon,t,sub,cls){ return `<button type="button" class="smg-row${cls?" "+cls:""}" ${attrs}><span class="smg-ri">${ic(icon,20)}</span><span class="smg-rt"><b>${t}</b>${sub?`<small>${sub}</small>`:""}</span><span class="smg-rc" aria-hidden="true">${ic("chev",16)}</span></button>`; }
+function sgSendHtml(c,q,d,sm){ let h=sgClientCard(c,q,d,sm);
+  if(c.noPrice) h+=`<p class="smg-warn">У ${c.noPrice} ${pl(c.noPrice,"позиции","позиций","позиций")} нет цены — вернитесь на шаг «Материалы»</p>`;
+  h+=`<div class="smg-grp smg-acts">`;
+  if(!DES()&&sm.deal) h+=sgRow('data-act="sm-xsend"',"send","Отправить ссылку клиенту","клиент увидит расчёт и нажмёт «Согласен» у себя");
+  h+=sgRow('data-act="sm-kp"',"doc",DES()?"Отправить клиенту — КП в PDF":"КП в PDF — отправить клиенту",DES()?"с вашим логотипом, без себестоимости":sm.deal?"":"ссылка с кнопкой «Согласен» — когда будет сделка");
+  if((q.pr||[]).length) h+=sgRow('data-qk="3d" data-i="-1"',"cube","3D и раскрой — показать клиенту","");
+  h+=sgRow('data-act="sm-client"',"eye","Показать клиенту на этом экране","без внутренних цифр; вернуть — удержать кнопку внизу");
+  h+=sgRow('data-smg="tplsave"',"star","Сохранить как мой шаблон","следующая смета — с неё одним нажатием");
+  h+=`</div>`;
+  h+=!sm.saved||sm.dirty?`<button type="button" class="w-pill smg-big" data-act="sm-save">Сохранить смету</button>`:`<p class="smg-saved">${ic("ok",16)} Смета сохранена</p>`;
+  return h; }
+function sgWhatTpl(){ const L=(TP.list||[]).slice(0,4); if(!L.length) return "";
+  return `<section class="smg-wt" aria-label="Мои шаблоны"><div class="smg-wth"><b>Мои шаблоны</b><button type="button" class="linkbtn" data-smg="tlist">все ${TP.list.length} ›</button></div><div class="smg-wtc">${L.map(t=>`<button type="button" class="smg-wtb" data-smg="tpl" data-id="${E(t.id)}"><span class="smg-ti">${ic("star",16)}</span><span><b>${E(t.n)}</b><small>${E(tpSub(t))}</small></span></button>`).join("")}</div></section>`; }
+let tpAsked=0;
+const _sgWrap=window.__qkStepsWrap;
+window.__qkStepsWrap=function(fn,c,q,d,sm){ let h=_sgWrap?_sgWrap(fn,c,q,d,sm):fn(c,q,d,sm);
+  try{ h=h.replace(/<button type="button" class="btn sm" data-qk="set">[^<]*<\/button>/,`<button type="button" class="btn sm smg-myb" data-smg="my">${ic("gear",16)} Моя смета</button>`);
+    if(S.shop.smClient) return h; const stp=q.stp||"what";
+    if(stp==="what"){ tpSync(); if(!TP.fresh&&Date.now()-tpAsked>60000){ tpAsked=Date.now(); setTimeout(()=>tpLoad(()=>{ if((SM()&&SM().data.qk&&SM().data.qk.stp||"what")==="what") shpRenderKeep(); }),0); }
+      const w=sgWhatTpl(), j=h.lastIndexOf('<div class="smn-stn">'); if(w&&j>0) h=h.slice(0,j)+w+h.slice(j); }
+    if(stp==="send"){ const i=h.indexOf('<div class="qk">'), j=h.lastIndexOf('<div class="smn-stn">'); if(i<0||j<i) return h;
+      return h.slice(0,i).replace(/<p class="smn-hint2">[\s\S]*?<\/p>/,`<p class="smn-hint2">${DES()?"Проверьте, как увидит клиент, и отправьте ему КП.":"Проверьте, как увидит клиент, и отправьте. Согласился — нажмите «Клиент согласен»."}</p>`)+`<div class="qk smg">`+sgSendHtml(c,q,d,sm)+`</div>`+h.slice(j); } }catch(e){ console.log("LOG smotp "+e.message); }
+  return h; };
+function redrawSoft(){ const sm=SM(); if(sm&&S.view==="shop"&&S.shop.mode==="smeta"&&!document.querySelector(".modal:not(.smg-m)")) shpRenderKeep(); }
+
+/* ---------- 3. «Клиент согласен → сделка»: то же, что «Записать сумму в сделку» ---------- */
+if(typeof smToDeal==="function"){ const _sgDeal=smToDeal; smToDeal=async function(){ const sm=SM(); if(!sm||!sm.data||!sm.data.qk) return _sgDeal.apply(this,arguments);
+  const c=smCalc(sm.data); if(!sm.client){ toast("Впишите клиента"); return; }
+  if(!(await appConfirm("Клиент согласен? Создать сделку «"+sm.client+"» на "+shpRub(c.total)+" и записать в неё сумму и ЗП бригаде — так же, как «Записать сумму в сделку».","Создать сделку",false))) return;
+  const o={client:sm.client,phone:sm.phone||"",kind:sm.kind||"",stage:"dogovor",owner:shpWho(),designer:S.shop.role==="office"?shpWho():"",sum:c.total,matx:c.M+(c.giftC||0),v3:1};
+  const j=await shpPost({action:"shopSave",order:o}); if(!j) return; sm.deal=j.id; sm.status="deal";
+  const ok=await smSave(true,true);   /* тот же запрос, что «Записать сумму в сделку»: works, fzP / fz / fzW, br, «ждёт проверки» */
+  await shpLoad(true); if(!shpById(j.id)) S.shop.orders.push(Object.assign({},o,{id:j.id,num:j.num}));
+  if(ok===false) toast("Сделка № "+j.num+" создана, но сумма не записалась — нажмите «Записать сумму в сделку»"); else setTimeout(()=>toast("Сделка № "+j.num+" создана"),1600);
+  shpRenderKeep(); }; }
+
+/* ---------- 4. Ссылка клиенту: данные для сервера при «Согласовать» (клиенту не уходят) ---------- */
+if(typeof smnOffer==="function"){ const _sgOff=smnOffer; smnOffer=function(){ const off=_sgOff.apply(this,arguments); try{ const sm=SM(), d=sm&&sm.data; if(!d||!off||!Array.isArray(off.vars)) return off;
+    off.vars.forEach(v=>{ const dd=typeof smnVarData==="function"?smnVarData(d,v.k):d, c=smCalc(dd); v.zf={p:Math.round(c.fzP||0),z:Math.round(c.fz||0),w:Math.round(c.wCl||0)};
+      if(c.qk&&c.BW&&Array.isArray(c.BW.works)){ v.wk=c.BW.works; if(dd.noMont) v.nm=1; } }); }catch(e){ console.log("LOG smotp offer "+e.message); } return off; }; }
+
+/* ---------- 5. «⚙ Моя смета» ---------- */
+let MY={scope:"me"};
+function myVals(){ const o={}; try{ const C=window.__cena&&window.__cena.cfg?window.__cena.cfg(MY.scope==="firm"?"firm":""):null; if(C) o.sch=C.old?"как раньше":({div:"÷ "+String(C.k).replace(".",","),mul:"× "+String(C.m).replace(".",","),meter:"за метр",groups:"по группам"}[C.sch]||""); }catch(_){}
+  try{ const K=window.__sk&&window.__sk.K?window.__sk.K():null; if(K) o.K=K; }catch(_){} try{ const s=window.__qk&&window.__qk.x&&window.__qk.x.set&&window.__qk.x.set(); o.view=s&&s.view&&s.view.view==="list"?"списком":"плитками"; }catch(_){} return o; }
+function myHtml(){ const sm=SM(), inSm=!!(sm&&sm.data&&sm.data.qk&&S.view==="shop"&&S.shop.mode==="smeta"), firm=MY.scope==="firm", t=TECH(), V=myVals(), n=(TP.list||[]).length;
+  const need=inSm?"":"откройте смету — настройка там";
+  const r=(attr,icon,ti,val,dis)=>`<button type="button" class="smg-row${dis?" dis":""}" ${dis?'aria-disabled="true"':attr}><span class="smg-ri">${ic(icon,20)}</span><span class="smg-rt"><b>${ti}</b>${dis?`<small>${dis}</small>`:""}</span>${val?`<span class="smg-rv">${E(val)}</span>`:""}<span class="smg-rc" aria-hidden="true">${ic("chev",16)}</span></button>`;
+  let h=`<div class="smg-hd"><h2>${ic("gear",22)} Моя смета</h2><button type="button" class="w-btn smg-xb" data-smgx="1" aria-label="Закрыть">${ic("x",18)}</button></div>`;
+  h+=`<p class="smg-note">${firm?"Настройки для всей фирмы — их видят все, кто делает сметы.":"Всё под себя: ваши настройки, другим не мешают."}</p>`;
+  if(t) h+=`<div class="smg-seg" role="radiogroup" aria-label="Чьи настройки"><button type="button" data-smgsc="me" aria-pressed="${!firm}">для меня</button><button type="button" data-smgsc="firm" aria-pressed="${firm}">для всей фирмы</button></div>`;
+  h+=`<div class="smg-grp">`;
+  h+=r(`data-smgmy="tiles"`,"grid","Плитки и их порядок","",DES()?"":"");
+  h+=r(`data-smgmy="sch"`,"div",firm?"Способ счёта для всей фирмы":"Способ счёта и настройки",V.sch||"",firm||inSm?"":need);
+  if(!firm) h+=r(`data-smgmy="schemes"`,"sq","Готовые схемы","",inSm?"":need);
+  if(!firm) h+=r(`data-smgmy="prices"`,"rub","Мои цены работ и материалов","",inSm?"":need);
+  h+=r(`data-smgmy="cls"`,"tag","Классы Эконом / Стандарт / Премиум","",inSm?"":need);
+  h+=r(`data-smgmy="tpl"`,"star","Мои шаблоны",n?String(n):"","");
+  if(DES()||t) h+=r(`data-smgmy="kp"`,"doc","Вид предложения клиенту","логотип, имя","");
+  if(!firm) h+=r(`data-smgmy="view"`,"list","Плитки или список",V.view||"",inSm?"":need);
+  if(DES()) h+=r(`data-smgmy="sub"`,"card","Подписка",subLine(),"");
+  h+=`</div>`;
+  if(!DES()&&V.K){ const K=V.K, f=v=>String(v).replace(".",","); h+=`<button type="button" class="smg-lock"${t?' data-smgmy="lock"':""}>${ic("lock",18)}<span><b>Директор: не ниже ${f(K.lMin||0.45)} · согласие выше ${f(K.kAsk||0.42)}</b><small>${t?"кто что меняет — «Настройки компании → Смета»":"пороги и кто что меняет — ставит директор"}</small></span></button>`; }
+  if(DES()) h+=`<p class="smg-note smg-note2">Вы сами себе директор: все настройки — ваши.</p>`;
+  return h; }
+function myOpen(){ tpSync(); const m=sheet("smgMyM",myHtml()); if(!TP.fresh) tpLoad(()=>{ const x=document.querySelector("#smgMyM .smg-card"); if(x) x.innerHTML=myHtml(); });
+  m.addEventListener("click",e=>{ const s=e.target.closest("[data-smgsc]"); if(s){ if(!TECH()) return; MY.scope=s.dataset.smgsc; m.querySelector(".smg-card").innerHTML=myHtml(); return; }
+    const b=e.target.closest("[data-smgmy]"); if(!b||b.getAttribute("aria-disabled")) return; const a=b.dataset.smgmy, firm=MY.scope==="firm"; m.remove();
+    if(a==="tiles") return tap({"data-pl":"ed","data-v":firm?"firm":"me"});
+    if(a==="sch") return firm?tap({"data-pcf":"set"}):tap({"data-pc":"set"});
+    if(a==="schemes") return tap({"data-pc":"sch"});
+    if(a==="prices") return tap({"data-qk":"set"});
+    if(a==="cls") return tap({"data-smv":"klset"});
+    if(a==="tpl") return tpListOpen();
+    if(a==="kp") return kpOpen();
+    if(a==="view"){ const v=myVals().view==="списком"?"tiles":"list"; return tap({"data-pl":"view","data-v":v}); }
+    if(a==="lock"){ S.view="shop"; S.shop.mode="cfg"; S.shop.cfgTab="sm"; if(typeof render==="function") render(); window.scrollTo(0,0); return; }
+    if(a==="sub") return subOpen(); }); }
+
+/* вид предложения (логотип, имя, телефон) — то же окно «Для клиента и КП», что в «Настройки компании → Общие»; смета остаётся открытой */
+function kpOpen(){ if(DES()) return tap({"data-deskp":"1"}); if(!TECH()) return toast("Вид предложения настраивает директор");
+  if(typeof kpcHtml!=="function"){ S.view="shop"; S.shop.mode="cfg"; S.shop.cfgTab="gen"; if(typeof render==="function") render(); return; }
+  S.shop.kpD=null; const m=sheet("smgKpM",`<div class="smg-hd"><h2>Вид предложения</h2><button type="button" class="w-btn smg-xb" data-smgx="1" aria-label="Закрыть">${ic("x",18)}</button></div><div class="smg-kpb">${kpcHtml()}</div>`);
+  m.addEventListener("click",()=>setTimeout(()=>{ const b=m.querySelector(".smg-kpb"); if(b&&document.body.contains(m)&&!m.querySelector("input:focus")) b.innerHTML=kpcHtml(); },400)); }
+/* ---------- 6. Подписка дизайнера: срок, тариф, пробный период (оплата — как в site_sub.js, переводом) ---------- */
+function desMe(){ try{ return JSON.parse(localStorage.getItem("w24-des-me")||"null"); }catch(_){ return null; } }
+function subLine(){ const me=desMe(); if(!me) return ""; if(me.free) return "бесплатно от цеха"; const left=Math.ceil(((+me.until||0)-Date.now())/864e5); return me.ro?"закончилась":left>0?"ещё "+left+" "+pl(left,"день","дня","дней"):"сегодня последний день"; }
+function subOpen(){ const me=desMe()||{}, left=Math.ceil(((+me.until||0)-Date.now())/864e5);
+  const st=me.free?`<div class="smg-st ok"><b>${ic("ok",18)} Бесплатно — подписку оплачивает цех «${E(me.free.name||"")}»</b><span>Пока цех на тарифе «Цех» или выше, Смета для вас бесплатна.</span></div>`
+    :me.ro?`<div class="smg-st bad"><b>Подписка закончилась</b><span>Сейчас только просмотр. Всё сохранено — после оплаты продолжите с того же места.</span></div>`
+    :`<div class="smg-st ${left<=3?"warn":"ok"}"><b>Работает ещё ${left>0?left+" "+pl(left,"день","дня","дней"):"сегодня"}</b><span>${me.until?"до "+new Date(+me.until).toLocaleDateString("ru-RU",{day:"numeric",month:"long"}):""}${left<=3?" · продлите, чтобы не прерывалось":""}</span></div>`;
+  const pr=+me.price||(me.founder?590:990);
+  sheet("smgSubM",`<div class="smg-hd"><h2>Подписка</h2><button type="button" class="w-btn smg-xb" data-smgx="1" aria-label="Закрыть">${ic("x",18)}</button></div>${st}
+    <div class="smg-tar"><div class="smg-tarh"><b>Дизайнер</b><span><b>${N(pr)} ₽</b><small>/мес</small></span></div><small class="smg-t2">за год — ${N(me.priceY||pr*10)} ₽, 2 месяца в подарок${me.founder?" · цена для первых клиентов закреплена за вами":""}</small>
+      <ul class="smg-tl"><li>${ic("ok",16)} Безлимитные сметы, свои цены и шаблоны</li><li>${ic("ok",16)} КП клиенту с вашим логотипом</li><li>${ic("ok",16)} 3D и раскрой шкафа</li><li>${ic("ok",16)} Бесплатно, если ваш цех на тарифе «Цех» или выше</li></ul></div>
+    <div class="smg-tar smg-tar2"><div class="smg-tarh"><b>Мастер</b><span><b>бесплатно</b></span></div><small class="smg-t2">по приглашению цеха или дизайнера — видит только заказы того, кто пригласил</small></div>
+    ${me.free?"":`<button type="button" class="w-pill smg-big" data-subpay="des">Оплатить переводом</button><p class="smg-note smg-note2">Перевод по QR; после проверки подписку продлят. Первые 30 дней — бесплатно, данные не удаляются.</p>`}`); }
+
+/* ---------- нажатия ---------- */
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-smg]"); if(!b) return; e.preventDefault(); e.stopPropagation(); const a=b.dataset.smg;
+  if(a==="my") return myOpen();
+  if(a==="tplsave") return tpSaveModal();
+  if(a==="tlist") return tpListOpen();
+  if(a==="tpl") return tpApply(b.dataset.id);
+  if(a==="tdel") return tpDel(b.dataset.id);
+  if(a==="kpset") return kpOpen(); },true);
+/* плитка «Мой шаблон» на шаге 1 (site_smetav — прошлые сметы): сверху окна — сохранённые «Мои шаблоны» */
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-smv="src"][data-k="tpl"]'); if(!b) return;
+  const put=()=>{ const m=document.getElementById("svTplM"); if(!m||m.querySelector(".smg-intpl")) return; const L=TP.list||[]; if(!L.length) return; const box=document.createElement("div"); box.className="smg-intpl";
+    box.innerHTML=`<p class="smg-cap">Сохранённые шаблоны</p><div class="smg-grp">${tpRows(L.slice(0,8),"tpl").replace(/<button type="button" class="w-btn smg-del"[\s\S]*?<\/button>/g,"")}</div><p class="smg-cap">Из прошлой сметы</p>`;
+    const n=m.querySelector(".sv-note"); if(n) n.after(box); else (m.querySelector(".modal-card")||m).prepend(box); };
+  tpSync(); setTimeout(put,60); setTimeout(put,400); setTimeout(put,1200); if(!TP.fresh) tpLoad(put); },true);
+/* «Все разделы»: «Моя смета» — тем, кто делает сметы */
+if(typeof shpMoreHtml==="function"){ const _sgMore=shpMoreHtml; shpMoreHtml=function(){ const h=_sgMore.apply(this,arguments); try{ if(!(S.shop&&(S.shop.tech||S.shop.role==="office"))&&!DES()) return h;
+    const it=`<li><button type="button" class="shp-row" data-smg="my"><span class="shp-av" aria-hidden="true">${ic("gear",20)}</span><span class="shp-rb"><b>Моя смета</b><span class="muted">Плитки, способ счёта, шаблоны, вид предложения</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
+    return h.indexOf('<ul class="shp-list">')>=0?h.replace('<ul class="shp-list">','<ul class="shp-list">'+it):h+`<ul class="shp-list">${it}</ul>`; }catch(e){ return h; } }; }
+window.__smotp={tpl:()=>TP.list,load:()=>tpLoad(),apply:tpApply,my:myOpen,sub:subOpen,saveModal:tpSaveModal};   /* для стенда и для шага 1 (site_smetav) */
+
+const st=document.createElement("style"); st.textContent=`
+.smg-caprow{display:flex;align-items:center;justify-content:space-between;gap:8px}.smg-caprow .smg-cap{margin:4px 4px 8px}.smg-gear{width:44px;height:44px;margin-bottom:4px}
+.smg-cap{margin:18px 4px 8px;font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--w-t2,var(--ink))}.smg-cap0{margin-top:4px}
+.smg-cv{background:#fff;color:#000;border-radius:22px;padding:18px;box-shadow:0 1px 0 rgba(0,0,0,.04)}
+html[data-vt="dark"] .smg-cv{box-shadow:none}
+html:not([data-vt="dark"]) .smg-cv{border:1px solid rgba(0,0,0,.08);box-shadow:0 10px 30px rgba(0,0,0,.08)}html:not([data-vt="dark"]) .smg-grp,html:not([data-vt="dark"]) .smg-wtb,html:not([data-vt="dark"]) .smg-tar,html:not([data-vt="dark"]) .smg-st{background:var(--w2-soft)}html:not([data-vt="dark"]) .smg-seg{background:#e5e5ea}html:not([data-vt="dark"]) .smg-seg button[aria-pressed="true"]{background:#fff}html:not([data-vt="dark"]) .smg-in{background:#fff;border-color:rgba(0,0,0,.12)}html:not([data-vt="dark"]) .smg-lock{background:rgba(212,160,0,.1);border-color:rgba(212,160,0,.3)}html:not([data-vt="dark"]) .smg-lock svg{color:#b58900}
+.smg-cv,.smg-cv b,.smg-cv .smg-cvl li b,.smg-cv .smg-cvp span,.smg-cv .smg-cvt{color:#000!important}.smg-cv small,.smg-cv .smg-cvl li span,.smg-cv .smg-cvn{color:rgba(60,60,67,.62)!important}.smg-cv .smg-agree,.smg-cv .smg-agree *{color:#000!important}.smg-cv .smg-av{color:#fff!important}
+.smg-cvh{display:flex;align-items:center;gap:12px;margin-bottom:12px}.smg-cvh b{display:block;font-size:17px;line-height:1.25}.smg-cvh .smg-s{display:block;color:rgba(60,60,67,.62)!important;font-size:13.5px;margin-top:2px}.smg-cv .smg-s{color:rgba(60,60,67,.62)!important}
+.smg-av{width:44px;height:44px;flex:none;border-radius:12px;display:grid;place-items:center;background:#000;color:#fff;font-weight:700;font-size:19px}.smg-lg{width:44px;height:44px;flex:none;object-fit:contain;border-radius:10px}
+.smg-cvl{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:7px}.smg-cvl li{display:flex;justify-content:space-between;gap:12px;font-size:14.5px;line-height:1.35}.smg-cvl li span{color:rgba(60,60,67,.6);flex:none}.smg-cvl li b{font-weight:500;text-align:right;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.smg-cvl li.smg-wide b{text-align:left}
+.smg-cvn{margin:0 0 10px;color:rgba(60,60,67,.6);font-size:14px}
+.smg-cvp{border-top:1px solid rgba(0,0,0,.08);padding-top:10px;display:grid;gap:6px}.smg-cvp div{display:flex;justify-content:space-between;gap:12px;font-size:14.5px}.smg-cvp div span:last-child{font-weight:600;white-space:nowrap}
+.smg-cvt{font-size:32px;font-weight:800;letter-spacing:-.02em;margin:10px 0 12px;font-variant-numeric:tabular-nums}
+.smg-agree{width:100%;min-height:52px;border:0;border-radius:16px;background:#30d158;color:#000;font:inherit;font-size:17px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;transition:transform .16s cubic-bezier(.2,.8,.2,1),opacity .16s}
+.smg-agree:active{transform:scale(.97)}.smg-agree[disabled]{opacity:.4}
+.smg-cvs{margin:8px 6px 0;font-size:12.5px;line-height:1.4;color:var(--w-t2,var(--ink));text-align:center}
+.smg-grp{background:var(--w-l1,#1c1c1e);border-radius:22px;overflow:hidden;margin-top:12px}
+.smg-row{position:relative;display:flex;align-items:center;gap:14px;width:100%;min-height:56px;padding:12px 16px;border:0;background:none;color:var(--w-ink,#fff);font:inherit;text-align:left;cursor:pointer;transition:background .16s}
+.smg-row:active{background:var(--w-hl,rgba(255,255,255,.06))}.smg-row:not(:last-child)::after{content:"";position:absolute;left:52px;right:0;bottom:0;height:1px;background:var(--w-line,rgba(255,255,255,.08))}
+.smg-row.dis{opacity:.45;cursor:default}
+.smg-ri{flex:none;width:24px;display:grid;place-items:center;color:var(--w-ink,#fff)}.smg-rt{flex:1;min-width:0}.smg-rt b{display:block;font-weight:500;font-size:16px;line-height:1.3}.smg-rt small{display:block;color:var(--w-t2,var(--ink));font-size:13px;margin-top:2px;line-height:1.3}
+.smg-rv{flex:none;color:var(--w-t2,var(--ink));font-size:15px;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smg-rc{flex:none;color:var(--w-t3,var(--ink));display:grid}
+.smg-big{width:100%;margin-top:14px}.smg-saved{display:flex;align-items:center;justify-content:center;gap:6px;margin:14px 0 0;color:var(--w-t2,var(--ink));font-size:14px}
+.smg-warn{margin:12px 2px 0;padding:10px 14px;border-radius:14px;background:rgba(255,214,10,.12);color:var(--w-ink,#fff);font-size:14px}
+.smg-m .smg-card{max-width:520px;padding:18px 18px 22px}.smg-hd{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}.smg-hd h2{margin:0;font-size:22px;display:flex;align-items:center;gap:8px}
+.smg-xb{flex:none}.smg-note{margin:4px 2px 12px;color:var(--w-t2,var(--ink));font-size:14px;line-height:1.4}.smg-note2{margin-top:12px;text-align:center}
+.smg-seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:3px;border-radius:14px;background:var(--w-l2,#2a2a2c);margin:0 0 4px}.smg-seg button{min-height:40px;border:0;border-radius:11px;background:none;color:var(--w-ink,#fff);font:inherit;font-size:15px;font-weight:500;cursor:pointer;transition:background .18s}
+.smg-seg button[aria-pressed="true"]{background:var(--w-l1,#1c1c1e);box-shadow:0 1px 3px rgba(0,0,0,.25);font-weight:600}
+.smg-fl{display:grid;gap:6px;margin:0 0 12px}.smg-fl span{font-size:13px;color:var(--w-t2,var(--ink))}.smg-in{min-height:48px;border-radius:14px;border:1px solid var(--w-line,rgba(255,255,255,.08));background:var(--w-l2,#2a2a2c);color:var(--w-ink,#fff);padding:0 14px;font:inherit;font-size:16px}
+.smg-lock{display:flex;align-items:center;gap:12px;width:100%;margin-top:12px;padding:14px 16px;border-radius:18px;border:1px solid rgba(255,214,10,.25);background:rgba(255,214,10,.08);color:var(--w-ink,#fff);font:inherit;text-align:left;cursor:pointer}.smg-lock svg{flex:none;color:var(--w-y,#ffd60a)}
+.smg-lock b{display:block;font-weight:600;font-size:14.5px}.smg-lock small{display:block;color:var(--w-t2,var(--ink));font-size:12.5px;margin-top:2px}
+.smg-tr{display:flex;align-items:center;position:relative}.smg-tr:not(:last-child)::after{content:"";position:absolute;left:52px;right:0;bottom:0;height:1px;background:var(--w-line,rgba(255,255,255,.08))}
+.smg-tb{flex:1;min-width:0;display:flex;align-items:center;gap:14px;min-height:60px;padding:10px 8px 10px 16px;border:0;background:none;color:var(--w-ink,#fff);font:inherit;text-align:left;cursor:pointer}.smg-tb:active{background:var(--w-hl,rgba(255,255,255,.06))}
+.smg-ti{flex:none;color:var(--w-y,#ffd60a);display:grid}.smg-tt{min-width:0}.smg-tt b{display:block;font-weight:500;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smg-tt small{display:block;color:var(--w-t2,var(--ink));font-size:13px;margin-top:2px}
+.smg-del{margin-right:10px;background:none!important;border:0!important;color:var(--w-t3,var(--ink))}
+.smg-empty{display:grid;justify-items:center;gap:6px;text-align:center;padding:26px 12px;color:var(--w-t2,var(--ink))}.smg-empty svg{color:var(--w-t3,var(--ink))}.smg-empty b{color:var(--w-ink,#fff);font-size:16px}.smg-empty span{font-size:14px;line-height:1.4;max-width:320px}
+.smg-skel{height:60px;border-radius:16px;margin-top:8px;background:var(--w-l1,#1c1c1e);animation:smgP 1.2s ease-in-out infinite}@keyframes smgP{50%{opacity:.55}}
+.smg-wt{margin:16px 0 4px}.smg-wth{display:flex;align-items:center;justify-content:space-between;margin:0 4px 8px}.smg-wth b{font-size:15px}.smg-wth .linkbtn{min-height:44px;color:var(--w-t2,var(--ink))}
+.smg-wtc{display:grid;grid-template-columns:1fr 1fr;gap:10px}.smg-wtb{display:flex;align-items:flex-start;gap:10px;min-height:64px;padding:12px;border-radius:18px;border:1px solid var(--w-line,rgba(255,255,255,.08));background:var(--w-l1,#1c1c1e);color:var(--w-ink,#fff);font:inherit;text-align:left;cursor:pointer;transition:transform .16s cubic-bezier(.2,.8,.2,1)}
+.smg-wtb:active{transform:scale(.97)}.smg-wtb span:last-child{min-width:0}.smg-wtb b{display:block;font-weight:600;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smg-wtb small{display:block;color:var(--w-t2,var(--ink));font-size:12.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.smg-myb{display:inline-flex;align-items:center;gap:6px}
+.smg-snack{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translate(-50%,12px);opacity:0;z-index:300;display:flex;align-items:center;gap:14px;padding:10px 12px 10px 16px;border-radius:16px;background:rgba(44,44,46,.92);color:#fff;font-size:14.5px;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);transition:transform .2s cubic-bezier(.2,.8,.2,1),opacity .2s}
+.smg-snack.on{transform:translate(-50%,0);opacity:1}.smg-snack button{min-height:36px;border:0;background:none;color:#30d158;font:inherit;font-weight:600;cursor:pointer}
+.smg-st{border-radius:18px;padding:14px 16px;margin:6px 0 12px;background:var(--w-l1,#1c1c1e)}.smg-st b{display:flex;align-items:center;gap:6px;font-size:16px}.smg-st span{display:block;margin-top:4px;color:var(--w-t2,var(--ink));font-size:13.5px}
+.smg-st.ok b{color:var(--w-g,#30d158)}.smg-st.warn b{color:var(--w-y,#ffd60a)}.smg-st.bad b{color:var(--w-r,#ff453a)}
+.smg-tar{border-radius:20px;padding:16px;background:var(--w-l1,#1c1c1e);border:1px solid var(--w-line,rgba(255,255,255,.08));margin-top:10px}.smg-tarh{display:flex;justify-content:space-between;align-items:baseline;gap:10px}.smg-tarh>b{font-size:18px}.smg-tarh span b{font-size:22px}.smg-tarh small{color:var(--w-t2,var(--ink))}
+.smg-t2{display:block;color:var(--w-t2,var(--ink));font-size:13px;margin-top:4px;line-height:1.35}.smg-tl{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}.smg-tl li{display:flex;gap:8px;align-items:flex-start;font-size:14.5px}.smg-tl svg{flex:none;color:var(--w-g,#30d158);margin-top:2px}
+@media (min-width:900px){.qk.smg{max-width:560px}}
+`; document.head.appendChild(st);
+})();
+
 /* ---------- Р3 (12.11.2026): экраны директора — по замечаниям Кирилла из ночного обхода ----------
    Всё — обёртки поверх готового, подключается самым последним (после site_works.js).
    1) «‹ Назад» во всех разделах, открытых из «Все разделы» (Задачи, Календарь, Касса, Склад, Подписки клиентов …).
@@ -28238,7 +28515,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="004e68c13a";/*cehqr-build*/
+  const BUILD="7702f1c04d";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
