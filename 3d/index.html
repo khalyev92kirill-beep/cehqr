@@ -861,7 +861,7 @@ function expandParts(orderId, list){
         code: orderId+"-"+pad(n,3),
         name:p.name||"Деталь", art:p.art||"", L:+p.L||0, W:+p.W||0, T:+p.T||0,
         material:p.material||"", edges:p.edges||{}, edgesRaw:p.edgesRaw||[],
-        holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, cuts:Array.isArray(p.cuts)&&p.cuts.length?p.cuts:null, frame:Array.isArray(p.frame)&&p.frame.length===9?p.frame.map(Number):null, box:p.box||null, grain:p.grain||null, mod:p.mod||"", blk:Array.isArray(p.blk)?p.blk:null, an:p.an==null?null:p.an, copy: q>1 ? (i+1)+" из "+q : ""
+        holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, cuts:Array.isArray(p.cuts)&&p.cuts.length?p.cuts:null, frame:Array.isArray(p.frame)&&p.frame.length===9?p.frame.map(Number):null, box:p.box||null, grain:p.grain||null, mod:p.mod||"", blk:Array.isArray(p.blk)?p.blk:null, an:p.an==null?null:p.an, copy: q>1 ? (i+1)+" из "+q : "", ...(typeof kmExp==="function"?kmExp(p):null)
       });
     }
   });
@@ -1209,7 +1209,7 @@ function partSheet(code){
   d.innerHTML=`<div class="ps-h">${p.art?`<span class="tg-pos">${esc(p.art)}</span>`:""}<div class="ps-t"><b>${esc(p.name)}</b><span class="mono">${fmt(p.L)} × ${fmt(p.W)} × ${fmt(p.T)}</span></div><button type="button" class="ps-x" data-act="sheet-close" aria-label="Закрыть">✕</button></div>
     <div class="ps-b"><canvas id="three" aria-label="Деталь в 3D"></canvas><div class="ps-f">
       <div><small>Материал</small><b>${m?esc(m.t)+(m.d?` · ${esc(m.d)}`:""):esc(String(p.material||"—").split(/[\r\n]/)[0])}</b></div>
-      <div><small>Кромка</small><b>${ek.length?ek.map(k=>`${k} ${fmt(e[k].t)}`).join(", "):"нет"}</b></div>
+      <div><small>Кромка</small><b>${ek.length?ek.map(k=>`${k} ${fmt(e[k].t)}`).join(", "):typeof kmFig==="function"&&kmFig(p)?kmShort(p):"нет"}</b></div>
       <div><small>Отверстий</small><b>${(p.holes||[]).length}</b></div>
       ${stagesOn()?`<div><small>Этап</small><b><i class="tg-st" style="background:${st.color}"></i> ${esc(st.name)}</b></div>`:""}
       <button type="button" class="btn sm" data-act="part" data-code="${esc(p.code)}">Открыть карточку</button></div></div>`;
@@ -1266,12 +1266,14 @@ function mount3D(p, z0){
   const board=new THREE.Color(cssVar("--board")), edge=new THREE.Color(cssVar("--edge")), holeC=new THREE.Color(cssVar("--hole"));
   const e=p.edges||{};
   const m=c=>new THREE.MeshLambertMaterial({color:c});
-  const side=k2=> e[k2]? m(edge) : m(board.clone().multiplyScalar(0.86));
+  const kmR=typeof kmRedOn==="function"&&kmRedOn()&&typeof kmNeedsEdge==="function"&&kmNeedsEdge(p);   // 14.11: торцы без кромки — красным
+  const side=k2=> e[k2]? m(edge) : kmR? m(new THREE.Color(0xff453a)) : m(board.clone().multiplyScalar(0.86));
   // +x W2, -x W1, +y L2, -y L1, +z A, -z B
   const mats=[side("W2"),side("W1"),side("L2"),side("L1"),m(board),m(board.clone().multiplyScalar(0.94))];
   const ex=p.shape?shapeExtrude(p):null;   // деталь с вырезом — по контуру
   if(ex){ ex.translate(-L/2,-W/2,-T/2); ex.scale(k,k,k); }
-  const box=ex? new THREE.Mesh(ex,[m(board),m(board.clone().multiplyScalar(0.86))]) : new THREE.Mesh(new THREE.BoxGeometry(L*k,W*k,T*k),mats); grp.add(box);
+  let exSide=null; if(ex&&typeof kmPaintGeo==="function"){ try{ const c3=x=>[x.r,x.g,x.b], bs=board.clone().multiplyScalar(0.86); kmPaintGeo(ex,p,(x,y,z)=>[x/k+L/2,y/k+W/2,z/k+T/2],{face:c3(bs),on:c3(edge),off:kmR?[1,0.27,0.23]:c3(bs)}); exSide=new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true}); }catch(_){ exSide=null; } }   // 14.11: кромка фигурной детали — по каждому торцу
+  const box=ex? new THREE.Mesh(ex,[m(board),exSide||m(board.clone().multiplyScalar(0.86))]) : new THREE.Mesh(new THREE.BoxGeometry(L*k,W*k,T*k),mats); grp.add(box);
   const lines=new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry,ex?25:1),new THREE.LineBasicMaterial({color:new THREE.Color(cssVar("--board-line"))}));
   grp.add(lines);
   const hm=new THREE.MeshBasicMaterial({color:holeC});
@@ -1301,7 +1303,7 @@ function mount3D(p, z0){
   canvas.onwheel=ev=>{ ev.preventDefault(); zoom=Math.max(1.5,Math.min(40,zoom+ev.deltaY*0.01)); cam.position.z=zoom; };
   function size(){ const w=canvas.clientWidth, h=canvas.clientHeight; if(!w||!h) return; renderer.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix(); }
   const ro=new ResizeObserver(size); ro.observe(canvas); size();
-  three={renderer,ro,raf:0};
+  three={renderer,ro,raf:0,p,z0};
   const me=three; three.loop=perfLoop({dirty:()=>{ const d=!!me._sz; me._sz=false; return d; }, draw:()=>renderer.render(scene,cam), sig:()=>perfSig(cam,grp)+"|"+canvas.width+"x"+canvas.height});
   ro.disconnect(); const ro2=new ResizeObserver(()=>{ size(); me._sz=true; me.loop&&me.loop.poke(300); }); ro2.observe(canvas); three.ro=ro2;
 }
@@ -1402,13 +1404,15 @@ function mountAssembly(canvas, parts, opt){
   const items=[]; let anApply=null, anTap=null;   // двери и ящики открываются (анимация из Базиса)
   withBox.forEach(p=>{
     const b=p.box, w=Math.max(b[3]-b[0],0.5)*K, h=Math.max(b[4]-b[1],0.5)*K, d=Math.max(b[5]-b[2],0.5)*K;
-    const sg=p.shape?shapeGeoGlobal(p,K):null;   // деталь с вырезом — по контуру из Базиса
+    const sg=(p.shape||p.frame)?shapeGeoGlobal(p,K):null;   // деталь с вырезом — по контуру из Базиса; 14.11: деталь под углом — по своим осям
     const geo=sg||new THREE.BoxGeometry(w,h,d);
+    if(typeof kmPaint==="function") kmPaint(geo,p,K);   // 14.11: торцы без кромки — красным
     const glass=/стекл/i.test((p.material||"")+" "+(p.name||""))&&!/зеркал/i.test((p.material||"")+" "+(p.name||""));   // стекло — прозрачное
     const tex=glass?null:texFor(p.material);
     if(tex){ if(sg) texUVAny(geo,grainAxis(p),K); else texUV(geo,{x:b[3]-b[0],y:b[4]-b[1],z:b[5]-b[2]},grainAxis(p)); }
-    const mat=tex? new THREE.MeshLambertMaterial({map:tex,color:0xffffff,transparent:true,opacity:1})
-                 : new THREE.MeshLambertMaterial({color:glass?0xbfe3ea:matColor(p.material),transparent:true,opacity:1});
+    const vc=!!geo.attributes.color;
+    const mat=tex? new THREE.MeshLambertMaterial({map:tex,color:0xffffff,transparent:true,opacity:1,vertexColors:vc})
+                 : new THREE.MeshLambertMaterial({color:glass?0xbfe3ea:matColor(p.material),transparent:true,opacity:1,vertexColors:vc});
     const mesh=new THREE.Mesh(geo,mat);
     const cx=((b[0]+b[3])/2-C[0])*K, cy=((b[1]+b[4])/2-C[1])*K, cz=((b[2]+b[5])/2-C[2])*K;
     mesh.position.set(cx,cy,cz);
@@ -1977,20 +1981,30 @@ function mountAssembly(canvas, parts, opt){
     const col=dk3?0xf2f2f2:0x1d1f1e, seg=[];
     const ln=(a,b)=>seg.push(a,b), dim=(a,b,ex,t)=>{ ln(a,b); ln(a.clone().add(ex),a.clone().sub(ex.clone().multiplyScalar(0.2))); ln(b.clone().add(ex),b.clone().sub(ex.clone().multiplyScalar(0.2))); ln(a.clone().add(t),a.clone().sub(t)); ln(b.clone().add(t),b.clone().sub(t)); };
     const k=K;
-    dim(P(lo[0],lo[1],hi[2]+off),P(hi[0],lo[1],hi[2]+off),new THREE.Vector3(0,0,-off*k*0.9),new THREE.Vector3(tk*k*0.7,0,tk*k*0.7));           // ширина — по полу перед изделием
-    dim(P(lo[0]-off,lo[1],hi[2]),P(lo[0]-off,hi[1],hi[2]),new THREE.Vector3(off*k*0.9,0,0),new THREE.Vector3(tk*k*0.7,tk*k*0.7,0));            // высота — слева у переднего ребра (камера смотрит спереди-слева)
-    dim(P(lo[0]-off,lo[1]-off,lo[2]),P(lo[0]-off,lo[1]-off,hi[2]),new THREE.Vector3(off*k*0.9,off*k*0.9,0),new THREE.Vector3(tk*k*0.7,0,tk*k*0.7));   // глубина — по полу слева
-    const lg=new THREE.BufferGeometry().setFromPoints(seg), lines=new THREE.LineSegments(lg,new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.9,depthTest:false}));
-    lines.renderOrder=30; G.add(lines);
+    /* 14.11 (Кирилл: «показывает общий размер, а не по корпусу. Надо по изделиям»): размеры у КАЖДОГО изделия (модуля) — Ш, В, Г по его габариту;
+       общий габарит заказа — отдельной группой G2, только если включён в меню («Общий габарит»). Одно изделие — его размеры и есть общие. */
+    const G2=new THREE.Group(); G2.userData.dims=true; scene.add(G2); asm.dimG2=G2;
+    const MB=(typeof kmModBoxes==="function"?kmModBoxes(withBox):[]).filter(b=>b.hi[0]-b.lo[0]>1&&b.hi[1]-b.lo[1]>1);
+    const BX=[]; if(MB.length>=1) MB.forEach(b=>BX.push({lo:b.lo,hi:b.hi,g:G})); BX.push({lo,hi,g:MB.length?G2:G,all:true});
+    const segOf=new Map([[G,[]],[G2,[]]]);
+    BX.forEach(B=>{ const l=B.lo, h=B.hi, o=B.all?off:Math.max(20,Math.min(off,Math.max(h[0]-l[0],h[1]-l[1],h[2]-l[2])*0.06)), t=o*0.22, sv=seg.length;
+      dim(P(l[0],l[1],h[2]+o),P(h[0],l[1],h[2]+o),new THREE.Vector3(0,0,-o*k*0.9),new THREE.Vector3(t*k*0.7,0,t*k*0.7));           // ширина — по полу перед изделием
+      dim(P(l[0]-o,l[1],h[2]),P(l[0]-o,h[1],h[2]),new THREE.Vector3(o*k*0.9,0,0),new THREE.Vector3(t*k*0.7,t*k*0.7,0));            // высота — слева у переднего ребра (камера смотрит спереди-слева)
+      dim(P(l[0]-o,l[1]-o,l[2]),P(l[0]-o,l[1]-o,h[2]),new THREE.Vector3(o*k*0.9,o*k*0.9,0),new THREE.Vector3(t*k*0.7,0,t*k*0.7));   // глубина — по полу слева
+      segOf.get(B.g).push(...seg.splice(sv)); B.o=o; });
+    let lines=null;
+    segOf.forEach((sg,grp)=>{ if(!sg.length) return; const lg=new THREE.BufferGeometry().setFromPoints(sg), ls=new THREE.LineSegments(lg,new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.9,depthTest:false}));
+      ls.renderOrder=30; ls.raycast=()=>{}; grp.add(ls); if(!lines) lines=ls; });
     /* подписи — обычные надписи поверх 3D (13–14 px, как подписи iPhone), а не картинки в сцене: так они всегда одного размера,
        целиком в экране и не ложатся под кнопки и микрофон. Место — на своей размерной линии (середина, потом ближе к концам); некуда — подпись прячется */
     const lay=canvas.parentElement&&canvas.parentElement.querySelector(".asm-labels"), tags=[];
     if(lay&&!document.getElementById("asmDimCss")){ const cs=document.createElement("style"); cs.id="asmDimCss";
       cs.textContent=".asm-labels .asm-dim{position:absolute;left:0;top:0;transform:none;z-index:2;pointer-events:none;font:600 13px/1 -apple-system,system-ui,'Segoe UI',Arial,sans-serif;padding:5px 9px;border-radius:999px;white-space:nowrap;background:rgba(28,28,30,.86);color:#fff;border:1px solid rgba(255,255,255,.16);box-shadow:none;will-change:transform}.asm-labels .asm-dim.lt{background:rgba(255,255,255,.94);color:#111;border-color:rgba(0,0,0,.14)}";
       document.head.appendChild(cs); }
-    const mkTag=(t,a,b)=>{ if(!lay) return; const el=document.createElement("span"); el.className="asm-dim"+(dk3?"":" lt"); el.textContent=t; el.style.visibility="hidden"; lay.appendChild(el); tags.push({el,a,b,w:0,h:0,on:false}); };
+    const mkTag=(t,a,b,g)=>{ if(!lay) return; const el=document.createElement("span"); el.className="asm-dim"+(dk3?"":" lt"); el.textContent=t; el.style.visibility="hidden"; lay.appendChild(el); tags.push({el,a,b,g:g||G,w:0,h:0,on:false}); };
     const r0=v=>String(Math.round(v));
-    mkTag(r0(W0),P(lo[0],lo[1],hi[2]+off),P(hi[0],lo[1],hi[2]+off)); mkTag(r0(H0),P(lo[0]-off,lo[1],hi[2]),P(lo[0]-off,hi[1],hi[2])); mkTag(r0(D0),P(lo[0]-off,lo[1]-off,lo[2]),P(lo[0]-off,lo[1]-off,hi[2]));
+    BX.slice().sort((x,y)=>(y.all?1:0)-(x.all?1:0)).forEach(B=>{ const l=B.lo, h=B.hi, o=B.o;   // общий габарит — первым (его подписи важнее)
+      mkTag(r0(h[0]-l[0]),P(l[0],l[1],h[2]+o),P(h[0],l[1],h[2]+o),B.g); mkTag(r0(h[1]-l[1]),P(l[0]-o,l[1],h[2]),P(l[0]-o,h[1],h[2]),B.g); mkTag(r0(h[2]-l[2]),P(l[0]-o,l[1]-o,l[2]),P(l[0]-o,l[1]-o,h[2]),B.g); });
     let geo=null, geoT=0; const V3=new THREE.Vector3();
     const geoGet=()=>{ const now=performance.now(); if(geo&&now-geoT<400) return geo; geoT=now;   // размеры окна и кнопок читаем не чаще 2–3 раз в секунду (без пересчёта страницы на каждом кадре)
       const L=lay.getBoundingClientRect(), C=canvas.getBoundingClientRect(), m=6, ob=[];
@@ -1999,9 +2013,9 @@ function mountAssembly(canvas, parts, opt){
       tags.forEach(t=>{ if(!t.w){ t.w=t.el.offsetWidth; t.h=t.el.offsetHeight; } });
       return geo={ox:C.left-L.left,oy:C.top-L.top,cw:C.width,ch:C.height,ob,bx}; };
     const hit=(r,L)=>L.some(q=>r[0]<q[2]&&r[2]>q[0]&&r[1]<q[3]&&r[3]>q[1]);
-    const dimPlace=c=>{ if(!tags.length) return; if(!G.visible||!canvas.isConnected){ tags.forEach(t=>{ if(t.on){ t.on=false; t.el.style.visibility="hidden"; } }); return; }
+    const dimPlace=c=>{ if(!tags.length) return; if((!G.visible&&!G2.visible)||!canvas.isConnected){ tags.forEach(t=>{ if(t.on){ t.on=false; t.el.style.visibility="hidden"; } }); return; }
       const g=geoGet(), used=[];
-      tags.forEach(t=>{ const pr=v=>{ V3.copy(v).project(c); return [g.ox+(V3.x+1)/2*g.cw, g.oy+(1-V3.y)/2*g.ch, V3.z]; }, A=pr(t.a), B=pr(t.b); let pk=null;
+      tags.forEach(t=>{ if(!t.g.visible){ if(t.on){ t.on=false; t.el.style.visibility="hidden"; } return; } const pr=v=>{ V3.copy(v).project(c); return [g.ox+(V3.x+1)/2*g.cw, g.oy+(1-V3.y)/2*g.ch, V3.z]; }, A=pr(t.a), B=pr(t.b); let pk=null;
         if(A[2]<1&&B[2]<1) for(const f of [0.5,0.4,0.6,0.3,0.7,0.2,0.8,0.12,0.88]){ const x=A[0]+(B[0]-A[0])*f, y=A[1]+(B[1]-A[1])*f, r=[x-t.w/2,y-t.h/2,x+t.w/2,y+t.h/2];
           if(r[0]<g.bx[0]||r[1]<g.bx[1]||r[2]>g.bx[2]||r[3]>g.bx[3]||hit(r,g.ob)||hit(r,used)) continue; pk=r; break; }
         if(!pk){ if(t.on){ t.on=false; t.el.style.visibility="hidden"; } return; }
@@ -2009,8 +2023,7 @@ function mountAssembly(canvas, parts, opt){
     { const rr=renderer.render.bind(renderer); renderer.render=function(sc,c){ rr(sc,c); if(sc===scene) try{ dimPlace(c); }catch(_){} }; }
     asm.dimPlace=()=>{ geo=null; };
     { const onR=()=>{ geo=null; if(!canvas.isConnected) window.removeEventListener("resize",onR); }; window.addEventListener("resize",onR,{passive:true}); }
-    lines.raycast=()=>{};
-    const vis=()=>{ G.visible=!st.explode&&!st.steps&&!st.selected&&!Object.keys(st.hidden||{}).length&&!(st.multi&&Object.keys(st.multi).length)&&S.asmDims!==false; };
+    const vis=()=>{ const base=!st.explode&&!st.steps&&!st.selected&&!Object.keys(st.hidden||{}).length&&!(st.multi&&Object.keys(st.multi).length)&&S.asmDims!==false; G.visible=base; G2.visible=base&&!!S.asmDimsAll; };
     { const ap=st.apply; st.apply=function(){ const r=ap.apply(this,arguments); try{ vis(); }catch(_){} return r; }; } vis();
   }catch(e){ console.warn("dims",e); } }
   asm.relabel=()=>{ dirty=true; if(asm&&asm.loop) asm.loop.poke(300); };
@@ -2068,11 +2081,12 @@ function asmBatch(scene, items, exactG, poke, fu){
     if(mt.map&&!(mt.map.image&&mt.map.image.width)) return null;   // текстура ещё грузится (или не загрузилась) — деталь рисуется сама, как раньше
     const ch=m.children, e=ch[0], h=ch[1], c=ch[2]; if(ch.length>3||!e||!e.isLineSegments||e.children.length) return null;
     if(h&&(!h.isMesh||h.children.length>1)) return null; if(c&&!c.isLineSegments) return null;
-    return mt.opacity+"|"+(mt.depthWrite?1:0)+"|"+(e.visible?e.material.color.getHex()+"/"+e.material.opacity+"/"+e.renderOrder:"-")+"|"+(h&&h.visible?1:0)+"|"+(c&&c.visible?1:0); };
+    return (window.__kmV||0)+"|"+mt.opacity+"|"+(mt.depthWrite?1:0)+"|"+(e.visible?e.material.color.getHex()+"/"+e.material.opacity+"/"+e.renderOrder:"-")+"|"+(h&&h.visible?1:0)+"|"+(c&&c.visible?1:0); };
   const mk=(key,f)=>mats[key]||(mats[key]=f());
   const itemParts=(m,out)=>{ const mt=m.material, ch=m.children, W=m.matrix;
     if(mt.opacity>0){ const hex=mt.color.getHex(), op=mt.opacity, dw=mt.depthWrite;
-      out.push({key:"m|"+(mt.map?mt.map.uuid:hex)+"|"+op+"|"+dw, ro:op<1?-2:0, mat:()=>new THREE.MeshLambertMaterial({map:mt.map||null,color:hex,transparent:op<1,opacity:op,depthWrite:dw}), geo:m.geometry, M:W, uv:!!mt.map, nor:true}); }
+      const vc=!!(mt.vertexColors&&m.geometry.attributes.color);   // 14.11: цвет торцов (без кромки — красный)
+      out.push({key:"m|"+(mt.map?mt.map.uuid:hex)+"|"+op+"|"+dw+(vc?"|vc":""), ro:op<1?-2:0, mat:()=>new THREE.MeshLambertMaterial({map:mt.map||null,color:hex,transparent:op<1,opacity:op,depthWrite:dw,vertexColors:vc}), geo:m.geometry, M:W, uv:!!mt.map, nor:true, col:vc}); }
     const e=ch[0]; if(e.visible){ e.updateMatrix(); const em=e.material, hx=em.color.getHex(), eo=em.opacity;
       out.push({key:"e|"+hx+"|"+eo+"|"+e.renderOrder, ro:-1, line:true, mat:()=>new THREE.LineBasicMaterial({color:hx,transparent:true,opacity:eo}), geo:e.geometry, M:new THREE.Matrix4().multiplyMatrices(W,e.matrix)}); }
     const h=ch[1]; if(h&&h.visible){ h.updateMatrix(); const HW=new THREE.Matrix4().multiplyMatrices(W,h.matrix);
@@ -2097,16 +2111,17 @@ function asmBatch(scene, items, exactG, poke, fu){
         inB[i]=join?1:0; bs[i]=join?s:null; }
       B.forEach(b=>{ const P=b.p; let nv=0, ni=0; b.list.forEach(q=>{ const g=q.geo, c=g.attributes.position.count; nv+=c; ni+=g.index?g.index.count:c; });
         if(!nv) return;
-        const pos=new Float32Array(nv*3), nor=P.nor?new Float32Array(nv*3):null, uv=P.uv?new Float32Array(nv*2):null, idx=nv>65535?new Uint32Array(ni):new Uint16Array(ni);
+        const col=P.col?new Float32Array(nv*3):null, pos=new Float32Array(nv*3), nor=P.nor?new Float32Array(nv*3):null, uv=P.uv?new Float32Array(nv*2):null, idx=nv>65535?new Uint32Array(ni):new Uint16Array(ni);
         let vo=0, io=0;
         b.list.forEach(q=>{ const g=q.geo, pa=g.attributes.position, na=g.attributes.normal, ua=g.attributes.uv, c=pa.count;
           if(parentM) M.multiplyMatrices(parentM,q.M); else M.copy(q.M); if(nor) N3.getNormalMatrix(M);
           for(let k=0;k<c;k++){ V.fromBufferAttribute(pa,k).applyMatrix4(M); pos[(vo+k)*3]=V.x; pos[(vo+k)*3+1]=V.y; pos[(vo+k)*3+2]=V.z;
             if(nor&&na){ V.fromBufferAttribute(na,k).applyMatrix3(N3).normalize(); nor[(vo+k)*3]=V.x; nor[(vo+k)*3+1]=V.y; nor[(vo+k)*3+2]=V.z; }
-            if(uv&&ua){ uv[(vo+k)*2]=ua.getX(k); uv[(vo+k)*2+1]=ua.getY(k); } }
+            if(uv&&ua){ uv[(vo+k)*2]=ua.getX(k); uv[(vo+k)*2+1]=ua.getY(k); }
+            if(col){ const cc=g.attributes.color; if(cc){ col[(vo+k)*3]=cc.getX(k); col[(vo+k)*3+1]=cc.getY(k); col[(vo+k)*3+2]=cc.getZ(k); } else { col[(vo+k)*3]=col[(vo+k)*3+1]=col[(vo+k)*3+2]=1; } } }
           if(g.index){ const ix=g.index.array, cnt=g.index.count; for(let k=0;k<cnt;k++) idx[io+k]=ix[k]+vo; io+=cnt; } else { for(let k=0;k<c;k++) idx[io+k]=vo+k; io+=c; }
           vo+=c; });
-        const geo=new THREE.BufferGeometry(); geo.setAttribute("position",new THREE.BufferAttribute(pos,3)); if(nor) geo.setAttribute("normal",new THREE.BufferAttribute(nor,3)); if(uv) geo.setAttribute("uv",new THREE.BufferAttribute(uv,2)); geo.setIndex(new THREE.BufferAttribute(idx,1));
+        const geo=new THREE.BufferGeometry(); geo.setAttribute("position",new THREE.BufferAttribute(pos,3)); if(nor) geo.setAttribute("normal",new THREE.BufferAttribute(nor,3)); if(uv) geo.setAttribute("uv",new THREE.BufferAttribute(uv,2)); if(col) geo.setAttribute("color",new THREE.BufferAttribute(col,3)); geo.setIndex(new THREE.BufferAttribute(idx,1));
         const mat=mk(P.key,P.mat), obj=P.line?new THREE.LineSegments(geo,mat):new THREE.Mesh(geo,mat);
         obj.renderOrder=P.ro||0; obj.matrixAutoUpdate=false; obj.raycast=()=>{}; root.add(obj); });
       builtAt=now; }
@@ -3829,7 +3844,7 @@ function parseJSON(text){
   if(!list.length) throw new Error("В файле нет деталей");
   const parts=list.map(p=>{
     const L=numOf(p.L??p.length), W=numOf(p.W??p.width);
-    const out={mod:typeof p.mod==="string"?p.mod:"", blk:Array.isArray(p.blk)?p.blk.map(String):null, name:p.name||"", art:p.art||"", qty:p.qty||1, L:Math.max(L,W), W:Math.min(L,W), T:numOf(p.T??p.thickness), material:p.material||"", edges:{}, edgesRaw:[], holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, cuts:Array.isArray(p.cuts)&&p.cuts.length?p.cuts:null, frame:Array.isArray(p.frame)&&p.frame.length===9?p.frame.map(Number):null, box:Array.isArray(p.box)&&p.box.length===6?p.box.map(Number):null, grain:Array.isArray(p.grain)?p.grain.map(Number):null, an:Number.isInteger(p.an)?p.an:null};
+    const out={mod:typeof p.mod==="string"?p.mod:"", blk:Array.isArray(p.blk)?p.blk.map(String):null, name:p.name||"", art:p.art||"", qty:p.qty||1, L:Math.max(L,W), W:Math.min(L,W), T:numOf(p.T??p.thickness), material:p.material||"", edges:{}, edgesRaw:[], holes:Array.isArray(p.holes)?p.holes:[], shape:Array.isArray(p.shape)&&p.shape.length?p.shape:null, cuts:Array.isArray(p.cuts)&&p.cuts.length?p.cuts:null, frame:Array.isArray(p.frame)&&p.frame.length===9?p.frame.map(Number):null, box:Array.isArray(p.box)&&p.box.length===6?p.box.map(Number):null, grain:Array.isArray(p.grain)?p.grain.map(Number):null, an:Number.isInteger(p.an)?p.an:null, ...(typeof kmPartExtra==="function"?kmPartExtra(p):null)};
     if(Array.isArray(p.edges)){
       p.edges.forEach(e=>{ const r={elem:e.elem,m:e.material||e.m||"",t:+e.t||0};
         if(/^(L1|L2|W1|W2)$/.test(e.side||"")) out.edges[e.side]={m:r.m,t:r.t}; else out.edgesRaw.push(r); });
@@ -3997,7 +4012,7 @@ function thumbRender(parts,tex){
     if(src) waits.push(new Promise(res=>{ loader.load(src,t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; mt.map=t; mt.needsUpdate=true; res(); },undefined,()=>{ mt.color.setHex(matColor(m)); res(); }); setTimeout(res,4000); }));
     return mats[m]=mt; };
   const line=new THREE.LineBasicMaterial({color:0x6b6f6c,transparent:true,opacity:0.55});
-  ps.forEach(p=>{ const b=p.box, geo=(p.shape&&shapeGeoGlobal(p,K))||new THREE.BoxGeometry(Math.max(b[3]-b[0],0.5)*K,Math.max(b[4]-b[1],0.5)*K,Math.max(b[5]-b[2],0.5)*K);
+  ps.forEach(p=>{ const b=p.box, geo=((p.shape||p.frame)&&shapeGeoGlobal(p,K))||new THREE.BoxGeometry(Math.max(b[3]-b[0],0.5)*K,Math.max(b[4]-b[1],0.5)*K,Math.max(b[5]-b[2],0.5)*K);
     const glass=/стекл/i.test((p.material||"")+" "+(p.name||""));
     const mt=glass?new THREE.MeshLambertMaterial({color:0xbfe3ea,transparent:true,opacity:0.35}):matFor(p.material);
     if(!glass&&(tex[p.material]||S.textures[p.material])&&geo.type==="BoxGeometry") texUV(geo,{x:b[3]-b[0],y:b[4]-b[1],z:b[5]-b[2]},grainAxis(p));
@@ -4116,11 +4131,12 @@ function viewPart(){
   if(typeof siteNotesHtml==="function") h+=siteNotesHtml(p);   // замечания и фото мастеров (на сайте, через таблицу цеха)
   h+=`<div class="cols"><div class="card"><h2>Кромка</h2><div class="edges-list">`;
   const raw=p.edgesRaw||[];
-  if(raw.length){
+  if(typeof kmFig==="function"&&kmFig(p)) h+=kmCardEdges(p);   // 14.11: фигурная деталь — кромка по каждому торцу, как в Базисе
+  else if(raw.length){
     raw.forEach(r=> h+=`<div class="edge-row"><i></i><span><b class="mono">${fmt(r.t)} мм</b> · ${esc(r.m)} <span class="muted">· торец №${esc(r.elem)}</span></span></div>`);
     h+=`<p class="note">Сторона не определена: деталь не прямоугольная или выгружена старой версией скрипта.</p>`;
   }
-  if(Object.keys(e).length || !raw.length) ["L1","L2","W1","W2"].forEach(k=> h+=`<div class="edge-row"><i class="${e[k]?"":"none"}"></i><span><b class="mono">${k}</b> ${SIDES[k]}: ${e[k]?`<b class="mono">${fmt(e[k].t)} мм</b> · ${esc(e[k].m)}`:'<span class="muted">без кромки</span>'}</span></div>`);
+  if(!(typeof kmFig==="function"&&kmFig(p))&&(Object.keys(e).length || !raw.length)) ["L1","L2","W1","W2"].forEach(k=> h+=`<div class="edge-row"><i class="${e[k]?"":"none"}"></i><span><b class="mono">${k}</b> ${SIDES[k]}: ${e[k]?`<b class="mono">${fmt(e[k].t)} мм</b> · ${esc(e[k].m)}`:'<span class="muted">без кромки</span>'}</span></div>`);
   h+=`</div></div><div class="card"><h2>Отверстия</h2>`;
   if(!(p.holes||[]).length) h+=`<p class="muted">Присадки нет.</p>`;
   else { const grp={}, rows=[];
@@ -15328,6 +15344,7 @@ function drillMapV(p, mode){
   // кромка: жирная линия снаружи стороны
   const seg={L1:[X(0),Y(0),X(L),Y(0),0,1],L2:[X(0),Y(W),X(L),Y(W),0,-1],W1:[X(0),Y(0),X(0),Y(W),-1,0],W2:[X(L),Y(0),X(L),Y(W),1,0]};
   if(!fac) Object.keys(seg).forEach(k=>{ const [x1,y1,x2,y2,nx,ny]=seg[k]; if(e[k]) g+=dkLine(x1+nx*1.8,y1+ny*1.8,x2+nx*1.8,y2+ny*1.8,e[k].t>=1?2.2:1.6); });   /* Кирилл 07.11: «очень толстая чёрная линия» — кромка тоньше */
+  if(!fac&&typeof kmDrawEdges==="function") g+=kmDrawEdges(p,X,Y,s);   /* Кирилл 14.11: «где вырез деталь, у него не показывается кромка» — кромка по каждому элементу контура */
   // отверстия: белый круг с крестом центра; сквозное — зачернено; с пласти B — пунктир; в торце — пунктирный прямоугольник
   const xs=new Set(), ys=new Set(), hb=[], groups=new Map();
   (p.holes||[]).forEach((h,hi)=>{ const r=Math.max(3.2,h.d/2*s), cx=X(h.x), cy=Y(h.y);
@@ -15369,7 +15386,8 @@ function drillMapV(p, mode){
     sp.add([pick.a==="start"?pick.tx:pick.tx-w,pick.ty-fs*0.8,pick.a==="start"?pick.tx+w:pick.tx,pick.ty+2]);
     sp.add([Math.min(pick.lx,pick.lx+pick.dx*(w+2)),pick.ly-1.5,Math.max(pick.lx,pick.lx+pick.dx*(w+2)),pick.ly+1.5]); g+=dkLine(cx+pick.dx*r*0.7,cy+pick.dy*r*0.7,pick.lx,pick.ly,0.7)+dkLine(pick.lx,pick.ly,pick.lx+pick.dx*(w+2),pick.ly,0.7)+dkText(pick.tx,pick.ty,t,{a:pick.a,fs,w:600}); });
   // надпись кромки на каждой стороне — «кромка 1» или «без кромки» (мастер читает словами, без легенды)
-  if(!fac) Object.keys(seg).forEach(k=>{ const ed=e[k], t=ed?"кромка "+fmt(ed.t):"без кромки", fs=DK.fsS, [x1,y1,x2,y2,nx,ny]=seg[k];
+  if(!fac) Object.keys(seg).forEach(k=>{ const kl=typeof kmSideLabel==="function"?kmSideLabel(p,k):undefined; if(kl===null) return;   /* 14.11: фигурная деталь — надпись по элементам на этой стороне */
+    const ed=e[k], t=kl||(ed?"кромка "+fmt(ed.t):"без кромки"), fs=DK.fsS, [x1,y1,x2,y2,nx,ny]=seg[k];
     const horiz=!!ny, w=dkTW(t,fs)*0.9, steps=[0.5,0.3,0.7,0.15,0.85];
     for(const f of steps){ const mx=x1+(x2-x1)*f, my=y1+(y2-y1)*f;
       const tx=horiz?mx:mx-nx*(fs*0.25+8), ty=horiz?my-ny*(ny>0?8:8+fs*0.8):my;
@@ -23469,7 +23487,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="918893f07c";
+const CHK_BUILD="b53a3ac12b";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -28751,6 +28769,211 @@ if(typeof smHtml==="function"){ const _prSH=smHtml; smHtml=function(){ let h=Str
 html.vt[data-vt="dark"] .pr-it,html.vt[data-vt="dark"] .pr-pick,html.vt[data-vt="dark"] .pr-dir{background:#2c2c2e;outline-color:rgba(255,255,255,.10)}
 @media (prefers-reduced-motion:reduce){.pr-skl{animation:none}}`; document.head.appendChild(st); }
 
+/* ---------- Кромка по контуру, торцы без кромки, детали под углом, размеры по изделиям (Кирилл 14.11) ----------
+   «где вырез деталь, у него не показывается кромка»; «где раскрой тоже не показывает кромку»; «где не закромленные детали — в 3D
+   показать красным»; «детали, которые под углом (45°), неверно показывает»; «размеры по изделиям, а не общий… и кнопку показывать / не показывать».
+   Данные: скрипт Базиса v9 отдаёт у каждой кромки сам элемент контура (edges[].seg, sd, len) и оси чертежа у всех деталей (frame).
+   Старые выгрузки: элемент берём из контура детали (shape[elem]), оси — из положения v8 (pl), если оно есть; нет ни того, ни другого — как раньше.
+   Деньги не трогаем: edges/edgesRaw (по ним считается метраж кромки в снабжении и смете) остаются как были — новое лежит в p.eg. */
+
+/* ---- 1. доп. поля детали из выгрузки (parseJSON → kmPartExtra, expandParts → kmExp) ---- */
+function kmN(v){ const n=+v; return isFinite(n)?n:0; }
+function kmFrameFromPl(pl){
+  try{ if(!pl||!Array.isArray(pl.o)||!Array.isArray(pl.x)||!Array.isArray(pl.y)||!Array.isArray(pl.cb)||pl.cb.length!==4) return null;
+    const o=pl.o.map(kmN), x=pl.x.map(kmN), y=pl.y.map(kmN), cb=pl.cb.map(kmN), lx=(cb[2]-cb[0])>=(cb[3]-cb[1]);
+    const px=lx?cb[0]:cb[2], py=cb[1], O=[0,1,2].map(k=>o[k]+px*x[k]+py*y[k]), X=lx?x:y, Y=lx?y:x.map(v=>-v);
+    const r1=v=>Math.round(v*10)/10, r4=v=>Math.round(v*1e4)/1e4;
+    return O.map(r1).concat(X.map(r4),Y.map(r4)); }catch(_){ return null; } }
+function kmSegOk(s){ return Array.isArray(s)&&(s[0]==="l"&&s.length>=5||s[0]==="a"&&s.length>=7)&&s.slice(1).every(v=>isFinite(+v)); }
+function kmPartExtra(p){
+  const o={};
+  try{
+    if(Number.isInteger(p.mi)) o.mi=p.mi;
+    if(!(Array.isArray(p.frame)&&p.frame.length===9)){ const f=kmFrameFromPl(p.pl); if(f) o.frame=f; }
+    const shape=Array.isArray(p.shape)&&p.shape.length?p.shape:null;
+    if(Array.isArray(p.edges)&&(shape||p.rect===false)){ const eg=[];
+      p.edges.forEach(e=>{ if(!e) return; const i=parseInt(e.elem,10); let seg=kmSegOk(e.seg)?e.seg.map((v,k)=>k?+v:v):null;
+        if(!seg&&shape&&i>=0&&kmSegOk(shape[i])) seg=shape[i];   // старая выгрузка: элемент по номеру из контура детали
+        if(!seg) return;
+        const sd=/^(L1|L2|W1|W2)$/.test(e.side||"")?e.side:/^(L1|L2|W1|W2)$/.test(e.sd||"")?e.sd:"";
+        eg.push({elem:i,seg,side:sd,m:String(e.material||e.m||""),t:+e.t||0,len:+e.len||0}); });
+      if(eg.length) o.eg=eg; }
+  }catch(_){}
+  return o; }
+function kmExp(p){ const o={}; if(p&&p.eg) o.eg=p.eg; if(p&&Number.isInteger(p.mi)) o.mi=p.mi; return o; }
+
+/* ---- 2. геометрия: элементы контура детали с кромкой / без (в мм чертежа: X вдоль длины от Ш1, Y от Д1) ---- */
+function kmArc(s){ const a=[+s[1],+s[2]], b=[+s[3],+s[4]], c=[+s[5],+s[6]], r=Math.hypot(a[0]-c[0],a[1]-c[1]);
+  const A1=Math.atan2(a[1]-c[1],a[0]-c[0]), A2=Math.atan2(b[1]-c[1],b[0]-c[0]); let ccw=((A2-A1)%(2*Math.PI)+2*Math.PI)%(2*Math.PI); if(ccw<1e-6) ccw=2*Math.PI;
+  const len=+s[7]||0, sweep=(len&&Math.abs(r*(2*Math.PI-ccw)-len)<Math.abs(r*ccw-len))?-(2*Math.PI-ccw):(len?ccw:(ccw<=Math.PI?ccw:-(2*Math.PI-ccw)));
+  return {a,b,c,r,a0:A1,sweep}; }   /* как shapeGeom: направление дуги — по её длине */
+function kmPts(s){ if(s[0]==="l") return [[+s[1],+s[2]],[+s[3],+s[4]]];
+  const A=kmArc(s), n=Math.max(2,Math.ceil(Math.abs(A.sweep)/(Math.PI/24))), out=[];
+  for(let i=0;i<=n;i++){ const t=A.a0+A.sweep*i/n; out.push([A.c[0]+A.r*Math.cos(t),A.c[1]+A.r*Math.sin(t)]); } return out; }
+function kmSame(s,q){ if(!s||!q||s[0]!==q[0]) return false; const T=0.8, e=(i,j)=>Math.abs(+s[i]-+q[j])<=T;
+  return (e(1,1)&&e(2,2)&&e(3,3)&&e(4,4))||(e(1,3)&&e(2,4)&&e(3,1)&&e(4,2)); }
+const KM_NOEDGE=/двп|хдф|hdf|оргалит|стекл|зеркал|пвх|плёнк|пленк|agt|мдф|крашен|эмал|^\s*стена/i;
+/* детали, которым кромка не нужна по природе (задняя стенка, стекло, фасад МДФ/эмаль) — красным не красим */
+function kmNeedsEdge(p){ return !!p&&(+p.T||0)>=10&&!KM_NOEDGE.test(String(p.material||""))&&!/задн|^\s*з\.?\s*ст/i.test(String(p.name||"")); }
+/* все торцы детали: [{seg, pts, e:{m,t}|null, side}] */
+function kmLoop(p){
+  if(!p) return [];
+  if(p._km&&p._km.k===p.L+"|"+p.W) return p._km.v;
+  let v=[];
+  if(Array.isArray(p.shape)&&p.shape.length){
+    const eg=p.eg||[], by=new Map(eg.map(x=>[x.elem,x]));
+    v=p.shape.filter(kmSegOk).map(s=>{ const i=p.shape.indexOf(s); let e=by.get(i); if(e&&!kmSame(e.seg,s)) e=null; if(!e) e=eg.find(x=>kmSame(x.seg,s))||null;
+      return {seg:s,pts:kmPts(s),e:e?{m:e.m,t:e.t}:null,side:kmSideOf(s,p.L,p.W)}; });
+  } else {
+    const L=+p.L||0, W=+p.W||0, ed=p.edges||{};
+    v=[["L1",["l",0,0,L,0]],["W2",["l",L,0,L,W]],["L2",["l",L,W,0,W]],["W1",["l",0,W,0,0]]].map(([k,s])=>({seg:s,pts:kmPts(s),e:ed[k]?{m:ed[k].m,t:+ed[k].t||0}:null,side:k}));
+  }
+  try{ Object.defineProperty(p,"_km",{value:{k:p.L+"|"+p.W,v},configurable:true,enumerable:false,writable:true}); }catch(_){}
+  return v; }
+/* отрезок лежит на стороне габарита — её имя */
+function kmSideOf(s,L,W){ if(s[0]!=="l") return ""; const T=0.6, x1=+s[1], y1=+s[2], x2=+s[3], y2=+s[4];
+  if(Math.abs(y1)<=T&&Math.abs(y2)<=T) return "L1"; if(Math.abs(y1-W)<=T&&Math.abs(y2-W)<=T) return "L2";
+  if(Math.abs(x1)<=T&&Math.abs(x2)<=T) return "W1"; if(Math.abs(x1-L)<=T&&Math.abs(x2-L)<=T) return "W2"; return ""; }
+/* стороны габарита с кромкой — для раскроя (как Базис-Раскрой: заготовка меньше на кромку там, где весь край детали закромлен) */
+function kmCutSides(p){
+  const out={}, lp=kmLoop(p), L=+p.L||0, W=+p.W||0, T=0.6;
+  const at={L1:q=>Math.abs(q[1])<=T, L2:q=>Math.abs(q[1]-W)<=T, W1:q=>Math.abs(q[0])<=T, W2:q=>Math.abs(q[0]-L)<=T};
+  Object.keys(at).forEach(k=>{ const f=at[k];
+    const along=lp.filter(x=>x.side===k), touch=along.length?along:lp.filter(x=>x.pts.some(f));
+    if(!touch.length||!touch.every(x=>x.e)) return;
+    const t=Math.max(...touch.map(x=>+x.e.t||0)), m=(touch.find(x=>+x.e.t===t)||touch[0]).e.m; if(t>0) out[k]={m,t}; });
+  return out; }
+function kmFig(p){ return !!(p&&Array.isArray(p.shape)&&p.shape.length&&p.eg&&p.eg.length); }
+
+/* ---- 3. раскрой: у фигурной детали стороны с кромкой — как у прямоугольной (−1 мм, отметка кромки на карте) ---- */
+if(typeof cutPart==="function"){ const _kmCP=cutPart; cutPart=function(p){
+  if(kmFig(p)&&!Object.keys(p.edges||{}).length){ const sd=kmCutSides(p); if(Object.keys(sd).length){ const r=_kmCP.call(this,Object.assign({},p,{edges:sd})); if(r&&r._fin) r._fin=p; return r; } }
+  return _kmCP.apply(this,arguments); }; }
+
+/* ---- 4. чертёж детали (карта присадки): жирная линия кромки снаружи каждого закромленного элемента ---- */
+function kmInside(loops,x,y){ let c=false; loops.forEach(l=>{ for(let i=0,j=l.length-1;i<l.length;j=i++){ const a=l[i], b=l[j];
+  if(((a[1]>y)!==(b[1]>y))&&(x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])) c=!c; } }); return c; }
+function kmDrawEdges(p,X,Y,s){
+  if(!kmFig(p)||typeof shapeLoops!=="function") return "";
+  let loops=[]; try{ loops=shapeLoops(p.shape,p.L,p.W); }catch(_){ loops=[]; }
+  const off=1.8/s, d=0.8; let g="";
+  kmLoop(p).forEach(x=>{ if(!x.e) return; const P=x.pts; if(P.length<2) return;
+    // наружу: точка у середины элемента, сдвинутая по нормали, должна быть вне детали
+    const m=Math.floor((P.length-1)/2), a=P[m], b=P[m+1]||P[m-1], tx=b[0]-a[0], ty=b[1]-a[1], tl=Math.hypot(tx,ty)||1, nx=-ty/tl, ny=tx/tl;
+    const mx=(a[0]+b[0])/2, my=(a[1]+b[1])/2, sg=kmInside(loops,mx+nx*d,my+ny*d)?-1:1;
+    const Q=P.map((q,i)=>{ const u=P[Math.min(i+1,P.length-1)], v=P[Math.max(i-1,0)], ux=u[0]-v[0], uy=u[1]-v[1], ul=Math.hypot(ux,uy)||1; return [q[0]+sg*(-uy/ul)*off, q[1]+sg*(ux/ul)*off]; });
+    g+=`<polyline points="${Q.map(q=>X(q[0]).toFixed(1)+","+Y(q[1]).toFixed(1)).join(" ")}" fill="none" stroke="#000" stroke-width="${x.e.t>=1?2.2:1.6}" stroke-linecap="butt" stroke-linejoin="round" data-km="1"/>`; });
+  return g; }
+
+/* надпись стороны габарита на чертеже фигурной детали: по элементам, которые лежат на этой стороне; на стороне только дуга/скос — без надписи (null) */
+function kmSideLabel(p,k){ if(!kmFig(p)) return undefined; const al=kmLoop(p).filter(x=>x.side===k); if(!al.length) return null;
+  const on=al.filter(x=>x.e); if(!on.length) return "без кромки"; const t=fmt(Math.max(...on.map(x=>+x.e.t||0))); return on.length===al.length?"кромка "+t:"кромка "+t+" частично"; }
+/* ---- 5. карточка детали: кромка по каждому торцу ---- */
+function kmElName(x,L,W){ const s=x.seg;
+  if(x.side) return (typeof SIDES==="object"&&SIDES[x.side])||x.side;
+  if(s[0]==="a"){ const A=kmArc(s); return `радиус R${fmt(Math.round(A.r))}, ${fmt(Math.round(Math.abs(A.sweep)*A.r))} мм`; }
+  const len=Math.round(Math.hypot(+s[3]-+s[1],+s[4]-+s[2])), ax=Math.abs(+s[1]-+s[3])<0.6||Math.abs(+s[2]-+s[4])<0.6;
+  return `${ax?"вырез":"скос"}, ${fmt(len)} мм`; }
+function kmCardEdges(p){
+  const lp=kmLoop(p).filter(x=>x.seg[0]!=="c"), on=lp.filter(x=>x.e), off=lp.length-on.length;
+  let h=on.map(x=>`<div class="edge-row"><i></i><span><b class="mono">${fmt(x.e.t)} мм</b> · ${esc(x.e.m)} <span class="muted">· ${esc(kmElName(x,p.L,p.W))}</span></span></div>`).join("");
+  if(off) h+=`<div class="edge-row"><i class="none"></i><span class="muted">Без кромки: ${off} ${off===1?"торец":off<5?"торца":"торцов"}${kmNeedsEdge(p)?" — в 3D красным":""}</span></div>`;
+  return h+`<p class="note">Деталь фигурная: кромка показана по каждому торцу, как в Базисе.</p>`; }
+function kmShort(p){ const on=kmLoop(p).filter(x=>x.e); if(!on.length) return "нет"; const t=[...new Set(on.map(x=>fmt(x.e.t)))].join("/"); return `${on.length} ${on.length===1?"торец":on.length<5?"торца":"торцов"} · ${t} мм`; }
+
+/* ---- 6. 3D: торцы без кромки — красным (переключатель «Кромка»), деталь под углом — по своим осям ---- */
+function kmRole(){ try{ if(typeof clientMode==="function"&&clientMode()) return ""; if(typeof siteIsAdmin==="function"&&siteIsAdmin()) return "tech"; if(typeof siteIsMasters==="function"&&siteIsMasters()) return "master";
+    const ls=k=>{ try{ return localStorage.getItem(k)||""; }catch(_){ return ""; } };   // вход по PIN без ключа сервера: технолог / мастер
+    if(ls("cehqr-techpin")) return "tech"; if(ls("cehqr-pin")&&!ls("cehqr-officepin")&&!ls("cehqr-suppin")) return "master"; }catch(_){} return ""; }
+function kmRedOn(){ try{ if(typeof clientMode==="function"&&clientMode()) return false; const v=localStorage.getItem("cehqr-kmred"); if(v==="1") return true; if(v==="0") return false; }catch(_){} return !!kmRole(); }
+function kmAxisOk(f){ const ax=v=>{ const a=v.map(Math.abs); return a.filter(x=>x>0.999).length===1&&a.filter(x=>x<0.001).length===2; }; return ax(f.slice(3,6))&&ax(f.slice(6,9)); }
+/* прямоугольная деталь под углом: рисуем по осям чертежа (контур-прямоугольник), а не коробкой габарита */
+if(typeof shapeGeoGlobal==="function"){ const _kmSG=shapeGeoGlobal; shapeGeoGlobal=function(p,K){
+  if(p&&!p.shape&&Array.isArray(p.frame)&&p.frame.length===9&&p.box&&p.L>0&&p.W>0){ if(kmAxisOk(p.frame)) return null;
+    const L=+p.L, W=+p.W; return _kmSG.call(this,Object.assign({},p,{shape:[["l",0,0,L,0],["l",L,0,L,W],["l",L,W,0,W],["l",0,W,0,0]]}),K); }
+  return _kmSG.apply(this,arguments); }; }
+const KM_RED=[1,0.28,0.25], KM_W=[1,1,1];
+let kmReg=[];   // геометрии деталей открытого 3D: переключатель перекрашивает их без пересборки
+function kmDist(x,px,py){ const s=x.seg;
+  if(s[0]==="l"){ const ax=+s[1], ay=+s[2], bx=+s[3], by=+s[4], dx=bx-ax, dy=by-ay, l2=dx*dx+dy*dy||1, t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/l2)); return Math.hypot(px-ax-t*dx,py-ay-t*dy); }
+  let best=1e9; const P=x.pts; for(let i=1;i<P.length;i++){ const ax=P[i-1][0], ay=P[i-1][1], dx=P[i][0]-ax, dy=P[i][1]-ay, l2=dx*dx+dy*dy||1, t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/l2)); best=Math.min(best,Math.hypot(px-ax-t*dx,py-ay-t*dy)); } return best; }
+/* toD(x,y,z) → [x,y,z] в мм чертежа (z — по толщине); col: {face, on, off} — цвета пласти, торца с кромкой, без кромки */
+function kmPaintGeo(geo,p,toD,col){
+  const pos=geo.attributes.position, n=pos.count, idx=geo.index?geo.index.array:null, tri=idx?idx.length/3:n/3;
+  let ca=geo.attributes.color; if(!ca||ca.count!==n){ ca=new THREE.BufferAttribute(new Float32Array(n*3).fill(1),3); geo.setAttribute("color",ca); }
+  const lp=kmLoop(p).filter(x=>x.seg[0]!=="c"), V=i=>toD(pos.getX(i),pos.getY(i),pos.getZ(i));
+  for(let t=0;t<tri;t++){ const i0=idx?idx[t*3]:t*3, i1=idx?idx[t*3+1]:t*3+1, i2=idx?idx[t*3+2]:t*3+2, A=V(i0), B=V(i1), C=V(i2);
+    const ux=B[0]-A[0], uy=B[1]-A[1], uz=B[2]-A[2], vx=C[0]-A[0], vy=C[1]-A[1], vz=C[2]-A[2], nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx, nl=Math.hypot(nx,ny,nz)||1;
+    let c=col.face;
+    if(Math.abs(nz/nl)<0.5&&lp.length){ const cx=(A[0]+B[0]+C[0])/3, cy=(A[1]+B[1]+C[1])/3; let best=null, bd=1e9; lp.forEach(x=>{ const d=kmDist(x,cx,cy); if(d<bd){ bd=d; best=x; } });
+      c=best&&bd<3?(best.e?col.on:col.off):col.face; }
+    [i0,i1,i2].forEach(i=>ca.setXYZ(i,c[0],c[1],c[2])); }
+  ca.needsUpdate=true; }
+/* деталь всего изделия: геометрия в осях изделия с центром в центре габарита (×K). Без осей детали (очень старая выгрузка) — не красим */
+function kmPaint(geo,p,K){
+  try{ const f=p&&p.frame, b=p&&p.box; if(!f||f.length!==9||!b||typeof THREE==="undefined") return;
+    const O=f.slice(0,3), X=f.slice(3,6), Y=f.slice(6,9), N=[X[1]*Y[2]-X[2]*Y[1],X[2]*Y[0]-X[0]*Y[2],X[0]*Y[1]-X[1]*Y[0]], bc=[(b[0]+b[3])/2,(b[1]+b[4])/2,(b[2]+b[5])/2];
+    const toD=(x,y,z)=>{ const g=[x/K+bc[0]-O[0],y/K+bc[1]-O[1],z/K+bc[2]-O[2]]; return [g[0]*X[0]+g[1]*X[1]+g[2]*X[2], g[0]*Y[0]+g[1]*Y[1]+g[2]*Y[2], g[0]*N[0]+g[1]*N[1]+g[2]*N[2]]; };
+    const need=kmNeedsEdge(p), rec={geo,p,toD,need};
+    kmReg.push(rec); kmRepaint(rec); }catch(e){ console.warn("km",e); } }
+/* для стенда (bench/kirill): что нарисовано в 3D — вид геометрии, деталь под углом, сколько торцов красные */
+try{ window.__kmInfo=()=>kmReg.map(r=>{ const c=r.geo.attributes.color, n=c?c.count:0; let red=0; for(let i=0;i<n;i++) if(c.getY(i)<0.5) red++;
+  return {name:r.p.name, code:r.p.code, type:r.geo.type, rot:!kmAxisOk(r.p.frame), red}; }); }catch(_){}
+function kmRepaint(r){ const red=kmRedOn()&&r.need; kmPaintGeo(r.geo,r.p,r.toD,{face:KM_W,on:KM_W,off:red?KM_RED:KM_W}); }
+if(typeof mountAssembly==="function"){ const _kmMA=mountAssembly; mountAssembly=function(){ kmReg=[]; return _kmMA.apply(this,arguments); }; }
+function kmApplyRed(){ kmReg.forEach(r=>{ try{ kmRepaint(r); }catch(_){} }); window.__kmV=(window.__kmV||0)+1;
+  try{ if(asm){ asm.loop&&asm.loop.poke&&asm.loop.poke(400); } }catch(_){}
+  try{ if(three&&three.p&&typeof mount3D==="function"){ const c=document.getElementById("three"); if(c&&c.isConnected) mount3D(three.p,three.z0); } }catch(_){} }
+
+/* ---- 7. размеры в 3D по изделиям (модулям), общий габарит — по желанию ---- */
+try{ const v=localStorage.getItem("cehqr-asmdims"); if(v==="0") S.asmDims=false; S.asmDimsAll=localStorage.getItem("cehqr-asmdimall")==="1"; }catch(_){}
+/* группы деталей (только в выгрузке с модулями Базиса — mi): модуль выгрузки (mi), иначе блок верхнего уровня (mod); внутри — только касающиеся друг друга; без модулей — по касанию */
+function kmModBoxes(ps){
+  const P=(ps||[]).filter(p=>Array.isArray(p.box)&&p.box.length===6&&!(typeof isWall==="function"&&isWall(p))).slice(0,1500);
+  if(!P.some(p=>Number.isInteger(p.mi)&&p.mi>=0)) return [];   // старая выгрузка без модулей Базиса — общий габарит, как раньше
+  const key=p=>Number.isInteger(p.mi)&&p.mi>=0?"i"+p.mi:(p.mod?"m"+p.mod:"");
+  const by=new Map(); P.forEach(p=>{ const k=key(p); if(!by.has(k)) by.set(k,[]); by.get(k).push(p); });
+  const touch=(a,b,t)=>a[0]<=b[3]+t&&b[0]<=a[3]+t&&a[1]<=b[4]+t&&b[1]<=a[4]+t&&a[2]<=b[5]+t&&b[2]<=a[5]+t;
+  const split=L=>{ const n=L.length, par=L.map((_,i)=>i), f=i=>{ while(par[i]!==i){ par[i]=par[par[i]]; i=par[i]; } return i; };
+    for(let i=0;i<n;i++) for(let j=i+1;j<n;j++) if(touch(L[i].box,L[j].box,3)){ const a=f(i), b=f(j); if(a!==b) par[a]=b; }
+    const g=new Map(); L.forEach((p,i)=>{ const r=f(i); if(!g.has(r)) g.set(r,[]); g.get(r).push(p); }); return [...g.values()]; };
+  const out=[]; by.forEach((L,k)=>{ (k.startsWith("i")?[L]:split(L)).forEach(G=>{ if(G.length<2) return;
+    const lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9]; G.forEach(p=>{ for(let i=0;i<3;i++){ lo[i]=Math.min(lo[i],p.box[i]); hi[i]=Math.max(hi[i],p.box[i+3]); } });
+    out.push({lo,hi,n:G.length}); }); });
+  // одинаковые коробки (модуль из нескольких групп) — одной
+  const seen=new Set(), uq=out.filter(b=>{ const k=b.lo.concat(b.hi).map(Math.round).join(","); if(seen.has(k)) return false; seen.add(k); return true; });
+  // не изделие: цоколь, столешница, планка (тоньше 150 мм или меньше 3 деталей); ящик внутри шкафа (коробка внутри другой) — без своих размеров
+  const sz=b=>[0,1,2].map(i=>b.hi[i]-b.lo[i]), vol=b=>sz(b).reduce((a,v)=>a*Math.max(v,1),1);
+  const big=uq.filter(b=>b.n>=3&&Math.min(...sz(b))>=150&&Math.max(...sz(b))>=250);
+  const inside=(a,b)=>[0,1,2].every(i=>a.lo[i]>=b.lo[i]-10&&a.hi[i]<=b.hi[i]+10);
+  return big.filter(b=>!big.some(a=>a!==b&&vol(a)>vol(b)&&inside(b,a))).sort((a,b)=>vol(b)-vol(a)).slice(0,16); }
+
+/* ---- 8. кнопки 3D: «Размеры» и «Кромка» (круглые, как остальные), пункт меню «Общий габарит» ---- */
+const KM_IC={dims:'<svg viewBox="0 0 24 24"><path d="M3 17h18M3 14v6M21 14v6"/><path d="M6 10V4h12v6"/></svg>',
+  red:'<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1.5"/><path d="M4 18h16" stroke="#ff453a" stroke-width="3"/></svg>'};
+if(typeof dqBar==="function"){ const _kmBar=dqBar; dqBar=function(){ let h=_kmBar.apply(this,arguments);
+  try{ const cl=typeof clientMode==="function"&&clientMode(), i=h.indexOf('<div class="dq-r">'), j=i>0?h.lastIndexOf("</div>",i):-1; if(j<0) return h;
+    const b=(act,ic,title,on)=>`<button type="button" class="dq-b km-b" data-act="${act}" title="${title}" aria-label="${title}" aria-pressed="${!!on}">${ic}</button>`;
+    const add=b("km-dims",KM_IC.dims,"Размеры изделий: показать / скрыть",S.asmDims!==false)+(cl?"":b("km-red",KM_IC.red,"Показать торцы без кромки (красным)",kmRedOn()));
+    h=h.slice(0,j)+add+h.slice(j); }catch(_){}
+  return h; }; }
+try{ if(typeof OP_LB==="object"){ OP_LB["km-dims"]="Размеры"; OP_LB["km-red"]="Кромка"; } }catch(_){}
+if(typeof dqMenu==="function"){ const _kmMenu=dqMenu; dqMenu=function(){ let h=_kmMenu.apply(this,arguments);
+  try{ const i=h.indexOf('<div class="dq-chips">'), j=i>=0?h.indexOf("</div>",i):-1; if(j<0) return h;
+    const ch=(act,txt,on)=>`<button type="button" class="dq-ch${on?" on":""}" data-act="${act}" aria-pressed="${!!on}">${txt}</button>`;
+    h=h.slice(0,j)+ch("km-dimall","Общий габарит",!!S.asmDimsAll)+h.slice(j); }catch(_){}
+  return h; }; }
+function kmDimsVis(){ try{ if(asm&&asm.st&&asm.st.apply) asm.st.apply(); if(asm&&asm.dimPlace) asm.dimPlace(); if(asm&&asm.loop) asm.loop.poke(400); }catch(_){} }
+document.addEventListener("click",ev=>{
+  const t=ev.target.closest&&ev.target.closest('[data-act="km-dims"],[data-act="km-red"],[data-act="km-dimall"]'); if(!t) return;
+  const a=t.dataset.act;
+  if(a==="km-dims"){ S.asmDims=S.asmDims===false; try{ localStorage.setItem("cehqr-asmdims",S.asmDims?"1":"0"); }catch(_){} t.setAttribute("aria-pressed",String(S.asmDims!==false)); kmDimsVis(); }
+  else if(a==="km-dimall"){ S.asmDimsAll=!S.asmDimsAll; if(S.asmDimsAll) S.asmDims=true; try{ localStorage.setItem("cehqr-asmdimall",S.asmDimsAll?"1":"0"); localStorage.setItem("cehqr-asmdims","1"); }catch(_){}
+    t.classList.toggle("on",S.asmDimsAll); t.setAttribute("aria-pressed",String(S.asmDimsAll)); document.querySelectorAll('[data-act="km-dims"]').forEach(b=>b.setAttribute("aria-pressed","true")); kmDimsVis(); }
+  else { const on=!kmRedOn(); try{ localStorage.setItem("cehqr-kmred",on?"1":"0"); }catch(_){} t.setAttribute("aria-pressed",String(on)); kmApplyRed();
+    if(typeof toast==="function") toast(on?"Торцы без кромки — красным":"Торцы без кромки не выделяются"); }
+});
+
 /* ===== Тёмная тема — мягкий графит «А» (Кирилл 11.11 макет, 12.11 выбор: «графит + как в телефоне») =====
    Слой цветов поверх тёмной темы (html.vt.sk[data-vt="dark"], см. site_theme.js / site_skin.js). Светлую тему не трогает.
    Чёрного #000 нет: фон тёплый тёмно-серый #0b0b0b, карточки #1c1c1e, чипы и поля #2a2a2c, текст #ffffff / rgba(235,235,245,.55),
@@ -29123,7 +29346,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="918893f07c"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="b53a3ac12b"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -30610,7 +30833,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="918893f07c";/*cehqr-build*/
+  const BUILD="b53a3ac12b";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
