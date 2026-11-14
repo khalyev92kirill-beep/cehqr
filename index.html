@@ -8662,9 +8662,10 @@ try{ S.shop.smClient=localStorage.getItem("cehqr-smcl")==="1"; }catch(_){}
     b.classList.add("sm-hold");
     tm=setTimeout(async()=>{ const id=b.dataset.id, it=(S.shop.smList||[]).find(x=>x.id===id); stop(); fired=true; try{ haptic("long"); }catch(_){}
       if(!it) return;
-      if(!(await appConfirm(`Удалить смету «${it.client||"Без имени"}»? Её нельзя будет вернуть.${it.deal?" Сделка останется.":""}`,"Удалить",true))) return;
-      const j=await shpPost({action:"smetaDel",id}); if(!j) return;
-      S.shop.smList=(S.shop.smList||[]).filter(x=>x.id!==id); shpRenderKeep(); toast("Смета удалена"); },3000); },true);
+      if(!(await appConfirm(`Удалить смету «${it.client||"Без имени"}»? Она полежит в корзине 30 дней — вернуть можно там.${it.deal?" Сделка останется.":""}`,"Удалить",true))) return;
+      const was=S.shop.smList; S.shop.smList=(S.shop.smList||[]).filter(x=>x.id!==id); shpRenderKeep();   /* Р5 (13.11): сразу убираем из списка; сервер отказал — возвращаем */
+      const j=await shpPost({action:"smetaDel",id}); if(!j){ S.shop.smList=was; shpRenderKeep(); return; }
+      toast(j.trash?"Смета в корзине — вернуть можно 30 дней":"Смета удалена"); },3000); },true);
   document.addEventListener("pointermove",e=>{ if(el&&Math.hypot(e.clientX-x0,e.clientY-y0)>12) stop(); },true);
   ["pointerup","pointercancel","scroll"].forEach(t=>document.addEventListener(t,()=>{ if(el) stop(); },true));
   document.addEventListener("click",e=>{ if(fired&&e.target.closest&&e.target.closest('.shp-zli[data-act="sm-openid"]')){ fired=false; e.preventDefault(); e.stopPropagation(); } },true);
@@ -14474,7 +14475,7 @@ function ksHtml(){ const D=KS.data;
   if(!D.ops.length) return h+`<p class="note">Записей пока нет. Начните с остатка: «+ Принял» → сумма, что сейчас в кассе, комментарий «остаток на начало».</p></div>`;
   h+=`<section class="ks-card ks-ops">${D.ops.map(o=>{ const dl=ksDeal(o.deal), sg=o.t==="in"?"+":o.t==="out"?"−":"", cls=o.t==="in"?"ks-p":o.t==="out"?"ks-m":"ks-v";
       const who=o.t==="move"?`${ke(o.holder)} → ${ke(o.to)}`:(o.t==="in"?"принял ":"выдал ")+ke(o.holder);
-      const can=!o.zp&&(D.all||(shpNorm(o.by)===me&&new Date(o.when).toDateString()===new Date().toDateString()));
+      const can=!o.zp&&((D.del!==undefined?D.del:D.all)||(shpNorm(o.by)===me&&new Date(o.when).toDateString()===new Date().toDateString()));   /* Р5 (13.11): чужую запись удаляет только директор (del от сервера) */
       return `<div class="ks-op"><div class="ks-ot"><b>${ke(o.note||dl||(o.t==="in"?"Приход":o.t==="out"?"Расход":"Передача"))}</b><small>${ksWhen(o.when)} · ${who}${dl&&o.note?" · "+ke(dl):""}${o.zp?" · из выплат":""}${o.photo?` · <a href="${ke(o.photo)}" target="_blank" rel="noopener">📷 чек</a>`:""}</small></div><b class="${cls}">${sg}${(Math.round(o.sum)).toLocaleString("ru-RU")}</b>${can?`<button type="button" class="ks-x" data-ks="del" data-id="${ke(o.id)}" aria-label="Удалить запись">✕</button>`:""}</div>`; }).join("")}</section>`;
   return h+`</div>`; }
 function ksForm(t){ const D=KS.data||{people:[],hold:[]}, me=shpWho();
@@ -23435,7 +23436,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="92440b63a6";
+const CHK_BUILD="010fefad13";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -28303,6 +28304,165 @@ html.vt.sk.sk.sk[data-vt="dark"] .r4-limw input{background:#2a2a2c!important;bor
 html.vt.sk.sk.sk[data-vt="dark"] .r4-bar{border:1px solid rgba(255,255,255,.14)!important;background:#1c1c1e}html.vt.sk.sk.sk[data-vt="dark"] .r4-bar.r4-ask{border:1px solid var(--frame-strong)!important}`;
   (document.head||document.documentElement).appendChild(st); })();
 
+/* ===== Р5 (Кирилл 13.11 16:28–16:34, «делай»): права сотрудников — понятным списком по ролям, корзина смет, журнал =====
+   1) «Права сотрудников» (только директор): Директор — может всё (галочки на него не действуют); Технолог; Главный дизайнер; Дизайнер / офис;
+      дальше — мастер, снабженец, всем (site_r4.js). Переключили — сохраняется сразу; не сохранилось — переключатель возвращается.
+      Новые галочки: технологу «Сметы всех дизайнеров», «Удалять чужие сметы», «Менять цены материалов», «Касса — полный доступ»;
+      дизайнеру «Менять цены материалов»; главному дизайнеру «Касса — полный доступ» (по умолчанию выкл, П1 14.11); снабженцу «Касса — полный доступ» (цены — по умолчанию да).
+   2) Сметы: удалить — в корзину на 30 дней («удалено кем/когда»), вернуть одной кнопкой; стереть насовсем — только директор.
+      Смету, по которой клиент согласился и есть сделка с суммой, удаляет только директор. Главный дизайнер передаёт смету другому дизайнеру.
+   3) Журнал: цены материалов «было → стало, кто, когда», сметы в корзину / вернули / стёрли / передали — директору, технологу, главному дизайнеру.
+   Всё проверяет СЕРВЕР (prSmAll_, smCanDel_, prPrices_, prKassa_, dirGate_ «…Rights» — только директор); здесь — только что показывать. ===== */
+const PR={tr:null,lg:null,busy:false};
+/* [ключ, название, пояснение, по умолчанию] */
+const PR_T=[["smAll","Смотреть сметы всех дизайнеров","иначе — только свои",1],["prices","Менять цены материалов","прайс и общие цены; убрать материал из прайса",1],
+  ["smDel","Удалять чужие сметы","свои — всегда; удалённая лежит в корзине 30 дней",0],["kassa","Касса — полный доступ","все записи и остатки, принимать и выдавать за любого",0],
+  ["del","Удалять сделки и договоры","и файлы договора",0],["money","Деньги фирмы","итог месяца, деньги по заказам, разбор договоров, проценты, согласие директора",0],
+  ["zp","Зарплата всех","свою видит всегда",0],["cfg","Настройки компании","ставки, наценки, проценты офиса",0],["staff","Сотрудники и режим фирмы","PIN-ы, приглашения, роли",0]];
+const PR_O=[["smetas","Видеть все сметы","иначе — только свои",0],["deals","Видеть все сделки","иначе — только свои (где он дизайнер)",0],["prices","Менять цены материалов","убрать материал из прайса — только главный дизайнер",1],
+  ["stage","Переносить сделки по этапам","перетаскивать карточки на любой этап",1],
+  ["sums","Суммы и оплаты сделки","сумма договора, предоплата, остаток",1],["price","Менять цену и сумму","в своих и чужих сделках (если видит суммы)",1],["del","Удалять свои сделки","свои сметы — можно всегда",0],
+  ["bz","Заказы из Базиса","3D, детали, раскрой",1],["stock","Склад: «+ Пришло / − Взял»","видит склад, записывает приход и что взял",1],["buy","Закупка и склад","разделы «Закупка» и «Склад» в «Все разделы»",0],["money","Деньги фирмы","деньги по заказам, итог месяца",0],["markup","Менять наценки","наценки по группам и тарифы работ",0]];
+/* главному дизайнеру — касса целиком только по галочке директора (Кирилл 14.11 21:41: по умолчанию выкл; обычным дизайнерам — только свои записи) */
+const PR_G=[["kassaGlav","Касса — полный доступ","все записи и остатки, принимать и выдавать за любого; только если включены «Суммы и оплаты»",0]];
+/* снабженцу: «Менять цены материалов» — по умолчанию да (сервер RR_DEF_), «Касса — полный доступ» — новая */
+try{ if(typeof R4_S!=="undefined"){ const i=R4_S.findIndex(x=>x[0]==="prices"); if(i>=0) R4_S[i]=["prices","Менять цены материалов","цена материала «запомнить в прайсе», убрать из прайса",1];
+  if(!R4_S.some(x=>x[0]==="kassa")) R4_S.splice(2,0,["kassa","Касса — полный доступ","все записи и остатки, принимать и выдавать за любого",1]); } }catch(_){}
+function prMy(){ return (S.shop&&S.shop.pr)||null; }   /* мои права от сервера (ответ «Сделок») */
+function prDir(){ return !!(S.shop&&S.shop.tech&&(S.shop.dir||!S.shop.hasDir)); }
+if(typeof shpSetRole==="function"){ const _prSR=shpSetRole; shpSetRole=function(j){ const r=_prSR.apply(this,arguments); try{ S.shop.pr=(j&&j.pr)||null; }catch(_){} return r; }; }
+/* технологу — значения по умолчанию, как на сервере (techCan_) */
+function prTVal(V,k,d){ const v=V[k]; if(v===true||v===false) return v; if(k==="kassa") return V.money===true; if(k==="smDel") return V.del===true; return !!d; }
+function prOVal(V,k,d){ const v=V[k]; return v===undefined||v===null?!!d:v===true; }
+if(typeof techCan==="function"){ techCan=function(k){ if(!S.shop||!S.shop.tech) return true; if(S.shop.dir||!S.shop.hasDir) return true; const d=(PR_T.find(x=>x[0]===k)||[])[3]||(k==="buy"?1:0); return prTVal(S.shop.rights||{},k,d); }; window.techCan=techCan; }
+
+/* ---------- окно «Права сотрудников» ---------- */
+function prSw(attr,k,t,s,on,dis){ return `<li><label class="dir-r"><span><b>${t}</b><small>${s}</small></span><input type="checkbox" role="switch" ${attr}="${esc(k)}"${on?" checked":""}${dis?" disabled":""}></label></li>`; }
+function prSec(g,title,sub,inner,open){ return `<details class="r4-sec pr-sec" data-prg="${g}"${open?" open":""}><summary><b>${title}</b><small>${sub}</small></summary>${inner}</details>`; }
+function prBoxHtml(){ const T=S.shop.rights||{}, okC=S.shop.cfgOk===true, O=okC?((S.shop.cfgAll&&S.shop.cfgAll.officeRights)||{}):{}, has=!!S.shop.hasDir;
+  const nT=PR_T.filter(([k,,,d])=>prTVal(T,k,d)).length, nO=PR_O.filter(([k,,,d])=>prOVal(O,k,d)).length, gl=O.glav||[];
+  const des=((S.shop&&S.shop.staff)||[]).filter(p=>/дизайн|офис|менедж/i.test(p.role||""));
+  let h=`<div class="pr-dir"><span class="pr-crown" aria-hidden="true">👑</span><span><b>Директор — может всё</b><small>Галочки на директора не действуют — запереть себя нельзя</small></span></div>`;
+  h+=prSec("tech","Технолог",`включено ${nT} из ${PR_T.length}`,`<p class="muted r4-note">Базис, 3D, чертежи, раскрой, присадка, цех, детали, этапы — технологу всегда.${has?"":" Галочки начнут действовать, когда назначите PIN директора (внизу); до этого технолог может всё."}</p>`+`<ul class="dir-l">${PR_T.map(([k,t,s,d])=>prSw("data-prt",k,t,s,prTVal(T,k,d))).join("")}</ul>`,PR.open==="tech");
+  h+=prSec("glav","Главный дизайнер",gl.length?esc(gl.join(", ")):"не выбран",`<p class="muted r4-note">Видит все сметы и сделки офиса, передаёт смету другому дизайнеру, удаляет любые сметы (смету со сделкой и суммой — только директор), меняет цены материалов и убирает материал из прайса. Кассу целиком — только если включите ниже.</p>`
+    +(okC?`<ul class="dir-l">${des.map(p=>prSw("data-prg2",p.name,esc(p.name),esc(p.role||""),gl.includes(p.name))).join("")||`<li class="muted" style="padding:10px 0">В «Сотрудниках» нет дизайнеров</li>`}</ul><ul class="dir-l pr-gl2">${PR_G.map(([k,t,s,d])=>prSw("data-pro",k,t,s,prOVal(O,k,d))).join("")}</ul>`:`<p class="muted">Загружаю…</p>`),PR.open==="glav");
+  h+=prSec("office","Дизайнер / офис",okC?`включено ${nO} из ${PR_O.length}`:"загружаю…",okC?`<ul class="dir-l">${PR_O.map(([k,t,s,d])=>prSw("data-pro",k,t,s,prOVal(O,k,d))).join("")}</ul><p class="muted r4-note">Свои сметы видит и удаляет всегда. Своя зарплата видна всегда. В кассе — только свои записи.</p>`:`<p class="muted">Загружаю настройки…</p>`,PR.open==="office");
+  h+=`<div class="pr-links"><button type="button" class="pr-link" data-act="pr-trash"><span>🗑</span><b>Корзина смет</b><i aria-hidden="true">›</i></button><button type="button" class="pr-link" data-act="pr-log"><span>📒</span><b>Журнал: цены и сметы</b><i aria-hidden="true">›</i></button></div>`;
+  return h; }
+if(typeof dirModal==="function"){ const _prDM=dirModal; dirModal=function(){ _prDM.apply(this,arguments); const m=document.getElementById("dirM"); if(!m) return; m.classList.add("pr-m");
+  const card=m.querySelector(".modal-card");
+  const add=()=>{ const c=m.querySelector(".modal-card"), pin=c&&c.querySelector(".dir-pin"); if(!pin||m.querySelector(".pr-box")) return;
+    const h2=c.querySelector("h2"); if(h2&&!c.querySelector(".pr-head")){ h2.textContent="Права сотрудников"; h2.classList.add("pr-head"); const p=h2.nextElementSibling; if(p&&p.tagName==="P") p.textContent="Кто что может. Переключили — сохраняется сразу. Каждое право проверяет сервер."; }
+    const box=document.createElement("div"); box.className="pr-box"; box.innerHTML=prBoxHtml();
+    const first=c.querySelector(".r4-box")||pin; first.parentNode.insertBefore(box,first); };
+  const redo=()=>{ const b=m.querySelector(".pr-box"); if(b) b.remove(); add(); };
+  add(); new MutationObserver(()=>{ add(); const r4=m.querySelector(".r4-box"), b=m.querySelector(".pr-box"); if(r4&&b&&b.nextElementSibling!==r4&&r4.previousElementSibling!==b) r4.parentNode.insertBefore(b,r4); }).observe(m,{childList:true,subtree:true});
+  if(S.shop.cfgOk!==true&&typeof cfgLoad==="function") cfgLoad(true).then(()=>{ if(document.body.contains(m)) redo(); });
+  m.addEventListener("toggle",e=>{ const d=e.target; if(d&&d.classList&&d.classList.contains("r4-sec")&&d.open){ PR.open=d.dataset.prg||""; m.querySelectorAll(".r4-sec").forEach(x=>{ if(x!==d) x.open=false; }); } },true);
+  m.addEventListener("change",async e=>{ const c=e.target.closest&&e.target.closest("[data-prt],[data-pro],[data-prg2]"); if(!c) return; e.stopPropagation(); const want=c.checked; c.disabled=true; let ok=false, nm="";
+    let note="";
+    if(c.dataset.prt){ const k=c.dataset.prt, R0=S.shop.rights||{}, V=Object.assign({},R0); PR_T.forEach(([kk,,,d])=>{ V[kk]=prTVal(R0,kk,d); }); V[k]=want; nm=(PR_T.find(x=>x[0]===k)||[])[1];   /* все галочки записываются ровно как были видны до переключения (касса — как была по «Деньги»), меняется только нажатая */
+      if((k==="money"&&R0.kassa!==true&&R0.kassa!==false)||(k==="del"&&R0.smDel!==true&&R0.smDel!==false)) note=k==="money"?" · «Касса — полный доступ» — отдельной галочкой ("+(V.kassa?"включена":"выключена")+")":" · «Удалять чужие сметы» — отдельной галочкой ("+(V.smDel?"включено":"выключено")+")";
+      const j=await prPost({action:"cfgSave",key:"techRights",value:V}); if(j){ ok=true; S.shop.rights=V; (S.shop.cfgAll||(S.shop.cfgAll={})).techRights=V; } }
+    else { if(S.shop.cfgOk!==true){ c.checked=!want; c.disabled=false; toast("Подождите — загружаю настройки"); return; }
+      const V=Object.assign({},(S.shop.cfgAll&&S.shop.cfgAll.officeRights)||{});
+      if(c.dataset.pro){ const k=c.dataset.pro; PR_O.concat(PR_G).forEach(([kk,,,d])=>{ V[kk]=prOVal(V,kk,d); }); V[k]=want; nm=(PR_O.concat(PR_G).find(x=>x[0]===k)||[])[1]; if(k==="kassaGlav") nm+=" (главный дизайнер)"; }
+      else { const n=c.dataset.prg2; V.glav=(V.glav||[]).filter(x=>x!==n); if(want) V.glav.push(n); nm=n+(want?" — главный дизайнер":" — больше не главный дизайнер"); }
+      const j=await prPost({action:"cfgSave",key:"officeRights",value:V}); if(j){ ok=true; S.shop.cfgAll.officeRights=V; } }
+    c.disabled=false; if(!ok){ c.checked=!want; return; }
+    const sec=c.closest(".pr-sec"), sm=sec&&sec.querySelector("summary small"); if(sm){ if(sec.dataset.prg==="glav"){ const g=((S.shop.cfgAll.officeRights||{}).glav||[]); sm.textContent=g.length?g.join(", "):"не выбран"; } else sm.textContent="включено "+sec.querySelectorAll("input[type=checkbox]:checked").length+" из "+sec.querySelectorAll("input[type=checkbox]").length; }
+    try{ haptic("light"); }catch(_){} toast(c.dataset.prg2?nm:(want?"Включено: ":"Выключено: ")+nm+note); if(typeof render==="function") setTimeout(()=>{ try{ if(!document.getElementById("dirM")) render(); }catch(_){} },0); },true);
+  /* старые кнопки «Сохранить» и разделы технолога/дизайнера — заменены разделами выше (сохраняются сразу) */
+  m.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-d="save"]'); if(b){ e.preventDefault(); e.stopPropagation(); m.remove(); } },true);
+  void card; }; }
+async function prPost(body){ const j=await shpPostRaw(body); if(!j){ toast("Нет связи — не сохранилось. Попробуйте ещё раз"); return null; } if(j.ok===false){ if(j.error==="pin"&&typeof shpBadPin==="function"){ shpBadPin(); return null; } if(!(j.right&&j.msg)) toast(j.msg||(j.error==="dir"?"Это может только директор":"Не сохранилось — попробуйте ещё раз")); return null; }   /* с right+msg сообщение уже показал site_r4.js */ return j; }
+
+/* ---------- корзина смет ---------- */
+function prRub(v){ return typeof shpRub==="function"?shpRub(v):Math.round(+v||0).toLocaleString("ru-RU")+" ₽"; }
+function prDate(ms){ try{ return new Date(ms).toLocaleString("ru-RU",{day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"}); }catch(_){ return ""; } }
+function prDays(n){ n=+n||0; const a=n%10, b=n%100; return n+" "+(a===1&&b!==11?"день":a>=2&&a<=4&&(b<10||b>=20)?"дня":"дней"); }
+function prSheet(id,title,body){ document.getElementById(id)?.remove(); const m=document.createElement("div"); m.className="modal pr-modal"; m.id=id; m.style.zIndex=120;
+  m.innerHTML=`<div class="modal-card pr-card" role="dialog" aria-label="${esc(title)}"><div class="pr-top"><button type="button" class="pr-back" data-prx aria-label="Назад">‹</button><h2>${esc(title)}</h2><span class="pr-sp"></span></div><div class="pr-body">${body}</div></div>`;
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-prx]")) m.remove(); }); document.body.appendChild(m); return m; }
+const PR_SK=`<ul class="pr-ul">${[1,2,3].map(()=>`<li class="pr-it pr-sk"><span class="pr-skl" style="width:62%"></span><span class="pr-skl" style="width:40%"></span></li>`).join("")}</ul>`;
+function prTrashHtml(){ const T=PR.tr; if(!T) return PR_SK; if(T.err) return `<p class="note">Не загрузилось — проверьте интернет и откройте ещё раз.</p>`;
+  const L=T.items||[]; let h=`<p class="muted pr-hint">Удалённые сметы лежат здесь ${prDays(T.days||30)}, потом стираются сами.${T.dir?" Стереть сразу можете только вы (директор).":" Стереть насовсем может только директор."}</p>`;
+  if(!L.length) return h+`<div class="pr-empty"><span aria-hidden="true">🗑</span><b>Корзина пуста</b><small>Удалённые сметы появятся здесь</small></div>`;
+  return h+`<ul class="pr-ul">${L.map(x=>`<li class="pr-it" data-id="${esc(x.id)}"><div class="pr-itm"><b>${esc(x.client||"Без имени")}</b>${x.total?`<span class="pr-sum">${esc(prRub(x.total))}</span>`:""}</div>
+    <small>${esc([x.kind,x.who?"составил(а) "+x.who:""].filter(Boolean).join(" · "))}</small><small>Удалил(а) <b>${esc(x.by||"—")}</b>${x.at?" · "+esc(prDate(x.at)):""} · осталось ${esc(prDays(x.left))}</small>
+    <div class="pr-act">${x.restore?`<button type="button" class="pr-bt pr-ok" data-prr="${esc(x.id)}">Вернуть</button>`:""}${x.purge?`<button type="button" class="pr-bt pr-danger" data-prp="${esc(x.id)}">Стереть насовсем</button>`:""}</div></li>`).join("")}</ul>`; }
+async function prTrashLoad(){ PR.tr=null; prTrashPaint(); const j=await shpGet("action=smetaTrash",true); PR.tr=j&&j.ok?j:{err:1}; prTrashPaint(); }
+function prTrashPaint(){ const m=document.getElementById("prTrM"); if(m) m.querySelector(".pr-body").innerHTML=prTrashHtml(); }
+function prTrashOpen(){ prSheet("prTrM","Корзина смет",PR_SK); prTrashLoad(); }
+document.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.closest("[data-prr],[data-prp]"); if(!t) return; e.preventDefault(); e.stopPropagation();
+  const id=t.dataset.prr||t.dataset.prp, purge=!!t.dataset.prp, it=(PR.tr&&PR.tr.items||[]).find(x=>x.id===id); if(!it) return;
+  if(purge&&!(await appConfirm(`Стереть смету «${it.client||"Без имени"}» насовсем? Вернуть будет нельзя.`,"Стереть",true))) return;
+  const was=PR.tr.items; PR.tr.items=was.filter(x=>x.id!==id); prTrashPaint();   /* сразу убираем из корзины; сервер отказал — возвращаем */
+  const j=await prPost({action:purge?"smetaPurge":"smetaRestore",id}); if(!j){ PR.tr.items=was; prTrashPaint(); return; }
+  try{ haptic("light"); }catch(_){} toast(purge?"Смета стёрта насовсем":"Смета вернулась в список"); if(!purge&&S.shop) S.shop.smList=null; },true);
+
+/* ---------- журнал ---------- */
+function prLogHtml(){ const L=PR.lg; if(!L) return PR_SK; if(L.err) return `<p class="note">Не загрузилось — проверьте интернет и откройте ещё раз.</p>`;
+  const it=L.items||[]; if(!it.length) return `<div class="pr-empty"><span aria-hidden="true">📒</span><b>Пока пусто</b><small>Здесь будут смены цен материалов и удаления смет</small></div>`;
+  const tf=PR.lgf||"all", f=x=>tf==="all"||(tf==="price")===!/^смета/.test(x.what);
+  return `<div class="pr-seg" role="group" aria-label="Что показать">${[["all","Всё"],["price","Цены"],["sm","Сметы"]].map(([k,n])=>`<button type="button" data-prlf="${k}" aria-pressed="${tf===k}">${n}</button>`).join("")}</div>
+    <ul class="pr-ul">${it.filter(f).slice(0,200).map(x=>`<li class="pr-it"><div class="pr-itm"><b>${esc(x.name||x.id||"—")}</b>${x.was!==""||x.now!==""?`<span class="pr-ch">${esc(x.was===""?"—":x.was)} → ${esc(x.now===""?"убран":x.now)}</span>`:""}</div><small>${esc(x.what)} · ${esc(x.who||"—")} · ${esc(prDate(x.when))}</small></li>`).join("")}</ul>`; }
+function prLogPaint(){ const m=document.getElementById("prLgM"); if(m) m.querySelector(".pr-body").innerHTML=prLogHtml(); }
+async function prLogOpen(){ PR.lg=null; prSheet("prLgM","Журнал: цены и сметы",PR_SK); const j=await shpGet("action=prLog",true); PR.lg=j&&j.ok?j:{err:1}; prLogPaint(); }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest("[data-prlf]"); if(!t) return; PR.lgf=t.dataset.prlf; prLogPaint(); });
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="pr-trash"],[data-act="pr-log"],[data-act="pr-give"]'); if(!t) return; e.preventDefault(); e.stopPropagation();
+  if(t.dataset.act==="pr-trash") prTrashOpen(); else if(t.dataset.act==="pr-log") prLogOpen(); else prGiveOpen(); },true);
+
+/* ---------- в списке смет: «Корзина»; в открытой смете у главного дизайнера и директора — «Передать» ---------- */
+function prCanTrash(){ const P=prMy(); return P?!!P.smDel:!!(S.shop&&(S.shop.tech||S.shop.role==="office")); }
+if(typeof smListHtml==="function"){ const _prSL=smListHtml; smListHtml=function(){ let h=String(_prSL.apply(this,arguments)); try{ if(!prCanTrash()||h.indexOf('data-act="pr-trash"')>=0) return h;
+    const lg=(S.shop.tech||(prMy()&&prMy().glav))?`<button type="button" class="btn pr-hbtn" data-act="pr-log" aria-label="Журнал">📒</button>`:"";
+    return h.replace('<div class="head-actions">',`<div class="head-actions"><button type="button" class="btn pr-hbtn" data-act="pr-trash" aria-label="Корзина смет">🗑 Корзина</button>${lg}`); }catch(_){ return h; } }; }
+function prGiveOpen(){ const sm=S.shop&&S.shop.sm; if(!sm||!sm.id){ toast("Сначала сохраните смету"); return; }
+  const L=((S.shop&&S.shop.staff)||[]).filter(p=>{ const r=String(p.role||"").toLowerCase(); return /офис|дизайн|менеджер/.test(r)&&!/со стороны|сторонн|тестиров|тестер|технолог|директор/.test(r)&&shpNorm(p.name)!==shpNorm(sm.who||(sm.saved&&sm.saved.who)||""); });   /* П9: только дизайнерам (офис) — как сервер (staffRole_) */
+  const m=prSheet("prGvM","Передать смету",`<p class="muted pr-hint">Смета «${esc(sm.client||"Без имени")}» появится у выбранного дизайнера. Сумма и расчёт не меняются.</p><ul class="pr-ul">${L.map(p=>`<li><button type="button" class="pr-pick" data-prto="${esc(p.name)}"><b>${esc(p.name)}</b><small>${esc(p.role||"")}</small><i aria-hidden="true">›</i></button></li>`).join("")||`<li class="muted">Нет других сотрудников</li>`}</ul>`);
+  m.addEventListener("click",async e=>{ const b=e.target.closest("[data-prto]"); if(!b) return; const to=b.dataset.prto; m.remove();
+    const old=sm.who, oldS=sm.saved&&sm.saved.who; sm.who=to; if(sm.saved) sm.saved.who=to; const j=await prPost({action:"smetaGive",id:sm.id,to}); if(!j){ sm.who=old; if(sm.saved) sm.saved.who=oldS; return; } S.shop.smList=null; toast("Смета передана: "+to); }); }
+/* чужая смета не открылась (сервер: «Это чужая смета») — понятное сообщение и назад, а не пустая смета с «обновите скрипт» */
+if(typeof smLoad==="function"){ const _prLd=smLoad; smLoad=async function(id){ const r=await _prLd.apply(this,arguments); try{ const sm=S.shop&&S.shop.sm, P=prMy();
+    if(id&&sm&&sm.err&&P&&!P.smAll){ const j=await fetch(shpUrl("action=smeta&id="+encodeURIComponent(id)+"&pin="+encodeURIComponent(shpPin())),{cache:"no-cache"}).then(x=>x.json()).catch(()=>null);
+      if(j&&j.ok===false&&j.error==="role"&&S.shop.sm===sm){ S.shop.sm=null; S.shop.mode=S.shop.smFrom||"order"; toast(j.msg||"Это чужая смета"); shpRenderKeep(); } } }catch(_){} return r; }; }
+if(typeof smHtml==="function"){ const _prSH=smHtml; smHtml=function(){ let h=String(_prSH.apply(this,arguments)); try{ const P=prMy(), sm=S.shop.sm; if(!P||!P.give||!sm||!sm.id||S.shop.smClient||h.indexOf('data-act="pr-give"')>=0) return h;
+    const B='<button type="button" class="btn pr-hbtn" data-act="pr-give">⇄ Передать</button>';
+    for(const a of ['<div class="head-actions">','<div class="smn-tools">']){ const i=h.indexOf(a); if(i>=0) return h.slice(0,i+a.length)+B+h.slice(i+a.length); }   /* старая смета — в кнопках сверху; «Новая смета» — в ряду «Версия / Из прошлого заказа» */
+    const k=h.indexOf('<div class="smn-meta">'), e=k>=0?h.indexOf('</p>',k):-1; if(e>=0) return h.slice(0,e+4)+B+h.slice(e+4);   /* быстрая смета — рядом с «сохранена …» */
+    return h; }catch(_){ return h; } }; }
+
+{ const st=document.createElement("style"); st.textContent=`
+.pr-dir{display:flex;align-items:center;gap:12px;padding:12px 14px;margin:0 0 10px;border-radius:14px;background:var(--surface,#1c1c1e);outline:1px solid rgba(128,128,128,.28);outline-offset:-1px}
+.pr-dir .pr-crown{font-size:24px;line-height:1}.pr-dir span:last-child{display:flex;flex-direction:column;gap:2px}.pr-dir b{font-size:16px}.pr-dir small{color:var(--muted,#8e8e93);font-size:13px}
+.pr-box{margin-top:10px}.pr-sec .r4-note{margin:0 0 6px}
+.pr-links{display:flex;flex-direction:column;margin:4px 0 8px;border-radius:14px;overflow:hidden;outline:1px solid rgba(128,128,128,.28);outline-offset:-1px}
+.pr-link{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 14px;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer}.pr-link+.pr-link{border-top:1px solid rgba(128,128,128,.22)}
+.pr-link b{flex:1;font-size:16px;font-weight:600}.pr-link i,.pr-pick i{font-style:normal;font-size:22px;color:var(--muted,#8e8e93)}.pr-link:active,.pr-pick:active{opacity:.6}
+#dirM.pr-m .dir-m>.dir-l:first-of-type,#dirM.pr-m .dir-m>h2+p+.dir-l+p,#dirM.pr-m .of-box,#dirM.pr-m [data-d="save"]{display:none!important}
+#dirM.pr-m .r4-box>h2,#dirM.pr-m .r4-box>.r4-note:first-of-type{display:none}
+.pr-card{width:min(520px,100%);max-height:88vh;display:flex;flex-direction:column;padding-top:10px!important}
+.pr-top{display:flex;align-items:center;gap:8px;min-height:48px;margin:0 0 6px}.pr-top h2{flex:1;margin:0;text-align:center;font-size:17px;font-weight:600}.pr-sp{width:44px}
+.pr-back{width:44px;height:44px;border-radius:50%;border:0;background:rgba(128,128,128,.16);color:inherit;font-size:28px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0 0 3px}
+.pr-body{overflow:auto;-webkit-overflow-scrolling:touch;min-height:180px}.pr-hint{font-size:13px;margin:0 0 10px}
+.pr-ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.pr-it{padding:12px 14px;border-radius:14px;background:var(--surface,#1c1c1e);outline:1px solid rgba(128,128,128,.22);outline-offset:-1px;display:flex;flex-direction:column;gap:3px;transition:opacity .2s,transform .2s}
+.pr-itm{display:flex;align-items:baseline;gap:10px}.pr-itm b{flex:1;min-width:0;font-size:16px;overflow-wrap:anywhere}.pr-sum{font-weight:600;white-space:nowrap}.pr-ch{font-weight:600;white-space:nowrap;color:#ffd60a}
+.pr-it small{color:var(--muted,#8e8e93);font-size:13px}.pr-it small b{color:inherit;font-weight:600}
+.pr-act{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}.pr-act .pr-bt{margin:0!important;border:0!important;outline:0!important;box-shadow:none!important}
+.pr-bt{box-sizing:border-box;width:auto;min-width:0;height:44px;min-height:44px;padding:0 18px;border-radius:22px;border:0;font:inherit;font-size:15px;font-weight:600;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;transition:opacity .15s,transform .15s}.pr-bt:active{opacity:.6;transform:scale(.97)}
+.pr-ok{background:#fff;color:#000}.pr-danger{background:rgba(255,69,58,.16);color:#ff453a}html.vt[data-vt="light"] .pr-ok{background:#000;color:#fff}
+.pr-empty{display:flex;flex-direction:column;align-items:center;gap:4px;padding:40px 10px;text-align:center}.pr-empty span{font-size:40px;opacity:.6}.pr-empty b{font-size:17px}.pr-empty small{color:var(--muted,#8e8e93)}
+.pr-sk{gap:8px}.pr-skl{display:block;height:13px;border-radius:7px;background:rgba(128,128,128,.22);animation:prSk 1.2s ease-in-out infinite}@keyframes prSk{50%{opacity:.45}}
+.pr-seg{display:flex;gap:4px;padding:3px;margin:0 0 10px;border-radius:12px;background:rgba(128,128,128,.16)}.pr-seg button{flex:1;min-height:36px;border:0;border-radius:9px;background:none;color:inherit;font:inherit;font-size:14px;cursor:pointer}.pr-seg button[aria-pressed="true"]{background:var(--surface,#2c2c2e);font-weight:600}
+.pr-pick{display:flex;align-items:center;gap:10px;width:100%;min-height:56px;padding:8px 14px;border-radius:14px;border:0;background:var(--surface,#1c1c1e);outline:1px solid rgba(128,128,128,.22);outline-offset:-1px;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.pr-pick b{display:block;font-size:16px}.pr-pick small{display:block;color:var(--muted,#8e8e93);font-size:13px;flex:1}.pr-pick span{flex:1}
+.pr-hbtn{min-height:44px}
+.pr-gl2{margin-top:6px;padding-top:4px;border-top:1px solid rgba(128,128,128,.28)}
+html.vt[data-vt="dark"] .pr-it,html.vt[data-vt="dark"] .pr-pick,html.vt[data-vt="dark"] .pr-dir{background:#2c2c2e;outline-color:rgba(255,255,255,.10)}
+@media (prefers-reduced-motion:reduce){.pr-skl{animation:none}}`; document.head.appendChild(st); }
+
 /* ===== Тёмная тема — мягкий графит «А» (Кирилл 11.11 макет, 12.11 выбор: «графит + как в телефоне») =====
    Слой цветов поверх тёмной темы (html.vt.sk[data-vt="dark"], см. site_theme.js / site_skin.js). Светлую тему не трогает.
    Чёрного #000 нет: фон тёплый тёмно-серый #0b0b0b, карточки #1c1c1e, чипы и поля #2a2a2c, текст #ffffff / rgba(235,235,245,.55),
@@ -28675,7 +28835,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="92440b63a6"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="010fefad13"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -29374,7 +29534,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="92440b63a6";/*cehqr-build*/
+  const BUILD="010fefad13";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
