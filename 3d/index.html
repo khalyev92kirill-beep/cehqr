@@ -14608,19 +14608,21 @@ function stLine(o,kind){ if(!o) return ""; const now=Date.now(), left=Math.ceil(
   if(o.grace) return `<div class="sb-st warn"><b>Подписка закончилась ${se(dt(o.until))}</b><span>Ещё ${dd(gl)} можно работать как обычно, потом — только просмотр.</span></div>`;
   return `<div class="sb-st ok"><b>✓ ${o.paid||/оплач/.test(o.status||"")?"Оплачено":"Бесплатно"} до ${se(dt(o.until))}</b><span>Осталось ${dd(Math.max(0,left))}.</span></div>`; }
 /* окно «Подписка» — фирма или дизайнер */
-const SB_TXT=["Одна цена за весь цех — не за каждого сотрудника. Добавляйте мастеров и дизайнеров без доплаты.","Меньше 200 ₽ в день — дешевле одной испорченной детали.","30 дней бесплатно, без оплаты вперёд."];
+const SB_TXT=["Одна цена за весь цех — не за каждого сотрудника. Добавляйте мастеров и дизайнеров без доплаты.","Меньше 200 ₽ в день — дешевле одной испорченной детали.","14 дней бесплатно, без оплаты вперёд."];
 async function subPay(kind){ document.getElementById("sbM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="sbM";
   m.innerHTML=`<div class="modal-card sb-card"><p class="muted">Загружаю…</p></div>`; document.body.appendChild(m);
   m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-sbx]")) m.remove(); });
   const I=await subInfo(); const card=m.querySelector(".sb-card"); if(!I){ card.innerHTML=`<p>Нет связи — проверьте интернет.</p><button type="button" class="btn" data-sbx="1">Закрыть</button>`; return; }
   const me=kind==="des"?desMe():null, fo=kind==="firm"?I.firm:null, st=kind==="des"&&me?{until:me.until,ro:me.ro,grace:me.grace,status:me.left>30?"оплачен":""}:fo;
   const founder=kind==="des"?!!(me&&me.founder):!!(fo&&fo.founder), free=kind==="des"&&me&&me.free;
-  let pick=fo&&fo.tariff?fo.tariff:((I.t.find(t=>t.rec)||I.t[0])||{}).n, yr=false;
+  const own=fo&&fo.tariff?String(fo.tariff):"", TL=(I.t||[]).filter(t=>t&&(!t.hidden||t.n===own)).map(t=>t.fHide&&!(founder&&t.n===own)?Object.assign({},t,{f:0,fy:0}):t);   // скрытый тариф — только свой; цена основателя fHide — только своя (сервер отдаёт так же, тут — на всякий случай)
+  let pick=own||((TL.find(t=>t.rec)||TL[0])||{}).n, yr=false;
+  if(own&&!TL.some(t=>t.n===pick)) pick=(TL[0]||{}).n;   // записан тариф, которого больше нет («Старт» → 13.11 «Мастер»): выбран первый, сумма и «Я оплатил» — по нему
   const pr=t=>founder&&t.f?(yr?(t.fy||t.f*10):t.f):(yr?(t.y||t.p*10):t.p);
   const dT={n:"Дизайнер",p:I.d,y:I.dy||I.d*10,f:I.df,fy:I.dfy||I.df*10}, burn=kind==="des"?(me&&me.fdBurn):(fo&&fo.fdBurn);
   const per=()=>yr?"/год":"/мес", old=t=>founder&&t.f?`<s>${rub(yr?(t.y||t.p*10):t.p)}</s>`:yr?`<s>${rub(t.p*12)}</s>`:"";
   const tar=()=>kind==="des"?`<div class="sb-t on"><span class="sb-tp">${old(dT)} ${rub(pr(dT))}<small>${per()}</small></span><b>Дизайнер</b><small>Смета: свои сметы, КП, 3D. Бесплатно, если ваш цех на тарифе «Цех» или выше</small></div>`
-    :I.t.map(t=>`<button type="button" class="sb-t${t.n===pick?" on":""}" data-sbt="${se(t.n)}">${t.rec?`<span class="sb-rec">советуем</span>`:""}<span class="sb-tp">${old(t)} ${rub(pr(t))}<small>${per()}</small></span><b>${se(t.n)}</b><small>${t.max?"до "+t.max+" человек":"без ограничений"}${t.note?" · "+se(t.note):""}</small></button>`).join("");
+    :TL.map(t=>`<button type="button" class="sb-t${t.n===pick?" on":""}" data-sbt="${se(t.n)}">${t.rec?`<span class="sb-rec">советуем</span>`:""}<span class="sb-tp">${old(t)} ${rub(pr(t))}<small>${per()}</small></span><b>${se(t.n)}</b><small>${t.max?"до "+t.max+" человек":"без ограничений"}${t.note?" · "+se(t.note):""}</small></button>`).join("");
   const memo=kind==="des"?(me&&me.phone?"ваш телефон +"+me.phone:"ваш телефон"):"код фирмы "+(fo?fo.code:F());
   const draw=()=>{ card.innerHTML=`<div class="sb-hd"><h2>Подписка</h2><button type="button" class="btn sm" data-sbx="1">Закрыть</button></div>${free?`<div class="sb-st ok"><b>✓ Бесплатно — подписку оплачивает цех «${se(me.free.name||"")}»</b><span>Пока цех на тарифе «Цех» или выше, Смета для вас бесплатна.</span></div>`:stLine(st,kind)}
     ${kind==="firm"?`<ul class="sb-why">${SB_TXT.map(x=>`<li>${se(x)}</li>`).join("")}</ul>`:""}
@@ -14628,9 +14630,9 @@ async function subPay(kind){ document.getElementById("sbM")?.remove(); const m=d
     <div class="sb-yr" role="radiogroup"><button type="button" data-sbyr="0" aria-pressed="${!yr}">На месяц</button><button type="button" data-sbyr="1" aria-pressed="${yr}">На год <small>2 месяца в подарок</small></button></div>
     <p class="sb-l">${kind==="des"?"Тариф":"Выберите тариф"}</p><div class="sb-ts">${tar()}</div>
     <div class="sb-pay"><p class="sb-l">Как оплатить</p>${I.qr?`<img class="sb-qr" src="${se(I.qr)}" alt="QR-код для перевода">`:""}${I.sbp?`<p class="sb-sbp">${se(I.sbp).replace(/\n/g,"<br>")}</p>`:""}${!I.qr&&!I.sbp?`<p class="muted">Реквизиты для перевода пришлёт Кирилл — напишите ему.</p>`:""}
-      <p class="sb-memo">Сумма: <b>${rub(kind==="des"?pr(dT):pr(I.t.find(t=>t.n===pick)||I.t[0]))}</b> · в сообщении к переводу напишите: <b>${se(memo)}</b></p></div>
+      <p class="sb-memo">Сумма: <b>${rub(kind==="des"?pr(dT):pr(TL.find(t=>t.n===pick)||TL[0]||{}))}</b> · в сообщении к переводу напишите: <b>${se(memo)}</b></p></div>
     ${free?"":`<button type="button" class="btn primary sb-big" data-sbpaid="1">Я оплатил — сообщить</button>`}
-    <p class="sb-foot">После проверки перевода подписку продлят — обновите страницу. Первые ${I.trial||30} дней — бесплатно; после срока ещё ${I.grace||3} дня всё работает, потом только просмотр. Данные не удаляются.${founder?" Цена основателя сохраняется, пока нет перерыва в оплате больше 14 дней.":""}</p>`; };
+    <p class="sb-foot">После проверки перевода подписку продлят — обновите страницу. ${fo&&fo.until>0&&fo.status!=="оплачена"?`Бесплатно до ${se(new Date(fo.until).toLocaleDateString("ru-RU",{day:"numeric",month:"long",year:"numeric"}))}; после`:"После"} срока ещё ${I.grace||3} дня всё работает, потом только просмотр. Данные не удаляются.${founder?" Цена основателя сохраняется, пока нет перерыва в оплате больше 14 дней.":""}</p>`; };
   draw();
   card.addEventListener("click",async e=>{ const t=e.target.closest("[data-sbt]"); if(t){ pick=t.dataset.sbt; return draw(); }
     const y=e.target.closest("[data-sbyr]"); if(y){ yr=y.dataset.sbyr==="1"; return draw(); }
@@ -14663,6 +14665,7 @@ function admHtml(){ const A=SB.adm; let h=`<div class="sb-wrap"><div class="sb-h
   const nf=v=>v===""||v==null||!(+v>0)?"":(+v).toLocaleString("ru-RU"), fl=(lb,f,v,cls,ph)=>`<label class="sb-f${cls?" "+cls:""}"><small>${lb}</small><input data-f="${f}" value="${se(v)}" inputmode="numeric" autocomplete="off"${ph?` placeholder="${ph}"`:""}></label>`;
   const tcard=(i,t)=>`<div class="sb-tc${t.rec?" best":""}" data-sbtc="${i}"><div class="sb-tch"><label class="sb-f sb-fn"><small>Название тарифа</small><input data-f="n" value="${se(t.n)}" maxlength="30" placeholder="Например: Цех"></label><label class="sb-chk sb-recl"><input type="radio" name="rec" value="${i}"${t.rec?" checked":""}> советуем</label></div>
       <div class="sb-g">${fl("Цена в месяц, ₽","p",nf(t.p))}${fl("Цена за год, ₽","y",nf(t.y))}${fl("Первым клиентам — в месяц, ₽","f",nf(t.f),"fo")}${fl("Первым клиентам — за год, ₽","fy",nf(t.fy||(t.f?t.f*10:"")),"fo")}${fl("До скольких сотрудников","max",nf(t.max),"","без ограничений")}<label class="sb-f w"><small>Чего нет в тарифе (пусто — всё есть)</small><input data-f="note" value="${se(t.note||"")}" maxlength="60" placeholder="всё есть"></label></div>
+      <label class="sb-chk"><input type="checkbox" data-f="hidden"${t.hidden?" checked":""}> старый тариф — новым не показывать (только у кого уже есть)</label><label class="sb-chk"><input type="checkbox" data-f="fHide"${t.fHide?" checked":""}> цену для первых клиентов — новым не показывать (только у кого уже есть)</label>
       <button type="button" class="linkbtn sb-tdel" data-sba="tdel">Убрать этот тариф</button></div>`;
   SB.tcard=tcard; const T0=c.t.length?c.t:[{n:"",p:"",y:"",f:"",max:"",note:""}];
   h+=`<details class="sb-set"${!c.sbp&&!c.qr||SB.setOpen?" open":""}><summary>Цены и как платить</summary><form data-sbform="1">
@@ -14683,7 +14686,7 @@ function admHtml(){ const A=SB.adm; let h=`<div class="sb-wrap"><div class="sb-h
       <small>до ${se(dt(x.until))} ${kind==="des"&&x.free?`<span class="sb-chip ok">бесплатно — цех платит${x.fname?" («"+se(x.fname)+"»)":""}</span>`:off?"":chip(x,now,gr)}${kind==="firm"&&fprice(x)?" · "+fprice(x):""}</small>
       <label class="sb-chk sb-fdc"><input type="checkbox" data-sbfd="${kind}" data-id="${se(kind==="firm"?x.code:x.id)}"${x.founder?" checked":""}> цена для первых клиентов</label>${x.burned?`<span class="sb-chip bad">цена для первых клиентов сгорела — перерыв в оплате больше 14 дней</span>`:""}
       ${kind==="des"?`<label class="sb-fc">фирма (код)<input data-sbfc="${se(x.id)}" value="${se(x.fcode||"")}" maxlength="8" placeholder="—" autocapitalize="characters"></label>`:""}</div>
-    ${off?`<div class="sb-ra"><span class="sb-offn">Сотрудники фирмы не могут войти. Данные сохранены.</span></div>`:`<div class="sb-ra">${kind==="firm"?`<select data-sbtar="${se(x.code)}" aria-label="Тариф">${["<option value=\"\">тариф —</option>"].concat(c.t.map(t=>`<option${t.n===x.tariff?" selected":""}>${se(t.n)}</option>`)).join("")}</select>`:""}
+    ${off?`<div class="sb-ra"><span class="sb-offn">Сотрудники фирмы не могут войти. Данные сохранены.</span></div>`:`<div class="sb-ra">${kind==="firm"?`<select data-sbtar="${se(x.code)}" aria-label="Тариф">${["<option value=\"\">тариф —</option>"].concat(c.t.map(t=>`<option${t.n===x.tariff?" selected":""}>${se(t.n)}</option>`),x.tariff&&!c.t.some(t=>t.n===x.tariff)?[`<option selected>${se(x.tariff)}</option>`]:[]).join("")}</select>`:""}
       <button type="button" class="btn sm primary" data-sba="ext" data-m="1" data-k="${kind}" data-id="${se(kind==="firm"?x.code:x.id)}">Продлить на месяц</button><button type="button" class="btn sm" data-sba="ext" data-m="12" data-k="${kind}" data-id="${se(kind==="firm"?x.code:x.id)}">Продлить на год</button></div>`}
     ${kind==="firm"?`<div class="sb-rb"><button type="button" class="btn sm" data-sba="foff" data-on="${off?0:1}" data-id="${se(x.code)}">${off?"Включить":"Выключить"}</button><button type="button" class="btn sm danger" data-sba="fdel" data-id="${se(x.code)}">🗑 Удалить</button></div>`:""}</div>`; };
   h+=`<p class="sb-l">Цехи · ${A.firms.length} <span class="muted">· цена для первых клиентов у ${nF} из ${c.fN}${nOff?" · выключено "+nOff:""}</span></p>${A.firms.length?A.firms.slice().sort((a,b)=>(isOff(a)-isOff(b))||(a.until-b.until)).map(x=>card(x,"firm")).join(""):`<p class="muted">Пока нет. Фирмы подключаются сами: «Подключить свою фирму».</p>`}`;
@@ -14745,15 +14748,15 @@ document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.
     b.disabled=true; const j=await fPost({action:"firmOff",id:b.dataset.id,on}); b.disabled=false; if(j){ toast(on?"Фирма выключена — её сотрудники не смогут войти":"Фирма включена"); admLoad(); } else if(b.isConnected){ b.dataset.sure=""; b.textContent=on?"Выключить":"Включить"; } return; }
   if(b.dataset.sba==="ext"){ const lb=b.dataset.m==="12"?"Продлить на год":"Продлить на месяц"; if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Точно? "+(b.dataset.m==="12"?"на год":"на месяц"); setTimeout(()=>{ if(b.isConnected){ b.dataset.sure=""; b.textContent=lb; } },3500); return; }
     const k=b.dataset.k, id=b.dataset.id, tsel=k==="firm"?document.querySelector(`[data-sbtar="${CSS.escape(id)}"]`):null; b.disabled=true;
-    const body={action:"subExtend",kind:k,id,months:+b.dataset.m===12?12:1}; if(tsel) body.tariff=tsel.value;
+    const body={action:"subExtend",kind:k,id,months:+b.dataset.m===12?12:1}; if(tsel&&tsel.value) body.tariff=tsel.value;   // «тариф —» — записанный не трогаем
     const j=await shpPost(body); b.disabled=false; if(j){ toast("Продлено до "+dt(j.until)); admLoad(); } } });
 document.addEventListener("change",async e=>{ const t=e.target; if(!(S.shop&&S.shop.mode==="subadm")||!t||!t.dataset) return;
   if(t.dataset.sbfd){ const j=await shpPost({action:"subMark",kind:t.dataset.sbfd,id:t.dataset.id,founder:t.checked?1:0}); if(j){ toast(t.checked?"Цена для первых клиентов закреплена":"Цена для первых клиентов снята"); admLoad(); } else t.checked=!t.checked; return; }
   if(t.dataset.sbfc!==undefined&&t.hasAttribute("data-sbfc")){ const v=String(t.value||"").trim().toUpperCase(); const j=await shpPost({action:"subMark",kind:"des",id:t.dataset.sbfc,fcode:v}); if(j){ toast(v?"Фирма дизайнера: "+v:"Фирма убрана"); admLoad(); } } });
 document.addEventListener("submit",async e=>{ const f=e.target.closest&&e.target.closest("[data-sbform]"); if(!f) return; e.preventDefault(); const g=n=>f.elements[n]?String(f.elements[n].value||"").trim():"";
-  const N=v=>+String(v).replace(/\s/g,"")||0, rc=(f.querySelector("[name=rec]:checked")||{}).value; const cards=[...f.querySelectorAll("[data-sbtc]")], cv=(cd,k)=>{ const el=cd.querySelector('[data-f="'+k+'"]'); return el?String(el.value||"").trim():""; };
+  const N=v=>+String(v).replace(/\s/g,"")||0, rc=(f.querySelector("[name=rec]:checked")||{}).value; const cards=[...f.querySelectorAll("[data-sbtc]")], cv=(cd,k)=>{ const el=cd.querySelector('[data-f="'+k+'"]'); return el?String(el.value||"").trim():""; }, cb=(cd,k)=>{ const el=cd.querySelector('[data-f="'+k+'"]'); return el&&el.checked?1:0; };
   const bad=cards.find(cd=>(cv(cd,"n")&&!(N(cv(cd,"p"))>0))||(!cv(cd,"n")&&N(cv(cd,"p"))>0)); if(bad){ toast(cv(bad,"n")?"У тарифа «"+cv(bad,"n")+"» не вписана цена в месяц":"У тарифа с ценой не вписано название"); const el=bad.querySelector(cv(bad,"n")?'[data-f="p"]':'[data-f="n"]'); el&&el.focus(); return; }
-  const t=cards.map(cd=>({n:cv(cd,"n"),p:N(cv(cd,"p")),y:N(cv(cd,"y")),f:N(cv(cd,"f")),fy:N(cv(cd,"fy")),max:N(cv(cd,"max")),note:cv(cd,"note"),rec:cd.dataset.sbtc===rc?1:0})).filter(x=>x.n&&x.p>0);
+  const t=cards.map(cd=>({n:cv(cd,"n"),p:N(cv(cd,"p")),y:N(cv(cd,"y")),f:N(cv(cd,"f")),fy:N(cv(cd,"fy")),max:N(cv(cd,"max")),note:cv(cd,"note"),rec:cd.dataset.sbtc===rc?1:0,hidden:cb(cd,"hidden"),fHide:cb(cd,"fHide")})).filter(x=>x.n&&x.p>0);
   const btn=f.querySelector("[type=submit]"); btn.disabled=true; btn.textContent="Сохраняю…";
   let qr=""; const fi=f.elements.qr&&f.elements.qr.files[0]; if(fi&&typeof siteShrink==="function"){ try{ qr=await siteShrink(fi); }catch(_){ toast("Не получилось открыть картинку"); } }
   const body={action:"subSave",t,d:N(g("d")),dy:N(g("dy")),df:N(g("df")),dfy:N(g("dfy")),fN:N(g("fN")),dN:N(g("dN")),sbp:g("sbp")}; if(qr) body.qr=qr; if(f.elements.qrDel&&f.elements.qrDel.checked) body.qrDel=1;
@@ -21540,14 +21543,15 @@ const staff=[{name:'Иван',role:'Технолог'},{name:'Айна',role:'Д
   /* 3. «Подключить свою фирму» — форма */
   function frmModal(){ document.getElementById("frmM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="frmM"; let ind="mebel";
     m.innerHTML=`<form class="modal-card frm-card" id="frmF" autocomplete="on"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">Подключить свою фирму</h2><button type="button" class="btn sm" data-fx="x">Закрыть</button></div>
-      <p class="muted" style="margin:6px 0 12px">30 дней бесплатно, без оплаты вперёд. У фирмы будет своя отдельная база — сделки, сметы, сотрудники. Никто другой их не видит.</p>
+      <p class="muted" style="margin:6px 0 12px">14 дней бесплатно, без оплаты вперёд. У фирмы будет своя отдельная база — сделки, сметы, сотрудники. Никто другой их не видит.</p>
+      <a class="frm-site" href="/o/#reg">Регистрация — на сайте<small>Тарифы, правила и подтверждение в Telegram — за минуту</small><i aria-hidden="true">›</i></a>
       <label>Название фирмы<input name="firm" maxlength="60" required placeholder="Мебель Север"></label>
       <p class="frm-l">Чем занимаетесь</p><div class="frm-ind">${Object.keys(IND).map(k=>`<button type="button" data-ind="${k}" aria-pressed="${k===ind}">${IND[k]}</button>`).join("")}</div>
       <p class="muted frm-ih" id="frmIh"></p>
       <label>Ваше имя<input name="name" maxlength="40" autocomplete="name" required placeholder="Иван"></label>
       <label>Телефон<input name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="+7 914 …"></label>
       <label>Придумайте PIN директора (6–12 цифр)<input name="ppin" type="password" inputmode="numeric" maxlength="12" autocomplete="new-password" required></label>
-      <button type="submit" class="btn primary frm-go">Создать фирму — 30 дней бесплатно</button><p class="frm-err" id="frmErr"></p></form>`;
+      <button type="submit" class="btn primary frm-go">Создать фирму — 14 дней бесплатно</button><p class="frm-err" id="frmErr"></p></form>`;
     document.body.appendChild(m);
     const ih=()=>{ const e=m.querySelector("#frmIh"); if(e) e.textContent=ind==="mebel"?"":"Для окон и потолков сейчас всё как у мебели — свои разделы и этапы добавим в ближайших обновлениях."; };
     m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-fx=x]")) return m.remove();
@@ -21557,7 +21561,7 @@ const staff=[{name:'Иван',role:'Технолог'},{name:'Айна',role:'Д
       if(!/^\d{6,12}$/.test(g("ppin"))){ err.textContent="PIN — от 6 до 12 цифр"; return; }
       sb.disabled=true; sb.textContent="Создаём фирму…"; let j=null;
       try{ const r=await (window.__fetch0||fetch)(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"firmNew",firm:g("firm"),ind,name:g("name"),phone:g("phone"),ppin:g("ppin")})}); j=await r.json(); }catch(_){ j=null; }
-      sb.disabled=false; sb.textContent="Создать фирму — 30 дней бесплатно";
+      sb.disabled=false; sb.textContent="Создать фирму — 14 дней бесплатно";
       if(!j){ err.textContent="Нет связи — проверьте интернет"; return; }
       if(!j.ok&&j.error==="exists"&&/^[A-Z0-9]{5,8}$/.test(String(j.code||""))){   /* Р4 (12.11): с этим телефоном компания уже есть — вторую не создаём, а ведём на вход (PIN директора этой фирмы) */
         err.textContent=""; f.querySelector(".frm-ex")?.remove(); const bx=document.createElement("div"); bx.className="frm-ex";
@@ -21613,6 +21617,7 @@ const staff=[{name:'Иван',role:'Технолог'},{name:'Айна',role:'Д
     if(fr){ try{ localStorage.removeItem("w24-fresh"); }catch(_){} window.__w24Fresh=1;
       setTimeout(()=>{ try{ if(typeof window.r4Onb==="function") window.r4Onb(frmHint); else frmHint(); }catch(_){ if(typeof toast==="function") toast("Фирма создана! Теперь позовите сотрудников — «Все разделы» → «Сотрудники»"); } },400); } }
   const st=document.createElement("style"); st.textContent=`.frm-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;margin:0 0 12px;border-radius:14px;background:var(--card,var(--w2-soft));border:1px solid var(--line,#ddd);font-size:14px}.frm-bar span{flex:1 1 200px}.frm-bar.bad{background:#fff1f0;border-color:#f3b8b2;color:#5a1a14}.frm-bar .btn{text-decoration:none}
+.frm-site{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-height:56px;padding:10px 14px;margin:0 0 14px;border-radius:14px;background:var(--l2,#2a2a2c);color:inherit;text-decoration:none;font-weight:600}.frm-site small{order:3;flex-basis:100%;font-weight:400;font-size:13px;opacity:.6}.frm-site i{margin-left:auto;font-style:normal;font-size:20px;opacity:.4}
 .frm-out{text-align:center;margin:14px 0 0;font-size:14px}.frm-card{max-width:520px}.frm-card label{display:flex;flex-direction:column;gap:6px;margin:0 0 12px;font-weight:600}.frm-card input{min-height:46px}.frm-l{margin:4px 0 6px;font-weight:600}.frm-ind{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 6px}.frm-ind button{flex:1 1 140px;min-height:46px;border-radius:12px;border:1px solid var(--line,#ccc);background:transparent;color:inherit;font:inherit}.frm-ind button[aria-pressed=true]{border-color:var(--accent,var(--frame-strong));box-shadow:inset 0 0 0 1px var(--accent,rgba(0,0,0,0.35));font-weight:700}.frm-ih{font-size:13px;margin:0 0 10px;min-height:0}.frm-go{width:100%;min-height:50px;margin-top:4px}.frm-err{color:#c0392b;min-height:1.2em;margin:8px 0 0}.frm-ex{margin:6px 0 0;padding:14px;border-radius:14px;border:1.5px solid var(--frame-strong);background:var(--w2-soft);display:grid;gap:8px}.frm-ex b{font-size:17px}.frm-ex p{margin:0;font-size:14px;line-height:1.4}
 .frm-ol{margin:0;padding-left:20px;line-height:1.55}.frm-ol li{margin:0 0 6px}.frm-url{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line,#ccc);border-radius:12px}.frm-url span{flex:1 1 180px;font-size:13px;word-break:break-all;user-select:all;-webkit-user-select:all}
 .frm-pic{margin:0 0 10px;border:1px solid var(--line,#ccc);border-radius:14px;overflow:hidden}.frm-ph{display:flex;justify-content:space-around;align-items:center;padding:8px 6px;font-size:20px;opacity:.9}.frm-ph span{width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;opacity:.45}.frm-ph .on{opacity:1;box-shadow:0 0 0 3px #FFD60A;color:inherit}
@@ -23429,7 +23434,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="5bb1668d4f";
+const CHK_BUILD="92440b63a6";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -24375,7 +24380,7 @@ body.pp-on #toast{display:none!important}
 
   /* «Новая компания»: подключить свою фирму · войти в другую компанию по коду · демо */
   function coSheet(){ lockHide(); document.getElementById("lgCoM")?.remove(); const m=document.createElement("div"); m.id="lgCoM"; m.className="lg-x"; m.setAttribute("role","dialog"); m.setAttribute("aria-modal","true"); document.body.classList.add("pp-on");
-    m.innerHTML=`<div class="lg-in"><div class="lg-logo">${LOGO}<b>Work24link</b></div><h2 class="lg-t">Новая компания</h2><p class="lg-s">Свой цех в Work24link — 30 дней бесплатно</p>
+    m.innerHTML=`<div class="lg-in"><div class="lg-logo">${LOGO}<b>Work24link</b></div><h2 class="lg-t">Новая компания</h2><p class="lg-s">Свой цех в Work24link — 14 дней бесплатно</p>
       <div class="lg-list"><button type="button" class="lg-go" data-lgc="firm">Подключить свою фирму</button><button type="button" class="lg-sec" data-lgc="code">Войти в другую компанию по коду</button><a class="lg-sec" href="?demo=1" data-lgc="demo">Посмотреть демо-фирму</a></div>
       <div class="lg-b"><button type="button" data-lgc="back">Назад</button></div></div>`;
     document.body.appendChild(m);
@@ -28669,7 +28674,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="5bb1668d4f"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="92440b63a6"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -28826,6 +28831,143 @@ if(typeof sgHeadBtns==="function"){ const _otzHB=sgHeadBtns; sgHeadBtns=function
 html[data-vt="light"] .otz-lk{background:rgba(0,0,0,.06)!important}html[data-vt="light"] .otz-th{background:rgba(0,0,0,.04)}
 @media (prefers-reduced-motion:reduce){#otzM.otz-m,#otzM .otz-card,.otz-seg::before{transition:none}}
 `; document.head.appendChild(st); })();
+
+/* ===== Регистрация на сайте → первый вход в приложение (Кирилл 13.11 12:07 «А», 12:11 «Делай 1 2 3»)
+   1) Сайт /o/ создал фирму (сервер regCheck_ — тем же путём firmNew_) и отдал талон «Придумайте PIN» (как после «Забыл PIN»).
+      Сайт кладёт {c: код фирмы, t: талон, n: имя} в sessionStorage «w24-reg» и открывает /?f=<код>. Здесь — сразу окно «Придумайте PIN»
+      (то же окно PIN «как на айфоне», site_pinpad.js), PIN уходит на сервер (codeSet) → пропуск → вход, дальше первые шаги фирмы (site_r4.js).
+      Талон одноразовый, живёт 30 мин; PIN и талон — только в полях формы и в sessionStorage этой вкладки, в адрес и журнал не попадают.
+   2) «С чего начать» — карточка на главном экране новой фирмы: «Создать первую смету» (быстрая смета) и «Загрузить заказ из Базиса».
+      Показывается после первого входа новой фирмы (с сайта или «Подключить свою фирму»), пока не нажали «Скрыть». Пустого экрана нет.
+   3) «Приведи цех» (Кирилл 13.11 14:48, 14:50 — неделя): у директора/технолога фирмы в карточке строка «Пригласите другой цех — вам и ему по неделе бесплатно»
+      → окно со ссылкой <сайт>/o/?ref=<КОД ПРИГЛАШЕНИЯ> (не код фирмы для входа: сервер выдаёт отдельный, refCode), «Скопировать» и «Поделиться».
+      Бонус начисляет сервер (regCheck_), здесь только ссылка. window.w24Invite() — открыть окно откуда угодно.
+   4) На шагах регистрации («Придумайте PIN», «Какая у вас фирма?», «Добавьте сотрудников», «Фирма создана») плашку «Поставьте Work24link на телефон» прячем — она закрывала варианты.
+   Ограничения тарифов не включаются — тариф с сайта только записан у Кирилла в журнале. ===== */
+(function(){
+  if(window.APP_DES||window.APP_DEMO) return;
+  const ls={ g:k=>{ try{ return localStorage.getItem(k)||""; }catch(_){ return ""; } }, s:(k,v)=>{ try{ localStorage.setItem(k,v); }catch(_){} }, d:k=>{ try{ localStorage.removeItem(k); }catch(_){} } };
+  const H=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const BOT="https://t.me/timebel_ceh_bot";
+
+  /* ---------- 1. «Придумайте PIN» по талону с сайта ---------- */
+  let REG=null; try{ REG=JSON.parse(sessionStorage.getItem("w24-reg")||"null"); }catch(_){ REG=null; }
+  if(REG&&!(window.APP_FIRM&&REG.c===window.APP_FIRM&&/^rst\./.test(String(REG.t||"")))) REG=null;
+  function regPin(){ if(!REG||document.getElementById("lgNewM")) return;
+    document.getElementById("lgM")?.remove();   // экран «Введите PIN» уже открылся — у новой фирмы PIN ещё нет
+    const m=document.createElement("div"); m.className="modal lg-m"; m.id="lgNewM"; m.dataset.mode="reg";
+    m.innerHTML=`<form class="modal-card" id="lgNewF" data-nm="${H(REG.n||"")}" data-ppmin="6" autocomplete="off">
+      <label>Придумайте свой PIN (6 цифр и больше)<input id="lgP1" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label>
+      <label>Повторите PIN<input id="lgP2" type="password" inputmode="numeric" maxlength="12" required autocomplete="new-password"></label>
+      <button type="submit">Готово</button><button type="button" data-ppfoot="1" data-lg="regback">Отмена</button></form>`;
+    document.body.appendChild(m); }
+  const err=(inp,msg)=>{ try{ fieldErr(inp,msg); }catch(_){ try{ toast(msg); }catch(__){} } };
+  async function regSet(f){ const a=f.querySelector("#lgP1"), b=f.querySelector("#lgP2"), P=String(a.value||"").trim();
+    f.querySelectorAll(".field-err").forEach(e=>e.remove());
+    if(!/^\d{6,12}$/.test(P)){ err(a,"PIN — от 6 до 12 цифр"); a.value=""; b.value=""; return; }
+    if(P!==String(b.value||"").trim()){ err(b,"Не совпадает — введите ещё раз"); b.value=""; return; }
+    const sb=f.querySelector("[type=submit]"); sb.disabled=true; let j=null;
+    try{ for(let t=0;t<40&&!(S.site&&S.site.stagesUrl);t++) await new Promise(r=>setTimeout(r,250));   /* адрес сервера (config.json) ещё грузится — ждём до 10 с */
+      const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"codeSet",ticket:REG.t,ppin:P})}); j=await r.json(); }catch(e0){ j=null; }   // firm=<код> добавит site_firm.js
+    sb.disabled=false;
+    if(!j){ err(b,"Нет связи — проверьте интернет и нажмите «Готово» ещё раз"); b.value=""; return; }
+    if(!j.ok||!/^tgs\./.test(j.session||"")){
+      if(j.error==="ticket"){ try{ sessionStorage.removeItem("w24-reg"); }catch(_){} REG=null; document.getElementById("lgNewM")?.remove();
+        try{ toast("Время вышло — нажмите «Забыл PIN»: код придёт в Telegram"); }catch(_){} return; }
+      err(j.error&&/^pp_/.test(j.error)?a:b,j.msg||"Не получилось"); a.value=""; b.value=""; return; }
+    /* вошли: как обычный вход по личному PIN (site_login.js lgDone) + первые шаги новой фирмы */
+    const K=typeof MST_KEYS!=="undefined"?MST_KEYS:{tech:"cehqr-techpin",tester:"cehqr-techpin",office:"cehqr-officepin",supply:"cehqr-suppin",master:"cehqr-pin"};
+    Object.values(K).forEach(k=>ls.d(k)); ["w24-pin-dir","w24-pin-tech","w24-altpin","w24-lgdir"].forEach(ls.d);
+    ls.s(K[j.role]||K.master,j.session); if(j.weak) ls.s("w24-ppask","weak"); else ls.d("w24-ppask");
+    if(j.name) ls.s("cehqr-who",String(j.name).slice(0,40)); ls.s("cehqr-full","1");
+    ls.s("w24-fresh","1"); ls.s("w24-start","1");
+    try{ sessionStorage.removeItem("w24-reg"); sessionStorage.removeItem("w24-lgskip"); }catch(_){} REG=null;
+    const go=()=>{ try{ location.reload(); }catch(_){} }; if(typeof window.w24Cover==="function") window.w24Cover(go); else go(); }
+  /* своя отправка — раньше обработчика site_login.js (он ловит #lgNewF на document; мы — на window, этап захвата) */
+  window.addEventListener("submit",e=>{ const f=e.target; if(!f||f.id!=="lgNewF") return; const m=f.closest("#lgNewM"); if(!m||m.dataset.mode!=="reg") return;
+    e.preventDefault(); e.stopImmediatePropagation(); regSet(f); },true);
+  window.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-lg="regback"]'); if(!b) return; e.preventDefault(); e.stopImmediatePropagation();
+    document.getElementById("lgNewM")?.remove(); try{ toast("PIN можно придумать позже: «Забыл PIN» — код придёт в Telegram"); }catch(_){} },true);
+  window.addEventListener("click",e=>{ if(e.target.closest&&e.target.closest("#w24bz [data-skup]")) setTimeout(()=>document.getElementById("w24bz")?.remove(),0); },true);   // «Загрузить файл модели» открывает своё окно (site_sketchup.js) — наше закрываем
+  if(REG){ if(document.body) regPin(); else document.addEventListener("DOMContentLoaded",regPin); setTimeout(regPin,350); setTimeout(regPin,1200); }
+
+  /* ---------- 2. «С чего начать» ---------- */
+  if(window.__w24Fresh===1) ls.s("w24-start","1");   // фирма создана в приложении («Подключить свою фирму») — тоже показываем
+  const IC={
+    sm:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
+    bz:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>',
+    inv:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M18.5 8v6M15.5 11h6"/></svg>'};
+  const invCode=()=>{ const c=String(window.APP_FIRM||"").toUpperCase(); return /^[A-Z0-9]{5,8}$/.test(c)?c:""; };
+  const invOn=()=>{ try{ return !!invCode()&&String(S.shop.role||"")==="tech"; }catch(_){ return false; } };   // директор/технолог фирмы (у ТиМебель без кода — нет)
+  let REFC=""; try{ REFC=sessionStorage.getItem("w24-refc:"+invCode())||""; }catch(_){}
+  async function invRef(){ if(/^[A-Z2-9]{8}$/.test(REFC)) return REFC; if(typeof shpPostRaw!=="function") return "";
+    const j=await shpPostRaw({action:"refCode"}); const v=j&&j.ok?String(j.ref||""):""; if(/^[A-Z2-9]{8}$/.test(v)){ REFC=v; try{ sessionStorage.setItem("w24-refc:"+invCode(),v); }catch(_){} } return REFC; }
+  function stOn(){ try{ return ls.g("w24-start")==="1"&&S.view==="shop"&&S.shop&&S.shop.loaded&&(S.shop.mode==="board"||!S.shop.mode)&&typeof shpPin==="function"&&!!shpPin()&&String(S.shop.role||"")!=="master"; }catch(_){ return false; } }
+  function stHtml(){ return `<div class="w24st" id="w24st" role="region" aria-label="С чего начать">
+      <div class="w24st-h"><div><b>С чего начать</b><p>Первый заказ — за минуту. Остальное покажем по ходу.</p></div><button type="button" class="w24st-x" data-st="x" aria-label="Скрыть">×</button></div>
+      <button type="button" class="w24st-r" data-st="sm">${IC.sm}<span><b>Создать первую смету</b><small>Материалы, работы и цена — клиенту ссылкой</small></span><i aria-hidden="true">›</i></button>
+      <button type="button" class="w24st-r" data-st="bz">${IC.bz}<span><b>Загрузить заказ из Базиса</b><small>3D, детали по QR, раскрой и присадка</small></span><i aria-hidden="true">›</i></button>${invOn()?`
+      <button type="button" class="w24st-r" data-st="inv">${IC.inv}<span><b>Пригласите другой цех</b><small>Вам и ему по неделе бесплатно</small></span><i aria-hidden="true">›</i></button>`:""}</div>`; }
+  function invModal(){ if(!invCode()) return; document.getElementById("w24inv")?.remove(); let u=""; const m=document.createElement("div"); m.className="modal"; m.id="w24inv";
+    m.innerHTML=`<div class="modal-card w24bz" role="dialog" aria-modal="true" aria-label="Пригласить">
+      <div class="w24bz-h"><h2>Пригласите другой цех</h2><button type="button" class="w24st-x" data-inv="x" aria-label="Закрыть">×</button></div>
+      <p class="muted" style="margin:8px 0 0">Вам и ему по неделе бесплатно. Зарегистрируется по вашей ссылке — вам +7 дней, ему 3 недели вместо двух. До 8 недель всего.</p>
+      <div class="w24inv-u w24inv-sk" id="w24invU" aria-busy="true">&nbsp;</div>
+      <button type="button" class="btn primary w24bz-go" data-inv="copy" disabled>Скопировать ссылку</button>${navigator.share?`<button type="button" class="btn w24bz-go" data-inv="share" disabled>Поделиться</button>`:""}</div>`;
+    document.body.appendChild(m);
+    invRef().then(v=>{ if(!m.isConnected) return; const el=m.querySelector("#w24invU"); el.classList.remove("w24inv-sk"); el.removeAttribute("aria-busy");
+      if(!v){ el.textContent="Не получилось получить ссылку — проверьте интернет и откройте ещё раз"; return; }
+      u=location.origin+"/o/?ref="+v; el.textContent=u; m.querySelectorAll("[data-inv=copy],[data-inv=share]").forEach(b=>b.disabled=false); });
+    m.addEventListener("click",e=>{ const b=e.target.closest("[data-inv]"); if(e.target===m||(b&&b.dataset.inv==="x")){ setTimeout(()=>m.remove(),0); return; } if(!b) return;
+      if(!u) return;
+      if(b.dataset.inv==="copy"){ (navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>{ b.textContent="Скопировано"; },()=>{ const rg=document.createRange(); rg.selectNodeContents(m.querySelector("#w24invU")); const sl=getSelection(); sl.removeAllRanges(); sl.addRange(rg); b.textContent="Выделено — скопируйте"; }); }
+      if(b.dataset.inv==="share"){ navigator.share({title:"Work24link",text:"Приложение для мебельного цеха — по моей ссылке 3 недели бесплатно",url:u}).catch(()=>{}); } }); }
+  window.w24Invite=invModal;
+  if(typeof viewShop==="function"){ const _v=viewShop; viewShop=function(){ const h=_v.apply(this,arguments); try{ if(!stOn()) return h;
+      const s=String(h), k=s.indexOf('<div class="frm-bar'); if(k>=0){ const e=s.indexOf("</div>",k); if(e>0) return s.slice(0,e+6)+stHtml()+s.slice(e+6); }
+      return stHtml()+s; }catch(_){ return h; } }; }
+  function bzModal(){ document.getElementById("w24bz")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="w24bz";
+    m.innerHTML=`<div class="modal-card w24bz" role="dialog" aria-modal="true" aria-label="Заказ из Базиса">
+      <div class="w24bz-h"><h2>Заказ из Базиса</h2><button type="button" class="w24st-x" data-bz="x" aria-label="Закрыть">×</button></div>
+      <p class="w24bz-cap">Быстро — файлом модели</p>
+      <p class="muted">В Базис-Мебельщике сохраните модель (.b3d) и загрузите её сюда: сразу 3D, детали и раскрой.</p>
+      <button type="button" class="btn primary w24bz-go" data-skup="1">Загрузить файл модели</button>
+      <p class="w24bz-cap">Полностью — скриптами «Технолог 3D»</p>
+      <ol class="w24bz-ol"><li>Получите скрипты «Технолог 3D» для Базиса — напишите нам в Telegram, пришлём с инструкцией.</li>
+        <li>Положите их в папку <b>Документы\\Bazis\\Scripts\\Технолог 3D</b>.</li>
+        <li>В Базисе откройте заказ → <b>Скрипты → Технолог 3D</b>. Заказ появится в «Заказах» с QR на каждой детали.</li></ol>
+      <a class="btn w24bz-go" href="${BOT}" target="_blank" rel="noopener">Получить скрипты в Telegram</a>
+      <p class="muted w24bz-n">Проектируете в SketchUp — там же, в «Загрузить файл модели», есть расширение Work24link.</p></div>`;
+    document.body.appendChild(m);
+    m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-bz=x]")||e.target.closest("[data-skup]")) setTimeout(()=>m.remove(),0); }); }
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-st]"); if(!b) return; e.preventDefault(); const a=b.dataset.st;
+    if(a==="x"){ ls.s("w24-start","0"); document.getElementById("w24st")?.remove(); return; }
+    if(a==="sm"){ try{ S.view="shop"; S.shop.smFrom="smetas"; S.shop.smAll=false; S.shop.mode="smeta"; window.scrollTo(0,0); smLoad("",{client:"",kind:""}); }catch(err0){ console.error(err0); try{ toast("Не открылось — нажмите «Смета» внизу"); }catch(_){} } return; }
+    if(a==="bz"){ bzModal(); return; }
+    if(a==="inv"){ invModal(); return; } });
+  const st=document.createElement("style"); st.textContent=`
+.w24st{background:var(--l1,#1c1c1e);border-radius:22px;padding:16px;margin:0 0 14px;color:#fff}
+@media (min-width:900px){.w24st{max-width:640px}}
+.w24st-h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin:0 0 10px}
+.w24st-h b{font-size:19px;letter-spacing:-.2px}.w24st-h p{margin:3px 0 0;font-size:14px;color:var(--ink)}
+.w24st-x{width:44px;height:44px;margin:-8px -8px 0 0;border-radius:50%;border:0;background:transparent;color:var(--ink);font-size:24px;line-height:1;flex:none;cursor:pointer}
+.w24st-r{display:flex;align-items:center;gap:14px;width:100%;min-height:64px;padding:10px 12px;margin:8px 0 0;border:0;border-radius:16px;background:#2a2a2c;color:#fff;font:inherit;text-align:left;cursor:pointer;transition:transform .15s,opacity .15s}
+.w24st-r:active{transform:scale(.98);opacity:.85}
+.w24st-r svg{width:26px;height:26px;flex:none;fill:none;stroke:#fff;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.w24st-r span{flex:1;min-width:0}.w24st-r b{display:block;font-size:16px}.w24st-r small{display:block;font-size:13px;color:var(--ink);margin-top:2px}
+.w24st-r i{font-style:normal;font-size:22px;color:var(--ink)}
+.w24bz{max-width:520px}.w24bz-h{display:flex;justify-content:space-between;align-items:center;gap:8px}.w24bz-h h2{margin:0}
+.w24bz-cap{margin:16px 0 4px;font-weight:700;font-size:15px}.w24bz-go{width:100%;min-height:48px;margin-top:10px;border-radius:999px;display:flex;align-items:center;justify-content:center;text-decoration:none}
+.w24inv-sk{background:linear-gradient(90deg,#2a2a2c,#3a3a3c,#2a2a2c)!important;background-size:200% 100%!important;animation:w24sk 1.2s infinite linear;min-height:44px}
+@keyframes w24sk{to{background-position:-200% 0}}
+html.w24-lt .w24inv-sk{background:linear-gradient(90deg,#e5e5ea,var(--w2-soft),#e5e5ea)!important}
+body:has(#lgNewM) .inst-ban,body:has(#firmM) .inst-ban,body:has(#r4Onb) .inst-ban,body:has(#frmHint) .inst-ban{display:none!important}
+.w24inv-u{margin:14px 0 4px;padding:12px 14px;border-radius:14px;background:#2a2a2c;font-size:14px;word-break:break-all;user-select:all;-webkit-user-select:all;color:var(--ink)}
+html.w24-lt .w24inv-u{background:var(--w2-soft);color:#000}
+.w24bz-ol{margin:6px 0 0;padding-left:20px;line-height:1.5}.w24bz-ol li{margin:0 0 6px}.w24bz-n{font-size:13px;margin:12px 0 0}
+html.w24-lt .w24st{background:#fff;color:#000}html.w24-lt .w24st-r{background:var(--w2-soft);color:#000}html.w24-lt .w24st-r svg{stroke:#000}html.w24-lt .w24st-h p,html.w24-lt .w24st-r small{color:rgba(60,60,67,.6)}`;
+  (document.head||document.documentElement).appendChild(st);
+})();
 
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
@@ -29231,7 +29373,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="5bb1668d4f";/*cehqr-build*/
+  const BUILD="92440b63a6";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
