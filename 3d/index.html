@@ -23469,7 +23469,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="526ab16183";
+const CHK_BUILD="918893f07c";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -23998,6 +23998,261 @@ window.addEventListener("click",async e=>{ const t=e.target.closest&&e.target.cl
   const sm=S.shop&&S.shop.sm; if(S.view==="shop"&&S.shop.mode==="smeta"&&sm&&sm.dirty&&t.getAttribute("data-act")==="sm-back"){ e.preventDefault(); e.stopImmediatePropagation(); if(!(await appConfirm("Смета не сохранена. Выйти без сохранения? Её можно будет вернуть на «Сметы».","Выйти"))) return; bkBack()||render(); return; }
   if(document.body.classList.contains("has-full")&&t.getAttribute("data-act")==="dq-close"&&S.asmOrder&&S.asmOrder.oid&&/^QK/i.test(S.asmOrder.oid||"")) return;   /* 3D черновика быстрой сметы — у него свой «Назад» в смету */
   e.preventDefault(); e.stopImmediatePropagation(); if(!bkBack()) { BK.st=[]; t.click(); } },true);
+
+/* ===== «Купить» — снабжение одним простым списком (Кирилл 14.11 22:30–22:32, макет snab.png, экраны 2 и 3 — «Да да») =====
+   «снабженцу очень неудобно, не понимает что где… белый лист, список, который добавляли дизайнеры… переключить — фурнитура из Базиса
+   сравнивается со списком… в магазине отмечает: это купил, это купил».
+   • Главный экран «Купить»: всё, что положили в список (дизайнеры — примерная спецификация сделки и заявки мастера, технолог — «Отправить
+     в закупку», офис/снабженец — «＋ Добавить в список», «Не хватает фурнитуры» — что добавили по подсказке), по магазинам или по заказам.
+     Одинаковое из разных заказов — одной строкой с суммой и метками №.
+   • Кружок = «куплено»: это прежний статус «Пришло» (2) того же листа «Снабжение» (кто и когда — как всегда пишет таблица).
+     Отменить — вернуть прежний статус. Чеков и денег отметка НЕ касается (чек — отдельно, как раньше).
+   • Позиции из модели Базиса в список сами не попадают: в заказе — переключатель «Сверить с Базисом» (запоминается) показывает,
+     чего не хватает в списке (в модели N · в списке M → +K), и кнопка «Добавить всё в «Купить»» (строки «A:», как ручное добавление).
+   • Старые вкладки (Заказы, Таблица, Купить по статусам, Всего) — в «⋯» → «Старый вид». Сервер не менялся: действие supply как было.
+   Обёртка поверх viewSupply (site_supply.js); свои действия — data-act="sn-…". */
+(function(){
+if(typeof viewSupply!=="function"||!S.sup) return;
+const SN_LS={by:"w24-snab-by",sv:"w24-snab-sverka",shop:"w24-snab-shop"};
+const snLs=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(_){} return null; };
+S.sup.tab="snab"; S.sup.snBy=snLs(SN_LS.by)==="ord"?"ord":"shop"; S.sup.snOrd=null; S.sup.snQ=""; S.sup.snPrev=S.sup.snPrev||{};
+const SN_CEH="ЦЕХ";   // «для цеха, без заказа»
+const snSv=()=>snLs(SN_LS.sv)==="1";
+function snShopMap(){ try{ return JSON.parse(snLs(SN_LS.shop)||"{}")||{}; }catch(_){ return {}; } }
+/* PIN для записи: PIN снабженца; вошёл снабженцем по личному PIN / Телеграму — его пропуск (сервер сам превращает в PIN роли) */
+function snPin(){ if(S.sup.pin) return S.sup.pin; try{ if(S.shop&&S.shop.role==="supply"&&typeof shpPin==="function") return shpPin()||""; }catch(_){} return ""; }
+function snIsSup(){ try{ return !!S.sup.pin||(S.shop&&S.shop.role==="supply")||(typeof siteIsSupply==="function"&&siteIsSupply()); }catch(_){ return false; } }
+/* сделки: ключ «D:<id>» мог прийти из таблицы заглавными — ищем без регистра */
+function snDealById(id){ const L=(S.shop&&S.shop.orders)||[], u=String(id||"").toUpperCase(); return L.find(o=>o.id===id)||L.find(o=>String(o.id).toUpperCase()===u)||null; }
+function snDeal(oid){ try{ if(/^D:/i.test(oid)) return snDealById(oid.slice(2)); return S.shop&&S.shop.loaded&&typeof vtxLinked==="function"?vtxLinked(oid):null; }catch(_){ return null; } }
+function snClosed(oid){ const d=snDeal(oid); return !!(d&&typeof shpClosed==="function"&&shpClosed(d)); }
+/* «D:D3» из таблицы и «D:d3» из спецификации — одна запись */
+function snNormSt(){ const st=S.sup.st||{}; Object.keys(S.sup.needs||{}).forEach(k=>{ if(!/^D:/.test(k)) return; const U=k.toUpperCase(); if(U!==k&&st[U]){ st[k]=Object.assign({},st[U],st[k]||{}); delete st[U]; } }); }
+function snStOf(oid){ return (S.sup.st||{})[oid]||{}; }
+function snSent(oid){ return !!snStOf(oid)["@SENT"]; }
+function snAdded(oid){ return Object.values(snStOf(oid)).filter(r=>r&&/^A:/.test(r.key)&&r.op!=="del").map(r=>({key:r.key,name:r.name,qty:+r.qty||0,unit:r.unit||"шт",status:+r.status||0,added:true,comment:r.comment||""})); }
+/* все «заказы», где может быть список: из Базиса, спецификации сделок, и всё, что есть в листе «Снабжение» */
+function snOids(){ const s=new Set(Object.keys(S.sup.needs||{})); Object.keys(S.sup.st||{}).forEach(k=>{ if(k&&k.charAt(0)!=="@") s.add(k); }); return [...s].filter(o=>!snClosed(o)); }
+/* позиции списка одного «заказа» */
+function snItemsOf(oid){ const nd=S.sup.needs[oid], st=snStOf(oid), out=[];
+  const push=(i,src)=>{ if(!i||i.del||i.build||i.covered) return; if(!i.added&&src!=="fm"&&!S.sup.small&&i.small) return; if(!(Number(i.qty)>0)) return;
+    const r=st[i.key]||{}; out.push({oid,key:i.key,name:i.name,qty:Number(i.qty)||0,unit:i.unit||"шт",status:+i.status||0,added:!!i.added,src,who:r.who||"",when:r.when||"",comment:i.comment||""}); };
+  if(/^D:/.test(oid)){
+    if(!nd){ snAdded(oid).forEach(i=>push(i,"add")); return out; }
+    const L=nd.inB&&snSent(nd.inB)?supItems(oid):supItemsRaw(oid);   // по заказу Базиса всё отправлено в закупку — примерная заменена точной (как раньше)
+    L.forEach(i=>push(i,i.added?"add":"spec")); return out; }
+  if(!nd){ snAdded(oid).forEach(i=>push(i,"add")); return out; }
+  const sent=snSent(oid), L=sent?supItems(oid):supItemsRaw(oid);
+  L.forEach(i=>{ if(i.added) return push(i,"add"); const r=st[i.key]; if(sent||(r&&(+r.status>0||r.op==="list"))) push(i,"bz"); });
+  if(typeof fmAdded==="function"){ fmAdded(oid).forEach(x=>{ const k="FM:"+x.k, r=st[k]||{}; if(r.op==="del") return; push({key:k,name:r.name||x.name,qty:r.qty!=null&&r.qty!==""?+r.qty:+x.qty||1,unit:r.unit||x.unit||"шт",status:+r.status||0,added:true},"fm"); }); }
+  return out; }
+/* «Не хватает фурнитуры» по заказам в работе — подгружаем тихо, по одному */
+function snFmLoad(){ if(typeof fmState!=="function"||typeof fmLoad!=="function"||S.sup.snFmBusy) return; const todo=Object.keys(S.sup.needs||{}).filter(o=>!/^D:/.test(o)&&!S.sup.needs[o].err&&!snClosed(o)&&!fmState(o).items&&!fmState(o).loading&&!fmState(o).tried);
+  if(!todo.length) return; S.sup.snFmBusy=true; (async()=>{ for(const o of todo.slice(0,12)){ fmState(o).tried=true; try{ await fmLoad(o); }catch(_){} } S.sup.snFmBusy=false; snPaint(); })(); }
+/* магазин позиции: выбранный при добавлении → привязка поставщика (site_vendors.js) → «Без магазина» */
+function snVendList(){ try{ return typeof vendAll==="function"?vendAll():[]; }catch(_){ return []; } }
+function snShopOf(name){ const V=snVendList(), m=snShopMap()[supPKey(name)];
+  if(m){ const v=V.find(x=>x.name===m||x.id===m); return v?{id:v.id,name:v.name,addr:v.addr||"",main:!!v.main}:{id:"n:"+m,name:m,addr:"",main:false}; }
+  let id=""; try{ id=typeof supVendWhy==="function"?supVendWhy(name).id:""; }catch(_){}
+  const v=id&&V.find(x=>x.id===id); return v?{id:v.id,name:v.name,addr:v.addr||"",main:!!v.main}:{id:"",name:"Без магазина",addr:"",main:false}; }
+function snShortShop(s){ const m=/\(([^)]+)\)/.exec(s.name); return (m?m[1]:s.name)+(s.addr?" · "+String(s.addr).split(/[;,]/).slice(0,2).join(" ").replace(/\s+дорога/i,"").replace(/\s+/g," ").trim():""); }
+function snLbl(oid){ if(oid===SN_CEH) return "цех"; const d=snDeal(oid); if(d) return "№"+d.num; const nd=S.sup.needs[oid]; return nd&&nd.spec?"примерно":String(oid); }
+function snGroupOf(oid){ const d=snDeal(oid); return d?"d:"+d.id:oid; }
+function snGNum(g){ const d=/^d:/.test(g)?snDealById(g.slice(2)):null; return d?(+d.num||0):-1; }
+function snGroupName(g,oids){ if(/^d:/.test(g)){ const d=snDealById(g.slice(2)); if(d) return "№ "+d.num+(d.client?" · "+d.client:"")+(d.kind?" · "+d.kind:""); }
+  if(g===SN_CEH) return "Для цеха (без заказа)"; const nd=S.sup.needs[g]; return (nd&&nd.name&&nd.name!==g?nd.name+" · ":"")+g; }
+/* одинаковое (название + единица + куплено/нет) — одной строкой; в магазине — и из разных заказов */
+function snMerge(L){ const m=new Map(); L.forEach(i=>{ const b=i.status>=2, k=supPKey(i.name)+"|"+String(i.unit).toLowerCase()+"|"+(b?1:0); const g=m.get(k)||{k,name:i.name,unit:i.unit,qty:0,refs:[],bought:b,ords:new Set(),who:"",when:""}; g.qty=Math.round((g.qty+i.qty)*100)/100; g.refs.push(i); g.ords.add(snLbl(i.oid)); if(b&&String(i.when)>=String(g.when)){ g.who=i.who; g.when=i.when; } m.set(k,g); });
+  return [...m.values()].sort((a,b)=>(a.bought-b.bought)||a.name.localeCompare(b.name,"ru")); }
+function snAll(){ snNormSt(); const out=[]; snOids().forEach(o=>snItemsOf(o).forEach(i=>out.push(i))); const q=supNorm(S.sup.snQ||""); return q?out.filter(i=>supNorm(i.name).includes(q)):out; }
+const SN_U={"л":"л.","л.":"л.","лист":"л.","листов":"л.","м2":"м²","м²":"м²","м":"м","п.м.":"м","пм":"м","шт":"шт","шт.":"шт","компл":"компл.","компл.":"компл."};
+function snUnit(u){ u=String(u||"шт").trim().toLowerCase(); return SN_U[u]||u; }
+function snNum(q){ return typeof supNum==="function"?supNum(q):String(q); }
+function snWhen(w){ if(!w) return ""; const t=typeof w==="number"?w:Date.parse(w); if(!t) return ""; try{ return shpTime(t); }catch(_){ return ""; } }
+const SN_CK='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const SN_PL='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg>';
+function snRow(g,opts){ const can=snIsSup()&&!!snPin(), refs=g.refs.map(i=>i.oid+"::"+i.key).join("\n"), ords=[...g.ords].filter(Boolean);
+  const tags=opts&&opts.noTag?"":ords.map(o=>`<span class="sn-tag">${esc(o)}</span>`).join("");
+  const sub=g.bought&&(g.who||g.when)?`<small class="sn-who">куплено${g.who?" · "+esc(g.who):""}${g.when?" · "+esc(snWhen(g.when)):""}</small>`:(g.refs.some(i=>i.status===1)&&!g.bought?`<small class="sn-who">заказано, ждём</small>`:"");
+  return `<li class="sn-row${g.bought?" done":""}"><button type="button" class="sn-ck${g.bought?" on":""}" data-act="sn-ck" data-refs="${esc(refs)}" data-on="${g.bought?1:0}" role="checkbox" aria-checked="${g.bought}" aria-label="${g.bought?"Куплено":"Не куплено"}: ${esc(g.name)}"${can?"":' aria-disabled="true"'}>${g.bought?SN_CK:""}</button>
+    <span class="sn-nm"><span class="sn-t">${esc(g.name)}</span>${tags}${sub}</span><b class="sn-q">${esc(snNum(g.qty))}${g.unit&&g.unit!=="шт"?" "+esc(g.unit):""}</b></li>`; }
+function snGroupHtml(title,sub,L,opts){ const n=L.length, b=L.filter(g=>g.bought).length;
+  return `<section class="sn-g"${opts&&opts.g?` data-g="${esc(opts.g)}"`:""}>${opts&&opts.g?`<button type="button" class="sn-gh lnk" data-act="sn-ord" data-g="${esc(opts.g)}" aria-label="Открыть заказ: ${esc(title)}">`:`<div class="sn-gh">`}<span class="sn-gt">${esc(title)}${sub?` <small>${esc(sub)}</small>`:""}</span><span class="sn-gc${b===n?" all":""}">${b} из ${n}</span>${opts&&opts.g?`<span class="sn-chev" aria-hidden="true">›</span></button>`:"</div>"}
+    <ul class="sn-l">${L.map(g=>snRow(g,opts)).join("")}</ul></section>`; }
+function snSkel(){ return `<div class="sn-sk" aria-hidden="true">${[5,2,3].map(n=>`<section class="sn-g"><div class="sn-gh"><i class="sk" style="width:46%"></i><i class="sk" style="width:38px"></i></div><ul class="sn-l">${Array.from({length:n},(_,i)=>`<li class="sn-row"><i class="sk c"></i><i class="sk" style="width:${52+((i*17)%30)}%"></i></li>`).join("")}</ul></section>`).join("")}</div>`; }
+function snHead(){ return `<div class="sn-hd"><h1>Купить</h1><span class="sn-hb"><button type="button" class="sn-rb" data-act="sn-find" aria-label="Поиск" aria-pressed="${!!S.sup.snFind}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></button><button type="button" class="sn-rb" data-act="sn-more" aria-label="Ещё" aria-expanded="${!!S.sup.snMenu}">⋯</button></span></div>
+  ${S.sup.snFind?`<input class="sn-find" type="search" placeholder="Найти позицию" value="${esc(S.sup.snQ||"")}" aria-label="Найти позицию" autocomplete="off">`:""}
+  ${S.sup.snMenu?`<div class="sn-menu" role="menu"><button type="button" role="menuitem" data-act="sup-vendors">Магазины и поставщики</button><button type="button" role="menuitem" data-act="sn-reload">Обновить</button><button type="button" role="menuitem" data-act="sn-small">${S.sup.small?"Скрыть мелочь (саморезы, шканты…)":"Показать мелочь (саморезы, шканты…)"}</button><p class="sn-mh">Старый вид</p><button type="button" role="menuitem" data-act="sup-tab" data-t="orders">Заказы</button><button type="button" role="menuitem" data-act="sup-tab" data-t="table">Таблица</button><button type="button" role="menuitem" data-act="sup-tab" data-t="buy">Купить · Ждём · Пришло</button><button type="button" role="menuitem" data-act="sup-tab" data-t="sum">Всего</button></div>`:""}`; }
+function snSeg(){ const s=S.sup.snBy!=="ord"; return `<div class="sn-seg" role="group" aria-label="Как показать"><button type="button" class="${s?"on":""}" aria-pressed="${s}" data-act="sn-by" data-t="shop">По магазинам</button><button type="button" class="${s?"":"on"}" aria-pressed="${!s}" data-act="sn-by" data-t="ord">По заказам</button></div>`; }
+function snPinNote(){ if(snPin()) return ""; return snIsSup()?`<p class="sn-note">Чтобы отмечать «куплено», нужен PIN снабженца. <button type="button" class="linkbtn" data-act="sup-pin">Ввести PIN</button></p>`:`<p class="sn-note">Отмечает снабженец. Здесь видно, что уже куплено.</p>`; }
+function snMain(){
+  let h=snHead()+snSeg()+snPinNote();
+  if(!S.sup.loaded) return h+snSkel();
+  const all=snAll();
+  if(!all.length) h+=`<div class="sn-empty"><b>${S.sup.snQ?"Ничего не нашлось":"Список пуст"}</b><p>${S.sup.snQ?"Попробуйте другое слово.":"Дизайнеры и технолог добавляют позиции в сделке, мастер — заявкой. Добавить самому — кнопка внизу."}</p></div>`;
+  else if(S.sup.snBy==="ord"){ const by=new Map(); all.forEach(i=>{ const g=snGroupOf(i.oid); (by.get(g)||by.set(g,[]).get(g)).push(i); });
+    [...by.entries()].sort((a,b)=>{ const fa=a[1].every(i=>i.status>=2), fb=b[1].every(i=>i.status>=2), ca=a[0]===SN_CEH, cb=b[0]===SN_CEH, na=snGNum(a[0]), nb=snGNum(b[0]); return fa-fb||ca-cb||nb-na||snGroupName(a[0]).localeCompare(snGroupName(b[0]),"ru"); })
+      .forEach(([g,L])=>{ h+=snGroupHtml(snGroupName(g),"",snMerge(L),{g,noTag:true}); }); }
+  else { const by=new Map(), shop={}; all.forEach(i=>{ const s=snShopOf(i.name); shop[s.id]=s; (by.get(s.id)||by.set(s.id,[]).get(s.id)).push(i); });
+    [...by.keys()].sort((a,b)=>(!a)-(!b)||(shop[b].main?1:0)-(shop[a].main?1:0)||by.get(b).length-by.get(a).length).forEach(id=>{ const s=shop[id]; h+=snGroupHtml(id?snShortShop(s):"Без магазина","",snMerge(by.get(id))); }); }
+  if(S.sup.pending>0) h+=`<p class="sn-pend">Догружаю заказы: ${S.sup.total-S.sup.pending} из ${S.sup.total}…</p>`;
+  return h+snAddBtn(); }
+function snAddBtn(o){ if(!snIsSup()) return ""; return `<div class="sn-addw"><button type="button" class="sn-add" data-act="sn-add"${o?` data-o="${esc(o)}"`:""}>${SN_PL}<span>Добавить в список</span></button></div>`; }
+/* ---- заказ: список заказа и «Сверить с Базисом» ---- */
+function snGroupOids(g){ if(/^d:/.test(g)){ const d=snDealById(g.slice(2)); const out=new Set(); if(d){ const D="D:"+d.id; if(S.sup.needs[D]||S.sup.st[D]) out.add(D); const t=String(d.t3d||"").toUpperCase(); if(t) out.add(t); } return [...out]; } return [g]; }
+function snBzOf(g){ const L=snGroupOids(g).filter(o=>!/^D:/.test(o)&&o!==SN_CEH); return L.find(o=>S.sup.needs[o]&&!S.sup.needs[o].err)||L[0]||""; }
+function snKey(name,unit){ let a=""; try{ a=typeof supArt==="function"?supArt(name):""; }catch(_){} return (a?"a:"+a:supNorm(name).replace(/[«»"'`]/g,"").replace(/\s*,\s*/g,", "))+"|"+snUnit(unit); }
+function snCompare(g){ const bz=snBzOf(g); if(!bz||!S.sup.needs[bz]||S.sup.needs[bz].err) return null; const m=new Map();
+  supItemsRaw(bz).filter(i=>!i.added&&!i.del&&!i.build&&(S.sup.small||!i.small)).forEach(i=>{ const k=snKey(i.name,i.unit), r=m.get(k)||{name:i.name,unit:i.unit,n:0,l:0}; r.n+=Number(i.qty)||0; m.set(k,r); });
+  snGroupOids(g).forEach(o=>snItemsOf(o).forEach(i=>{ const k=snKey(i.name,i.unit), r=m.get(k); if(r) r.l+=i.qty; }));
+  const miss=[], ok=[]; m.forEach(r=>{ r.n=Math.round(r.n*100)/100; r.l=Math.round(r.l*100)/100; const d=Math.round((r.n-r.l)*100)/100; if(d>0.005) miss.push(Object.assign(r,{d})); else ok.push(r); });
+  const s=(a,b)=>a.name.localeCompare(b.name,"ru"); return {bz,miss:miss.sort(s),ok:ok.sort(s)}; }
+function snOrderView(g){ const oids=snGroupOids(g), d=/^d:/.test(g)?snDealById(g.slice(2)):snDeal(g), title=d?"№ "+d.num+(d.client?" · "+d.client:""):snGroupName(g), sv=snSv();
+  let h=`<div class="sn-oh"><button type="button" class="sn-rb" data-act="sn-back" aria-label="Назад">‹</button><b class="sn-ot">${esc(title)}</b><button type="button" class="sn-rb" data-act="sn-omore" data-g="${esc(g)}" aria-label="Подробно: старый вид заказа">⋯</button></div>`;
+  const bz=snBzOf(g);
+  h+=`<section class="sn-g sn-sw"><label class="sn-swr"><span><b>Сверить с Базисом</b><small>${bz?"что есть в модели, но нет в списке":"заказ из Базиса ещё не выгружен"}</small></span><input type="checkbox" class="sn-tg" data-act="sn-sv" role="switch"${sv?" checked":""}${bz?"":" disabled"} aria-label="Сверить с Базисом"></label></section>`;
+  if(sv&&bz){ const C=snCompare(g);
+    if(!C) h+=`<p class="sn-note">${S.sup.needs[bz]&&S.sup.needs[bz].err?"Заказ из Базиса не открылся.":"Загружаю заказ из Базиса…"}</p>`;
+    else { if(C.miss.length) h+=`<section class="sn-g sn-miss"><div class="sn-gh"><span class="sn-gt">Не хватает в списке</span><span class="sn-gc y">${C.miss.length}</span></div><ul class="sn-l">${C.miss.map(r=>`<li class="sn-row"><span class="sn-pl" aria-hidden="true">${SN_PL}</span><span class="sn-nm"><span class="sn-t">${esc(r.name)}</span><small class="sn-who">в модели ${esc(snNum(r.n))} · в списке ${esc(snNum(r.l))}</small></span><b class="sn-q y">+${esc(snNum(r.d))}${r.unit&&r.unit!=="шт"?" "+esc(r.unit):""}</b></li>`).join("")}</ul>
+        <button type="button" class="sn-addall" data-act="sn-addall" data-g="${esc(g)}"${snIsSup()&&snPin()?"":' aria-disabled="true"'}>Добавить всё в «Купить»</button></section>`;
+      else h+=`<p class="sn-note ok">Всё из модели Базиса уже есть в списке.</p>`;
+      if(C.ok.length) h+=`<section class="sn-g sn-ok"><div class="sn-gh"><span class="sn-gt">Совпадает</span><span class="sn-gc g">${C.ok.length}</span></div><ul class="sn-l">${C.ok.map(r=>`<li class="sn-row"><span class="sn-ck on g" aria-hidden="true">${SN_CK}</span><span class="sn-nm"><span class="sn-t">${esc(r.name)}</span></span><b class="sn-q">${esc(snNum(r.n))}${r.unit&&r.unit!=="шт"?" "+esc(r.unit):""}</b></li>`).join("")}</ul></section>`; } }
+  const L=[]; oids.forEach(o=>snItemsOf(o).forEach(i=>L.push(i)));
+  h+=L.length?snGroupHtml("Список","",snMerge(L),{noTag:true}):`<div class="sn-empty"><b>В списке пусто</b><p>${bz?"Включите «Сверить с Базисом» — покажу, что есть в модели.":"Добавьте позицию кнопкой внизу."}</p></div>`;
+  if(!sv) h+=`<p class="sn-foot">Сверка — переключателем, по желанию. Без неё — просто список.</p>`;
+  return h+snAddBtn(oids.find(o=>!/^D:/.test(o))||oids[0]||""); }
+/* ---- запись: сразу на экране, таблица — в фоне; ошибка — откат и понятное сообщение ---- */
+function snRecOf(i,status){ const r=snStOf(i.oid)[i.key]||{}, base=i.src==="bz"||i.src==="spec";
+  const q={order:i.oid,key:i.key,name:r.name||i.name,qty:r.qty!=null&&r.qty!==""?r.qty:(base?null:i.qty),unit:r.unit||i.unit||"",status,op:r.op||(i.src==="fm"?"fm":i.added?"add":"")};
+  return q; }
+async function snSave(recs,okMsg){ const pin=snPin(); if(!pin){ if(typeof supPinModal==="function") supPinModal(()=>snSave(recs,okMsg)); return false; }
+  const back=recs.map(r=>{ const m=snStOf(r.order); return [r.order,r.key,m[r.key]?Object.assign({},m[r.key]):null]; }), now=new Date().toISOString();
+  recs.forEach(r=>{ const m=(S.sup.st[r.order]=S.sup.st[r.order]||{}); m[r.key]=Object.assign({},m[r.key]||{},r,{who:S.who||"",when:now}); }); snPaint();
+  let j=null; try{ j=await (await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"supply",pin,who:S.who||"Снабженец",items:recs})})).json(); }catch(_){ j=null; }
+  if(j&&j.ok){ if(okMsg) toast(okMsg); try{ [...new Set(recs.filter(r=>+r.status>=2).map(r=>r.order))].forEach(o=>supAutoStage(o)); }catch(_){} return true; }
+  back.forEach(([o,k,v])=>{ const m=(S.sup.st[o]=S.sup.st[o]||{}); if(v) m[k]=v; else delete m[k]; }); snPaint();
+  if(j&&j.error==="pin"){ if(S.sup.pin){ S.sup.pin=""; try{ localStorage.removeItem("cehqr-suppin"); }catch(_){} } toast("PIN снабженца не подошёл — отметка не сохранилась"); }
+  else toast(j&&j.msg?j.msg:j?"Не сохранилось. Попробуйте ещё раз.":"Нет связи с таблицей — отметка не сохранилась");
+  return false; }
+function snFind(ref){ const p=String(ref).indexOf("::"), oid=ref.slice(0,p), key=ref.slice(p+2); return snItemsOf(oid).find(i=>i.key===key)||null; }
+function snToggle(t){ if(!snIsSup()){ toast("Отмечает снабженец"); return; } if(!snPin()){ if(typeof supPinModal==="function") supPinModal(()=>snPaint()); return; }
+  const on=t.dataset.on!=="1", L=String(t.dataset.refs||"").split("\n").filter(Boolean).map(snFind).filter(Boolean); if(!L.length) return;
+  const recs=L.map(i=>{ const pk=i.oid+"|"+i.key; let st; if(on){ S.sup.snPrev[pk]=i.status<2?i.status:0; st=2; } else { st=S.sup.snPrev[pk]!=null?S.sup.snPrev[pk]:0; delete S.sup.snPrev[pk]; } return snRecOf(i,st); });
+  try{ navigator.vibrate&&navigator.vibrate(on?12:6); }catch(_){}
+  snSave(recs); }
+function snPaint(){ if(S.view!=="supply"||S.sup.tab!=="snab") return; const ae=document.activeElement; if(ae&&ae.classList&&ae.classList.contains("sn-find")){ snSoft(); return; } if(document.getElementById("snAddM")) return; supRenderKeep(); }
+/* поиск — без потери фокуса: перерисовываем только список */
+function snSoft(){ const v=document.querySelector(".snv"); if(!v) return; const w=document.createElement("div"); w.innerHTML=snBody(); const nv=w.querySelector(".snv"); if(!nv) return; [...v.children].forEach(c=>{ if(!c.classList.contains("sn-hd")&&!c.classList.contains("sn-find")&&!c.classList.contains("sn-menu")) c.remove(); }); [...nv.children].forEach(c=>{ if(!c.classList.contains("sn-hd")&&!c.classList.contains("sn-find")&&!c.classList.contains("sn-menu")) v.appendChild(c); }); }
+function snBody(){ const g=S.sup.snOrd; return `<div class="snv${g?" ord":""}">${g?snOrderView(g):snMain()}</div>`; }
+/* ---- «＋ Добавить в список»: позиция, кол-во, заказ, магазин ---- */
+function snOrdOptions(cur){ const out=[], seen=new Set(); ((S.shop&&S.shop.orders)||[]).filter(d=>!shpClosed(d)).sort((a,b)=>(+b.num||0)-(+a.num||0)).forEach(d=>{ const t=String(d.t3d||"").toUpperCase(), v=t||"D:"+d.id; seen.add(v); if(t) seen.add("D:"+d.id); out.push([v,"№ "+d.num+(d.client?" · "+d.client:"")+(d.kind?" · "+d.kind:"")]); });
+  Object.keys(S.sup.needs||{}).filter(o=>!/^D:/.test(o)&&!seen.has(o)&&!snClosed(o)).forEach(o=>out.push([o,((S.sup.needs[o]||{}).name||o)+" · "+o]));
+  out.push([SN_CEH,"Для цеха (без заказа)"]);
+  let c=cur||""; if(/^D:/.test(c)){ const d=snDealById(c.slice(2)); if(d&&d.t3d) c=String(d.t3d).toUpperCase(); }
+  return out.map(([v,t])=>`<option value="${esc(v)}"${v===c?" selected":""}>${esc(t)}</option>`).join(""); }
+function snAddModal(oid){ if(!snIsSup()&&!snPin()){ toast("Добавляет снабженец. Дизайнер и технолог — в сделке, в спецификации."); return; }
+  if(!S.sup.vend&&typeof supVendLoad==="function"&&!S.sup.vLoading){ S.sup.vLoading=true; supVendLoad().then(()=>{ S.sup.vLoading=false; }); }
+  const V=snVendList(), main=V.find(v=>v.main), m=document.createElement("div"); m.className="modal sn-am"; m.id="snAddM";
+  m.innerHTML=`<form class="modal-card" autocomplete="off" role="dialog" aria-modal="true" aria-labelledby="snAddH"><h2 id="snAddH">Добавить в список</h2>
+    <label class="sn-f">Позиция<input name="n" list="supNames" required maxlength="200" placeholder="Например: Петли Blum с доводчиком" autocomplete="off"></label>
+    <div class="sn-f2"><label class="sn-f">Сколько<input name="q" inputmode="decimal" required placeholder="1" maxlength="10"></label><label class="sn-f">Ед.<select name="u"><option>шт</option><option>м</option><option>л.</option><option>м²</option><option>компл.</option></select></label></div>
+    <label class="sn-f">Заказ<select name="o">${snOrdOptions(oid)}</select></label>
+    <label class="sn-f">Магазин<select name="v">${V.map(v=>`<option value="${esc(v.name)}"${main&&v.id===main.id?" selected":""}>${esc(v.name)}</option>`).join("")}<option value="">Без магазина</option></select></label>
+    <div class="sn-fb"><button type="button" class="btn" data-x>Отмена</button><button type="submit" class="btn primary">Добавить</button></div></form>${typeof supDatalists==="function"?supDatalists():""}`;
+  document.body.appendChild(m); const f=m.querySelector("form"); setTimeout(()=>{ try{ f.n.focus(); }catch(_){} },60);
+  const close=()=>{ m.remove(); document.removeEventListener("keydown",kd); snPaint(); }, kd=e=>{ if(e.key==="Escape") close(); }; document.addEventListener("keydown",kd);
+  m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-x]")) close(); });
+  f.addEventListener("submit",e=>{ e.preventDefault(); const nm=f.n.value.trim(), q=parseFloat(String(f.q.value).replace(",",".")), u=f.u.value, o=f.o.value||SN_CEH, v=f.v.value;
+    if(!nm){ f.n.focus(); return; } if(!(q>0)){ toast("Впишите количество числом"); f.q.focus(); return; }
+    const mp=snShopMap(); if(v) mp[supPKey(nm)]=v; else delete mp[supPKey(nm)]; snLs(SN_LS.shop,JSON.stringify(mp));   // магазин запоминается на этом телефоне
+    try{ const vv=V.find(x=>x.name===v); if(vv&&!/^k:/.test(vv.id)&&typeof supVendPost==="function"&&snPin()){ ((S.sup.vend||{}).binds||{})[supPKey(nm)]=vv.id; supVendPost({action:"vendBind",name:nm,vendor:vv.id}); } }catch(_){}   // и у всех — привязка поставщика, как в «Поставщики»
+    const ex=typeof supAddSame==="function"?supAddSame(o,nm,u):null;
+    m.remove(); document.removeEventListener("keydown",kd);
+    snSave([ex?Object.assign(ex,{qty:Math.round(((+ex.qty||0)+q)*100)/100}):{order:o,key:"A:"+Date.now().toString(36),name:nm,qty:q,unit:u,status:0,op:"add"}],"Добавлено в список"); }); }
+function snAddAll(g){ if(!snIsSup()||!snPin()){ toast("Добавляет снабженец"); return; } const C=snCompare(g); if(!C||!C.miss.length) return; const t=Date.now().toString(36);
+  snSave(C.miss.map((r,i)=>({order:C.bz,key:"A:"+t+i.toString(36),name:r.name,qty:r.d,unit:r.unit||"шт",status:0,op:"add",comment:"по модели Базиса"})),"Добавлено в «Купить»: "+C.miss.length+" поз."); }
+/* ---- экран ---- */
+const _snView0=viewSupply;
+viewSupply=function(){ if(S.sup.tab!=="snab"||!supCanSee()) return _snView0.apply(this,arguments);
+  if(!S.sup.loaded){ if(S.site&&S.site.stagesUrl) supLoad(); else if(!S.sup.snWait){ S.sup.snWait=setTimeout(()=>{ S.sup.snWait=0; if(S.view==="supply") render(); },400); } }   // адрес таблицы ещё не пришёл — не падаем, ждём (иначе supLoad застревает в «загрузке»)
+  try{ if(typeof catLoad==="function") catLoad(); supDealsLoad(); supSpecLoadOnce(); supSpecSync(); }catch(_){}
+  if(S.sup.loaded){ snFmLoad(); if(!S.sup.vend&&typeof supVendLoad==="function"&&!S.sup.vLoading&&snPin()){ S.sup.vLoading=true; supVendLoad().then(()=>{ S.sup.vLoading=false; snPaint(); }); } }
+  return snBody(); };
+/* старый вид → «‹ Купить» сверху, чтобы вернуться */
+const _snView1=viewSupply;
+viewSupply=function(){ const h=_snView1.apply(this,arguments); if(S.sup.tab==="snab"||!supCanSee()) return h; return `<div class="sn-old"><button type="button" class="sn-back2" data-act="sn-home">‹ Купить</button></div>`+h; };
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest("[data-act^='sn-']"); if(!t) return; if(t.matches("input")&&t.dataset.act==="sn-sv") return; ev.preventDefault(); ev.stopPropagation(); const a=t.dataset.act;
+  if(a==="sn-ck"){ snToggle(t); return; }
+  if(a==="sn-by"){ S.sup.snBy=t.dataset.t==="ord"?"ord":"shop"; snLs(SN_LS.by,S.sup.snBy); supRenderKeep(); return; }
+  if(a==="sn-find"){ S.sup.snFind=!S.sup.snFind; if(!S.sup.snFind) S.sup.snQ=""; supRenderKeep(); if(S.sup.snFind) setTimeout(()=>{ const q=document.querySelector(".sn-find"); q&&q.focus(); },30); return; }
+  if(a==="sn-more"){ S.sup.snMenu=!S.sup.snMenu; supRenderKeep(); return; }
+  if(a==="sn-reload"){ S.sup.snMenu=false; try{ supSpecTried=false; }catch(_){} supLoad(true); if(typeof supDealsOn==="function"&&supDealsOn()) shpLoad(true).then(()=>snPaint()); toast("Обновляю…"); return; }
+  if(a==="sn-small"){ S.sup.snMenu=false; S.sup.small=!S.sup.small; try{ localStorage.setItem("cehqr-supsmall",S.sup.small?"1":"0"); }catch(_){} supRenderKeep(); return; }
+  if(a==="sn-ord"){ S.sup.snOrd=t.dataset.g; S.sup.snMenu=false; render(); window.scrollTo(0,0); return; }
+  if(a==="sn-back"){ S.sup.snOrd=null; render(); return; }
+  if(a==="sn-home"){ S.sup.tab="snab"; S.sup.snMenu=false; S.sup.sel&&S.sup.sel.clear(); render(); window.scrollTo(0,0); return; }
+  if(a==="sn-omore"){ const g=t.dataset.g, L=snGroupOids(g); S.sup.snOrd=null; S.sup.tab="orders"; L.forEach(o=>{ if(S.sup.needs[o]) S.sup.open[o]=true; }); render(); setTimeout(()=>{ const o=L.find(x=>S.sup.needs[x]); const b=o&&document.querySelector(`[data-act="sup-open"][data-o="${CSS.escape(o)}"]`); b&&b.scrollIntoView({block:"start"}); },60); return; }
+  if(a==="sn-add"){ snAddModal(t.dataset.o||(S.sup.snOrd?snGroupOids(S.sup.snOrd)[0]:"")); return; }
+  if(a==="sn-addall"){ snAddAll(t.dataset.g); return; }
+},true);
+/* «в закупку» со страницы заказа (ca-cart, site_supply.js) — сразу экран этого заказа в «Купить» */
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="ca-cart"]'); if(!t||S.sup.tab!=="snab") return; const o=String(t.dataset.o||""); if(!o) return; S.sup.snOrd=snGroupOf(o); S.sup.snMenu=false; if(S.view==="supply") render(); },true);
+/* меню «⋯» закрывается по нажатию мимо; пункты «Старый вид» — прежние sup-tab (site_supply.js) */
+document.addEventListener("click",ev=>{ if(!S.sup.snMenu) return; if(ev.target.closest&&(ev.target.closest(".sn-menu")||ev.target.closest('[data-act="sn-more"]'))) { if(ev.target.closest(".sn-menu [data-act]")) S.sup.snMenu=false; return; } S.sup.snMenu=false; if(S.view==="supply") supRenderKeep(); });
+document.addEventListener("change",ev=>{ const t=ev.target; if(!t.classList||!t.classList.contains("sn-tg")) return; snLs(SN_LS.sv,t.checked?"1":"0"); supRenderKeep(); });
+document.addEventListener("input",ev=>{ const t=ev.target; if(!t.classList||!t.classList.contains("sn-find")) return; S.sup.snQ=t.value; snSoft(); });
+/* «Назад» (site_back.js) помнит и экран заказа внутри «Купить», и старый вид: «‹» и стрелка сверху возвращают к списку, а не из раздела */
+if(typeof bkSnap==="function"&&typeof bkKey==="function"&&typeof bkRestore==="function"){ const _bs=bkSnap, _bk=bkKey, _br=bkRestore;
+  bkSnap=function(){ const s=_bs.apply(this,arguments); if(S.view==="supply"){ s.snOrd=S.sup.snOrd||""; s.snTab=S.sup.tab||""; } return s; };
+  bkKey=function(s){ return _bk.apply(this,arguments)+(s&&s.view==="supply"?"~"+(s.snTab||"")+"|"+(s.snOrd||""):""); };
+  bkRestore=function(s){ if(s&&s.view==="supply"){ S.sup.snOrd=s.snOrd||null; S.sup.tab=s.snTab||"snab"; S.sup.snMenu=false; } return _br.apply(this,arguments); }; }
+/* стили: как в макете — тёмные группы со скруглением, большие круглые кружки, белая кнопка внизу; только transform/opacity в движении */
+(function(){ if(document.getElementById("snCss")) return; const st=document.createElement("style"); st.id="snCss"; st.textContent=`
+.snv{max-width:640px;margin:0 auto;padding:4px 0 calc(var(--apbar,0px) + 96px)}
+.sn-hd{display:flex;align-items:center;gap:10px;margin:6px 0 12px}.sn-hd h1{margin:0;flex:1;font-size:32px;line-height:1.1;letter-spacing:-.02em}
+.sn-hb{display:flex;gap:8px}.sn-rb{width:44px;height:44px;border-radius:50%;border:1px solid rgba(128,128,128,.28);background:var(--surface);color:var(--ink);display:inline-grid;place-items:center;font-size:20px;line-height:1;cursor:pointer;padding:0;transition:transform .15s,opacity .15s}.sn-rb:active{transform:scale(.94);opacity:.8}
+.sn-find{width:100%;min-height:44px;border-radius:12px;border:1px solid rgba(128,128,128,.28);background:var(--surface);color:var(--ink);padding:8px 14px;font:16px var(--f-body,system-ui);margin:0 0 12px;box-sizing:border-box}
+.sn-menu{position:relative;z-index:5;margin:-4px 0 12px auto;width:min(320px,100%);background:var(--surface);border:1px solid rgba(128,128,128,.28);border-radius:14px;overflow:hidden;animation:snIn .18s ease-out}
+.sn-menu button{display:block;width:100%;min-height:46px;text-align:left;padding:10px 16px;background:none;border:0;box-shadow:inset 0 1px 0 rgba(128,128,128,.18);color:var(--ink);font:16px var(--f-body,system-ui);cursor:pointer}.sn-menu button:first-child{box-shadow:none}
+.sn-mh{margin:0;padding:10px 16px 4px;font-size:12.5px;color:var(--muted);box-shadow:inset 0 1px 0 rgba(128,128,128,.18)}
+@keyframes snIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.sn-seg{display:flex;background:var(--surface);border-radius:12px;padding:3px;margin:0 0 14px;border:1px solid rgba(128,128,128,.18)}
+.sn-seg button{flex:1;min-height:40px;border:0;border-radius:9px;background:none;color:var(--muted);font:600 15px var(--f-body,system-ui);cursor:pointer;transition:opacity .15s}
+.sn-seg button.on{background:rgba(128,128,128,.28);color:var(--ink)}
+.sn-g{background:var(--surface);border-radius:16px;margin:0 0 12px;overflow:hidden;border:1px solid rgba(128,128,128,.14)}
+.sn-gh{display:flex;align-items:center;gap:8px;padding:12px 16px 8px;color:var(--muted);font-size:14.5px;width:100%;background:none;border:0;text-align:left;font-family:inherit;box-sizing:border-box}
+.sn-gh.lnk{cursor:pointer;min-height:44px}.sn-gt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sn-gt small{font-size:12.5px}
+.sn-gc{font-variant-numeric:tabular-nums;white-space:nowrap}.sn-gc.all,.sn-gc.g{color:#30d158}.sn-gc.y{color:#ffd60a}.sn-chev{font-size:20px;line-height:1;margin-left:2px}
+.sn-l{list-style:none;margin:0;padding:0}
+.sn-row{display:flex;align-items:center;gap:12px;padding:10px 16px;min-height:56px;box-shadow:inset 0 1px 0 rgba(128,128,128,.18);box-sizing:border-box;animation:snRow .2s ease-out}
+@keyframes snRow{from{opacity:.4}to{opacity:1}}
+.sn-ck{flex:0 0 auto;width:30px;height:30px;border-radius:50%;border:2px solid rgba(128,128,128,.55);background:none;display:grid;place-items:center;color:#000;padding:0;cursor:pointer;position:relative;transition:transform .15s,opacity .15s}
+.snv .sn-ck{border:0!important;box-shadow:inset 0 0 0 2px rgba(150,150,150,.65)}.sn-ck::after{content:"";position:absolute;inset:-8px}.sn-ck:active{transform:scale(.9)}.snv .sn-ck.on{background:#30d158!important;box-shadow:none}.sn-ck[aria-disabled="true"]{opacity:.55;cursor:default}
+.sn-pl{flex:0 0 auto;width:30px;height:30px;border-radius:50%;box-shadow:inset 0 0 0 2px #ffd60a;color:#ffd60a;display:grid;place-items:center;box-sizing:border-box}
+.sn-nm{flex:1;min-width:0;font-size:16.5px;line-height:1.3;color:var(--ink)}.sn-t{overflow-wrap:anywhere}
+.sn-tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;background:rgba(128,128,128,.22);color:var(--muted);font-size:11.5px;vertical-align:2px;white-space:nowrap}
+.sn-who{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+.sn-row .sn-q{flex:0 0 auto;font-size:16px;font-weight:700;font-style:italic;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}.sn-row .sn-q.y{color:#ffd60a;font-style:normal}
+.sn-row.done .sn-t{text-decoration:line-through;color:var(--muted)}.sn-row.done .sn-q{color:var(--muted)}.sn-row.done .sn-tag{opacity:.7}
+.sn-addall{display:block;width:100%;min-height:50px;border:0;box-shadow:inset 0 1px 0 rgba(128,128,128,.18);background:none;color:var(--ink);font:600 16px var(--f-body,system-ui);cursor:pointer}.sn-addall[aria-disabled="true"]{opacity:.5}
+.sn-sw .sn-swr{display:flex;align-items:center;gap:12px;padding:12px 16px;min-height:60px;cursor:pointer}.sn-swr>span{flex:1}.sn-swr b{display:block;font-size:16.5px;font-weight:500;color:var(--ink)}.sn-swr small{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+.sn-tg{appearance:none;-webkit-appearance:none;flex:0 0 auto;width:51px;height:31px;border-radius:16px;background:rgba(128,128,128,.4);position:relative;cursor:pointer;margin:0;transition:background-color .2s}
+.sn-tg::before{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 2px 4px rgba(0,0,0,.25)}.sn-tg:checked{background:#30d158}.sn-tg:checked::before{transform:translateX(20px)}.sn-tg:disabled{opacity:.45}
+.sn-oh{display:flex;align-items:center;gap:10px;margin:6px 0 14px}.sn-ot{flex:1;text-align:center;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sn-note{font-size:13.5px;color:var(--muted);margin:0 4px 12px}.sn-note.ok{color:#30d158}.sn-foot{font-size:13px;color:var(--muted);margin:4px 4px 12px}
+.sn-pend{font-size:13px;color:var(--muted);margin:0 4px 12px}
+.sn-empty{background:var(--surface);border-radius:16px;padding:24px 18px;text-align:center;margin:0 0 12px;border:1px solid rgba(128,128,128,.14)}.sn-empty b{font-size:17px}.sn-empty p{margin:6px 0 0;color:var(--muted);font-size:14px}
+.sn-addw{position:fixed;left:0;right:0;bottom:calc(var(--apbar,0px) + 12px);display:flex;justify-content:center;padding:0 16px;z-index:30;pointer-events:none}body:has(.ai-fab) .sn-addw{padding-right:84px}@media (min-width:900px){.sn-addw,body:has(.ai-fab) .sn-addw{position:sticky;bottom:24px;padding:0;margin-top:12px}.snv{padding-bottom:32px}}
+.sn-add{pointer-events:auto;width:min(608px,100%);min-height:52px;border-radius:26px;border:0;background:#fff;color:#000;font:600 17px var(--f-body,system-ui);display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.35);transition:transform .15s,opacity .15s}.sn-add:active{transform:scale(.97);opacity:.9}
+:root[data-theme="light"] .sn-add{background:#000;color:#fff}
+.sn-sk .sk{display:block;height:14px;border-radius:7px;background:rgba(128,128,128,.22);animation:snSk 1.2s ease-in-out infinite}.sn-sk .sk.c{flex:0 0 auto;width:30px;height:30px;border-radius:50%}.sn-sk .sn-gh{justify-content:space-between}
+@keyframes snSk{0%,100%{opacity:.55}50%{opacity:1}}
+.sn-am .modal-card{width:min(440px,100%)}.sn-am h2{margin:0 0 12px}.sn-f{display:block;font-size:13px;color:var(--muted);margin:0 0 10px}
+.sn-f input,.sn-f select{display:block;width:100%;box-sizing:border-box;min-height:46px;margin-top:4px;padding:8px 12px;border-radius:12px;border:1px solid rgba(128,128,128,.32);background:var(--bg,var(--surface));color:var(--ink);font:16px var(--f-body,system-ui)}
+.sn-f2{display:grid;grid-template-columns:1fr 110px;gap:10px}.sn-fb{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}.sn-fb .btn{min-height:46px;min-width:110px}
+.sn-old{margin:4px 0 8px}.sn-back2{min-height:44px;padding:0 14px;border-radius:22px;border:1px solid rgba(128,128,128,.28);background:var(--surface);color:var(--ink);font:600 15px var(--f-body,system-ui);cursor:pointer}
+@media (prefers-reduced-motion:reduce){.sn-row,.sn-menu{animation:none}.sn-tg::before,.sn-ck,.sn-add{transition:none}}`; document.head.appendChild(st); })();
+})();
 
 /* ===== Ввод PIN «как на айфоне» (Кирилл 11.11, вариант А) =====
    Окно на весь экран: плашка «Имя · роль ▾», точки, круглые кнопки 0–9 с буквами, ⌫, «Войти», «Забыл PIN», «Отмена».
@@ -28868,7 +29123,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="526ab16183"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="918893f07c"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -30355,7 +30610,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="526ab16183";/*cehqr-build*/
+  const BUILD="918893f07c";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
