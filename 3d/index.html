@@ -23784,7 +23784,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="bc29c6960a";
+const CHK_BUILD="0d427c0df6";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -29697,7 +29697,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="bc29c6960a"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="0d427c0df6"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -36430,6 +36430,640 @@ html[data-vt="light"] .zk-dn .r b{color:#d70015}html[data-vt="light"] .zk-dn .o 
 window.__zk={groups:()=>zkGroups(),sum:g=>{ const s=zkSum(g); return {buy:s.buy,ord:s.ord,done:s.done,n:s.n}; },cex:id=>zkCex(shpById(id))};   // для стенда (bench/kirill/2026-11-15_zakupka.js)
 })();
 
+/* ---------- «Процесс работы в цехе», шаг 1 (Кирилл 15.11 17:26–19:29, вариант В — «да»; макет scratchpad/ceh_process/phone.png, экраны 1, 2, 6) ----------
+   Внутри экрана «Цех» (site_zhivoj.js, вид «Цех» сверху) — ещё одна строка вкладок; первый экран и нижние вкладки НЕ меняются (урок 15.11 утром):
+     директор, технолог, дизайнеры: «Заказы» (как было — карточки) · «Сегодня» (кто что делает, пила сейчас и дальше, опоздания красным) · «Пила» (очередь по дням,
+       свободные окна зелёным, «≡» — переставить, директору и технологу) · «Загрузка» (пила на 2 недели, свободные окна, когда освободятся бригады; календарь по дням — шаг 2);
+     мастер: «Заказы» (как было) · «Мой день» (сейчас — заказ, листы, карта раскроя, «Распилил» / «Не успеваю»; кто ждёт пилу после; дальше по дням). Ещё — строка в «Все разделы».
+   Сервер: GET pila, POST pilaPut / pilaMove / pilaDel / pilaMark / pilaNorm (лист «Пила», нормы — «Настройки компании», ключ cehNorm). Права проверяет сервер.
+   Нажал — экран меняется сразу (запись в фоне; не сохранилось — откат и понятное сообщение). Денег здесь нет. «Когда сможем?» (3 варианта срока) — шаг 2, пока — ближайшие свободные места. */
+(function(){
+if(!window.APP_ONE||typeof shpBoardHtml!=="function"||typeof render!=="function") return;
+const PL={d:null,at:0,busy:0,err:"",days:10,note:null,open:{},tick:0,sh:null,io:null};
+const PL_DOW=["вс","пн","вт","ср","чт","пт","сб"], PL_WD=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+const PL_DEF={v:1,days:[1,2,3,4,5,6],from:540,to:1080,lunch:null,saw:{n:1,perDay:3,sph:0},edge:{n:1,mph:0},drill:{n:1,pph:0},asm:{mpd:0,ppl:1},mont:{mpd:0,days:1},brig:[],hol:[],buf:1};
+const PL_IC={saw:'<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/>',
+  clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',alert:'<path d="M12 4l9 15.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/>',
+  people:'<circle cx="9" cy="8.5" r="3.2"/><path d="M3 19c.6-3.4 3-5 6-5s5.4 1.6 6 5"/><circle cx="17" cy="9.5" r="2.6"/><path d="M16.5 14c2.4.2 4 1.6 4.5 4.5"/>',
+  spark:'<path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 16.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>',
+  cal:'<rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  box:'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>',truck:'<path d="M3 6.5h11v9H3zM14 9.5h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',chev:'<path d="M9 6l6 6-6 6"/>',handle:'<path d="M5 8h14M5 12h14M5 16h14"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',
+  up:'<path d="M12 19V5M6 11l6-6 6 6"/>',down:'<path d="M12 5v14M6 13l6 6 6-6"/>',back:'<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>',
+  edge:'<circle cx="9" cy="10" r="5.5"/><circle cx="9" cy="10" r="1.6"/><path d="M9 15.5h12"/>',cut:'<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 11h17M11 4.5V11M14.5 11v8.5"/>',
+  minus:'<path d="M5 12h14"/>',re:'<path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4.5h-4.5"/>',grid:'<rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M4 10h16M10 10v10"/>'};
+function plI(n,s){ return `<svg class="pq-i" viewBox="0 0 24 24" width="${s||20}" height="${s||20}" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${PL_IC[n]||""}</svg>`; }
+const plE=v=>typeof esc==="function"?esc(v):String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const plHm=m=>{ m=Math.max(0,Math.round(+m||0)); return Math.floor(m/60)+":"+String(m%60).padStart(2,"0"); };
+const plN=s=>String(s==null?"":s).trim().toLowerCase().replace(/ё/g,"е");
+const plPl=(n,a,b,c)=>typeof shpPl==="function"?shpPl(n,a,b,c):c;
+function plRole(){ try{ if(S.shop.tech) return "tech"; const r=S.shop.role; return r==="office"||r==="supply"||r==="master"?r:(S.shop.techPin?"tech":S.shop.officePin?"office":S.shop.supPin?"supply":"master"); }catch(_){ return "master"; } }
+function plCan(k){ const c=PL.d&&PL.d.can; if(c) return !!c[k]; const r=plRole(); return k==="put"?(r==="tech"||r==="office"):k==="move"||k==="norm"?r==="tech":k==="mark"?(r==="tech"||r==="master"):false; }
+function plCvs(r){ return r==="supply"?[]:r==="master"?[["orders","Заказы"],["day","Мой день"]]:[["orders","Заказы"],["today","Сейчас"],["saw","Пила"],["load","Загрузка"]]; }
+function plCv(r){ const L=plCvs(r), v=S.shop.cv; return L.some(x=>x[0]===v)?v:"orders"; }
+function plActive(){ try{ return S.view==="shop"&&S.shop.mode==="board"&&S.shop.bview==="ceh"&&plCv(plRole())!=="orders"; }catch(_){ return false; } }
+/* ---- время и дни ---- */
+function plToday(){ return shpToday(); }
+function plNow(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); }
+function plWdOf(day){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(day||""); return m?new Date(+m[1],+m[2]-1,+m[3],12).getDay():0; }
+function plNorm(){ return (PL.d&&PL.d.norm)||PL_DEF; }
+function plWork(day){ const N=plNorm(), w=plWdOf(day)||7; return N.days.includes(w)&&!(N.hol||[]).includes(day); }
+function plNextDays(n,from){ const out=[]; let d=from||plToday(); for(let i=0;i<200&&out.length<n;i++){ if(plWork(d)) out.push(d); d=shpAddDays(d,1); } return out; }
+function plCap(){ const N=plNorm(); return N.saw.n*N.saw.perDay; }
+function plSlot(){ const N=plNorm(), L=N.lunch?N.lunch[1]-N.lunch[0]:0; return Math.max(30,Math.floor((N.to-N.from-L)/N.saw.perDay/15)*15); }
+function plDur(sh){ const N=plNorm(); return N.saw.sph>0&&+sh>0?Math.max(30,Math.ceil(+sh/N.saw.sph*4)*15):plSlot(); }
+function plFix(s){ const N=plNorm(); return N.lunch&&s>=N.lunch[0]&&s<N.lunch[1]?N.lunch[1]:s; }
+function plEnd(s,d){ const N=plNorm(); let e=s+d; if(N.lunch&&s<N.lunch[0]&&e>N.lunch[0]) e+=N.lunch[1]-N.lunch[0]; return e; }
+function plDayLbl(day,o){ o=o||{}; const t=plToday(), dd=shpDays(day,t), m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(day||""); if(!m) return ""; const wd=PL_DOW[plWdOf(day)], dm=+m[3]+(o.mon?" "+SHP_MON[+m[2]-1]:"");
+  if(!o.short&&dd===0) return "Сегодня, "+wd+" "+dm; if(!o.short&&dd===1) return "Завтра, "+wd+" "+dm; const s=wd+" "+dm; return o.low?s:s.charAt(0).toUpperCase()+s.slice(1); }
+function plQ(){ return (PL.d&&Array.isArray(PL.d.q))?PL.d.q:[]; }
+function plDayQ(day){ return plQ().filter(x=>x.day===day).sort((a,b)=>a.from-b.from||a.pos-b.pos); }
+/* состояние распила: done — распилено; past — прошлый день без отметки (считаем распиленным); late — «не успевают»; nomark — время вышло, отметки нет (сегодня); now — пилят; wait — ждёт */
+function plSt(x){ const t=plToday(), nm=plNow(); if(x.st==="done") return "done"; if(x.day<t) return "past"; if(x.lt) return "late";
+  if(x.day===t){ if(nm>=x.to+15) return "nomark"; if(nm>=x.from||x.st==="cut") return "now"; } return x.st==="cut"?"now":"wait"; }
+/* свободное окно (как на сервере, pilaGap_): самое раннее, куда распил влезает целиком, никого не двигая */
+function plLanes(items){ const N=plNorm(), n=N.saw.n, lanes=[]; for(let k=0;k<n;k++) lanes.push([]); const endOf=L=>L.length?L[L.length-1].to:N.from;
+  items.forEach(o=>{ let b=-1,be=-1; for(let j=0;j<n;j++){ const e=endOf(lanes[j]); if(e<=o.from&&e>be){ be=e; b=j; } } if(b<0){ b=0; for(let j=1;j<n;j++) if(endOf(lanes[j])<endOf(lanes[b])) b=j; } lanes[b].push(o); }); return lanes; }
+function plGap(day,dur,skip){ if(!plWork(day)) return null; const N=plNorm(), items=plDayQ(day).filter(o=>o!==skip); if(items.length>=plCap()) return null; let best=null;
+  plLanes(items).forEach(L=>{ let cur=N.from; for(let i=0;i<=L.length;i++){ const nx=i<L.length?L[i].from:null, s=plFix(cur), e=plEnd(s,dur);
+      if(nx===null?(s<=N.to-15&&(e<=N.to+30||s===N.from)):e<=nx){ if(best===null||s<best) best=s; return; } if(i<L.length) cur=Math.max(cur,L[i].to); } });
+  return best===null?null:{day,from:best}; }
+function plNextFree(from,dur){ let d=from||plToday(); for(let i=0;i<150;i++){ const g=plGap(d,dur); if(g) return g; d=shpAddDays(d,1); } return null; }
+/* свободные окна дня для показа (не короче часа; сегодня — с текущего времени) */
+function plNeed(){ return plNorm().saw.sph>0?60:plSlot(); }   /* короче не бывает: по листам — от часа, иначе — одно место */
+function plWins(day){ if(!plWork(day)) return []; const N=plNorm(), items=plDayQ(day); if(items.length>=plCap()) return []; const out=[], t=plToday(), nm=plNow(), need=plNeed();
+  plLanes(items).forEach((L,li)=>{ let cur=N.from; const push=(a,b,last)=>{ if(day<t) return; if(day===t) a=Math.max(a,Math.ceil(nm/15)*15); a=plFix(a); const e=plEnd(a,need);
+      if(last?(a<=N.to-15&&(e<=N.to+30||a===N.from)):e<=b) out.push({from:a,to:b,lane:li}); };
+    L.forEach(o=>{ if(o.from>cur) push(cur,o.from,false); cur=Math.max(cur,o.to); }); if(cur<N.to) push(cur,N.to,true); });
+  return out.sort((a,b)=>a.from-b.from); }
+function plPlaces(w){ const N=plNorm(); if(N.saw.sph>0) return ""; const S=plSlot(); let n=0, a=w.from; while(n<12){ const e=plEnd(plFix(a),S); if(e>w.to+30) break; n++; a=e; } return n>0?n+" "+plPl(n,"место","места","мест")+" по "+(S%60?plLen(S):S/60+" ч"):""; }
+function plLen(m){ const h=Math.floor(m/60), mm=m%60; return h?(h+" "+plPl(h,"час","часа","часов")+(mm?" "+mm+" мин":"")):mm+" мин"; }
+/* ---- бригады и сделки ---- */
+function plBrigs(){ return (PL.d&&Array.isArray(PL.d.brig))?PL.d.brig:[]; }
+function plMyBrig(){ const me=plN((PL.d&&PL.d.me)||shpWho()); return plBrigs().find(g=>(g.m||[]).some(n=>plN(n)===me))||null; }
+function plDealLate(d){ const t=plToday(); if(d.dl&&d.dl<t) return {k:"over",n:shpDays(t,d.dl)}; const end=d.mt||d.md||d.pt; if(d.dl&&end&&end>d.dl) return {k:"plan",n:shpDays(end,d.dl),end}; return null; }
+function plInBr(x,g){ return x.br===g.n||(g.d||[]).some(d=>d.num&&d.num===x.num); }   /* распил бригады: по имени бригады или по её заказу (бригады переименовали — не теряется) */
+function plBrNow(g){ const t=plToday(), nm=plNow(), q=plDayQ(t).filter(x=>plInBr(x,g)), d=g.d||[];
+  const sNow=q.find(x=>{ const s=plSt(x); return s==="now"||(s==="late"&&x.from<=nm); }), sNext=q.find(x=>x.from>nm&&x.st==="wait"&&!x.lt);
+  const mont=d.find(x=>x.md&&x.md<=t&&(x.mt||x.md)>=t), prod=d.filter(x=>x.stage==="cex");
+  const nm2=x=>"№"+x.num+(x.cl?" "+x.cl:x.kind?" · "+String(x.kind).toLowerCase():"");
+  let act=sNow?"Распил "+nm2(sNow):mont?"Монтаж "+nm2(mont):prod.length?(prod[0].step||"В цеху")+" "+nm2(prod[0]):"";
+  if(sNext) act=(act?act+" → ":"")+"пила в "+plHm(sNext.from);
+  const late=q.some(x=>{ const s=plSt(x); return s==="late"||s==="nomark"; })||d.some(x=>!!plDealLate(x)), busy=!!(sNow||mont||prod.length);
+  const st=late?["r","отстают"]:!busy&&sNext?["y","простой до "+plHm(sNext.from)]:busy&&sNext?["g","без простоя"]:busy?["g","по плану"]:["n","свободны"];
+  return {act:act||"Нет заказов в работе",st}; }
+/* ---- загрузка с таблицы (показываем сохранённое сразу, свежее — тихо) ---- */
+function plFk(){ try{ const c=typeof licCo==="function"?licCo():null; return c&&c.code?String(c.code):""; }catch(_){ return ""; } }
+function plLsK(){ return "cehqr-pila:"+plFk(); }
+function plSet(j){ PL.d=j; PL.at=Date.now(); PL.err=""; try{ const keep={today:j.today,norm:j.norm,normSet:j.normSet,q:j.q,brig:j.brig,me:j.me,can:j.can}; localStorage.setItem(plLsK(),JSON.stringify(keep)); }catch(_){} }
+function plFromLs(){ if(PL.d) return; try{ const j=JSON.parse(localStorage.getItem(plLsK())||"null"); if(j&&Array.isArray(j.q)){ PL.d=j; PL.at=0; } }catch(_){} }
+async function plLoad(force){ if(PL.busy) return; if(!force&&PL.d&&PL.at&&Date.now()-PL.at<25000) return; if(!shpPin()) return;
+  PL.busy=1; let j=null; try{ j=await shpGet("action=pila",true); }catch(_){ j=null; } PL.busy=0;
+  if(j&&j.ok&&Array.isArray(j.q)) plSet(j); else if(j&&j.ok) PL.err="old"; else if(!PL.d) PL.err="net";
+  plPaint(); }
+function plApply(j,oldD){ if(j&&j.ok&&Array.isArray(j.q)){ plSet(j); return true; } if(oldD) PL.d=oldD; return false; }
+function plErr(j,def){ return !j?"Нет связи с таблицей. Не сохранилось — попробуйте ещё раз":j.msg||(j.error==="role"?"Нет прав на это":j.error==="pin"?"Войдите заново — PIN не подошёл":j.error==="full"?"В этот день на пиле мест нет":j.error==="hours"?"Рабочий день закончился — сейчас можно только смотреть":def||"Не сохранилось — попробуйте ещё раз"); }
+async function plPost(body){ const j=await shpPostRaw(body); if(j&&j.error==="pin"&&typeof shpBadPin==="function"){ shpBadPin(); return null; } return j; }
+/* ---- вкладки внутри «Цеха» ---- */
+function plTabs(r){ const L=plCvs(r), cv=plCv(r); if(!L.length) return "";
+  return `<div class="pq-tabs" role="tablist" aria-label="Что показать в цехе">${L.map(([k,n])=>`<button type="button" role="tab" data-pq-cv="${k}" aria-selected="${cv===k}">${n}</button>`).join("")}</div>`; }
+function plDayLine(r,cv){ const t=plToday(), m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(t), wd=PL_DOW[plWdOf(t)], dm=+m[3]+" "+SHP_MON[+m[2]-1];
+  if(cv==="day"){ const me=(PL.d&&PL.d.me)||shpWho(); const b=plMyBrig(); return (b&&b.m.length>1?b.n:String(me||"").replace(/^./,c=>c.toUpperCase()))+" · "+wd+", "+dm; }
+  const B=plBrigs().filter(g=>(g.d||[]).some(x=>x.stage==="cex"||x.stage==="montazh")||plDayQ(t).some(x=>plInBr(x,g))).length;
+  return wd.charAt(0).toUpperCase()+wd.slice(1)+", "+dm+(PL.d?" · "+(B?B+" "+plPl(B,"бригада","бригады","бригад")+" в работе":"бригады свободны"):""); }
+function plViewHtml(r,cv){
+  const menu=`<button type="button" role="menuitem" data-act="pq-reload">${plI("re",18)} Обновить</button>`+(plCan("norm")?`<button type="button" role="menuitem" data-act="pq-norm">${plI("gear",18)} Участки и нормы</button>`:"")+(r!=="master"?`<button type="button" role="menuitem" data-act="shp-tab" data-v="chess">${plI("grid",18)} График работы</button>`:"");
+  let h=`<div class="head vx-thead sg-head zj-head pq-head"><h1>${cv==="day"?"Мой день":"Цех"}</h1>${typeof sgHeadBtns==="function"?sgHeadBtns(menu,false):""}</div>`;
+  h+=`<p class="sg-day zj-day pq-day">${plE(plDayLine(r,cv))}</p>${typeof sgSegHtml==="function"?sgSegHtml():""}${plTabs(r)}`;
+  PL.last=plBody(r,cv); return h+`<div id="pqBox" class="pq-box" data-cv="${cv}">${PL.last}</div>`; }
+function plBody(r,cv){ if(!PL.d){ return PL.err?`<div class="pq-empty"><p>${PL.err==="old"?"Очередь на пилу заработает, когда обновится таблица (скрипт сервера).":"Нет связи с таблицей. Нажмите «⋯ → Обновить»."}</p></div>`:plSkel(cv); }
+  try{ return cv==="today"?plTodayHtml():cv==="saw"?plSawHtml():cv==="load"?plLoadHtml():cv==="day"?plMyDayHtml():""; }catch(e){ console.error("пила",e); return `<div class="pq-empty"><p>Не получилось показать. Нажмите «⋯ → Обновить».</p></div>`; } }
+function plSkel(cv){ const row='<i class="pq-sk-row"><i class="pq-sk-av"></i><i class="pq-sk-tx"><i></i><i class="s"></i></i></i>';
+  return `<div class="pq-sk" aria-busy="true" aria-label="Загружаю">${cv==="day"?'<i class="pq-sk-card"></i>':""}<i class="pq-sk-sec"></i><i class="pq-sk-grp">${row.repeat(cv==="day"?2:3)}</i><i class="pq-sk-sec"></i><i class="pq-sk-grp">${row.repeat(3)}</i></div>`; }
+/* ---- строка распила ---- */
+function plWho(x){ return x.br||"бригада не указана"; }
+function plTitle(x){ return "№"+x.num+(x.cl?" "+x.cl:""); }
+function plRow(x,o){ o=o||{}; const s=plSt(x), t=plToday(), nm=plNow(), cur=s==="now"||(s==="late"&&x.day===t&&x.from<=nm), done=s==="done"||s==="past";
+  const av=`<span class="pq-av${cur?" w":s==="late"||s==="nomark"?" r":""}">${plI(done?"check":o.today&&!cur?"clock":"saw",19)}</span>`;
+  const kind=x.kind?String(x.kind).toLowerCase():"";
+  const sub=o.today?[kind,plWho(x),cur?"до "+plHm(x.to):done?(x.s1?"распилено в "+plHm(new Date(x.s1).getHours()*60+new Date(x.s1).getMinutes()):"распилено"):""]:["до "+plHm(x.to),plWho(x),x.sh?x.sh+" "+plPl(x.sh,"лист","листа","листов"):""];
+  if(s==="late") sub.push("ещё "+(x.ext>=60?Math.round(x.ext/6)/10+" ч":x.ext+" мин")+(x.why?" — "+x.why:""));
+  let rt="";
+  if(s==="late") rt=`<span class="pq-chip r">не успевают</span>`; else if(s==="nomark") rt=`<span class="pq-chip r">нет отметки</span>`;
+  else if(cur) rt=`<span class="pq-chip n">сейчас</span>`; else if(done) rt=o.today?"":`<span class="pq-rt">распилено</span>`;
+  else if(x.mv&&x.d0&&x.d0!==x.day) rt=`<span class="pq-chip y" title="${plE("был "+plDayLbl(x.d0,{short:1,low:1}))}">сдвинут</span>`;
+  else if(o.today) rt=`<span class="pq-rt">с ${plHm(x.from)}</span>`;
+  const hd=o.handle&&x.st==="wait"&&!done&&x.day>=t?`<button type="button" class="pq-hd" data-pq-it="${plE(x.id)}" data-pq-move="1" aria-label="${plE("Переставить №"+x.num)}">${plI("handle",20)}</button>`:"";
+  const prog=cur&&x.to>x.from?`<span class="pq-prog" aria-hidden="true"><i style="transform:scaleX(${Math.max(0.03,Math.min(1,(nm-x.from)/(x.to-x.from))).toFixed(3)})"></i></span>`:"";
+  return `<div class="pq-row${done?" done":""}${s==="late"||s==="nomark"?" bad":""}"><button type="button" class="pq-rb" data-pq-it="${plE(x.id)}" aria-label="${plE(plTitle(x)+", "+plHm(x.from)+"–"+plHm(x.to))}">${av}<span class="pq-tx"><b>${o.time?plHm(x.from)+" · ":""}${plE(plTitle(x))}</b><small>${plE(sub.filter(Boolean).join(" · "))}</small>${prog}</span>${rt}</button>${hd}</div>`; }
+function plFreeRow(day,w,o){ o=o||{}; const put=plCan("put"), lane=plNorm().saw.n>1?" · пила "+(w.lane+1):"";
+  const pc=plPlaces(w), inner=`<span class="pq-av g">${plI("plus",19)}</span><span class="pq-tx"><b>${plHm(w.from)}–${plHm(w.to)} свободно</b><small>${plE((pc||plLen(w.to-w.from))+lane+(put?" — можно поставить заказ":""))}</small></span>${put?`<span class="pq-ch" aria-hidden="true">${plI("chev",18)}</span>`:""}`;
+  return put?`<div class="pq-row free"><button type="button" class="pq-rb" data-pq-free="${plE(day)}" data-from="${w.from}" aria-label="${plE("Поставить на пилу: "+plDayLbl(day,{short:1,low:1})+", "+plHm(w.from))}">${inner}</button></div>`:`<div class="pq-row free"><div class="pq-rb">${inner}</div></div>`; }
+/* ---- «Сегодня» ---- */
+function plAlerts(){ const t=plToday(), out=[];
+  plDayQ(t).forEach(x=>{ const s=plSt(x); if(s==="late") out.push({id:x.id,t:plTitle(x)+" — не успевают распилить",s:["ещё "+(x.ext>=60?Math.round(x.ext/6)/10+" ч":x.ext+" мин"),x.why,plWho(x),"до "+plHm(x.to)].filter(Boolean).join(" · ")});
+    else if(s==="nomark") out.push({id:x.id,t:plTitle(x)+" — нет отметки «Распилил»",s:"план до "+plHm(x.to)+" · "+plWho(x)}); });
+  const seen={}; plBrigs().forEach(g=>(g.d||[]).forEach(d=>{ if(seen[d.num]) return; const L=plDealLate(d); if(!L) return; seen[d.num]=1;
+    out.push({deal:d.id,t:"№"+d.num+(d.cl?" "+d.cl:"")+(L.k==="over"?" — срок прошёл "+L.n+" "+plPl(L.n,"день","дня","дней")+" назад":" опаздывает на "+L.n+" "+plPl(L.n,"день","дня","дней")),
+      s:L.k==="over"?"срок был "+plDayLbl(d.dl,{short:1,low:1})+" · "+g.n:(d.mt||d.md?"монтаж "+plDayLbl(d.mt||d.md,{short:1,low:1}):"цех до "+plDayLbl(d.pt,{short:1,low:1}))+", срок "+plDayLbl(d.dl,{short:1,low:1})+" · "+g.n}); }));
+  if(!out.length) return "";
+  const more=out.length>3&&!PL.open.__al, L=more?out.slice(0,3):out;
+  return `<div class="pq-alert" role="group" aria-label="Опаздывают">${L.map(a=>`<button type="button" class="pq-rb pq-al"${a.id?` data-pq-it="${plE(a.id)}"`:a.deal?` data-act="shp-open" data-id="${plE(a.deal)}"`:""}><span class="pq-av r">${plI("alert",19)}</span><span class="pq-tx"><b>${plE(a.t)}</b><small>${plE(a.s)}</small></span>${a.id||a.deal?`<span class="pq-ch" aria-hidden="true">${plI("chev",18)}</span>`:""}</button>`).join("")}${more?`<button type="button" class="pq-more-b" data-pq-open="__al">Ещё ${out.length-3}</button>`:""}</div>`; }
+function plTodayHtml(){ const t=plToday(), L=plDayQ(t), cap=plCap(), wins=plWins(t), tm=plNextDays(1,shpAddDays(t,1))[0]||shpAddDays(t,1);   /* следующий рабочий день */
+  let h=plNote()+plAlerts();
+  let saw=`<div class="pq-sec"><span>Пила</span><span>сегодня ${L.length} из ${cap}</span></div><div class="pq-grp">`;
+  if(!plWork(t)) saw+=`<div class="pq-row"><div class="pq-rb"><span class="pq-av">${plI("cal",19)}</span><span class="pq-tx"><b>Сегодня выходной</b><small>${plE(plNextLine())}</small></span></div></div>`;
+  else if(!L.length&&!wins.length) saw+=`<div class="pq-row"><div class="pq-rb"><span class="pq-av">${plI("saw",19)}</span><span class="pq-tx"><b>Сегодня на пиле никого</b><small>${plE(plNextLine())}</small></span></div></div>`;
+  const rows=L.map(x=>({f:x.from,h:plRow(x,{today:1})})).concat(wins.map(w=>({f:w.from,h:plFreeRow(t,w)}))).sort((a,b)=>a.f-b.f);
+  saw+=rows.map(r=>r.h).join("");
+  const T=plWork(tm)?plDayQ(tm):[], tl=shpDays(tm,t)===1?"Завтра":plDayLbl(tm,{short:1}); if(plWork(tm)) saw+=`<div class="pq-row"><button type="button" class="pq-rb" data-pq-cv="saw"><span class="pq-av">${plI("cal",19)}</span><span class="pq-tx"><b>${plE(tl)} · ${T.length} из ${cap}</b><small>${plE(T.length?T.map(x=>plHm(x.from)+" №"+x.num).join(" · "):"пила свободна")}</small></span><span class="pq-ch" aria-hidden="true">${plI("chev",18)}</span></button></div>`;
+  saw+=`</div>`;
+  const B=plBrigs(); let br=`<div class="pq-sec"><span>Бригады</span><span>кто что делает</span></div><div class="pq-grp">`;
+  if(!B.length) br+=`<div class="pq-row"><div class="pq-rb"><span class="pq-av">${plI("people",19)}</span><span class="pq-tx"><b>Бригад пока нет</b><small>Добавьте мастеров в «Сотрудники» или бригады в «Участки и нормы»</small></span></div></div>`;
+  B.forEach(g=>{ const a=plBrNow(g), op=!!PL.open[g.n];
+    br+=`<div class="pq-row"><button type="button" class="pq-rb" data-pq-open="${plE(g.n)}" aria-expanded="${op}"><span class="pq-av">${plE(String(g.n||"?").charAt(0).toUpperCase())}</span><span class="pq-tx"><b>${plE(g.n)}</b><small>${plE(a.act)}</small></span><span class="pq-chip ${a.st[0]}">${plE(a.st[1])}</span></button></div>`;
+    if(op) br+=plBrDetail(g); });
+  br+=`</div>`;
+  h+=`<div class="pq-cols">${`<div class="pq-col">${saw}</div><div class="pq-col">${br}</div>`}</div>`;
+  return h+plWhenPill(); }
+function plNextLine(){ const g=plNextFree(plToday(),plSlot()); return g?"ближайшее свободное место: "+plDayLbl(g.day,{low:1})+", "+plHm(g.from):"свободных мест пока нет"; }
+function plBrDetail(g){ const t=plToday(), d=(g.d||[]).slice(0,8), q=plQ().filter(x=>plInBr(x,g)&&x.day>=t&&x.st!=="done").slice(0,4);
+  let h=`<div class="pq-det">`;
+  if(g.m&&g.m.length>1) h+=`<p class="pq-det-m">${plE(g.m.join(", "))}</p>`;
+  q.forEach(x=>{ h+=`<button type="button" class="pq-det-r" data-pq-it="${plE(x.id)}">${plI("saw",16)}<span>${plE(plDayLbl(x.day,{short:1})+", "+plHm(x.from)+" · пила · №"+x.num)}</span></button>`; });
+  d.forEach(x=>{ const L=plDealLate(x), dt=x.md?"монтаж "+plDayLbl(x.md,{short:1,low:1}):x.pt?"цех до "+plDayLbl(x.pt,{short:1,low:1}):"";
+    const tx="№"+x.num+(x.cl?" "+x.cl:x.kind?" · "+String(x.kind).toLowerCase():"")+" — "+(x.step||plStName(x.stage))+(dt?" · "+dt:"")+(x.dl?" · срок "+plDayLbl(x.dl,{short:1,low:1}):"");
+    h+=x.id?`<button type="button" class="pq-det-r${L?" bad":""}" data-act="shp-open" data-id="${plE(x.id)}">${plI("box",16)}<span>${plE(tx)}</span></button>`:`<div class="pq-det-r${L?" bad":""}">${plI("box",16)}<span>${plE(tx)}</span></div>`; });
+  if(!d.length&&!q.length) h+=`<p class="pq-det-m">Заказов в работе нет — можно ставить новый.</p>`;
+  return h+`</div>`; }
+function plStName(k){ try{ const s=SHP_ST.find(x=>x.k===k); return s?(s.s||s.n):""; }catch(_){ return ""; } }
+function plNote(){ const n=PL.note; if(!n||Date.now()-n.at>10*60e3) return ""; return `<div class="pq-note">${plI("spark",18)}<div>${n.h}</div><button type="button" class="pq-note-x" data-pq-notex="1" aria-label="Скрыть">${plI("x",16)}</button></div>`; }
+function plWhenPill(){ const r=plRole(); if(r!=="tech"&&r!=="office") return ""; return `<div class="pq-pillw"><button type="button" class="pq-pill" data-act="pq-when">${plI("plus",18)}Когда сможем?</button></div>`; }
+/* ---- «Пила» — очередь по дням ---- */
+function plSawSub(){ const N=plNorm(), n=N.saw.n, c=plCap(); return (n===1?"1 станок":n+" "+plPl(n,"станок","станка","станков"))+" · не больше "+c+" "+plPl(c,"распила","распилов","распилов")+" в день"+(N.saw.sph>0?" · "+N.saw.sph+" "+plPl(N.saw.sph,"лист","листа","листов")+" в час":""); }
+function plSawHtml(){ const t=plToday(), last=plQ().reduce((m,x)=>x.day>m?x.day:m,t), days=plNextDays(PL.days,t), mv=plCan("move");
+  let h=`<p class="pq-sub">${plE(plSawSub())}${plCan("norm")?` · <button type="button" class="pq-lnk" data-act="pq-norm">нормы</button>`:""}</p>`+plNote();
+  const later=plQ().filter(x=>x.day>days[days.length-1]&&x.day>=t).length;
+  h+=`<div class="pq-days">`;
+  let run=[];   /* подряд пустые дни — одной строкой, чтобы не листать одинаковое */
+  const day1=day=>{ const L=plDayQ(day), W=plWins(day), cap=plCap(), full=L.length>=cap;
+    let o=`<section class="pq-day1"><div class="pq-sec"><span>${plE(plDayLbl(day))}</span><span class="pq-chip ${L.length>cap?"r":full?"n":"g"}">${L.length} из ${cap}</span></div><div class="pq-grp">`;
+    const rows=L.map(x=>({f:x.from,h:plRow(x,{time:1,handle:mv})})).concat(W.map(w=>({f:w.from,h:plFreeRow(day,w)}))).sort((a,b)=>a.f-b.f);
+    o+=rows.length?rows.map(r=>r.h).join(""):`<div class="pq-row"><div class="pq-rb"><span class="pq-av">${plI("saw",19)}</span><span class="pq-tx"><b>Мест нет</b><small>все места заняты</small></span></div></div>`;
+    return o+`</div></section>`; };
+  const flush=tail=>{ if(run.length<2&&!(tail&&run.length)){ run.forEach(d=>{ h+=day1(d); }); run=[]; return; } const a=run[0], z=run[run.length-1], cap=plCap(), put=plCan("put"), n=run.length, mon=a.slice(0,7)!==z.slice(0,7);
+    const inner=`<span class="pq-av g">${plI("plus",19)}</span><span class="pq-tx"><b>${tail?"Дальше пила свободна":"Пила свободна — "+n+" "+plPl(n,"день","дня","дней")}</b><small>${plE(cap+" "+plPl(cap,"место","места","мест")+" в день"+(put?" — можно ставить заказы":""))}</small></span>${put?`<span class="pq-ch" aria-hidden="true">${plI("chev",18)}</span>`:""}`;
+    h+=`<section class="pq-day1"><div class="pq-sec"><span>${plE(tail?"С "+plDayLbl(a,{short:1,low:1,mon:1}):plDayLbl(a,{short:1,mon:mon})+" – "+plDayLbl(z,{short:1,low:1,mon:mon}))}</span><span class="pq-chip g">свободно</span></div><div class="pq-grp"><div class="pq-row free">${put?`<button type="button" class="pq-rb" data-pq-free="${plE(a)}" data-from="${plNorm().from}">${inner}</button>`:`<div class="pq-rb">${inner}</div>`}</div></div></section>`; run=[]; };
+  days.forEach(day=>{ if(day!==t&&!plDayQ(day).length){ run.push(day); return; } flush(false); h+=day1(day); }); flush(!later);   /* после последнего заказа — одна строка «Дальше пила свободна», без бесконечной подгрузки */
+  h+=`</div>`;
+  if(days.length&&later) h+=`<div class="pq-more" data-pq-more="1"><button type="button" class="pq-more-b" data-pq-more-b="1">Показать дальше · ещё ${later} ${plPl(later,"распил","распила","распилов")}</button></div>`;
+  return h+plWhenPill(); }
+/* ---- «Загрузка»: пила на 2 недели, свободные окна, когда освободятся бригады (календарь по дням — шаг 2) ---- */
+function plLoadHtml(){ const t=plToday(), days=plNextDays(12,t), cap=plCap();
+  let h=`<div class="pq-sec"><span>Пила на 2 недели</span><span>${plE(cap+" "+plPl(cap,"место","места","мест")+" в день")}</span></div><div class="pq-strip" role="list">`;
+  days.forEach(day=>{ const L=plDayQ(day), m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(day); let bars="";
+    for(let i=0;i<Math.max(cap,L.length);i++){ const x=L[i], s=x?plSt(x):""; bars+=`<i class="${!x?"f":s==="late"||s==="nomark"?"r":x.mv&&x.d0&&x.d0!==x.day?"y":"b"}"></i>`; }
+    h+=`<button type="button" class="pq-sd${day===t?" td":""}" role="listitem" data-pq-day="${day}" aria-label="${plE(plDayLbl(day,{mon:1})+": "+L.length+" из "+cap)}"><span>${PL_DOW[plWdOf(day)]}</span><b>${+m[3]}</b><span class="pq-sb">${bars}</span></button>`; });
+  h+=`</div><p class="pq-leg"><span><i class="b"></i>занято</span><span><i class="f"></i>свободно</span><span><i class="y"></i>сдвинут</span><span><i class="r"></i>опаздывает</span></p>`;
+  const W=[]; plNextDays(10,t).forEach(day=>plWins(day).forEach(w=>W.push({day,w})));
+  h+=`<div class="pq-sec"><span>Свободные окна на пиле</span><span>${plCan("put")?"сюда можно ставить":""}</span></div><div class="pq-grp">`;
+  h+=W.length?W.slice(0,8).map(x=>plFreeRow(x.day,x.w).replace(/<b>(\d+:\d\d–\d+:\d\d) свободно<\/b>/,`<b>${plE(plDayLbl(x.day,{short:1}))}, $1</b>`)).join(""):`<div class="pq-row"><div class="pq-rb"><span class="pq-av">${plI("saw",19)}</span><span class="pq-tx"><b>Свободных окон нет</b><small>на ближайшие 2 недели пила занята</small></span></div></div>`;
+  h+=`</div><div class="pq-sec"><span>Бригады</span><span>когда освободятся</span></div><div class="pq-grp">`;
+  const B=plBrigs(); if(!B.length) h+=`<div class="pq-row"><div class="pq-rb"><span class="pq-av">${plI("people",19)}</span><span class="pq-tx"><b>Бригад пока нет</b><small>Добавьте мастеров в «Сотрудники»</small></span></div></div>`;
+  B.forEach(g=>{ let end="", why=""; (g.d||[]).forEach(d=>{ const e=d.mt||d.md||d.pt||""; if(e>end){ end=e; why=(d.mt||d.md?"монтаж":"цех")+" №"+d.num; } }); plQ().forEach(x=>{ if(plInBr(x,g)&&x.st!=="done"&&x.day>end){ end=x.day; why="пила №"+x.num; } });
+    const free=!end||end<t, nx=free?"":plNextDays(1,shpAddDays(end,1))[0];
+    h+=`<div class="pq-row"><button type="button" class="pq-rb" data-pq-open="${plE(g.n)}" data-pq-go="today"><span class="pq-av${free?" g":""}">${plI("people",19)}</span><span class="pq-tx"><b>${plE(g.n)}</b><small>${plE(free?"свободны — можно ставить новый заказ":"заняты до "+plDayLbl(end,{short:1,low:1})+" ("+why+")")}</small></span>${free?`<span class="pq-chip g">свободны</span>`:`<span class="pq-rt">с ${plE(plDayLbl(nx||end,{short:1,low:1}))}</span>`}</button></div>`; });
+  h+=`</div><p class="pq-soon">${plI("cal",16)} Скоро: календарь по дням — пила, кромка, сборка и монтаж каждой бригады, и «Когда сможем?» с тремя вариантами срока.</p>`;
+  return h+plWhenPill(); }
+/* ---- «Мой день» (мастер) ---- */
+function plMyDayHtml(){ const t=plToday(), nm=plNow(), mine=plQ().filter(x=>x.mine), today=mine.filter(x=>x.day===t).sort((a,b)=>a.from-b.from);
+  const cur=today.find(x=>{ const s=plSt(x); return s==="now"||s==="late"||s==="nomark"; })||today.find(x=>x.st!=="done"&&plSt(x)==="wait"), doneT=today.filter(x=>x.st==="done");
+  let h=plNote();
+  if(cur){ const s=plSt(cur), inSlot=s!=="wait", pr=inSlot&&cur.to>cur.from?Math.max(0.03,Math.min(1,(nm-cur.from)/(cur.to-cur.from))):0;
+    h+=`<div class="pq-now${s==="late"||s==="nomark"?" bad":""}"><div class="pq-lb"><span>${inSlot?"Сейчас":"Сегодня"} · ${plHm(cur.from)}–${plHm(cur.to)}</span><span class="pq-chip ${s==="late"?"r":"w"}">${s==="late"?"не успеваете":"пила ваша"}</span></div>`;
+    h+=`<h2>Распил ${plE(plTitle(cur))}</h2><p>${plE([cur.kind?String(cur.kind).toLowerCase():"",cur.sh?cur.sh+" "+plPl(cur.sh,"лист","листа","листов"):""].filter(Boolean).join(" · "))}${cur.t3d?`${cur.kind||cur.sh?" · ":""}<button type="button" class="pq-lnk" data-act="ap-sec" data-id="${plE(cur.t3d)}" data-k="cut">карта раскроя ›</button>`:""}</p>`;
+    if(inSlot) h+=`<span class="pq-prog big" aria-hidden="true"><i style="transform:scaleX(${pr.toFixed(3)})"></i></span>`;
+    h+=`<div class="pq-bb"><button type="button" class="pq-b1" data-pq-mk="done" data-id="${plE(cur.id)}">${plI("check",18)}Распилил</button><button type="button" class="pq-b2" data-pq-late="${plE(cur.id)}">Не успеваю</button></div>`;
+    h+=`<p class="pq-hint">${s==="late"?"Директор знает. Распилите — нажмите «Распилил»":cur.st==="wait"&&inSlot?`Распилили — нажмите «Распилил». <button type="button" class="pq-lnk" data-pq-mk="start" data-id="${plE(cur.id)}">Отметить «начал»</button>`:cur.st==="wait"?`<button type="button" class="pq-lnk" data-pq-mk="start" data-id="${plE(cur.id)}">Начал раньше</button> · не успеете — скажите заранее, следующие сдвинутся сами`:"Не успеваете — скажите заранее: следующие сдвинутся сами"}</p></div>`;
+    const dn=doneT.filter(x=>x.id!==cur.id&&x.s1&&Date.now()-x.s1<3*36e5).pop();   /* только что распилил — можно вернуть, если нажал по ошибке */
+    if(dn){ const st=new Date(dn.s1); h+=`<div class="pq-done1">${plI("check",18)}<span>${plE(plTitle(dn))} — распилено в ${plHm(st.getHours()*60+st.getMinutes())}</span><button type="button" class="pq-lnk" data-pq-mk="undo" data-id="${plE(dn.id)}">Вернуть</button></div>`; }
+    const after=plDayQ(t).filter(x=>x.from>=cur.to-1&&x.id!==cur.id&&!x.mine&&x.st!=="done")[0];
+    if(after) h+=`<div class="pq-note">${plI("clock",18)}<div>После вас в ${plHm(after.from)} пилу ждут <b>${plE(plWho(after))}</b> (№${plE(after.num)})</div></div>`;
+  } else if(doneT.length){ const x=doneT[doneT.length-1], st=x.s1?new Date(x.s1):null;
+    h+=`<div class="pq-now ok"><div class="pq-lb"><span>Сегодня</span><span class="pq-chip g">распилено</span></div><h2>${plE(plTitle(x))} — распилено${st?" в "+plHm(st.getHours()*60+st.getMinutes()):""}</h2><p>Пила свободна для следующих.</p><div class="pq-bb"><button type="button" class="pq-b2" data-pq-mk="undo" data-id="${plE(x.id)}">Вернуть — ещё не распилили</button></div></div>`;
+  } else { const nx=mine.filter(x=>x.day>t&&x.st!=="done").sort((a,b)=>a.day<b.day?-1:a.day>b.day?1:a.from-b.from)[0];
+    h+=`<div class="pq-now calm"><div class="pq-lb"><span>Сегодня</span></div><h2>Сегодня пила не ваша</h2><p>${plE(nx?"Ваш распил: "+plDayLbl(nx.day,{low:1})+", "+plHm(nx.from)+" — №"+nx.num:"Пока вас нет в очереди на пилу — директор поставит, появится здесь")}</p></div>`; }
+  /* дальше: свои распилы и монтажи по дням */
+  const ev=[]; mine.filter(x=>x.st!=="done"&&(x.day>t||(x.day===t&&cur&&x.id!==cur.id&&x.from>=cur.from))).forEach(x=>ev.push({d:x.day,f:x.from,ic:"saw",w:1,t:plDayLbl(x.day,{short:1})+" · "+plHm(x.from)+" · пила ваша",s:plTitle(x)+(x.sh?" · "+x.sh+" "+plPl(x.sh,"лист","листа","листов"):""),id:x.id}));
+  const b=plMyBrig(); if(b) (b.d||[]).forEach(d=>{ const nm2="№"+d.num+(d.cl?" "+d.cl:""); if(d.md&&(d.mt||d.md)>=t) ev.push({d:d.md,f:600,ic:"truck",t:(d.mt&&d.mt!==d.md?plDayLbl(d.md,{short:1})+" – "+plDayLbl(d.mt,{short:1,low:1}):plDayLbl(d.md,{short:1}))+" · монтаж",s:nm2,deal:d.id});
+    else if(d.stage==="cex"&&d.pt&&d.pt>=t) ev.push({d:d.pt,f:1000,ic:"box",t:"До "+plDayLbl(d.pt,{short:1,low:1})+" · "+(d.step?String(d.step).toLowerCase():"цех")+" — сдать из цеха",s:nm2,deal:d.id}); });
+  ev.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:a.f-b.f);
+  h+=`<div class="pq-sec"><span>Дальше</span></div><div class="pq-grp">`;
+  h+=ev.length?ev.slice(0,10).map(e=>`<div class="pq-row"><button type="button" class="pq-rb"${e.id?` data-pq-it="${plE(e.id)}"`:e.deal?` data-act="shp-open" data-id="${plE(e.deal)}"`:""}><span class="pq-av${e.w?" w":""}">${plI(e.ic,19)}</span><span class="pq-tx"><b>${plE(e.t)}</b><small>${plE(e.s)}</small></span></button></div>`).join(""):`<div class="pq-row"><div class="pq-rb"><span class="pq-av">${plI("cal",19)}</span><span class="pq-tx"><b>Дальше пока пусто</b><small>Новые распилы и монтажи появятся здесь сами</small></span></div></div>`;
+  return h+`</div>`; }
+/* ---- шторка снизу (одна на экран) ---- */
+function plSheet(html,cls){ plSheetClose(true); document.documentElement.classList.add("pq-sh-on"); const w=document.createElement("div"); w.className="pq-shw"+(cls?" "+cls:""); w.id="pqSh"; w.innerHTML=`<div class="pq-dim" data-pq-x="1"></div><div class="pq-sh" role="dialog" aria-modal="true"><div class="pq-grab" aria-hidden="true"></div>${html}</div>`;
+  document.body.appendChild(w); PL.sh=w; requestAnimationFrame(()=>requestAnimationFrame(()=>w.classList.add("on"))); const f=w.querySelector("[data-pq-focus]"); if(f) setTimeout(()=>{ try{ f.focus({preventScroll:true}); }catch(_){} },230); return w; }
+function plSheetClose(now){ const w=document.getElementById("pqSh"); PL.sh=null; if(!document.getElementById("pqNormM")) document.documentElement.classList.remove("pq-sh-on"); if(!w) return; if(now){ w.remove(); return; } w.classList.remove("on"); setTimeout(()=>w.remove(),220); }
+/* распил: что можно сделать */
+function plItSheet(id,moveOnly){ const x=plQ().find(q=>q.id===id); if(!x) return toast("Этого распила уже нет — обновите");
+  const r=plRole(), s=plSt(x), t=plToday(), mv=plCan("move")&&x.st==="wait"&&x.day>=t, mk=(r==="tech"&&plCan("mark"))||(r==="master"&&x.mine), own=r==="office"&&x.mine&&x.st==="wait";
+  let h=`<h3>${plE(plTitle(x))}</h3><p class="pq-shs">${plE([plDayLbl(x.day),plHm(x.from)+"–"+plHm(x.to),plWho(x),x.sh?x.sh+" "+plPl(x.sh,"лист","листа","листов"):""].filter(Boolean).join(" · "))}</p>`;
+  const info=[]; if(x.lt) info.push("Не успевают: ещё "+(x.ext>=60?Math.round(x.ext/6)/10+" ч":x.ext+" мин")+(x.why?" — "+x.why:"")+(x.mb?" ("+x.mb+")":""));
+  if(x.s0) info.push("Начали в "+plHm(new Date(x.s0).getHours()*60+new Date(x.s0).getMinutes()));
+  if(x.s1) info.push("Распилили в "+plHm(new Date(x.s1).getHours()*60+new Date(x.s1).getMinutes()));
+  if(x.mv&&x.d0&&x.d0!==x.day) info.push("Сдвинут: был "+plDayLbl(x.d0,{short:1,low:1})+(x.mv?" ("+x.mv+")":""));
+  if(x.note) info.push("Заметка: "+x.note); if(x.by) info.push("Поставил(а): "+x.by);
+  if(info.length) h+=`<div class="pq-shinfo">${info.map(i=>`<p>${plE(i)}</p>`).join("")}</div>`;
+  h+=`<div class="pq-shl">`;
+  if(mk&&!moveOnly&&x.day>=t&&s!=="done"){ h+=`<button type="button" class="pq-shr" data-pq-mk="done" data-id="${plE(x.id)}">${plI("check",20)}<span>Распилил</span></button>`;
+    if(x.st==="wait") h+=`<button type="button" class="pq-shr" data-pq-mk="start" data-id="${plE(x.id)}">${plI("saw",20)}<span>Начал пилить</span></button>`;
+    h+=`<button type="button" class="pq-shr" data-pq-late="${plE(x.id)}">${plI("clock",20)}<span>Не успеваю</span></button>`; }
+  if(mk&&!moveOnly&&s==="done"&&x.day>=shpAddDays(t,-1)) h+=`<button type="button" class="pq-shr" data-pq-mk="undo" data-id="${plE(x.id)}">${plI("re",20)}<span>Вернуть — ещё не распилили</span></button>`;
+  if(mv){ const L=plDayQ(x.day), i=L.indexOf(x), up=i>0&&L[i-1].st==="wait", dn=i>=0&&i<L.length-1&&L[i+1].st==="wait";   /* только то, что можно: первый — не выше, последний — не ниже */
+    if(up) h+=`<button type="button" class="pq-shr" data-pq-mv="up" data-id="${plE(x.id)}">${plI("up",20)}<span>Поднять выше — раньше №${plE(L[i-1].num)}</span></button>`;
+    if(dn) h+=`<button type="button" class="pq-shr" data-pq-mv="down" data-id="${plE(x.id)}">${plI("down",20)}<span>Опустить ниже — после №${plE(L[i+1].num)}</span></button>`;
+    h+=`<div class="pq-shf"><span>Перенести на день</span><div class="pq-dchips">${plDayChips(x)}</div></div>`;
+    h+=`<div class="pq-shf"><span>Листов</span>${plStep("pqShSh",x.sh||0,0,99,"data-pq-sh=\""+plE(x.id)+"\"")}</div>`;
+    h+=`<button type="button" class="pq-shr bad" data-pq-del="${plE(x.id)}">${plI("x",20)}<span>Убрать из очереди</span></button>`; }
+  else if(own) h+=`<button type="button" class="pq-shr bad" data-pq-del="${plE(x.id)}">${plI("x",20)}<span>Убрать из очереди</span></button>`;
+  if(x.deal) h+=`<button type="button" class="pq-shr" data-act="shp-open" data-id="${plE(x.deal)}" data-pq-x="1">${plI("box",20)}<span>Открыть сделку</span></button>`;
+  if(x.t3d&&(r==="master"||r==="tech")) h+=`<button type="button" class="pq-shr" data-act="ap-sec" data-id="${plE(x.t3d)}" data-k="cut" data-pq-x="1">${plI("cut",20)}<span>Карта раскроя</span></button>`;
+  h+=`</div><button type="button" class="pq-wide g2" data-pq-x="1">Закрыть</button>`;
+  plSheet(h); }
+function plDayChips(x){ const dur=(x.dur||plSlot())+(x.ext||0); return plNextDays(10,plToday()).map(d=>{ const g=d===x.day?null:plGap(d,dur,x), cnt=plDayQ(d).filter(q=>q.id!==x.id).length;
+    return `<button type="button" class="pq-dc" data-pq-mvday="${d}" data-id="${plE(x.id)}"${d===x.day||!g?" disabled":""} aria-pressed="${d===x.day}"><b>${plE(plDayLbl(d,{short:1}))}</b><small>${d===x.day?"сейчас здесь":g?"с "+plHm(g.from):"мест нет"}</small></button>`; }).join(""); }
+function plStep(id,v,lo,hi,attr){ return `<div class="pq-step" id="${id}" data-lo="${lo}" data-hi="${hi}" ${attr||""}><button type="button" data-pq-st="-1" aria-label="Меньше">${plI("minus",18)}</button><b data-v="${v}">${v||"—"}</b><button type="button" data-pq-st="1" aria-label="Больше">${plI("plus",18)}</button></div>`; }
+/* «Не успеваю» */
+const PL_WHY=["Много деталей","Станок","Нет материала","Переделка","Другое"];
+function plLateSheet(id){ const x=plQ().find(q=>q.id===id); if(!x) return;
+  const h=`<h3>Не успеваю — №${plE(x.num)}</h3><p class="pq-shs">${plE("план до "+plHm(x.to)+(x.cl?" · "+x.cl:""))}</p>
+    <div class="pq-shf"><span>На сколько дольше?</span><div class="pq-chips" data-pq-grp="ext">${[["30","+30 мин"],["60","+1 час"],["120","+2 часа"],["eod","До конца дня"]].map(([v,n],i)=>`<button type="button" class="pq-cp" data-v="${v}" aria-pressed="${i===1}">${n}</button>`).join("")}</div></div>
+    <div class="pq-shf"><span>Почему?</span><div class="pq-chips" data-pq-grp="why">${PL_WHY.map(n=>`<button type="button" class="pq-cp" data-v="${plE(n)}" aria-pressed="false">${n}</button>`).join("")}</div><input class="pq-in" id="pqWhyT" maxlength="100" placeholder="Своими словами (можно пусто)" hidden></div>
+    <p class="pq-prev" id="pqLatePrev">${plE(pqLatePrev(x,60))}</p>
+    <button type="button" class="pq-wide w" data-pq-latego="${plE(x.id)}">Сообщить директору</button><button type="button" class="pq-wide g2" data-pq-x="1">Отмена</button>
+    <p class="pq-small">Директор получит сообщение. Следующие в очереди сдвинутся сами.</p>`;
+  plSheet(h); }
+function pqLatePrev(x,add){ const N=plNorm(), end=add==="eod"?Math.max(x.to+30,N.to):x.to+(+add||0), nx=plDayQ(x.day).filter(q=>q.from>=x.from&&q.id!==x.id&&q.st==="wait");
+  if(!nx.length) return "До "+plHm(end)+". После вас в этот день никого — никто не ждёт."; const a=nx[0], ns=Math.max(a.from,end), ok=ns+(a.to-a.from)<=N.to+30;
+  return "До "+plHm(end)+". №"+a.num+" ("+plWho(a)+") "+(ns===a.from?"успевает как было — в "+plHm(a.from):ok?"сдвинется на "+plHm(ns):"не успеет сегодня — встанет первым на следующий день")+(nx.length>1?", за ним — ещё "+(nx.length-1):"")+"."; }
+/* «Поставить на пилу» */
+function plPutSheet(day,from){ const r=plRole(); if(!plCan("put")) return toast(r==="master"?"На пилу ставит директор или технолог":"Нет прав ставить в очередь");
+  const t=plToday(), have={}; plQ().forEach(x=>{ if(x.deal&&x.st!=="done"&&x.day>=t) have[x.deal]=x; });
+  const O=(S.shop.orders||[]).filter(o=>!shpClosed(o)&&["proekt_ok","zakup","cex"].includes(o.stage)&&(r!=="office"||S.shop.glav||plMineDeal(o)||(!o.owner&&!o.designer))).sort((a,b)=>(have[a.id]?1:0)-(have[b.id]?1:0)||(a.stage==="cex"?-1:1)-(b.stage==="cex"?-1:1));
+  if(!O.length) return plSheet(`<h3>Поставить на пилу</h3><p class="pq-shs">${r==="office"?"Нет ваших заказов, которые можно пилить (проект готов, закупка или производство).":"Нет заказов, которые можно пилить: проект готов, закупка или производство."}</p><button type="button" class="pq-wide g2" data-pq-x="1">Закрыть</button>`);
+  PL.put={deal:O.find(o=>!have[o.id])?O.find(o=>!have[o.id]).id:O[0].id,sh:0,day:day||"",from:from||null,br:""};
+  const list=O.slice(0,40).map(o=>{ const hv=have[o.id]; return `<button type="button" class="pq-pick" data-pq-deal="${plE(o.id)}" aria-pressed="${o.id===PL.put.deal}"><span class="pq-tx"><b>№${plE(o.num)} ${plE(o.client||"")}</b><small>${plE([o.kind?String(o.kind).toLowerCase():"",plStName(o.stage),o.master||"",hv?"уже на пиле: "+plDayLbl(hv.day,{short:1,low:1})+", "+plHm(hv.from):""].filter(Boolean).join(" · "))}</small></span><i class="pq-radio" aria-hidden="true"></i></button>`; }).join("");
+  const B=plBrigs(), brs=r==="tech"&&B.length?`<div class="pq-shf"><span>Кто пилит</span><div class="pq-chips" data-pq-grp="br"><button type="button" class="pq-cp" data-v="" aria-pressed="true">как в сделке</button>${B.map(g=>`<button type="button" class="pq-cp" data-v="${plE(g.n)}" aria-pressed="false">${plE(g.n)}</button>`).join("")}</div></div>`:"";
+  const h=`<h3>Поставить на пилу</h3><p class="pq-shs">${r==="office"?"Свой заказ — в свободное место. Переставить может директор.":"Ставится в первое свободное окно дня. Мест нет — сам встанет на ближайший свободный день."}</p>
+    <div class="pq-shf"><span>Заказ</span><div class="pq-picks">${list}</div></div>
+    <div class="pq-shf"><span>Листов (из раскроя)</span>${plStep("pqPutSh",0,0,99)}</div>
+    <div class="pq-shf"><span>День</span><div class="pq-dchips" id="pqPutDays">${pqPutDays()}</div></div>${brs}
+    <p class="pq-prev" id="pqPutPrev">${plE(pqPutPrev())}</p>
+    <button type="button" class="pq-wide w" data-pq-putgo="1">Поставить</button><button type="button" class="pq-wide g2" data-pq-x="1">Отмена</button>`;
+  plSheet(h,"tall"); }
+function plMineDeal(o){ const me=plN(shpWho()); return plN(o.owner)===me||plN(o.designer)===me; }
+function pqPutDays(){ const P=PL.put, dur=plDur(P.sh), r=plRole(); let first=""; const out=plNextDays(10,plToday()).map(d=>{ const g=plGap(d,dur), cnt=plDayQ(d).length, cap=plCap(), dis=!g&&r==="office";
+    if(!P.day&&g&&!first) first=d; return {d,g,cnt,cap,dis}; });
+  if(!P.day) P.day=first||(out[0]&&out[0].d)||plToday();
+  return out.map(x=>`<button type="button" class="pq-dc" data-pq-putday="${x.d}"${x.dis?" disabled":""} aria-pressed="${x.d===P.day}"><b>${plE(plDayLbl(x.d,{short:1}))}</b><small>${x.g?(x.cap-x.cnt)+" "+plPl(x.cap-x.cnt,"место","места","мест")+" · с "+plHm(x.g.from):"мест нет"}</small></button>`).join(""); }
+function pqPutPrev(){ const P=PL.put; if(!P) return ""; const dur=plDur(P.sh), g=plGap(P.day,dur);
+  if(g) return "Встанет: "+plDayLbl(g.day,{low:1})+", "+plHm(g.from)+"–"+plHm(plEnd(g.from,dur))+". Никого не сдвигаем.";
+  if(plRole()==="office") return "В этот день мест нет — выберите день, где есть место.";
+  const f=plNextFree(shpAddDays(P.day,1),dur); return f?"В "+plDayLbl(P.day,{short:1,low:1})+" мест нет — заказ сам встанет на "+plDayLbl(f.day,{low:1})+", "+plHm(f.from)+". Никто не стоит.":"Свободных мест нет."; }
+/* «Когда сможем?» — пока: ближайшие свободные места (шаг 2 — три варианта срока) */
+function plWhenSheet(){ const dur=plSlot(), W=[]; let d=plToday(); for(let i=0;i<40&&W.length<3;i++){ const g=plGap(d,dur); if(g) W.push(g); d=shpAddDays(d,1); }
+  const h=`<h3>Когда сможем?</h3><p class="pq-shs">Скоро приложение само подберёт три срока для клиента — с распилом, сборкой и монтажом — и подскажет лучший. Пока — ближайшие свободные места на пиле:</p>
+    <div class="pq-grp in">${W.length?W.map(g=>plFreeRow(g.day,{from:g.from,to:plEnd(g.from,dur),lane:0}).replace(/<b>(\d+:\d\d)–\d+:\d\d свободно<\/b>/,`<b>${plE(plDayLbl(g.day,{low:0}))}, с $1</b>`)).join(""):`<div class="pq-row"><div class="pq-rb"><span class="pq-av">${plI("saw",19)}</span><span class="pq-tx"><b>Свободных мест нет</b><small>на ближайшие недели пила занята</small></span></div></div>`}</div>
+    <button type="button" class="pq-wide g2" data-pq-cv="saw" data-pq-x="1">Открыть очередь на пилу</button>`;
+  plSheet(h); }
+/* ---- «Участки и нормы» (Профиль цеха) ---- */
+function plNormOpen(){ if(!plCan("norm")) return toast("Участки и нормы меняет директор или технолог"); const cur=JSON.parse(JSON.stringify(plNorm()));
+  PL.nd=cur; PL.n0=JSON.stringify(cur); document.getElementById("pqNormM")?.remove();
+  const m=document.createElement("div"); m.id="pqNormM"; m.className="pq-full"; m.setAttribute("role","dialog"); m.setAttribute("aria-label","Участки и нормы");
+  m.innerHTML=`<div class="pq-fc"><div class="pq-ftop"><button type="button" class="pq-rbtn" data-pq-nx="1" aria-label="Назад">${plI("back",22)}</button><b>Участки и нормы</b><span style="width:44px"></span></div><div class="pq-fb" id="pqNormB"></div><div class="pq-fbar"><button type="button" class="pq-wide w" data-pq-nsave="1">Сохранить</button></div></div>`;
+  document.body.appendChild(m); document.documentElement.classList.add("pq-sh-on"); plNormPaint(); requestAnimationFrame(()=>requestAnimationFrame(()=>m.classList.add("on"))); if(!PL.d) plLoad(true); }
+function plNormPaint(){ const b=document.getElementById("pqNormB"); if(!b) return; const N=PL.nd, def=JSON.stringify(Object.assign({},PL_DEF,{brig:N.brig,hol:N.hol}))===JSON.stringify(Object.assign({},N,{v:1}));
+  const tm=(k,v)=>`<select class="pq-sel" data-pq-n="${k}">${Array.from({length:37},(_,i)=>300+i*30).map(m=>`<option value="${m}"${m===v?" selected":""}>${plHm(m)}</option>`).join("")}</select>`;
+  const st=(k,v,lo,hi,step)=>`<div class="pq-step" data-pq-nk="${k}" data-lo="${lo}" data-hi="${hi}" data-step="${step||1}"><button type="button" data-pq-st="-1" aria-label="Меньше">${plI("minus",18)}</button><b>${v}</b><button type="button" data-pq-st="1" aria-label="Больше">${plI("plus",18)}</button></div>`;
+  const row=(t,s,ctl)=>`<div class="pq-nr"><span><b>${t}</b>${s?`<small>${s}</small>`:""}</span>${ctl}</div>`;
+  const sw=(k,on)=>`<input type="checkbox" role="switch" class="pq-sw" data-pq-nsw="${k}"${on?" checked":""}>`;
+  const staff=(S.shop.staff||[]).map(p=>p.name).filter(Boolean);
+  const BR=N.brig.length?N.brig:plBrigs().map(g=>({n:g.n,m:g.m.slice()}));
+  let h=`<div class="pq-tpl${def?" on":""}"><span class="pq-av w">${plI("spark",19)}</span><span class="pq-tx"><b>Готовый шаблон</b><small>1 пила · 3 распила в день · пн–сб · 9:00–18:00</small></span>${def?`<span class="pq-chip g">сейчас так</span>`:`<button type="button" class="pq-b2 sm" data-pq-ntpl="1">Взять</button>`}</div>
+    <p class="pq-nhint">Перфекционистам — всё ниже, до мелочей. Пила считается уже сейчас; кромка, присадка, сборка и монтаж пока сохраняются — по ним приложение будет подбирать срок («Когда сможем?»).</p>
+    <div class="pq-sec"><span>Рабочее время</span></div><div class="pq-grp pq-ng"><div class="pq-nr col d7"><span><b>Рабочие дни</b></span><div class="pq-chips pq-d7">${PL_WD.map((n,i)=>`<button type="button" class="pq-cp" data-pq-nday="${i+1}" aria-pressed="${N.days.includes(i+1)}">${n}</button>`).join("")}</div></div>
+      ${row("Начало дня","",tm("from",N.from))}${row("Конец дня","",tm("to",N.to))}${row("Обед","перерыв, пила стоит",sw("lunch",!!N.lunch))}${N.lunch?row("Обед с","",tm("l0",N.lunch[0]))+row("Обед до","",tm("l1",N.lunch[1])):""}</div>
+    <div class="pq-sec"><span>Пила</span><span>${plE(Math.max(30,Math.floor((N.to-N.from-(N.lunch?N.lunch[1]-N.lunch[0]:0))/N.saw.perDay/15)*15)/60+" ч на распил")}</span></div><div class="pq-grp pq-ng">${row("Станков","форматно-раскроечных или ЧПУ",st("saw.n",N.saw.n,1,5))}${row("Распилов в день","на один станок",st("saw.perDay",N.saw.perDay,1,12))}${row("Считать по листам","время распила = листы ÷ скорость",sw("sph",N.saw.sph>0))}${N.saw.sph>0?row("Листов в час","",st("saw.sph",N.saw.sph,1,30)):""}</div>
+    <div class="pq-sec"><span>Кромка</span><span>для срока</span></div><div class="pq-grp pq-ng">${row("Станков","",st("edge.n",N.edge.n,0,5))}${row("Метров в час","0 — не считать",st("edge.mph",N.edge.mph,0,1000,10))}</div>
+    <div class="pq-sec"><span>Присадка</span><span>для срока</span></div><div class="pq-grp pq-ng">${row("Станков","присадочный или ЧПУ",st("drill.n",N.drill.n,0,5))}${row("Деталей в час","0 — не считать",st("drill.pph",N.drill.pph,0,1000,5))}</div>
+    <div class="pq-sec"><span>Сборка</span><span>для срока</span></div><div class="pq-grp pq-ng">${row("Модулей в день","на одного человека, 0 — не считать",st("asm.mpd",N.asm.mpd,0,50,0.5))}${row("Людей в бригаде","обычно",st("asm.ppl",N.asm.ppl,1,6))}</div>
+    <div class="pq-sec"><span>Монтаж</span><span>для срока</span></div><div class="pq-grp pq-ng">${row("Дней на заказ","обычно",st("mont.days",N.mont.days,0,30,0.5))}${row("Модулей в день","на бригаду, 0 — не считать",st("mont.mpd",N.mont.mpd,0,50,0.5))}${row("Запас к сроку клиента","рабочих дней",st("buf",N.buf,0,10))}</div>
+    <div class="pq-sec"><span>Бригады</span><span>${N.brig.length?"заданы вручную":"собраны сами"}</span></div><div class="pq-grp pq-ng">`;
+  if(!N.brig.length) h+=`<p class="pq-nhint in">Сейчас бригады собираются сами: мастера из «Сотрудников», вместе — кто записан в одну бригаду заказа.</p>`;
+  BR.forEach((g,i)=>{ h+=`<div class="pq-nr col"><span><b>${plE(g.n||"Бригада")}</b><small>${plE(g.m.join(", "))}</small></span><div class="pq-chips">${staff.map(n=>`<button type="button" class="pq-cp sm" data-pq-bm="${i}" data-v="${plE(n)}" aria-pressed="${g.m.some(x=>plN(x)===plN(n))}">${plE(n)}</button>`).join("")}${N.brig.length?`<button type="button" class="pq-cp sm bad" data-pq-bdel="${i}">Убрать</button>`:""}</div></div>`; });
+  h+=`<div class="pq-nr"><button type="button" class="pq-b2 sm" data-pq-badd="1">${plI("plus",16)} Бригада</button></div></div>`;
+  h+=`<div class="pq-sec"><span>Выходные и праздники</span></div><div class="pq-grp pq-ng">${(N.hol||[]).map((d,i)=>`<div class="pq-nr"><span><b>${plE(plDayLbl(d,{short:1,mon:1}))}</b></span><button type="button" class="pq-b2 sm" data-pq-hdel="${i}">Убрать</button></div>`).join("")}<div class="pq-nr"><input type="date" class="pq-in" id="pqHolD" aria-label="Дата выходного"><button type="button" class="pq-b2 sm" data-pq-hadd="1">Добавить</button></div></div>
+    <p class="pq-nhint">Мест на пиле станет меньше — заказы, которым не хватит места, сдвинутся на следующие дни по порядку. Денег эти настройки не меняют.</p>`;
+  const sc=b.scrollTop; b.innerHTML=h; b.scrollTop=sc; }
+function plNormGet(k){ const p=k.split("."); return p.length>1?PL.nd[p[0]][p[1]]:PL.nd[p[0]]; }
+function plNormSet(k,v){ const p=k.split("."); if(p.length>1) PL.nd[p[0]][p[1]]=v; else PL.nd[p[0]]=v; }
+function plNormClose(){ const m=document.getElementById("pqNormM"); if(!m) return; m.classList.remove("on"); if(!document.getElementById("pqSh")) document.documentElement.classList.remove("pq-sh-on"); setTimeout(()=>m.remove(),220); }
+async function plNormSave(force){ const N=PL.nd, O=plNorm(), less=(N.saw.n*N.saw.perDay<O.saw.n*O.saw.perDay)||O.days.some(d=>!N.days.includes(d))||N.to-N.from<O.to-O.from||(N.hol||[]).some(d=>!(O.hol||[]).includes(d));
+  if(JSON.stringify(N)===PL.n0){ plNormClose(); return; }
+  if(less&&!force){ plSheet(`<h3>Мест на пиле станет меньше</h3><p class="pq-shs">Заказы, которым не хватит места, сдвинутся на следующие дни — по порядку. Директор увидит их жёлтыми.</p><button type="button" class="pq-wide w" data-pq-nsave2="1">Сохранить</button><button type="button" class="pq-wide g2" data-pq-x="1">Отмена</button>`); return; }
+  const btn=document.querySelector("[data-pq-nsave]"); if(btn){ btn.disabled=true; btn.textContent="Сохраняю…"; }
+  const j=await plPost({action:"pilaNorm",value:N}); if(btn){ btn.disabled=false; btn.textContent="Сохранить"; }
+  if(!j||!j.ok) return toast(plErr(j,"Нормы не сохранились — попробуйте ещё раз"));
+  plApply(j); PL.n0=JSON.stringify(plNorm()); const mv=(j.moved||[]).length; plNormClose(); toast("Нормы сохранены"+(mv?" · сдвинулись "+mv+" "+plPl(mv,"распил","распила","распилов"):"")); plPaint(); }
+/* ---- запись: сразу на экране, потом в таблицу ---- */
+async function plMark(id,m,extra){ const x=plQ().find(q=>q.id===id); if(!x) return; const old=JSON.parse(JSON.stringify(PL.d));
+  if(m==="done"){ x.st="done"; x.s1=Date.now(); } else if(m==="start"){ x.st="cut"; x.s0=Date.now(); } else if(m==="undo"){ if(x.st==="done"){ x.st=x.s0?"cut":"wait"; x.s1=0; } else { x.st="wait"; x.s0=0; } }
+  else if(m==="late"){ const add=extra.ext==="eod"?Math.max(30,plNorm().to-x.to):+extra.ext; x.lt=Date.now(); x.ext=(x.ext||0)+add; x.to=x.to+add; x.why=extra.why||""; }
+  plSheetClose(); plPaint();
+  const j=await plPost(Object.assign({action:"pilaMark",id,m},extra||{}));
+  if(!plApply(j,old)){ plPaint(); return toast(plErr(j)); }
+  if(m==="done") toast("Распилено — следующие видят, что пила свободна"); else if(m==="start") toast("Отметили: начали пилить"); else if(m==="undo") toast("Вернули");
+  else if(m==="late"){ const mv=j.moved||[]; toast("Директор получит сообщение"+(mv.length?" · сдвинулись: "+mv.slice(0,3).map(z=>"№"+z.num+" → "+(z.day!==x.day?plDayLbl(z.day,{short:1,low:1})+", ":"")+plHm(z.from)).join("; "):"")); }
+  plPaint(); }
+async function plMove(id,body,okMsg){ const old=JSON.parse(JSON.stringify(PL.d)), x=plQ().find(q=>q.id===id); if(!x) return;
+  if(body.dir){ const L=plDayQ(x.day), i=L.indexOf(x), o=L[body.dir==="up"?i-1:i+1]; if(!o){ plSheetClose(); return toast(body.dir==="up"?"Он и так первый в этот день":"Он и так последний в этот день"); } const t0=Math.min(x.from,o.from), t1=Math.max(x.from,o.from); if(body.dir==="up"){ x.from=t0; o.from=t1; } else { o.from=t0; x.from=t1; } }
+  if(body.day){ const g=plGap(body.day,(x.dur||plSlot())+(x.ext||0),x); if(g){ x.day=g.day; x.from=g.from; x.to=plEnd(g.from,(x.dur||plSlot())+(x.ext||0)); } }
+  if(body.sh!==undefined) x.sh=body.sh;
+  if(!body.keep) plSheetClose(); plPaint();
+  const j=await plPost(Object.assign({action:"pilaMove",id},body)); if(!plApply(j,old)){ plPaint(); return toast(plErr(j)); }
+  const mv=(j.moved||[]).filter(z=>z.id!==id); if(okMsg||mv.length) toast((okMsg||"Готово")+(mv.length?" · сдвинулись: "+mv.slice(0,3).map(z=>"№"+z.num).join(", "):"")); plPaint(); }
+async function plDel(id){ const old=JSON.parse(JSON.stringify(PL.d)), x=plQ().find(q=>q.id===id); if(!x) return; PL.d.q=plQ().filter(q=>q.id!==id); plSheetClose(); plPaint();
+  const j=await plPost({action:"pilaDel",id}); if(!plApply(j,old)){ plPaint(); return toast(plErr(j)); } toast("№"+x.num+" убран из очереди — место свободно"); plPaint(); }
+async function plPutGo(){ const P=PL.put; if(!P||!P.deal) return toast("Выберите заказ"); const o=shpById(P.deal), old=PL.d?JSON.parse(JSON.stringify(PL.d)):null, dur=plDur(P.sh);
+  const g=plGap(P.day,dur)||(plRole()==="office"?null:plNextFree(shpAddDays(P.day,1),dur)); if(!g) return toast("В этот день на пиле мест нет — выберите день с зелёным окном");
+  const tmp={id:"tmp"+Date.now(),num:o?o.num:"",cl:o?o.client:"",kind:o?o.kind:"",deal:P.deal,day:g.day,pos:99,from:g.from,to:plEnd(g.from,dur),br:P.br||(o&&o.master)||"",st:"wait",sh:P.sh,dur,mine:plRole()==="office"?1:0};
+  if(PL.d) PL.d.q=plQ().concat([tmp]); plSheetClose(); plPaint();
+  const j=await plPost({action:"pilaPut",deal:P.deal,day:P.day,sh:P.sh||"",br:P.br||""}); if(!plApply(j,old)){ plPaint(); return toast(plErr(j,"Не поставилось — попробуйте ещё раз")); }
+  const it=plQ().find(x=>x.id===j.id), mv=(j.moved||[]).find(z=>z.full);
+  if(mv) PL.note={at:Date.now(),h:`В ${plE(plDayLbl(mv.was,{short:1,low:1}))} на пиле мест нет — <b>№${plE(mv.num)} сам встал на ${plE(plDayLbl(mv.day,{low:1}))}, ${plHm(mv.from)}</b>. Никто не стоит.`};
+  toast(it?"№"+it.num+" — "+plDayLbl(it.day,{low:1})+", "+plHm(it.from):"Поставили на пилу"); plPaint(); }
+/* ---- нажатия ---- */
+function plGo(cv){ S.shop.bview="ceh"; S.shop.cv=cv; try{ sessionStorage.setItem("zj-bv","ceh"); sessionStorage.setItem("pq-cv",cv); }catch(_){} if(S.view!=="shop"||S.shop.mode!=="board"){ if(typeof shpGo==="function") return shpGo("board"); } render(); window.scrollTo(0,0); }
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-pq-cv],[data-pq-it],[data-pq-free],[data-pq-open],[data-pq-mk],[data-pq-late],[data-pq-latego],[data-pq-mv],[data-pq-mvday],[data-pq-del],[data-pq-putgo],[data-pq-putday],[data-pq-deal],[data-pq-st],[data-pq-x],[data-pq-day],[data-pq-notex],[data-pq-more-b],.pq-cp,[data-act="pq-open"],[data-act="pq-norm"],[data-act="pq-reload"],[data-act="pq-when"],[data-pq-nx],[data-pq-nsave],[data-pq-nsave2],[data-pq-ntpl],[data-pq-nday],[data-pq-bm],[data-pq-bdel],[data-pq-badd],[data-pq-hdel],[data-pq-hadd]');
+  if(!t) return; const d=t.dataset, menu=t.closest("details"); if(menu&&t.getAttribute("role")==="menuitem") menu.open=false;
+  if(t.dataset.act==="shp-open"||t.dataset.act==="ap-sec"){ if(d.pqX) plSheetClose(true); return; }   // дальше — как обычно (сделка, карта раскроя)
+  ev.preventDefault(); ev.stopImmediatePropagation();
+  if(d.act==="pq-open"){ const v=d.v==="pq-day"?"day":d.v==="pq-saw"?"saw":"today"; return plGo(v); }
+  if(d.act==="pq-norm"){ document.getElementById("cexM")&&typeof cxClose==="function"&&cxClose(); return plNormOpen(); }
+  if(d.act==="pq-reload"){ toast("Обновляю…"); return plLoad(true); }
+  if(d.act==="pq-when") return plWhenSheet();
+  if(d.pqCv!==undefined){ if(d.pqX) plSheetClose(); const cv=d.pqCv; if(cv==="orders"||plCvs(plRole()).some(x=>x[0]===cv)){ S.shop.cv=cv; try{ sessionStorage.setItem("pq-cv",cv); }catch(_){} if(S.view==="shop"&&S.shop.mode==="board"&&S.shop.bview==="ceh"){ render(); window.scrollTo(0,0); } else plGo(cv); } return; }
+  if(d.pqX!==undefined&&!d.pqLatego&&!d.pqPutgo){ plSheetClose(); return; }
+  if(d.pqNotex){ PL.note=null; return plPaint(); }
+  if(d.pqMoreB){ PL.days=Math.min(120,PL.days+10); return plPaint(); }
+  if(d.pqOpen!==undefined){ if(d.pqGo){ PL.open[d.pqOpen]=true; return plGo(d.pqGo); } PL.open[d.pqOpen]=!PL.open[d.pqOpen]; return plPaint(); }
+  if(d.pqDay){ S.shop.cv="saw"; try{ sessionStorage.setItem("pq-cv","saw"); }catch(_){} render(); setTimeout(()=>{ const s=[...document.querySelectorAll(".pq-day1")].find(e=>e.textContent.includes(plDayLbl(d.pqDay))); if(s) s.scrollIntoView({block:"start",behavior:"smooth"}); },60); return; }
+  if(d.pqIt!==undefined) return plItSheet(d.pqIt,!!d.pqMove);
+  if(d.pqFree!==undefined) return plPutSheet(d.pqFree,+d.from||null);
+  if(d.pqMk) return plMark(d.id,d.pqMk);
+  if(d.pqLate!==undefined) return plLateSheet(d.pqLate);
+  if(d.pqLatego!==undefined){ const sh=document.getElementById("pqSh"), ex=sh&&sh.querySelector('[data-pq-grp="ext"] [aria-pressed="true"]'), wy=sh&&sh.querySelector('[data-pq-grp="why"] [aria-pressed="true"]'), tx=sh&&sh.querySelector("#pqWhyT");
+    let why=wy?wy.dataset.v:""; if(why==="Другое") why=(tx&&tx.value.trim())||"другое"; return plMark(d.pqLatego,"late",{ext:ex?ex.dataset.v:"60",why}); }
+  if(d.pqMv) return plMove(d.id,{dir:d.pqMv},d.pqMv==="up"?"Подняли выше":"Опустили ниже");
+  if(d.pqMvday) return plMove(d.id,{day:d.pqMvday},"Перенесли на "+plDayLbl(d.pqMvday,{short:1,low:1}));
+  if(d.pqDel) return plDel(d.pqDel);
+  if(d.pqPutgo) return plPutGo();
+  if(d.pqPutday){ PL.put.day=d.pqPutday; const w=document.getElementById("pqPutDays"); if(w) w.innerHTML=pqPutDays(); const p=document.getElementById("pqPutPrev"); if(p) p.textContent=pqPutPrev(); return; }
+  if(d.pqDeal){ PL.put.deal=d.pqDeal; t.parentNode.querySelectorAll(".pq-pick").forEach(b=>b.setAttribute("aria-pressed",String(b===t))); return; }
+  if(d.pqSt){ const w=t.closest(".pq-step"), b=w.querySelector("b"), lo=+w.dataset.lo, hi=+w.dataset.hi, stp=+(w.dataset.step||1); let v=+(b.dataset.v!==undefined?b.dataset.v:b.textContent)||0; v=Math.max(lo,Math.min(hi,Math.round((v+stp*(+d.pqSt))*100)/100));
+    if(w.dataset.pqNk){ plNormSet(w.dataset.pqNk,v); return plNormPaint(); }
+    b.dataset.v=v; b.textContent=v||"—";
+    if(w.id==="pqPutSh"){ PL.put.sh=v; const dd=document.getElementById("pqPutDays"); if(dd) dd.innerHTML=pqPutDays(); const p=document.getElementById("pqPutPrev"); if(p) p.textContent=pqPutPrev(); }
+    if(w.dataset.pqSh){ clearTimeout(PL.shT); const id=w.dataset.pqSh; PL.shT=setTimeout(()=>plMove(id,{sh:v,keep:1},"Листов: "+v),700); }
+    return; }
+  if(d.pqNx){ return plNormClose(); }
+  if(d.pqNsave) return plNormSave(false);
+  if(d.pqNsave2){ plSheetClose(); return plNormSave(true); }
+  if(d.pqNtpl){ const keep={brig:PL.nd.brig,hol:PL.nd.hol}; PL.nd=Object.assign(JSON.parse(JSON.stringify(PL_DEF)),keep); return plNormPaint(); }
+  if(d.pqNday){ const v=+d.pqNday, L=PL.nd.days; PL.nd.days=L.includes(v)?L.filter(x=>x!==v):L.concat([v]).sort(); if(!PL.nd.days.length) PL.nd.days=[v]; return plNormPaint(); }
+  if(d.pqBm!==undefined){ const i=+d.pqBm, N=PL.nd; if(!N.brig.length) N.brig=plBrigs().map(g=>({n:g.n,m:g.m.slice()})); const g=N.brig[i]; if(!g) return; const v=d.v, has=g.m.some(x=>plN(x)===plN(v));
+    N.brig.forEach(x=>{ x.m=x.m.filter(y=>plN(y)!==plN(v)); }); if(!has) g.m.push(v); N.brig.forEach(x=>{ x.n=x.m.length<=1?(x.m[0]||""):x.m.slice(0,-1).join(", ")+" и "+x.m[x.m.length-1]; }); N.brig=N.brig.filter((x,k)=>x.m.length||k===i); return plNormPaint(); }
+  if(d.pqBdel!==undefined){ PL.nd.brig.splice(+d.pqBdel,1); return plNormPaint(); }
+  if(d.pqBadd){ const N=PL.nd; if(!N.brig.length) N.brig=plBrigs().map(g=>({n:g.n,m:g.m.slice()})); N.brig.push({n:"",m:[]}); return plNormPaint(); }
+  if(d.pqHdel!==undefined){ PL.nd.hol.splice(+d.pqHdel,1); return plNormPaint(); }
+  if(d.pqHadd){ const i=document.getElementById("pqHolD"), v=i&&i.value; if(!/^\d{4}-\d{2}-\d{2}$/.test(v||"")) return toast("Выберите дату"); if(!PL.nd.hol.includes(v)) PL.nd.hol=PL.nd.hol.concat([v]).sort(); return plNormPaint(); }
+  if(t.classList.contains("pq-cp")){ const g=t.closest(".pq-chips"); if(!g) return; const one=g.dataset.pqGrp; if(one){ g.querySelectorAll(".pq-cp").forEach(b=>b.setAttribute("aria-pressed",String(b===t)));
+      if(one==="why"){ const tx=document.getElementById("pqWhyT"); if(tx){ tx.hidden=t.dataset.v!=="Другое"; if(!tx.hidden) tx.focus(); } }
+      if(one==="ext"){ const sh=document.getElementById("pqSh"), id=sh&&sh.querySelector("[data-pq-latego]"), x=id&&plQ().find(q=>q.id===id.dataset.pqLatego), p=document.getElementById("pqLatePrev"); if(x&&p) p.textContent=pqLatePrev(x,t.dataset.v==="eod"?"eod":+t.dataset.v); }
+      if(one==="br"&&PL.put) PL.put.br=t.dataset.v; } return; }
+},true);
+document.addEventListener("change",ev=>{ const t=ev.target; if(!t||!t.closest) return;
+  if(t.dataset&&t.dataset.pqN){ const v=+t.value, k=t.dataset.pqN, N=PL.nd; if(k==="l0"||k==="l1"){ N.lunch=N.lunch||[780,840]; N.lunch[k==="l0"?0:1]=v; } else N[k]=v; return plNormPaint(); }
+  if(t.dataset&&t.dataset.pqNsw){ const k=t.dataset.pqNsw, N=PL.nd; if(k==="lunch") N.lunch=t.checked?[780,840]:null; if(k==="sph") N.saw.sph=t.checked?2:0; return plNormPaint(); } },true);
+document.addEventListener("keydown",ev=>{ if(ev.key!=="Escape") return; if(document.getElementById("pqSh")){ ev.stopPropagation(); plSheetClose(); return; } if(document.getElementById("pqNormM")){ ev.stopPropagation(); plNormClose(); } },true);
+/* ---- встраивание в экран «Цех» (обёртка над site_zhivoj.js) ---- */
+function plPaint(){ if(!plActive()) return; const b=document.getElementById("pqBox"); if(!b) return; const r=plRole(), cv=plCv(r); if(b.dataset.cv!==cv){ render(); return; }
+  const h=plBody(r,cv); if(b.__h!==h){ b.innerHTML=h; b.__h=h; plObs(); } const dl=document.querySelector(".pq-day"); if(dl){ const tx=plDayLine(r,cv); if(dl.textContent!==tx) dl.textContent=tx; } }
+function plObs(){ const s=document.querySelector("[data-pq-more]"); if(!s||!window.IntersectionObserver) return; if(PL.io) PL.io.disconnect();
+  PL.io=new IntersectionObserver(es=>{ if(es.some(e=>e.isIntersecting)&&PL.days<120){ PL.io.disconnect(); PL.days=Math.min(120,PL.days+10); requestAnimationFrame(plPaint); } },{rootMargin:"300px 0px"}); PL.io.observe(s); }
+{ const _plB=shpBoardHtml; shpBoardHtml=function(){ try{ if(S.shop.bview==="ceh"&&S.shop.loaded){ const r=plRole(), cv=plCv(r); if(r!=="supply"&&cv!=="orders"){ plFromLs(); return plViewHtml(r,cv); } } }catch(err){ console.error("пила",err); }
+    const h=_plB.apply(this,arguments); try{ if(S.shop.bview!=="ceh"||!S.shop.loaded) return h; const r=plRole(); if(r==="supply") return h;
+    const i=h.indexOf('class="sg-seg zj3"'); if(i<0) return h; const e=h.indexOf("</div>",i); if(e<0) return h; return h.slice(0,e+6)+plTabs(r)+h.slice(e+6); }catch(err){ console.error("пила",err); return h; } }; }
+{ const _plR=render; render=function(){ const out=_plR.apply(this,arguments); try{ if(plActive()){ const b=document.getElementById("pqBox"); if(b) b.__h=PL.last; plObs(); plLoad(false); } if(!shpPin()&&PL.d){ PL.d=null; try{ localStorage.removeItem(plLsK()); }catch(_){} } }catch(e){ console.error("пила",e); } return out; }; }
+setInterval(()=>{ try{ if(document.visibilityState!=="visible"||!plActive()||document.getElementById("pqSh")) return; PL.tick++; plPaint(); if(PL.tick%2===0) plLoad(false); }catch(_){} },30000);
+S.shop.cv=(function(){ try{ return sessionStorage.getItem("pq-cv")||"orders"; }catch(_){ return "orders"; } })();
+/* «Все разделы»: мастеру — «Мой день» первым; директору, технологу, дизайнеру — «Очередь на пилу»; директору — «Участки и нормы» */
+if(typeof shpMoreHtml==="function"){ const _plMore=shpMoreHtml; shpMoreHtml=function(){ let h=_plMore.apply(this,arguments); try{ const r=plRole(); if(r==="supply") return h;
+    const li=(v,b,s,ic)=>`<li><button type="button" class="shp-row" data-act="${v==="pq-norm"?"pq-norm":"pq-open"}" data-v="${v}"><span class="shp-av" aria-hidden="true">${plI(ic,20)}</span><span class="shp-rb"><b>${b}</b><span class="muted">${s}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
+    let add=r==="master"?li("pq-day","Мой день","Что сейчас на пиле, что дальше · «Распилил» / «Не успеваю»","saw"):li("pq-saw","Очередь на пилу","Кто что делает, места на каждый день","saw");
+    if(r==="tech"&&plCan("norm")) add+=li("pq-norm","Участки и нормы","Пила, кромка, присадка, сборка, монтаж, бригады","gear");
+    h=h.replace('<ul class="shp-list">','<ul class="shp-list">'+add); }catch(_){} return h; }; }
+try{ if(typeof PR_MINE!=="undefined"&&PR_MINE.master&&!PR_MINE.master.includes("pq-day")) PR_MINE.master.unshift("pq-day");
+  if(typeof PR_GR!=="undefined"){ const w=PR_GR.find(g=>g[0]==="work"); if(w&&!w[2].includes("pq-saw")) w[2].unshift("pq-saw"); const s=PR_GR.find(g=>g[0]==="set"); if(s&&!s[2].includes("pq-norm")) s[2].push("pq-norm"); }
+  if(typeof PR_DO!=="undefined"){ PR_DO.push({t:"Очередь на пилу",s:"Кто распиливает, кто ждёт, свободные места",k:"пила распил очередь распилить станок загрузка бригада кто что делает",act:"pq-open",v:"pq-saw"});
+    PR_DO.push({t:"Мой день",s:"Что сейчас на пиле, что дальше",k:"мой день пила распил распилил не успеваю",act:"pq-open",v:"pq-day"}); } }catch(_){}
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="pr-do"][data-do="pq-open"]'); if(!t) return; ev.preventDefault(); ev.stopImmediatePropagation(); const r=plRole(); if(r==="supply") return toast("Очередь на пилу — у директора, технолога, дизайнеров и мастеров"); plGo(t.dataset.dv==="pq-day"?(r==="master"?"day":"saw"):(r==="master"?"day":"saw")); },true);
+/* «Профиль цеха» → шаг «Присадка и станки»: строка «Участки и нормы» */
+if(typeof cxStepHtml==="function"){ const _plCx=cxStepHtml; cxStepHtml=function(i){ let h=_plCx.apply(this,arguments); try{ if(typeof CXP_STEPS!=="undefined"&&CXP_STEPS[i]&&CXP_STEPS[i][0]==="drill"&&plCan("norm"))
+    h=`<button type="button" class="cxp-qk pq-cxq" data-act="pq-norm"><span><b>Участки и нормы</b><small>Пила, кромка, присадка, сборка, монтаж, бригады — для очереди и сроков</small></span><span aria-hidden="true">›</span></button>`+h; }catch(_){} return h; }; }
+/* ---- вид ---- */
+(function(){ const st=document.createElement("style"); st.id="pqCss"; st.textContent=`
+.pq-tabs{display:flex;gap:6px;margin:10px 0 0;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.pq-tabs::-webkit-scrollbar{display:none}
+html:not(#plNo) body .pq-tabs button{flex:none;min-height:44px;padding:0 16px;border:0!important;border-radius:22px!important;background:var(--w-l1)!important;color:var(--w-t2)!important;font:600 14.5px var(--f-body,system-ui);box-shadow:none!important;cursor:pointer;transition:transform var(--w-tf,160ms) var(--w-ease,ease),background-color var(--w-tf,160ms) ease}
+html:not(#plNo) body .pq-tabs button[aria-selected="true"]{background:var(--w-ink)!important;color:var(--w-bg)!important}
+html:not(#plNo) body .pq-tabs button:active{transform:scale(.96)}
+.pq-box{margin:6px 0 0;padding-bottom:12px}
+.pq-sec{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:20px 4px 8px;font-size:15px;color:var(--w-t2);font-weight:600}
+.pq-sec>span:last-child{font-weight:500}
+.pq-grp{background:var(--w-l1);border-radius:var(--w-r-grp,20px);overflow:hidden}
+.pq-grp.in{background:var(--w-l2)}
+.pq-row{position:relative;display:flex;align-items:stretch}
+.pq-row:not(:last-child)::after{content:"";position:absolute;left:64px;right:0;bottom:0;height:1px;background:var(--w-line);pointer-events:none}
+html:not(#plNo) body .pq-rb{flex:1;min-width:0;display:flex;align-items:center;gap:12px;min-height:58px;margin:0;padding:10px 14px 10px 16px;border:0!important;border-radius:0!important;background:transparent!important;color:var(--w-ink)!important;text-align:left;font:inherit;box-shadow:none!important;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background-color 150ms ease}
+html:not(#plNo) body div.pq-rb{cursor:default}
+html:not(#plNo) body button.pq-rb:active{background:var(--w-hl)!important}
+.pq-av{width:36px;height:36px;border-radius:18px;background:var(--w-l2);display:grid;place-items:center;flex:none;font-weight:600;font-size:15px;color:var(--w-ink)}
+.pq-av.w{background:var(--w-ink);color:var(--w-bg)}.pq-av.r{background:rgba(255,69,58,.15);color:var(--w-r)}.pq-av.g{background:rgba(48,209,88,.14);color:var(--w-g)}.pq-av.y{background:rgba(255,214,10,.14);color:var(--w-y)}
+.pq-tx{flex:1;min-width:0;display:flex;flex-direction:column}
+.pq-tx b{font-weight:600;font-size:16px;line-height:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pq-tx small{color:var(--w-t2);font-size:13.5px;line-height:18px;margin-top:1px}
+.pq-row.free .pq-tx b{color:var(--w-g)}
+.pq-row.done .pq-tx b{color:var(--w-t2);font-weight:500}
+.pq-rt{flex:none;font-size:14px;color:var(--w-t2);white-space:nowrap}
+.pq-ch{flex:none;color:var(--w-t3);display:flex}
+.pq-chip{flex:none;display:inline-block;font-size:12.5px;font-weight:600;line-height:16px;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.pq-chip.g{color:var(--w-g);background:rgba(48,209,88,.14)}.pq-chip.r{color:var(--w-r);background:rgba(255,69,58,.15)}.pq-chip.y{color:var(--w-y);background:rgba(255,214,10,.14)}.pq-chip.n{color:var(--w-t2);background:var(--w-l2)}.pq-chip.w{color:var(--w-bg);background:var(--w-ink)}
+html:not([data-vt="dark"]) .pq-chip.y{background:rgba(212,160,0,.14)}
+.pq-prog{display:block;height:4px;border-radius:2px;background:var(--w-l2);margin-top:7px;overflow:hidden;max-width:220px}
+.pq-prog i{display:block;height:100%;width:100%;background:var(--w-ink);border-radius:2px;transform-origin:left center;transition:transform 250ms var(--w-ease,ease)}
+.pq-prog.big{max-width:none;margin:12px 0 0;background:var(--w-l2)}
+html:not(#plNo) body .pq-hd{flex:none;width:48px;min-height:58px;margin:0;padding:0;border:0!important;background:transparent!important;color:var(--w-t3)!important;display:grid;place-items:center;cursor:grab;box-shadow:none!important}
+.pq-alert{margin:12px 0 0;border-radius:var(--w-r-grp,20px);background:var(--w-l1);box-shadow:inset 0 0 0 1px rgba(255,69,58,.35);overflow:hidden}
+html:not(#plNo) body .pq-alert .pq-al+.pq-al{border-top:1px solid var(--w-line)!important}
+.pq-alert .pq-tx b{white-space:normal}
+html:not(#plNo) body .pq-alert .pq-al{width:100%;box-sizing:border-box}
+html:not(#plNo) body .pq-more-b{display:block;width:100%;min-height:44px;margin:0;border:0!important;background:transparent!important;color:var(--w-t2)!important;font:500 15px var(--f-body,system-ui);cursor:pointer;box-shadow:none!important}
+.pq-note{display:flex;gap:10px;align-items:flex-start;margin:12px 0 0;padding:12px 10px 12px 14px;border-radius:16px;background:var(--w-l1);font-size:14px;line-height:1.38;color:var(--w-t2)}
+.pq-note>.pq-i{flex:none;margin-top:1px;color:var(--w-g)}.pq-note>div{flex:1}.pq-note b{color:var(--w-ink);font-weight:600}
+html:not(#plNo) body .pq-note-x{flex:none;width:32px;height:32px;margin:-6px -2px 0 0;padding:0;border:0!important;border-radius:16px!important;background:transparent!important;color:var(--w-t3)!important;display:grid;place-items:center;box-shadow:none!important;cursor:pointer}
+.pq-note-x::after{content:"";position:absolute;inset:-6px}
+.pq-sub{margin:12px 4px 0;font-size:15px;color:var(--w-t2)}
+html:not(#plNo) body .pq-lnk{display:inline;min-height:0;margin:0;padding:0;border:0!important;background:none!important;color:var(--w-ink)!important;font:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--w-t3);cursor:pointer;box-shadow:none!important}
+.pq-cols{display:block}
+@media (min-width:900px){.pq-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 18px;align-items:start}
+  .pq-days{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:0 18px;align-items:start}
+  .pq-box{max-width:1180px}}
+.pq-pillw{display:flex;justify-content:center;margin:22px 0 6px}
+html:not(#plNo) body .pq-pill{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;margin:0;padding:0 26px;border:0!important;border-radius:28px!important;background:#fff!important;color:#000!important;font:600 16px var(--f-body,system-ui);box-shadow:0 8px 30px rgba(0,0,0,.35)!important;cursor:pointer;transition:transform var(--w-tf,160ms) var(--w-ease,ease),opacity var(--w-tf,160ms) ease}
+html:not([data-vt="dark"]):not(#plNo) body .pq-pill{background:#000!important;color:#fff!important;box-shadow:0 8px 24px rgba(0,0,0,.18)!important}
+html:not(#plNo) body .pq-pill:active{transform:scale(.96);opacity:.88}
+.pq-empty{margin:14px 0 0;padding:28px 18px;border-radius:var(--w-r-card,18px);background:var(--w-l1);text-align:center}.pq-empty p{margin:0;color:var(--w-t2);font-size:15px}
+/* «Мой день» */
+.pq-now{margin:14px 0 0;padding:16px;border-radius:22px;background:var(--w-l1)}
+.pq-now.bad{box-shadow:inset 0 0 0 1px rgba(255,69,58,.4)}
+.pq-lb{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13.5px;color:var(--w-t2);font-weight:600}
+.pq-now h2{margin:6px 0 2px;font-size:21px;font-weight:700;letter-spacing:-.015em;line-height:1.22;color:var(--w-ink)}
+.pq-now p{margin:0;font-size:14.5px;color:var(--w-t2)}
+.pq-bb{display:flex;gap:10px;margin-top:14px}
+html:not(#plNo) body :is(.pq-b1,.pq-b2){flex:1;display:flex;align-items:center;justify-content:center;gap:6px;min-height:50px;margin:0;padding:0 14px;border:0!important;border-radius:25px!important;font:600 16px var(--f-body,system-ui);box-shadow:none!important;cursor:pointer;transition:transform var(--w-tf,160ms) var(--w-ease,ease),opacity var(--w-tf,160ms) ease}
+html:not(#plNo) body .pq-b1{background:#fff!important;color:#000!important}
+html:not([data-vt="dark"]):not(#plNo) body .pq-b1{background:#000!important;color:#fff!important}
+html:not(#plNo) body .pq-b2{background:var(--w-l2)!important;color:var(--w-ink)!important}
+html:not(#plNo) body .pq-b2.sm{flex:none;min-height:40px;padding:0 14px;border-radius:20px!important;font-size:14.5px}
+html:not(#plNo) body :is(.pq-b1,.pq-b2):active{transform:scale(.97);opacity:.86}
+.pq-done1{display:flex;align-items:center;gap:10px;margin:10px 0 0;padding:10px 14px;border-radius:16px;background:var(--w-l1);font-size:14px;color:var(--w-t2)}
+.pq-done1>.pq-i{flex:none;color:var(--w-g)}.pq-done1>span{flex:1;min-width:0}
+html:not(#plNo) body .pq-done1 .pq-lnk{min-height:44px;padding:0 4px}
+.pq-hint{margin:10px 0 0!important;font-size:12.5px!important;color:var(--w-t3)!important;text-align:center;line-height:1.5}
+/* бригада подробно */
+.pq-det{padding:0 14px 10px 64px;display:flex;flex-direction:column;gap:2px}
+.pq-det-m{margin:0 0 4px;font-size:13px;color:var(--w-t2)}
+html:not(#plNo) body .pq-det-r{display:flex;align-items:flex-start;gap:8px;min-height:36px;margin:0;padding:8px 0;border:0!important;background:transparent!important;color:var(--w-ink)!important;text-align:left;font:14px/1.35 var(--f-body,system-ui);box-shadow:none!important;cursor:pointer}
+.pq-det-r .pq-i{flex:none;margin-top:1px;color:var(--w-t2)}
+.pq-det-r.bad{color:var(--w-r)!important}.pq-det-r.bad .pq-i{color:var(--w-r)}
+/* «Загрузка» */
+.pq-strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+@media (min-width:720px){.pq-strip{grid-template-columns:repeat(12,minmax(0,1fr))}}
+html:not(#plNo) body .pq-sd{display:flex;flex-direction:column;align-items:center;gap:3px;min-height:76px;margin:0;padding:8px 2px;border:0!important;border-radius:14px!important;background:var(--w-l1)!important;color:var(--w-ink)!important;font:inherit;box-shadow:none!important;cursor:pointer}
+.pq-sd>span:first-child{font-size:11.5px;color:var(--w-t2)}.pq-sd b{font-size:16px;line-height:20px}
+html:not(#plNo) body .pq-sd.td{box-shadow:inset 0 0 0 1.5px var(--w-ink)!important}
+.pq-sb{display:flex;gap:3px;margin-top:3px}
+.pq-sb i,.pq-leg i{display:block;width:8px;height:14px;border-radius:3px}
+.pq-sb i.b,.pq-leg i.b{background:var(--w-ink)}.pq-sb i.f,.pq-leg i.f{box-shadow:inset 0 0 0 1.5px var(--w-g);background:transparent}
+.pq-sb i.y,.pq-leg i.y{background:var(--w-y)}.pq-sb i.r,.pq-leg i.r{background:var(--w-r)}
+.pq-leg{display:flex;flex-wrap:wrap;gap:4px 14px;margin:10px 4px 0;font-size:12.5px;color:var(--w-t2)}.pq-leg span{display:inline-flex;align-items:center;gap:6px}.pq-leg i{width:8px;height:12px}
+.pq-soon{display:flex;gap:8px;align-items:flex-start;margin:18px 4px 0;font-size:13px;line-height:1.4;color:var(--w-t3)}.pq-soon .pq-i{flex:none;margin-top:1px}
+/* заготовки того же размера */
+.pq-sk{display:block;animation:plPulse 1.2s ease-in-out infinite alternate}
+.pq-sk i{display:block}
+.pq-sk-sec{height:16px;width:38%;margin:22px 4px 10px;border-radius:8px;background:var(--w-l1)}
+.pq-sk-grp{border-radius:20px;background:var(--w-l1);padding:4px 0}
+.pq-sk-row{display:flex!important;align-items:center;gap:12px;height:58px;padding:0 16px}
+.pq-sk-av{width:36px;height:36px;border-radius:18px;background:var(--w-l2);flex:none}
+.pq-sk-tx{flex:1}.pq-sk-tx i{height:12px;width:60%;border-radius:6px;background:var(--w-l2)}.pq-sk-tx i.s{width:40%;margin-top:8px}
+.pq-sk-card{height:190px;margin:14px 0 0;border-radius:22px;background:var(--w-l1)}
+@keyframes plPulse{from{opacity:1}to{opacity:.55}}
+/* шторка */
+.pq-shw{position:fixed;inset:0;z-index:420;display:flex;align-items:flex-end;justify-content:center}
+.pq-dim{position:absolute;inset:0;background:var(--w-scrim,rgba(0,0,0,.55));opacity:0;transition:opacity 220ms ease}
+.pq-shw.on .pq-dim{opacity:1}
+.pq-sh{position:relative;box-sizing:border-box;width:100%;max-width:560px;max-height:88dvh;overflow:auto;-webkit-overflow-scrolling:touch;padding:8px 16px calc(16px + env(safe-area-inset-bottom,0px));border-radius:26px 26px 0 0;background:var(--w-l1);color:var(--w-ink);box-shadow:0 -10px 40px rgba(0,0,0,.45);transform:translateY(100%);transition:transform 240ms var(--w-ease,cubic-bezier(.2,.8,.2,1))}
+html[data-vt="dark"] .pq-sh{background:#1c1c1e}
+.pq-shw.on .pq-sh{transform:none}
+@media (min-width:900px){.pq-shw{align-items:center}.pq-sh{border-radius:22px;max-height:84dvh;transform:translateY(16px);opacity:0;transition:transform 220ms var(--w-ease,ease),opacity 200ms ease}.pq-shw.on .pq-sh{opacity:1}}
+.pq-grab{width:38px;height:5px;border-radius:3px;background:var(--w-l2);margin:0 auto 14px}
+.pq-sh h3{margin:0 4px;font-size:19px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+.pq-shs{margin:4px 4px 12px;font-size:14px;line-height:1.4;color:var(--w-t2)}
+.pq-shinfo{margin:0 0 10px;padding:10px 14px;border-radius:14px;background:var(--w-l2)}.pq-shinfo p{margin:2px 0;font-size:13.5px;line-height:1.4;color:var(--w-ink)}
+.pq-shl{display:flex;flex-direction:column;border-radius:16px;overflow:hidden;background:var(--w-l2)}
+html:not(#plNo) body .pq-shr{display:flex;align-items:center;gap:12px;min-height:52px;margin:0;padding:0 16px;border:0!important;border-radius:0!important;background:transparent!important;color:var(--w-ink)!important;text-align:left;font:500 16px var(--f-body,system-ui);box-shadow:none!important;cursor:pointer}
+html:not(#plNo) body .pq-shl>:is(.pq-shr,.pq-shf)+:is(.pq-shr,.pq-shf){border-top:1px solid var(--w-line)!important}
+html:not(#plNo) body .pq-shr:active{background:var(--w-hl)!important}
+html:not(#plNo) body .pq-shr.bad{color:var(--w-r)!important}
+.pq-shf{display:flex;flex-direction:column;gap:8px;padding:12px 4px 4px}.pq-shf>span{font-size:13.5px;font-weight:600;color:var(--w-t2)}
+.pq-shl .pq-shf{padding:10px 16px}
+.pq-chips{display:flex;flex-wrap:wrap;gap:8px}
+html:not(#plNo) body .pq-cp{min-height:44px;margin:0;padding:0 16px;border:1px solid var(--w-line)!important;border-radius:22px!important;background:var(--w-l2)!important;color:var(--w-ink)!important;font:500 15px var(--f-body,system-ui);box-shadow:none!important;cursor:pointer;transition:background-color 150ms ease,color 150ms ease}
+html:not(#plNo) body .pq-sh .pq-cp{background:var(--w-bg)!important}
+html:not(#plNo) body .pq-cp[aria-pressed="true"]{background:var(--w-ink)!important;color:var(--w-bg)!important;border-color:transparent!important}
+html:not(#plNo) body .pq-cp.sm{min-height:36px;padding:0 12px;font-size:14px}
+html:not(#plNo) body .pq-cp.bad{color:var(--w-r)!important}
+.pq-dchips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}.pq-dchips::-webkit-scrollbar{display:none}
+html:not(#plNo) body .pq-dc{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-height:52px;min-width:88px;margin:0;padding:6px 12px;border:1px solid var(--w-line)!important;border-radius:14px!important;background:var(--w-bg)!important;color:var(--w-ink)!important;font:inherit;text-align:left;box-shadow:none!important;cursor:pointer}
+.pq-dc b{font-size:14.5px;color:inherit}.pq-dc small{font-size:12px;color:var(--w-g)}
+html:not(#plNo) body .pq-dc[aria-pressed="true"]{background:var(--w-ink)!important;color:var(--w-bg)!important;border-color:transparent!important}
+html:not(#plNo) body .pq-dc[aria-pressed="true"] small{color:var(--w-bg)!important;opacity:.72}
+html:not(#plNo) body .pq-dc:disabled{opacity:.45;cursor:default}
+.pq-dc:disabled small{color:var(--w-t2)}
+.pq-picks{display:flex;flex-direction:column;max-height:34dvh;overflow:auto;border-radius:14px;background:var(--w-bg)}
+html:not(#plNo) body .pq-pick{display:flex;align-items:center;gap:10px;min-height:56px;margin:0;padding:8px 14px;border:0!important;border-radius:0!important;background:transparent!important;color:var(--w-ink)!important;text-align:left;font:inherit;box-shadow:none!important;cursor:pointer}
+html:not(#plNo) body .pq-pick+.pq-pick{box-shadow:none!important}
+.pq-radio{flex:none;width:22px;height:22px;border-radius:11px;box-shadow:inset 0 0 0 1.5px var(--w-t3)}
+.pq-pick[aria-pressed="true"] .pq-radio{box-shadow:inset 0 0 0 7px var(--w-ink)}
+.pq-step{display:inline-flex;align-items:center;gap:4px;flex:none}
+html:not(#plNo) body .pq-step button{width:44px;height:40px;margin:0;padding:0;border:0!important;border-radius:20px!important;background:var(--w-l2)!important;color:var(--w-ink)!important;display:grid;place-items:center;box-shadow:none!important;cursor:pointer}
+html:not(#plNo) body .pq-sh .pq-step button{background:var(--w-bg)!important}
+.pq-step b{min-width:44px;text-align:center;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.pq-prev{margin:12px 4px 0;font-size:13.5px;line-height:1.4;color:var(--w-t2)}
+html:not(#plNo) body .pq-wide{display:flex;justify-content:center;align-items:center;gap:8px;width:100%;min-height:52px;margin:12px 0 0;border:0!important;border-radius:26px!important;font:600 16px var(--f-body,system-ui);box-shadow:none!important;cursor:pointer;transition:transform var(--w-tf,160ms) var(--w-ease,ease),opacity var(--w-tf,160ms) ease}
+html:not(#plNo) body .pq-wide.w{background:#fff!important;color:#000!important}
+html:not([data-vt="dark"]):not(#plNo) body .pq-wide.w{background:#000!important;color:#fff!important}
+html:not(#plNo) body .pq-wide.g2{background:var(--w-l2)!important;color:var(--w-ink)!important}
+html:not(#plNo) body .pq-wide:active{transform:scale(.97);opacity:.86}
+html:not(#plNo) body .pq-wide:disabled{opacity:.6}
+.pq-small{margin:10px 0 0;font-size:12.5px;color:var(--w-t3);text-align:center}
+.pq-in{box-sizing:border-box;width:100%;min-height:46px;padding:0 14px;border-radius:12px;border:1px solid var(--w-line)!important;background:var(--w-bg)!important;color:var(--w-ink)!important;font:16px var(--f-body,system-ui);outline:none}
+/* «Участки и нормы» — полный экран */
+#pqNormM.pq-full{position:fixed;inset:0;z-index:410;display:flex;justify-content:center;background:var(--w-bg);opacity:0;transition:opacity 200ms var(--w-ease,ease)}
+#pqNormM.pq-full.on{opacity:1}
+.pq-fc{box-sizing:border-box;width:100%;max-width:640px;height:100dvh;display:flex;flex-direction:column;transform:translateY(14px);transition:transform 220ms var(--w-ease,ease)}
+#pqNormM.on .pq-fc{transform:none}
+@media (min-width:900px){#pqNormM.pq-full{background:var(--w-scrim,rgba(0,0,0,.55));align-items:center}.pq-fc{height:min(880px,94dvh);border-radius:22px;background:var(--w-bg);box-shadow:var(--w-shade),0 0 0 1px var(--w-line)}}
+.pq-ftop{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px}.pq-ftop b{font-size:17px}
+html:not(#plNo) body .pq-rbtn{flex:none;width:44px;height:44px;margin:0;padding:0;border-radius:50%!important;border:1px solid var(--w-btn-line)!important;background:var(--w-btn)!important;color:var(--w-ink)!important;display:grid;place-items:center;box-shadow:none!important;cursor:pointer}
+.pq-fb{flex:1;overflow:auto;padding:4px 16px 20px;-webkit-overflow-scrolling:touch}
+.pq-fbar{flex:none;padding:8px 16px calc(12px + env(safe-area-inset-bottom,0px));background:var(--w-glass);-webkit-backdrop-filter:var(--w-blur,blur(24px));backdrop-filter:var(--w-blur,blur(24px));border-top:1px solid var(--w-line)}
+.pq-fbar .pq-wide{margin:0!important}
+.pq-tpl{display:flex;align-items:center;gap:12px;margin:8px 0 0;padding:14px 14px 14px 16px;border-radius:20px;background:var(--w-l1)}
+.pq-tpl.on{box-shadow:inset 0 0 0 1.5px rgba(48,209,88,.55)}
+.pq-nhint{margin:12px 4px 0;font-size:13px;line-height:1.45;color:var(--w-t2)}.pq-nhint.in{margin:0;padding:12px 16px 0}
+.pq-ng .pq-nr{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:8px 14px 8px 16px}
+.pq-ng .pq-nr.col{flex-direction:column;align-items:stretch;gap:10px;padding:12px 16px}
+.pq-ng .pq-nr+.pq-nr{box-shadow:none}
+.pq-nr>span{display:flex;flex-direction:column;min-width:0}.pq-nr b{font-size:15.5px;font-weight:500}.pq-nr small{font-size:12.5px;color:var(--w-t2);margin-top:1px}
+.pq-sel{flex:none;min-height:40px;padding:0 12px;border-radius:12px;border:1px solid var(--w-line);background:var(--w-l2);color:var(--w-ink);font:500 16px var(--f-body,system-ui)}
+.pq-sw{appearance:none;-webkit-appearance:none;flex:none;width:51px;height:31px;margin:0;border-radius:16px;background:rgba(120,120,128,.32);position:relative;cursor:pointer;transition:background-color 200ms}
+.pq-sw::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25);transition:transform 200ms var(--w-ease,ease)}
+.pq-sw:checked{background:var(--w-g)}.pq-sw:checked::after{transform:translateX(20px)}
+.pq-ng .pq-nr .pq-in{flex:1;min-height:40px}
+.pq-cxq{margin:0 0 14px!important}
+html.pq-sh-on .ai-fab{opacity:0!important;pointer-events:none!important}
+.pq-d7{display:grid!important;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px!important}
+html:not(#plNo) body .pq-d7 .pq-cp{min-width:0;padding:0;justify-content:center}
+.pq-ng .pq-nr.col.d7{padding:12px 10px}
+@media (prefers-reduced-motion:reduce){.pq-sk{animation:none}.pq-sh,.pq-dim,#pqNormM.pq-full,.pq-fc,.pq-prog i{transition:none}}
+`; document.head.appendChild(st); })();
+window.__pl={state:()=>PL.d,set:j=>{ plSet(j); plPaint(); },go:plGo,st:plSt,gap:plGap};   /* для стенда */
+})();
+
 /* ---------- события ---------- */
 document.addEventListener("click", async ev=>{
   const t=ev.target.closest("[data-act],[data-view]"); if(!t) return;
@@ -36834,7 +37468,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="bc29c6960a";/*cehqr-build*/
+  const BUILD="0d427c0df6";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
