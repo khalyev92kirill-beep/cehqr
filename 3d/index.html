@@ -489,7 +489,7 @@ svg.dz-on line,svg.dz-on path,svg.dz-on polyline,svg.dz-on rect,svg.dz-on circle
 .dq-cube .rt{transform:rotateY(90deg) translateZ(31px)}.dq-cube .lf{transform:rotateY(-90deg) translateZ(31px)}
 .dq-cube .tp{transform:rotateX(90deg) translateZ(31px)}.dq-cube .bt{transform:rotateX(-90deg) translateZ(31px)}
 .asm.full.dq .dq-help{display:grid;place-items:center;position:absolute;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));width:46px;height:46px;border-radius:50%;border:0;background:#fff;color:#2f9e44;font:800 22px/1 var(--f-body,system-ui);box-shadow:0 2px 8px rgba(0,0,0,0.18);cursor:pointer;z-index:5}
-.asm.full.dq .dq-menu:not([hidden]){display:block;position:absolute;right:12px;top:calc(64px + var(--sat,env(safe-area-inset-top,0px)));z-index:8;width:min(290px,calc(100% - 24px));max-height:calc(100% - 90px);overflow:auto;background:#fff;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,0.25);padding:6px}
+.asm.full.dq .dq-menu:not([hidden]){display:block;position:absolute;right:12px;top:calc(64px + var(--sat,env(safe-area-inset-top,0px)));z-index:8;width:min(290px,calc(100% - 24px));max-height:min(calc(100% - 90px),calc(100dvh - 90px - var(--sat,env(safe-area-inset-top,0px)) - var(--apbar,0px) - env(safe-area-inset-bottom,0px)));overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;background:#fff;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,0.25);padding:6px}
 .dq-mi{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;padding:11px 10px;border-radius:9px;font:500 15px var(--f-body,inherit);color:#1d1f1e;text-align:left;cursor:pointer}
 .dq-mi:hover{background:#f3f4f6}
 .dq-mi i{width:18px;height:18px;flex:none;border-radius:5px}
@@ -7030,7 +7030,11 @@ function shpChessAsk(o,to){
 }
 
 /* ---------- кнопка «В Work24link» в заказе Технолог 3D: новая сделка или привязка к существующей ---------- */
-function vtxLinked(oid){ oid=String(oid||"").toUpperCase(); return S.shop.orders.find(o=>String(o.t3d||"").toUpperCase()===oid&&oid)||null; }
+/* 15.11 (Кирилл 22:38: «закрепил, но не закрепляется»): таблица съедала нули у номера заказа Базиса («0004» → 4, «00100» → 100) —
+   сделка не находила свой заказ. Сервер теперь пишет номер текстом; для старых строк — возвращаем нули по списку заказов (если совпадение одно). */
+function t3dFix(){ try{ const ids=Object.keys(S.orders||{}); if(!ids.length) return; (S.shop.orders||[]).forEach(o=>{ const t=String(o.t3d||""); if(!/^\d+$/.test(t)||S.orders[t]) return;
+  const m=ids.filter(id=>/^\d+$/.test(id)&&+id===+t); if(m.length===1) o.t3d=m[0]; }); }catch(_){} }
+function vtxLinked(oid){ oid=String(oid||"").toUpperCase(); if(!oid) return null; t3dFix(); return S.shop.orders.find(o=>String(o.t3d||"").toUpperCase()===oid)||(/^\d+$/.test(oid)?S.shop.orders.find(o=>/^\d+$/.test(String(o.t3d||""))&&+o.t3d===+oid&&!(S.orders&&S.orders[String(o.t3d)])):null)||null; }
 function vtxBtnHtml(oid){
   if(!shpOn()) return "";
   if(shpPin()&&!S.shop.loaded&&!S.shop.loading&&!S.shop.err){ S.shop.loading=true; setTimeout(()=>shpLoad(true).then(vtxBtnSync),0); }
@@ -7620,6 +7624,9 @@ document.addEventListener("toggle",e=>{ const d=e.target; if(d&&d.classList&&d.c
 /* мир 11.11: запрет «Проект готов» не технологу — самой внешней обёрткой (site_dir.js даёт офису любые этапы и стоит в сборке позже), ставим после склейки всех модулей */
 setTimeout(()=>{ if(typeof shpCanStage!=="function") return; const _tgCS=shpCanStage; shpCanStage=function(o,to){ if(shpMyRole()!=="tech"&&shpTechGate(o?o.stage:"",to)) return false; return _tgCS.apply(this,arguments); };
   if(typeof shpStageHint==="function"){ const _tgSH=shpStageHint; shpStageHint=function(o,to){ if(shpMyRole()!=="tech"&&shpTechGate(o?o.stage:"",to)) return "«Проект готов» ставит технолог — проект ещё у него"; return _tgSH.apply(this,arguments); }; } },0);
+
+/* 15.11: нули в номере заказа Базиса — чиним сразу после загрузки сделок */
+try{ const _t3dSR=shpSetRole; shpSetRole=function(){ const r=_t3dSR.apply(this,arguments); t3dFix(); return r; }; }catch(_){}
 
 /* ---------- быстрый показ: «показываем сразу, обновляем тихо» ----------
    Каждый ответ таблицы (чтение) и файл заказа запоминаем. При следующем открытии экрана показываем
@@ -22052,7 +22059,7 @@ if(typeof module!=="undefined"&&module.exports) module.exports={skToOrder};
   const RBZ="sketchup/Work24link.rbz";
   function skUpModal(){ document.getElementById("skUpM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="skUpM";
     m.innerHTML=`<div class="modal-card sku"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">Загрузить модель</h2><button type="button" class="btn sm" data-sk="x">Закрыть</button></div>
-      <label class="sku-drop" id="skDrop"><input type="file" accept=".json,.b3d,application/json" id="skFile" hidden><b>Есть файл модели?</b><span>Перетащите сюда модель Базиса «….b3d» или файл SketchUp «….w24.json» (папка «Документы\\Work24link») — или нажмите, чтобы выбрать</span></label>
+      <label class="sku-drop" id="skDrop"><input type="file" id="skFile" hidden><b>Есть файл модели?</b><span>Перетащите сюда модель Базиса «….b3d» или файл SketchUp «….w24.json» (папка «Документы\\Work24link») — или нажмите, чтобы выбрать</span></label>
       <p class="sku-st" id="skSt"></p>
       <p class="sku-h">Или сразу из SketchUp — расширением:</p>
       <ol class="sku-steps"><li><a class="btn primary" href="${RBZ}" download>⬇ Скачать расширение Work24link</a></li>
@@ -22302,7 +22309,7 @@ if(typeof window!=="undefined"&&typeof document!=="undefined"){
     if(typeof viewOrders==="function"){ const _b3dVO=viewOrders; viewOrders=function(){ const h=_b3dVO.apply(this,arguments);
       const can=(typeof siteIsAdmin==="function"&&siteIsAdmin())||(S.shop&&S.shop.tech); if(!can) return h;
       /* 11.11 (проверка): вместо плашки над списком — одна кнопка; пояснение — во всплывающей подсказке */
-      return `<div class="b3d-bar"><label class="btn sm" title="Модель без Базиса: файл Базиса «….b3d» или SketchUp «….w24.json» → 3D, детали, раскрой, присадка (ставится сама — проверьте). Хранится на этом устройстве."><span>📥 Загрузить модель</span><input type="file" id="b3dFile" accept=".b3d,.json,application/json" hidden></label></div>`+h; }; }
+      return `<div class="b3d-bar"><label class="btn sm" title="Модель без Базиса: файл Базиса «….b3d» или SketchUp «….w24.json» → 3D, детали, раскрой, присадка (ставится сама — проверьте). Хранится на этом устройстве."><span>📥 Загрузить модель</span><input type="file" id="b3dFile" hidden></label></div>`+h; }; }
   }
   document.addEventListener("change",e=>{ const i=e.target; if(!i||i.id!=="b3dFile") return; const f=i.files&&i.files[0]; i.value=""; b3dPick(f); });
   const st=document.createElement("style"); st.textContent=`.b3d-bar{display:flex;justify-content:flex-end;margin:0 0 10px}
@@ -22482,7 +22489,7 @@ function skPartsHtml(c,des){ if(!c.qk||!(c.total>0)) return ""; const L=[], cat=
     <li class="sk-pm"><span>Материал + расходы (М)</span><b>${N(c.M)}</b></li>
     ${window.APP_DES?`<li class="sk-pf"><span>Работа и ваша наценка</span><b class="sk-g">${N(c.total-c.M)}</b></li></ul><p class="muted" style="font-size:12px;margin:4px 0 0">Цена клиенту минус материал и расходы. Из этого — оплата цеху за изготовление и монтаж и ваш доход.</p>`:`${c.fz>0?`<li><span>Заказные фасады: закупка ${N(c.fz)} → клиенту ÷ ${(+c.kF||0.7).toFixed(2).replace(".",",")}</span><b>${N(c.fzP)}</b></li>`:""}<li><span>Бригаде ${bwOn?"· по работам"+(nm?" (без монтажа)":""):"· "+brP+"% "+(nm?"(без монтажа)":"— работы не выбраны")}</span><b>${N(br)}</b></li>
     ${OFR?OFR.map(r=>`<li><span>${esc(r.name)}${r.to&&!/^(дизайнер заказа)$/i.test(r.to)?" · "+esc(r.to):""} · ${nf(r.pct)}%</span><b>${N(r.amt)}</b></li>`).join(""):`<li><span>Офис · 16% (технолог, снабженец, руководители)</span><b>${N(of)}</b></li>`}<li><span>Дизайнеру</span><b>${N(des)}</b></li>
-    <li class="sk-pf"><span>Фирме остаётся</span><b class="${firm>0?"sk-g":"sk-r"}">${N(firm)}</b></li></ul><p class="muted" style="font-size:12px;margin:4px 0 0">${bwOn?"Офису":"Бригаде и офису"} — от ${N(base)}: ${BB.cap?`продано дешевле М ÷ ${nf(BB.kb)}, поэтому от суммы продажи${c.fzP>0?" мебели "+N(BB.sM):""}`:`М ÷ ${nf(BB.kb)}`}${BB.mk>0?` + наценка заказных фасадов ${N(BB.mk)}`:""}${bwOn?"; бригаде — по работам":""}. Как в зарплате.</p>`}`; }
+    ${S.shop.tech||(S.shop.rr&&S.shop.rr.money===true)?`<li class="sk-pf"><span>Фирме остаётся</span><b class="${firm>0?"sk-g":"sk-r"}">${N(firm)}</b></li>`:""}</ul><p class="muted" style="font-size:12px;margin:4px 0 0">${bwOn?"Офису":"Бригаде и офису"} — от ${N(base)}: ${BB.cap?`продано дешевле М ÷ ${nf(BB.kb)}, поэтому от суммы продажи${c.fzP>0?" мебели "+N(BB.sM):""}`:`М ÷ ${nf(BB.kb)}`}${BB.mk>0?` + наценка заказных фасадов ${N(BB.mk)}`:""}${bwOn?"; бригаде — по работам":""}. Как в зарплате.</p>`}`; }
 /* Кирилл 11.11: «Остаётся фирме» в смете — по той же формуле, что «Разбор договоров» (сервер zpDeal_/dealsPay_):
    цена без доставки − материалы (с подарком) − бригаде − доли офиса из «ЗП-проценты» (от базы skBase или от договора без доставки) − премия дизайнеру.
    Доставка — отдельной суммой, в проценты не входит. «Доли офиса 21 %» в расчёте цены не меняются (это наценка в цене). */
@@ -22906,6 +22913,13 @@ function fmDetect(parts,fs){ parts=parts||[]; fs=fs||[]; const out=[], nm=f=>Str
   const low=modsOf(/^нм|^к-|нижн|цокол|^пенал|^п-/);
   if(low&&!has(/опор|ножк|клипс|регулир.*цокол/)) out.push({k:"legs",name:"Опоры (ножки) с клипсами",qty:4*low,unit:"шт",why:`нижних модулей ${low}, опор нет — по 4 на модуль`});
   if(facs.length&&!has(/ручк|push|пуш|tip.?on|толкател|gola|гола|профиль.?ручк/)&&!(typeof autoFurn==="function"&&autoFurn(parts,fs).length)) out.push({k:"handle",name:"Ручки (или PUSH)",qty:facs.length+drawers,unit:"шт",why:"на фасадах нет ни ручек, ни PUSH"});
+  /* 15.11 22:49 Кирилл: «связки» — что идёт вместе: ножки → клипсы цоколя; евровинт → заглушки-самоклейки; крепление к стене → дюбели и уголки. Спрашиваем «Добавить / Не нужно». */
+  const legsN=cnt(/опор|ножк/), hasPl=P.some(x=>/цокол/.test(x.n));
+  if(legsN&&hasPl&&!has(/клипс/)) out.push({k:"clip",name:"Клипсы для цоколя",qty:legsN,unit:"шт",why:`опор ${legsN}, цоколь есть, клипс нет — по одной на опору`});
+  const euN=cnt(/евровинт|конфирмат|euro.?винт/);
+  if(euN&&!has(/заглушк|самоклей/)) out.push({k:"capeuro",name:"Заглушки-самоклейки на евровинт",qty:euN,unit:"шт",why:`евровинтов ${euN}, заглушек нет — если видно снаружи`});
+  const wallRe=/пенал|^п-|стеллаж|шкаф|^вм|навесн|антресол/, wallM=new Set(P.filter(x=>wallRe.test(x.mod.toLowerCase())||wallRe.test(x.n)).map(x=>x.mod)).size;
+  if(wallM&&!has(/дюбел|анкер|уголок|уголк|кронштейн|крепл.*стен/)) out.push({k:"wall",name:"Крепление к стене: дюбели и уголки",qty:2*wallM,unit:"компл.",why:`модулей у стены ${wallM} — если крепим к стене, по 2 уголка с дюбелями на модуль`});
   return out; }
 function fmState(oid){ return S.fmiss[oid]||(S.fmiss[oid]={items:null,loading:false}); }
 async function fmLoad(oid){ const st=fmState(oid); if(st.items||st.loading||typeof prfUrl!=="function") return; const u=prfUrl("action=prfList&order="+encodeURIComponent(oid)); if(!u) return;
@@ -23784,7 +23798,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="0d427c0df6";
+const CHK_BUILD="b5f757e728";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -27392,6 +27406,7 @@ function cnMoney(c){ const s=SK(); if(!s||!s.base) return null; const Mg=c.M+(c.
   return {base,br,of,des,prem,dp:cnDesP(c),OFR,mat,ex:c.exS,firm,bwOn,brP,cap:BB.cap,kb:BB.kb}; }
 function cnMineHtml(c,E){ if(!(c.total>0&&c.M>0)) return ""; const S0=c.total-(c.fzP||0), KK=cnK();
   if(window.APP_DES){ const v=Math.round(c.total-c.M-(c.fzC||0)); return `<section class="cn-me"><div><span>Вам с этой сметы</span><b>${cN(v)} ₽</b></div><p class="cn-hint">цена клиенту минус материал и расходы — работа и ваша наценка</p></section>`; }
+  if(cnWhoOk()) return "";   /* 15.11: дизайнеру цеха — карточка «Кому сколько с этой сметы» (cnWhoHtml, под ползунком) вместо «Вам с этой сметы» */
   if(S.shop.tech){ const P=cnMoney(c); if(!P) return ""; if(cnDir()) return `<section class="cn-me"><div><span>Фирме с этой сметы</span><b class="${P.firm>0?"":"cn-r"}">${cN(P.firm)} ₽</b></div><p class="cn-hint">после материала, бригады, офиса и дизайнера — подробно в «Куда идут деньги»</p></section>`;
     const me=String(S.who||"").trim().toLowerCase(), mine=P.OFR.filter(r=>me&&String(r.to||"").trim().toLowerCase()===me); if(!mine.length) return "";
     return `<section class="cn-me"><div><span>Вам с этой сметы</span><b>${cN(mine.reduce((a,r)=>a+r.amt,0))} ₽</b></div><p class="cn-hint">${mine.map(r=>esc(r.name)+" "+cF(r.pct)+" %").join(" · ")}</p></section>`; }
@@ -27399,6 +27414,44 @@ function cnMineHtml(c,E){ if(!(c.total>0&&c.M>0)) return ""; const S0=c.total-(c
   let tip=""; if(nx){ const S1=(c.mats+(c.giftC||0))/nx, d1=cnDes(c,S1), p1=cnPrem(c,S1); if(p1>pr) tip=`Продайте на ${cK(nx)} (мебель ${cN(S1)}) — премия станет <b class="cn-g">+${cN(p1)} ₽</b>`; else if(d1-des>=100) tip=`Продайте на ${cK(nx)} — вам станет ${cN(d1)} ₽`; }
   const DP=cnDesP(c), dl=DP.p>0?`${cF(DP.p)} % ${DP.from}${pr>0?" + премия":""}`:"";
   return `<section class="cn-me"><div><span>Вам с этой сметы</span><b>${cN(des-pr)} ₽ + премия ${cN(pr)}</b></div>${dl?`<p class="cn-hint">${esc(dl)}</p>`:""}${tip?`<p class="cn-hint">${tip}</p>`:pr>0?"":`<p class="cn-hint">Премия — если мебель продана дороже нормы (коэф. ниже ${cK(KK.k)})${KK.min>0?` и договор от ${cN(KK.min)}`:""}.</p>`}</section>`; }
+/* 15.11 (Кирилл 19:2x: «должны увидеть то, что директор видит… кто сколько берёт, и премию сразу — дизайнер при замене коэффициента сразу премию свою должен увидеть»):
+   дизайнеру цеха (роль «офис», и главному) — всегда «Кому сколько с этой сметы»: дизайнеру, премия, офису, бригаде, фирме.
+   Числа — тот же cnMoney, что «Куда идут деньги» у директора (ничего не пересчитываем по-новому). «Фирме остаётся» — только с правом «Деньги фирмы» (сервер: rrOut_ → rr.money).
+   Только чтение: проценты и наценки здесь не меняются. Мастер и снабжение смету не открывают (smScale им — отказ); дизайнер по подписке (/smeta/) — как раньше, только своё. */
+function cnWhoOk(){ return !window.APP_DES&&!!(S.shop&&!S.shop.tech&&S.shop.role==="office"); }
+function cnFirmSee(){ try{ return !!(S.shop.rr&&S.shop.rr.money===true); }catch(_){ return false; } }
+function cnWhoHtml(c,send){ if(!cnWhoOk()||!(c.total>0&&c.M>0)) return ""; const s=SK(), D=s&&s.data?s.data():null;
+  const ttl=`<div class="cn-row cn-wh"><b>Кому сколько с этой сметы</b>`;
+  if(!D) return `<section class="cn-card cn-who" id="cnWho" aria-busy="true">${ttl}</div><ul class="cn-pt cn-sk">${"<li><i></i><i></i></li>".repeat(5)}</ul></section>`;   /* проценты фирмы ещё грузятся — серые заготовки, без «прыжка» */
+  const P=cnMoney(c); if(!P) return ""; const KK=cnK(), Mg=c.mats+(c.giftC||0), fzP=+c.fzP||0, S0=c.total-fzP, k=Mg/Math.max(1,S0), p0=+D.dpct||0, DP=P.dp, low=p0>0&&DP.p<p0;
+  const dz=P.des-P.prem, pr=P.prem, bon=+KK.bonus||0, minOk=!(KK.min>0)||c.total>=KK.min, mebW="клиенту";
+  const li=(n,sub,v,cl)=>`<li class="${cl||""}"><span>${n}${sub?`<small>${sub}</small>`:""}</span><b>${v}</b></li>`;
+  let L=li("Дизайнеру (вам)",DP.p>0?`${cF(DP.p)}&nbsp;% ${esc(DP.from)}${low?` (не ${cF(p0)}&nbsp;%: коэф. выше ${cK(KK.kLow)})`:""}`:"процент дизайнера не задан",cN(dz)+" ₽");
+  if(bon>0) L+=pr>0?li(`Премия ${cF(bon)}&nbsp;% — будет`,`сверх нормы: мебель дороже ${cN(Mg/KK.k)} (коэф. ниже ${cK(KK.k)})${KK.min>0?`, договор от ${cN(KK.min)}`:""}`,"+"+cN(pr)+" ₽","cn-wg")
+    :li(`Премия ${cF(bon)}&nbsp;% — не будет`,!(k<KK.k-1e-9)?`коэф. ${cK(k)} — нужно ниже ${cK(KK.k)}${KK.min>0&&!minOk?` и договор от ${cN(KK.min)}`:""}`:!minOk?`договор ${cN(c.total)} — нужно от ${cN(KK.min)}`:`цена почти на норме ${cK(KK.k)}`,"0 ₽","cn-wm");
+  L+=li("Офису",`технолог, снабжение, руководители · от ${cN(P.base)}`,cN(P.of)+" ₽");
+  L+=li("Бригаде",P.bwOn?"по работам":`${P.brP}&nbsp;% от ${cN(P.base)}`,cN(P.br)+" ₽");
+  if(cnFirmSee()) L+=li("Фирме остаётся","",cN(P.firm)+" ₽","cn-pf"+(P.firm>0?"":" cn-wr"));
+  const T=[], at=kt=>Mg/kt, tot=S1=>cN(S1+fzP);
+  if(k>KK.kAsk+0.0005) T.push(["r",`Коэф. ${cK(k)} — выше ${cK(KK.kAsk)}: клиенту только после согласия директора. По ${cK(KK.kAsk)} — ${mebW} ${tot(at(KK.kAsk))} ₽.`]);
+  if(low){ const S1=at(KK.kLow), d1=cnDes(c,S1); T.push(["y",`Коэф. выше ${cK(KK.kLow)} — ваши ${cF(DP.p)}&nbsp;% вместо ${cF(p0)}&nbsp;%. По ${cK(KK.kLow)} (${mebW} ${tot(S1)} ₽) — вам станет ${cN(d1)} ₽.`]); }
+  if(bon>0&&!pr){ if(k<KK.k-1e-9&&!minOk){ const p1=cnPrem(c,KK.min-fzP); if(p1>0) T.push(["g",`Договор от ${cN(KK.min)} — будет премия +${cN(p1)} ₽.`]); }
+    else { const kt=[KK.lGood,KK.lTop].filter(v=>v>0&&v<KK.k-0.004)[0]||Math.round((KK.k-0.02)*100)/100, S1=Math.max(at(kt),KK.min>0?KK.min-fzP:0), p1=cnPrem(c,S1);   /* по уровню шкалы, но не меньше «договор от» */
+      T.push(["g",p1>0?`Продайте по ${cK(Mg/S1)} (${mebW} ${tot(S1)} ₽) — будет премия +${cN(p1)} ₽.`:`Премия — когда коэф. ниже ${cK(KK.k)}${KK.min>0?` и договор от ${cN(KK.min)}`:""}.`]); } }
+  if(pr>0){ const kt=[KK.lGood,KK.lTop].filter(v=>v>0&&v<k-0.005)[0]; if(kt){ const S1=at(kt), p1=cnPrem(c,S1); if(p1>pr) T.push(["g",`По ${cK(kt)} (${mebW} ${tot(S1)} ₽) — премия станет +${cN(p1)} ₽.`]); } }
+  return `<section class="cn-card cn-who" id="cnWho" aria-live="polite">${ttl}<span class="cn-wme">вам <b>${cN(dz+pr)} ₽</b></span></div><ul class="cn-pt">${L}</ul>`
+    +(send?"":T.map(([cl,t])=>`<p class="cn-wt cn-wt-${cl}">${t}</p>`).join(""))
+    +`<p class="cn-hint">Как в зарплате и в «Разборе договоров». Проценты и наценки ставит директор.</p></section>`; }
+/* тянете ползунок или вписываете окошко — карточка меняется сразу, без перерисовки шага (как окошки в cnPreview); отпустили — шаг перерисуется сам (cnPut) */
+let cnWhoRaf=0;
+function cnWhoLive(a,v,len){ if(!cnWhoOk()) return; cancelAnimationFrame(cnWhoRaf); cnWhoRaf=requestAnimationFrame(()=>{ try{ const sm=cnSm(), el=document.getElementById("cnWho"); if(!sm||!el) return;
+  const d=sm.data, c=smCalc(d), st=c.pcSt, I=c.pc; if(!I||!(v>0)) return; const KK=cnK();
+  const E=cnEngine({M:I.M,ex:I.ex,fz:I.fz,W:I.W,len:len!=null?len:I.len,G:I.G},{a,v,rnd:st.rnd,mB:st.mB,kDef:cnCfg().k,kGuard:[KK.lMin,KK.kAsk,KK.kLow]});   /* как cnPreview и cnApply */
+  const DS=typeof smDiscOf==="function"?smDiscOf(d,Math.max(0,E.meb)+(+c.fzF||0)):{discA:0,giftC:0}, c2=Object.assign({},c,{total:E.T-(DS.discA||0),discA:DS.discA||0,giftC:DS.giftC||0});
+  const h=cnWhoHtml(c2); if(h) el.outerHTML=h; }catch(e){ console.log("LOG cena who "+e.message); } }); }
+document.addEventListener("input",e=>{ const t=e.target; if(!t||!t.dataset||!cnWhoOk()) return;
+  if(t.dataset.pcr) return cnWhoLive("k",Math.round((80-+t.value))/100);
+  if(t.dataset.pci){ const f=t.dataset.pci, v=cNum(t.value); if(f==="len"){ const pmI=document.querySelector('.cn-in[data-pci="pm"]'); return cnWhoLive("pm",cNum(pmI&&pmI.value),v); } cnWhoLive(f==="pm"?"pm":f,f==="k"&&v>1?v/100:v); } },true);
 function cnWhereHtml(c){ if(!cnDir()||!(c.total>0)) return ""; const P=cnMoney(c); if(!P) return ""; const T=c.total, sal=P.of+P.des;
   const parts=[["mat","материал",P.mat,"var(--cn-s1)"],["br","бригаде",P.br,"var(--cn-s2)"],["sal","зарплаты",sal,"var(--cn-s3)"],["ex","расходы",P.ex,"var(--cn-s4)"],["firm","прибыль",Math.max(0,P.firm),"var(--cn-g)"]].filter(x=>x[2]>0);   /* стиль 13.11: доли — белый и оттенки серого, зелёный только прибыль */
   const pc=v=>Math.round(v/T*100);
@@ -27439,7 +27492,7 @@ function cnPriceHtml(c,q,d,sm){ const E=c.pc, st=c.pcSt, C=cnCfg(), KK=cnK(), ed
   if(E.bad) h+=`<p class="cn-warn r">Сумма меньше, чем фасады и работы, — мебель получается 0. Впишите больше.</p>`;
   h+=`<div class="cn-ws">${W.map(w=>cnWinHtml(w,E,st,C,ed===w)).join("")}</div>`;
   h+=ed?cnChipsHtml(ed,E,C,st):`<p class="cn-link">меняете одно — остальные пересчитываются · подержите окошко — меню</p>`;
-  h+=cnSlideHtml(E,c,KK)+`</div><div class="cn-rt">`+cnFoldsHtml(c,E,st,d)+cnMineHtml(c,E);
+  h+=cnSlideHtml(E,c,KK)+cnWhoHtml(c)+`</div><div class="cn-rt">`+cnFoldsHtml(c,E,st,d)+cnMineHtml(c,E);
   try{ const x=X(); if(x&&x.ex) h+=x.ex(c,q); if(x&&x.fzH&&c.fzF>0) h+=x.fzH(Object.assign({},c,{fz:c.fzC,fzP:c.fzF}),q); }catch(_){}
   h+=cnSumHtml(c,E)+`<p class="cn-old"><button type="button" class="linkbtn" data-pc="old">Показать цену как раньше</button> · <button type="button" class="linkbtn" data-pc="sch">Готовые схемы</button></p></div>`;
   return h; }
@@ -27449,7 +27502,7 @@ const _cnWrap=window.__qkStepsWrap;
 window.__qkStepsWrap=function(fn,c,q,d,sm){ const prev=()=>_cnWrap?_cnWrap(fn,c,q,d,sm):fn(c,q,d,sm);
   let h=prev(); try{ if(S.shop.smClient||!c.pc||cnOld()) return h; const stp=q.stp||"what";
     if(stp==="price"){ const i=h.indexOf('<div class="qk">'), j=h.lastIndexOf('<div class="smn-stn">'); if(i<0||j<i) return h;
-      return h.slice(0,i).replace(/<p class="smn-hint2">[\s\S]*?<\/p>/,`<p class="smn-hint2">Меняете любое окошко — остальные пересчитываются. Шкала и «Вам с этой сметы» — сразу.</p>`)+`<div class="qk cn">`+cnPriceHtml(c,q,d,sm)+`</div>`+h.slice(j); }
+      return h.slice(0,i).replace(/<p class="smn-hint2">[\s\S]*?<\/p>/,`<p class="smn-hint2">Меняете любое окошко — остальные пересчитываются. Шкала и ${cnWhoOk()?"«Кому сколько»":"«Вам с этой сметы»"} — сразу.</p>`)+`<div class="qk cn">`+cnPriceHtml(c,q,d,sm)+`</div>`+h.slice(j); }
     if(stp==="mat"&&S.plOpen&&S.plOpen.id==="works"&&S.plOpen.sm===sm){ const st=c.pcSt, seg=`<div class="cn-wkt">${cnWkHtml(st,c)}</div>`;
       const k=h.indexOf('<button type="button" class="qk-add smt-add1"'); if(k>0) return h.slice(0,k)+seg+h.slice(k); } }catch(e){ console.log("LOG cena wrap "+e.message); } return h; };
 { const _cnH=smHtml; smHtml=function(){ const sm=S.shop&&S.shop.sm, d=sm&&sm.data;
@@ -27461,6 +27514,7 @@ window.__qkStepsWrap=function(fn,c,q,d,sm){ const prev=()=>_cnWrap?_cnWrap(fn,c,
     try{ if(d&&d.qk&&S.shop.smClient&&!cnOld()){ const c=smCalc(d); if(c.pc&&c.wCl>0&&(c.wMode==="out"||c.wDet)){   /* «Для клиента»: Б (или В «подробно») — мебель и работы двумя строками */
         h=h.replace(/<div class="qk-tot"><span>Изготовление, монтаж и доставка<\/span><span>[^<]*<\/span><\/div>/,`<div class="qk-tot"><span>Изготовление мебели</span><span>${cN(c.total-c.wCl)}</span></div><div class="qk-tot"><span>Работы</span><span>${cN(c.wCl)}</span></div>`); } } }catch(_){}
     try{ if(!d||!d.qk||!S.shop.full||S.shop.smClient||cnOld()) return h; const c=smCalc(d); if(!c.pc) return h;
+      if(false&&d.qk.stp==="send"&&cnWhoOk()){   /* 15.11 22:23 решил сам: на шаге «Отправить» карточку не показываем — телефон могут повернуть к клиенту */ const w=cnWhoHtml(c,true), j=h.lastIndexOf('<div class="smn-stn">'); if(w&&j>0) h=h.slice(0,j)+`<div class="qk cn cn-whos">${w}</div>`+h.slice(j); }   /* 15.11: и на шаге «Отправить» — «Кому сколько» (без подсказок); здесь, а не в __qkStepsWrap: шаг «Отправить» целиком строит site_smotp.js */
       if((d.qk.stp||"what")==="price"){ const i=h.indexOf('<div class="sk-sc"'), j=h.indexOf('<div class="sm-spacer">',i); if(i>=0&&j>i) h=h.slice(0,i)+h.slice(j); }   /* старая шкала — заменена ползунком */
       const E=c.pc, st=c.pcSt, r=`<small class="muted">${st.a==="m"?"× "+cF(E.m):"÷ "+(isFinite(E.k)?cK(E.k):"—")}${E.rounded?" · округлено с "+cN(E.T0):st.wIn||!c.wCl?" · работы внутри":st.wk==="mix"?" · под ключ":" · работы отдельно"}</small>`;
       h=h.replace(/<small class="muted">М <b>[^<]*<\/b><\/small>/,r); }catch(e){ console.log("LOG cena dock "+e.message); } return h; }; }
@@ -27647,7 +27701,7 @@ document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.
 
 /* КП в PDF (site_kpdf.js): Б — строка «Работы», В — одна строка «под ключ» (с разбивкой — если включено «подробно») */
 if(typeof kpData==="function"){ const _cnKp=kpData; kpData=function(sm){ const K=_cnKp.apply(this,arguments); try{ const d=sm&&sm.data; if(d&&d.qk&&K&&K.price&&!cnOld()){ const c=smCalc(d); if(c.pc&&c.wCl>0){ K.price.wk=Math.round(c.wCl); K.price.wMode=c.wMode; K.price.det=!!c.wDet; } } }catch(e){ console.log("LOG cena kp "+e.message); } return K; }; }
-window.__cena={engine:cnEngine,cfg:s=>cnCfg(s),old:()=>cnOld(),calc:d=>smCalc(d),raw:d=>{ try{ return window.__qk.calc(d); }catch(e){ return null; } },put:(p)=>cnPut(p),money:c=>cnMoney(c),kp:()=>{ try{ return typeof kpData==="function"?kpData(S.shop.sm).price:null; }catch(e){ return "ошибка "+e.message; } },st:d=>cnSt(d),d:()=>{ const s=cnSm(); return s&&s.data; },redraw:()=>shpRenderKeep()};   /* для проверки на стенде */
+window.__cena={engine:cnEngine,cfg:s=>cnCfg(s),old:()=>cnOld(),calc:d=>smCalc(d),raw:d=>{ try{ return window.__qk.calc(d); }catch(e){ return null; } },put:(p)=>cnPut(p),money:c=>cnMoney(c),kp:()=>{ try{ return typeof kpData==="function"?kpData(S.shop.sm).price:null; }catch(e){ return "ошибка "+e.message; } },st:d=>cnSt(d),d:()=>{ const s=cnSm(); return s&&s.data; },redraw:()=>shpRenderKeep(),who:(c,x)=>cnWhoHtml(c||smCalc(cnSm().data),x)};   /* для проверки на стенде */
 
 const st=document.createElement("style"); st.textContent=`
 .qk.cn,.cn-mod,.cn-cfg,.cn-wkt{--cn-r:#e5484d;--cn-y:#b38600;--cn-g:#1f9d55;--cn-s1:#1c1c1e;--cn-s2:#636366;--cn-s3:#aeaeb2;--cn-s4:#d1d1d6;--cn-sg:rgba(118,118,128,.12);--cn-so:#fff;--cn-sot:#000;--cn-ring:rgba(0,0,0,.55);--cn-pill:#1c1c1e;--cn-pillt:#fff}
@@ -27699,6 +27753,12 @@ html.vt[data-vt="dark"] .qk.cn,html.vt[data-vt="dark"] .cn-mod,html.vt[data-vt="
 .cn-wkt{padding:8px 12px;border-radius:14px;background:rgba(127,127,127,.08);box-shadow:inset 0 0 0 1px rgba(127,127,127,.18);margin:0 0 10px}.cn-wkt .cn-hint{margin:2px 0 4px}
 .cn-wkv{font-weight:600;text-align:right}.cn-wkh{min-height:2.7em}.cn-sub{display:block;font-size:12px;opacity:.65;font-weight:400}
 .cn-sec{font-size:13px;font-weight:600;opacity:.6;margin:12px 4px 6px;text-transform:none}.cn-list{padding:0 14px}.cn-opt{display:flex;align-items:center;gap:10px;width:100%;min-height:56px;text-align:left;font:inherit;color:inherit;background:none;border:0;padding:10px 0;cursor:pointer}.cn-opt+.cn-opt{border-top:1px solid rgba(127,127,127,.18)}.cn-opt>span{flex:1;min-width:0}.cn-opt b{display:block;font-size:15.5px}.cn-opt small{display:block;font-size:12.5px;opacity:.65;margin-top:2px}.cn-opt i{flex:none;width:22px;font-style:normal;font-weight:700;color:var(--cn-g);text-align:center}
+.cn-who .cn-wh{padding:0 0 2px;align-items:baseline}.cn-who .cn-wh b{font-size:15.5px}.cn-wme{font-size:14px;opacity:.85}.cn-wme b{color:var(--cn-g);font-size:16px}
+.cn-who .cn-pt li{align-items:baseline;min-height:30px}.cn-who .cn-pt li>span{display:flex;flex-direction:column;min-width:0}.cn-who .cn-pt small{font-size:12px;opacity:.65;font-weight:400;margin-top:1px}.cn-who .cn-pt b{white-space:nowrap;font-variant-numeric:tabular-nums}
+.cn-who .cn-wg b{color:var(--cn-g)}.cn-who .cn-wm b{opacity:.55}.cn-who .cn-wr b{color:var(--cn-r)}
+.cn-wt{font-size:13px;line-height:1.35;margin:8px 0 0;padding:8px 10px;border-radius:12px;background:rgba(127,127,127,.1)}.cn-wt-g{box-shadow:inset 3px 0 0 var(--cn-g)}.cn-wt-y{box-shadow:inset 3px 0 0 var(--cn-y)}.cn-wt-r{box-shadow:inset 3px 0 0 var(--cn-r)}
+.cn-sk li i{display:block;height:12px;border-radius:6px;background:rgba(127,127,127,.18)}.cn-sk li i:first-child{width:46%}.cn-sk li i:last-child{width:22%}
+.qk.cn.cn-whos{display:block;max-width:760px}
 @media(min-width:900px){.qk.cn{max-width:760px}.cn-ws{grid-template-columns:repeat(4,1fr)}.cn-w b{font-size:25px}}
 @media(min-width:1180px){.qk.cn{max-width:1180px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:0 18px;align-items:start}.cn-lt{position:sticky;top:64px}.cn-ws{grid-template-columns:1fr 1fr}.cn-rt>:first-child{margin-top:0}}`;
 document.head.appendChild(st);
@@ -29697,7 +29757,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="0d427c0df6"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="b5f757e728"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -30059,7 +30119,11 @@ function akMats(){ const P=akP();
   return {plates,edges,furn,nFurn:fl.length}; }
 function akMatsHtml(){ const M=akMats(), row=(a,b,c)=>`<div class="ak-mr"><span class="ak-mn">${a}</span>${c?`<span class="ak-mq">${c}</span>`:""}${b?`<span class="ak-ma">${b}</span>`:""}</div>`;
   let h=`<p class="ak-mh">Плиты</p>`; if(!M.plates.length) h+=`<p class="muted">В заказе нет материалов плит.</p>`;
-  M.plates.forEach(g=>{ h+=`<div class="ak-mg"><b>${esc(g.t)}</b>${g.items.map(x=>row(esc(x.m),"",akN(x.a)+" м² · "+x.n+" дет.")).join("")}</div>`; });
+  /* 15.11 22:42 Кирилл: «рядом надо по штукам, по квадратам — не понимают, сколько листов» → сколько листов по раскрою (тот же расчёт, что «Раскрой»).
+     Один материал в двух группах (корпус и фасады из одной плиты) — листы общие: число пишем один раз, у второй строки — «листы — выше». */
+  const SHN={}; try{ (cutMaps(typeof cutParts==="function"?cutParts():S.current.parts)||[]).forEach(m=>{ const k=akMatN(m.mat); SHN[k]=(SHN[k]||0)+((m.sheets||[]).length); }); }catch(_){}
+  const shSeen={}, shTxt=m=>{ const n=SHN[akMatN(m)]; if(!n) return ""; if(shSeen[akMatN(m)]) return " · листы — выше"; shSeen[akMatN(m)]=1; return " · <b>"+n+" "+(n%10===1&&n%100!==11?"лист":n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?"листа":"листов")+"</b>"; };
+  M.plates.forEach(g=>{ h+=`<div class="ak-mg"><b>${esc(g.t)}</b>${g.items.map(x=>row(esc(x.m),"",akN(x.a)+" м² · "+x.n+" дет."+shTxt(x.m))).join("")}</div>`; });
   h+=`<p class="ak-mh">Кромка</p>`; if(!M.edges.length) h+=`<p class="muted">Кромки в выгрузке нет.</p>`;
   M.edges.forEach(g=>{ h+=`<div class="ak-mg"><b>${esc(g.t)}</b>${g.items.map(x=>row(esc(x.m),"",akN(x.len)+" м")).join("")}</div>`; });
   h+=`<p class="ak-mh">Фурнитура</p>`; if(!M.furn.length) h+=`<p class="muted">Фурнитуры в выгрузке нет.</p>`;
@@ -35726,7 +35790,7 @@ if(typeof vxSwitch==="function") vxSwitch=function(){ const b=S.shop.bview; retu
   return r; }; }
 /* вкладка «Цех» внизу: мастеру — первой (было «Задачи · Заказы · …»; «Заказы» — в «Ещё»), у всех подпись «Цех» вместо «Сделки» */
 { const _zjFB=window.firmBar; window.firmBar=function(r){ const f=typeof _zjFB==="function"?_zjFB(r):null; if(f) return f; return null; };   /* 15.11 11:00 Кирилл: «мастерам не видно заказов» — вкладки мастера как раньше */ }
-function zjBarLbl(){ const b=document.querySelector('#appBar [data-v="board"] .lb'); if(b&&b.textContent!=="Цех") b.textContent="Цех"; }
+function zjBarLbl(){ const b=document.querySelector('#appBar [data-v="board"] .lb'); if(b&&b.textContent!=="Договоры") b.textContent="Договоры";   /* 15.11 22:28 Кирилл: «Название цех надо менять — договоры» (кнопка внизу) */ }
 try{ new MutationObserver(()=>zjBarLbl()).observe(document.body,{childList:true}); }catch(_){}
 /* ---- вид ---- */
 (function(){ const st=document.createElement("style"); st.id="zjCss"; st.textContent=`
@@ -37468,7 +37532,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="0d427c0df6";/*cehqr-build*/
+  const BUILD="b5f757e728";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -37526,7 +37590,13 @@ render();
   /* после перезагрузки на большое обновление — окно «Что нового» (один раз) */
   setTimeout(()=>{ let n=""; try{ n=sessionStorage.getItem("cehqr-upd-note")||""; sessionStorage.removeItem("cehqr-upd-note"); }catch(_){} if(!n) return;
     const m=document.createElement("div"); m.className="modal"; m.innerHTML=`<div class="modal-card" style="width:min(440px,100%)"><h2 style="margin:0 0 8px">Обновление приложения</h2><p style="white-space:pre-line;margin:0 0 14px;line-height:1.45"></p><button type="button" class="btn primary" data-act="qr-close">Понятно</button></div>`;
-    m.querySelector("p").textContent=n; document.body.appendChild(m); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); },2500);
+    { /* 15.11 22:57 Кирилл: «каждое обновление показать, что изменилось — раньше так, сейчас так; мелкие — мелкие исправления». Строки «~ …» — мелкие, под «Мелкие исправления». */
+      const L=String(n).split(/\n/), big=L.filter(x=>!/^\s*~/.test(x)).join("\n").trim(), small=L.filter(x=>/^\s*~/.test(x)).map(x=>x.replace(/^\s*~\s*/,"")).filter(Boolean);
+      const p=m.querySelector("p"); p.textContent=big||"Мелкие исправления и ускорение.";
+      if(small.length){ const d=document.createElement("details"); d.style.cssText="margin:0 0 14px;opacity:.85"; const sm=document.createElement("summary"); sm.textContent="Мелкие исправления · "+small.length; sm.style.cssText="cursor:pointer;font-weight:600;margin-bottom:6px"; d.appendChild(sm);
+        const ul=document.createElement("ul"); ul.style.cssText="margin:0;padding-left:18px;line-height:1.45"; small.forEach(t=>{ const li=document.createElement("li"); li.textContent=t; ul.appendChild(li); }); d.appendChild(ul); p.after(d); } }
+    m.querySelector("h2").textContent="Что нового"; const mc=m.querySelector(".modal-card"); if(mc){ mc.style.maxHeight="80dvh"; mc.style.overflow="auto"; }
+    document.body.appendChild(m); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest('[data-act="qr-close"]')) m.remove(); }); },2500);
   setTimeout(check,1500);
   setInterval(()=>{ if(document.visibilityState==="visible") check(); },60000);
   document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") check(); });
@@ -37854,7 +37924,7 @@ ${A(".w2-exit.w2-exit.w2-exit.w2-exit.w2-exit,.w2-exit.w2-exit.w2-exit.w2-exit.w
 ${A(".w2-exit.w2-exit.w2-exit.w2-exit.w2-exit")}{background:var(--surface)!important;border:0!important}
 
 /* ---------- низ: панель-таблетка с размытием (телефон) ---------- */
-${Ph("nav.shp-tabs.bottom")}{left:10px!important;right:10px!important;bottom:calc(env(safe-area-inset-bottom,0px) + 6px)!important;width:auto!important;border-radius:32px!important;
+${Ph("nav.shp-tabs.bottom")}{left:10px!important;right:10px!important;bottom:calc(env(safe-area-inset-bottom,0px) * .35 + 4px)!important;width:auto!important;border-radius:32px!important;
   background:var(--w2-glass)!important;border:1px solid var(--w2-glass-line)!important;box-shadow:0 10px 30px rgba(0,0,0,.28)!important;
   -webkit-backdrop-filter:blur(24px) saturate(160%)!important;backdrop-filter:blur(24px) saturate(160%)!important;padding-bottom:3px!important;padding-top:3px!important;height:58px!important;min-height:0!important;box-sizing:border-box!important;align-items:center}
 /* таблетка выше края на 6 px и ниже на 6 px — верх там же, где у прежней панели (64 px): окна над панелью (итог сметы) не перекрываются */
