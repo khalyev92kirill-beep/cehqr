@@ -4239,6 +4239,157 @@ function viewHelp(){
     ${S.site&&S.site.stagesUrl?(S.who?`<p class="note">Вы отмечаете как <b>${esc(S.who)}</b>. <button class="btn sm" data-act="site-logout">Выйти</button></p>`:""):`<p class="note">Отметки этапов на этом сайте ещё не подключены.</p>`}</div></div>`;
 }
 
+/* ===== ЗАЩИТА ДИРЕКТОРА (Кирилл 15.11 19:29, «Да, делай»): чтобы никто не забрал фирму и тихо не поменял права и деньги =====
+   1) Опасное действие (роль, PIN, Телеграм, телефон сотрудника, права, проценты, ставки, наценки, стереть навсегда…) — сервер отвечает {error:'confirm'}:
+      окно «Подтвердите: введите ваш пароль» (как в банке перед переводом) → пропуск подтверждения на 10 минут → то же действие повторяется само.
+      Модули ничего не знают: перехват — на уровне fetch (снаружи всех обёрток), поэтому работает для всех кнопок сразу. Отмена — действие не сохраняется.
+   2) Метка телефона dv — случайная строка в памяти браузера (не номер, не данные человека): с ней сервер узнаёт новый телефон директора
+      и не пускает телефон, который директор выкинул. Добавляется ко всем запросам к таблице в самом низу (под запоминателем site_cache —
+      ключи запомненного не меняются). При входе ещё — dvn: «iPhone · Safari» (только тип телефона и браузера).
+   3) Ссылка «Не я — выкинуть» из Телеграма (#secno=…) — экран: какой телефон, когда; «Не я — выкинуть» / «Это был я».
+   4) «Права сотрудников» → «Журнал безопасности» (только директор): владелец фирмы, телефоны директора (выкинуть), кто что менял — было → стало.
+   Всё проверяет СЕРВЕР (secGate_, secOwnGate_, secDevChk_); здесь — только окно, метка и экраны. Модуль — первым в сборке (низ цепочки fetch). ===== */
+const SX={cf:"",cfAt:0,ask:null,newN:0,newAt:0,lg:null};
+const SX_ACT=/^(staffSave|staffDel|ppSet|sessKill|smsKey|dirPinSet|ppOnly|telOnly|cfgSave|qkSetSave|dealPct|zpPct|zpSal|zpAccSet|kassaPlSave|invNew|invSend|smetaPurge|shopPurge|firmDel|firmOff|secKick)$/;
+const SX_LOGIN=/^(pinWho|ppLogin|tgLogin|codeSet|telSet|ppMine|invPin|firmSetup)$/;
+function sxDv(){ try{ let d=localStorage.getItem("w24-dv"); if(!/^[A-Za-z0-9_-]{16,40}$/.test(d||"")){ const a=new Uint8Array(12); (window.crypto||{}).getRandomValues?crypto.getRandomValues(a):a.forEach((_,i)=>a[i]=Math.random()*256|0);
+      d=btoa(String.fromCharCode.apply(null,a)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); localStorage.setItem("w24-dv",d); } return d; }catch(_){ return ""; } }
+function sxDvn(){ const u=navigator.userAgent||""; const os=/iPhone/.test(u)?"iPhone":/iPad/.test(u)?"iPad":/Android/.test(u)?"Android":/Macintosh/.test(u)?"Mac":/Windows/.test(u)?"Windows":/Linux/.test(u)?"Linux":"Телефон";
+  const br=/Telegram/i.test(u)||window.Telegram&&window.Telegram.WebApp&&window.Telegram.WebApp.initData?"Телеграм":/YaBrowser/.test(u)?"Яндекс":/Edg\//.test(u)?"Edge":/Firefox|FxiOS/.test(u)?"Firefox":/Chrome|CriOS/.test(u)?"Chrome":/Safari/.test(u)?"Safari":"браузер";
+  return os+" · "+br; }
+function sxIsApi(u){ return typeof u==="string"&&/^https:\/\/script\.google(usercontent)?\.com\/macros\//.test(u)||(typeof u==="string"&&typeof S!=="undefined"&&!!(S&&S.site&&S.site.stagesUrl)&&u.indexOf(S.site.stagesUrl)===0); }
+/* ---- низ цепочки: метка телефона ко всем запросам к таблице ---- */
+(function(){ const wrap=f=>{ if(typeof f!=="function"||f.__sx) return f; const g=function(u,o){ try{ const us=typeof u==="string"?u:(u&&u.url)||"";
+        if(sxIsApi(us)&&typeof u==="string"){ const dv=sxDv(); const post=String(o&&o.method||"GET").toUpperCase()!=="GET";
+          if(post&&o&&typeof o.body==="string"&&o.body.charAt(0)==="{"){ let b=null; try{ b=JSON.parse(o.body); }catch(_){}
+            if(b&&typeof b==="object"&&!b.dv&&dv){ b.dv=dv; if(SX_LOGIN.test(String(b.action||""))) b.dvn=sxDvn(); o=Object.assign({},o,{body:JSON.stringify(b)}); } }
+          else if(!post&&dv&&!/[?&]dv=/.test(us)) u=us+(us.indexOf("?")<0?"?":"&")+"dv="+encodeURIComponent(dv); } }catch(_){}
+      return f.call(this,u,o); }; g.__sx=1; return g; };
+  try{ if(typeof window.__fetch0==="function") window.__fetch0=wrap(window.__fetch0); else window.fetch=wrap(window.fetch); }catch(e){ console.warn("защита: метка",e); } })();
+
+/* ---- окно «Подтвердите: введите ваш пароль» ---- */
+function sxCss(){ if(document.getElementById("sxCss")) return; const st=document.createElement("style"); st.id="sxCss"; st.textContent=`
+.sx-ov{position:fixed;inset:0;z-index:400;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);opacity:0;transition:opacity .2s ease;padding:0 0 env(safe-area-inset-bottom)}
+.sx-ov.on{opacity:1}@media (min-width:700px){.sx-ov{align-items:center}}
+.sx-card{box-sizing:border-box;width:min(420px,100%);margin:0 10px 10px;padding:22px 20px 16px;border-radius:22px;background:#1c1c1e;color:#fff;outline:1px solid rgba(255,255,255,.10);outline-offset:-1px;box-shadow:0 20px 60px rgba(0,0,0,.5);transform:translateY(24px);transition:transform .22s cubic-bezier(.2,.8,.2,1);text-align:center}
+.sx-ov.on .sx-card{transform:none}
+.sx-ic{width:52px;height:52px;margin:0 auto 10px;border-radius:50%;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:26px}
+.sx-card h2{margin:0 0 6px;font-size:19px;font-weight:700;line-height:1.25}
+.sx-what{margin:0 0 14px;font-size:14px;line-height:1.35;color:var(--muted,#8e8e93)!important}.sx-what b{color:#fff;font-weight:600}
+.sx-in{box-sizing:border-box;width:100%;height:52px;border-radius:14px;border:0;outline:1px solid rgba(255,255,255,.14);outline-offset:-1px;background:#000;color:#fff;font:inherit;font-size:22px;letter-spacing:.3em;text-align:center;padding:0 12px}
+.sx-in:focus{outline:2px solid rgba(255,255,255,.5)}.sx-in::placeholder{font-size:15px;letter-spacing:0;color:var(--ink)}
+.sx-err{min-height:20px;margin:8px 0 4px;font-size:14px;color:#ff453a}
+.sx-bt{display:flex;gap:10px;margin-top:4px}.sx-bt button{flex:1;height:50px;min-height:44px;border-radius:25px;border:0;font:inherit;font-size:16px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:opacity .15s,transform .15s}
+.sx-bt button:active{opacity:.6;transform:scale(.97)}.sx-no{background:rgba(255,255,255,.10);color:#fff}.sx-ok{background:#fff;color:#000}.sx-ok[disabled]{opacity:.45}
+.sx-red{background:rgba(255,69,58,.18)!important;color:#ff453a!important}
+.sx-note{margin:12px 0 0;font-size:12px;line-height:1.35;color:var(--muted,#8e8e93)!important;opacity:.8}
+.sx-shake{animation:sxSh .3s}@keyframes sxSh{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+html.w24-lt .sx-card,html.vt[data-vt="light"] .sx-card{background:#fff;color:#000;outline-color:rgba(0,0,0,.08)}html.w24-lt .sx-in,html.vt[data-vt="light"] .sx-in{background:var(--w2-soft);color:#000;outline-color:rgba(0,0,0,.12)}
+html.w24-lt .sx-what b,html.vt[data-vt="light"] .sx-what b{color:#000}html.w24-lt .sx-ok,html.vt[data-vt="light"] .sx-ok{background:#000;color:#fff}html.w24-lt .sx-no,html.vt[data-vt="light"] .sx-no{background:rgba(0,0,0,.06);color:#000}
+.sx-sec{margin:14px 0 6px;font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--muted,#8e8e93)}
+.sx-own{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:14px;background:var(--surface,#1c1c1e);outline:1px solid rgba(128,128,128,.22);outline-offset:-1px}html.vt[data-vt="dark"] .sx-own{background:#2c2c2e;outline-color:rgba(255,255,255,.10)}.sx-own span:first-child{font-size:24px;line-height:1}.sx-own b{display:block;font-size:16px}.sx-own small{display:block;margin-top:2px;color:var(--muted,#8e8e93);font-size:13px;line-height:1.35}
+.sx-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px;background:#30d158}.sx-dot.out{background:#ffd60a}.sx-dot.ban{background:#ff453a}
+.sx-chg{margin-top:4px;font-size:14px;line-height:1.4;white-space:pre-line;opacity:.85}.sx-chg i{font-style:normal;color:var(--muted,#8e8e93)}
+.sx-new{display:inline-block;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#ff453a;color:#fff;font-size:12px;font-weight:700;line-height:20px;text-align:center;margin-right:4px}
+.sx-me{font-size:12px;font-weight:600;color:#30d158;margin-left:6px}
+.sx-scr{position:fixed;inset:0;z-index:390;display:flex;align-items:center;justify-content:center;background:#0b0b0b;padding:20px;opacity:0;transition:opacity .2s}.sx-scr.on{opacity:1}
+.sx-scr .sx-card{transform:none;margin:0}
+@media (prefers-reduced-motion:reduce){.sx-ov,.sx-card,.sx-scr{transition:none}}`; document.head.appendChild(st); }
+function sxAsk(what,hint){ if(SX.ask) return SX.ask; sxCss();
+  SX.ask=new Promise(res=>{ const ov=document.createElement("div"); ov.className="sx-ov"; ov.setAttribute("role","dialog"); ov.setAttribute("aria-modal","true"); ov.setAttribute("aria-labelledby","sxT");
+    ov.innerHTML=`<div class="sx-card"><div class="sx-ic" aria-hidden="true">🔐</div><h2 id="sxT">Подтвердите: введите ваш пароль</h2>
+      <p class="sx-what">${what?`Важное действие: <b>${esc(what)}</b>`:"Это важное действие"}</p>
+      <input class="sx-in" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="20" placeholder="${esc(hint||"PIN директора")}" aria-label="${esc(hint||"PIN директора")}">
+      <p class="sx-err" aria-live="polite"></p>
+      <div class="sx-bt"><button type="button" class="sx-no">Отмена</button><button type="button" class="sx-ok" disabled>Подтвердить</button></div>
+      <p class="sx-note">Как в банке перед переводом: права, деньги и сотрудники меняются только с паролем. 10 минут больше не спросим. Директору придёт сообщение.</p></div>`;
+    document.body.appendChild(ov); requestAnimationFrame(()=>ov.classList.add("on"));
+    const inp=ov.querySelector(".sx-in"), ok=ov.querySelector(".sx-ok"), err=ov.querySelector(".sx-err"), card=ov.querySelector(".sx-card");
+    setTimeout(()=>{ try{ inp.focus(); }catch(_){} },60);
+    const close=v=>{ ov.classList.remove("on"); setTimeout(()=>ov.remove(),220); SX.ask=null; res(v); };
+    inp.addEventListener("input",()=>{ inp.value=inp.value.replace(/\D/g,""); ok.disabled=inp.value.length<4; err.textContent=""; });
+    const go=async()=>{ if(ok.disabled) return; ok.disabled=true; ok.textContent="Проверяю…"; let j=null;
+      try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"secConfirm",pin:shpPin(),who:shpWho(),pw:inp.value,what:String(what||"").slice(0,80)})}); j=await r.json(); }catch(_){ j=null; }
+      ok.textContent="Подтвердить";
+      if(j&&j.ok&&j.cf){ SX.cf=j.cf; SX.cfAt=Date.now(); try{ haptic("light"); }catch(_){} close(j.cf); return; }
+      if(j&&j.error==="pin"){ close(""); try{ shpBadPin(); }catch(_){} return; }
+      err.textContent=!j?"Нет связи — проверьте интернет и нажмите ещё раз":j.msg||"Неверный пароль"; inp.value=""; ok.disabled=true; card.classList.remove("sx-shake"); void card.offsetWidth; card.classList.add("sx-shake"); try{ haptic("err"); }catch(_){}
+      if(j&&j.error==="confirm_wait"){ inp.disabled=true; ok.hidden=true; ov.querySelector(".sx-no").textContent="Понятно"; } else inp.focus(); };
+    ok.addEventListener("click",go); inp.addEventListener("keydown",e=>{ if(e.key==="Enter") go(); if(e.key==="Escape") close(""); });
+    ov.querySelector(".sx-no").addEventListener("click",()=>close("")); ov.addEventListener("click",e=>{ if(e.target===ov) close(""); }); });
+  return SX.ask; }
+/* ---- верх цепочки: «confirm» → окно → повтор с пропуском (ставится после всех модулей) ---- */
+function sxTop(){ if(window.fetch.__sxTop) return; const _top=window.fetch;
+  const g=async function(u,o){ const us=typeof u==="string"?u:(u&&u.url)||""; let b=null;
+    if(sxIsApi(us)&&o&&typeof o.body==="string"&&String(o.method||"").toUpperCase()==="POST"&&o.body.charAt(0)==="{"){ try{ b=JSON.parse(o.body); }catch(_){ b=null; } }
+    if(!b||!SX_ACT.test(String(b.action||""))||b.action==="secConfirm") return _top.apply(this,arguments);
+    if(SX.cf&&Date.now()-SX.cfAt<9.5*60e3&&!b.cf){ b.cf=SX.cf; o=Object.assign({},o,{body:JSON.stringify(b)}); }
+    const r=await _top.call(this,u,o); let j=null; try{ j=await r.clone().json(); }catch(_){ return r; }
+    if(!(j&&j.ok===false&&j.error==="confirm")) return r;
+    SX.cf=""; const cf=await sxAsk(j.what,j.hint);
+    if(!cf){ const t=JSON.stringify({ok:false,error:"dir",cancel:true,msg:"Отменено — без пароля не сохраняется"});   /* «dir» + msg — старые подсказки покажут текст, а не «Не сохранилось» */ return new Response(t,{status:200,headers:{"content-type":"application/json"}}); }
+    b.cf=cf; const r2=await _top.call(this,u,Object.assign({},o,{body:JSON.stringify(b)})); let j2=null; try{ j2=await r2.clone().json(); }catch(_){ return r2; }
+    if(j2&&j2.ok===false&&j2.error==="confirm"){ SX.cf=""; return new Response(JSON.stringify({ok:false,error:"dir",msg:"Пароль подтверждения не подошёл — нажмите ещё раз"}),{status:200,headers:{"content-type":"application/json"}}); }
+    return r2; };
+  g.__sxTop=1; window.fetch=g; }
+if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",()=>setTimeout(sxTop,0)); else setTimeout(sxTop,0);
+/* ---- ссылка «Не я — выкинуть» (#secno=…) ---- */
+async function sxNo(tok){ sxCss(); const sc=document.createElement("div"); sc.className="sx-scr"; sc.setAttribute("role","dialog"); sc.setAttribute("aria-modal","true");
+  const paint=h=>{ sc.innerHTML=`<div class="sx-card">${h}</div>`; };
+  paint(`<div class="sx-ic" aria-hidden="true">🔐</div><h2>Вход с нового телефона</h2><p class="sx-what">Загружаю…</p>`); document.body.appendChild(sc); requestAnimationFrame(()=>sc.classList.add("on"));
+  for(let i=0;i<50&&!(typeof S!=="undefined"&&S.site&&S.site.stagesUrl);i++) await new Promise(r=>setTimeout(r,200));
+  let p=null; try{ const r=await fetch(S.site.stagesUrl+(S.site.stagesUrl.indexOf("?")<0?"?":"&")+"action=secPeek&t="+encodeURIComponent(tok),{cache:"no-cache"}); p=await r.json(); }catch(_){ p=null; }
+  const when=p&&p.at?new Date(p.at).toLocaleString("ru-RU",{day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"}):"";
+  const close=()=>{ sc.classList.remove("on"); setTimeout(()=>sc.remove(),220); };
+  if(!p||!p.ok){ paint(`<div class="sx-ic" aria-hidden="true">⏳</div><h2>Ссылка устарела</h2><p class="sx-what">${esc((p&&p.msg)||"Нет связи — проверьте интернет")}. Телефоны директора — в «Права сотрудников» → «Журнал безопасности».</p><div class="sx-bt"><button type="button" class="sx-no">Закрыть</button></div>`); sc.querySelector(".sx-no").onclick=close; return; }
+  if(p.st==="ban"){ paint(`<div class="sx-ic" aria-hidden="true">✅</div><h2>Этот телефон уже выкинут</h2><p class="sx-what">${esc(p.ua||"")}${when?" · "+esc(when):""}</p><div class="sx-bt"><button type="button" class="sx-no">Закрыть</button></div>`); sc.querySelector(".sx-no").onclick=close; return; }
+  paint(`<div class="sx-ic" aria-hidden="true">🔐</div><h2>Вход как Директор с нового телефона</h2><p class="sx-what"><b>${esc(p.ua||"Телефон")}</b>${when?"<br>"+esc(when):""}<br>Если это были не вы — выкиньте этот телефон: он выйдет из приложения, а все входы директора закроются, кроме этого.</p>
+    <div class="sx-bt"><button type="button" class="sx-no">Это был я</button><button type="button" class="sx-ok sx-red">Не я — выкинуть</button></div><p class="sx-note">Потом смените PIN директора: «Права сотрудников» → внизу «PIN директора».</p>`);
+  sc.querySelector(".sx-no").onclick=close;
+  sc.querySelector(".sx-ok").onclick=async e=>{ const bt=e.currentTarget; bt.disabled=true; bt.textContent="Выкидываю…"; let j=null;
+    try{ const pin=typeof shpPin==="function"?shpPin():""; const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify(Object.assign({action:"secKick",t:tok},pin?{pin}:{}))}); j=await r.json(); }catch(_){ j=null; }
+    if(!j||!j.ok){ bt.disabled=false; bt.textContent="Не я — выкинуть"; toast(!j?"Нет связи — нажмите ещё раз":j.msg||"Не получилось"); return; }
+    if(j.session&&S.shop&&typeof S.shop.techPin==="string"&&S.shop.techPin.indexOf("tgs.")===0){ S.shop.techPin=j.session; try{ localStorage.setItem("cehqr-techpin",j.session); }catch(_){} }
+    try{ haptic("light"); }catch(_){}
+    paint(`<div class="sx-ic" aria-hidden="true">✅</div><h2>Телефон выкинут</h2><p class="sx-what">Все входы директора закрыты${j.mine?", кроме этого телефона":""}. На других своих телефонах войдите заново.<br><b>Смените PIN директора</b> — «Права сотрудников» → внизу «PIN директора».</p><div class="sx-bt"><button type="button" class="sx-ok">Готово</button></div>`);
+    sc.querySelector(".sx-ok").onclick=()=>{ close(); if(!j.mine) setTimeout(()=>location.reload(),250); }; }; }
+(function(){ const m=/^#secno=([A-Za-z0-9_=.-]{20,1200})$/.exec(location.hash||""); if(!m) return; const tok=m[1];
+  try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){ location.hash=""; }
+  const go=()=>setTimeout(()=>sxNo(tok),300); if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",go); else go(); })();
+
+/* ---- «Права сотрудников» → «Журнал безопасности» (директор) ---- */
+function sxDirNow(){ try{ return typeof prDir==="function"?prDir():!!(S.shop&&S.shop.tech&&(S.shop.dir||!S.shop.hasDir)); }catch(_){ return false; } }
+if(typeof prBoxHtml==="function"){ const _sxBox=prBoxHtml; prBoxHtml=function(){ let h=_sxBox.apply(this,arguments); try{ if(!sxDirNow()) return h;
+    const btn=`<button type="button" class="pr-link" data-act="sx-log"><span>🔐</span><b>Журнал безопасности</b>${SX.newN>0?`<span class="sx-new" aria-label="новых ${SX.newN}">${SX.newN>99?"99+":SX.newN}</span>`:""}<i aria-hidden="true">›</i></button>`;
+    const k=h.lastIndexOf("</div>"); if(k>0&&h.indexOf('class="pr-links"')>=0) h=h.slice(0,k)+btn+h.slice(k); }catch(_){} return h; }; }
+function sxDate(ms){ try{ return new Date(ms).toLocaleString("ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(_){ return ""; } }
+function sxLogHtml(){ const L=SX.lg; if(!L) return typeof PR_SK!=="undefined"?PR_SK:"<p class='muted'>Загружаю…</p>"; if(L.err) return `<p class="note">${esc(L.msg||"Не загрузилось — проверьте интернет и откройте ещё раз.")}</p>`;
+  let h=`<div class="sx-own"><span aria-hidden="true">👑</span><span><b>Владелец фирмы: ${esc(L.owner||"не назначен")}</b><small>${L.owner?"Его имя, роль, телефон, PIN и Телеграм из приложения не меняет никто — даже он сам. Удалить и позвать на его имя нельзя. Сменить владельца — только через службу Work24link.":"Владелец назначается сам, когда в «Сотрудниках» один директор. Иначе — через службу Work24link."}</small></span></div>`;
+  const D=L.devs||[], st={ok:["","работает"],out:["out","нужно войти заново"],ban:["ban","выкинут"]};
+  h+=`<p class="sx-sec">Телефоны директора</p>`+(D.length?`<ul class="pr-ul">${D.map(d=>{ const s=st[d.st]||st.ok; return `<li class="pr-it"><div class="pr-itm"><b>📱 ${esc(d.ua||"Телефон")}${d.me?`<span class="sx-me">этот</span>`:""}</b></div>
+      <small><span class="sx-dot ${s[0]}" aria-hidden="true"></span>${s[1]} · первый вход ${esc(sxDate(d.at))}${d.kb?" · выкинут "+esc(sxDate(d.kb)):""} · метка ${esc(d.k)}</small>
+      ${!d.me&&d.st!=="ban"?`<div class="pr-act"><button type="button" class="pr-bt pr-danger" data-sxk="${esc(d.k)}">Выкинуть</button></div>`:""}</li>`; }).join("")}</ul>`:`<p class="muted pr-hint">Телефоны появятся после следующего входа директора.</p>`);
+  const I=L.items||[];
+  h+=`<p class="sx-sec">Кто что менял</p>`+(I.length?`<ul class="pr-ul">${I.map(x=>{ const w=String(x.was||"").split("; "), n=String(x.now||"").split("; "), ch=w.length===n.length&&x.was&&x.now?w.map((a,i)=>{ const k=a.indexOf(": "), kk=k>0?a.slice(0,k):""; const b=n[i]||""; return esc(kk?kk+": ":"")+esc(k>0?a.slice(k+2):a)+" <i>→</i> "+esc(kk&&b.indexOf(kk+": ")===0?b.slice(kk.length+2):b); }).join("\n"):"";
+      return `<li class="pr-it"><div class="pr-itm"><b>${x.fresh?`<span class="sx-dot ban" aria-label="новое"></span>`:""}${esc(x.what)}${x.obj?" — "+esc(x.obj):""}</b></div>${ch?`<div class="sx-chg">${ch}</div>`:""}<small><b>${esc(x.who||"—")}</b>${x.role?" · "+esc(({tech:"технолог",office:"дизайнер / офис",supply:"снабженец",master:"мастер"})[x.role]||x.role):""} · ${esc(sxDate(x.at))}${x.dv?" · метка "+esc(x.dv):""}</small></li>`; }).join("")}</ul>`
+    :`<div class="pr-empty"><span aria-hidden="true">🔐</span><b>Пока пусто</b><small>Здесь будет всё важное: роли, PIN, права, проценты, входы с новых телефонов</small></div>`);
+  return `<p class="muted pr-hint">Важные действия — только с паролем директора. Вам приходит сообщение в Телеграм (нет Телеграма — смотрите здесь).</p>`+h; }
+function sxLogPaint(){ const m=document.getElementById("sxLogM"), b=m&&m.querySelector(".pr-body"); if(b) b.innerHTML=sxLogHtml(); }
+async function sxLogOpen(){ SX.lg=null; if(typeof prSheet!=="function") return; sxCss(); const m=prSheet("sxLogM","Журнал безопасности",sxLogHtml());
+  m.addEventListener("click",async e=>{ const k=e.target.closest&&e.target.closest("[data-sxk]"); if(!k) return; e.stopPropagation();
+    if(typeof appConfirm==="function"&&!(await appConfirm("Выкинуть этот телефон? Он сразу выйдет из приложения и больше не войдёт как директор.","Выкинуть",true))) return;
+    k.disabled=true; const j=await shpPostRaw({action:"secKick",dev:k.dataset.sxk}); k.disabled=false;
+    if(!j){ toast("Нет связи — не получилось. Попробуйте ещё раз"); return; } if(j.ok===false){ toast(j.msg||"Не получилось"); return; }
+    if(j.session&&S.shop&&typeof S.shop.techPin==="string"&&S.shop.techPin.indexOf("tgs.")===0){ S.shop.techPin=j.session; try{ localStorage.setItem("cehqr-techpin",j.session); }catch(_){} }
+    toast("Телефон выкинут. Все входы директора закрыты, кроме этого"); sxLogLoad(); });
+  sxLogLoad(); }
+async function sxLogLoad(){ SX.lg=null; sxLogPaint(); const j=await shpGet("action=secLog",true); SX.lg=j&&j.ok?j:{err:1,msg:j&&j.msg}; sxLogPaint();
+  if(j&&j.ok){ SX.newN=0; document.querySelectorAll('[data-act="sx-log"] .sx-new').forEach(x=>x.remove()); shpPostRaw({action:"secSeen"}).catch(()=>{}); } }
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-act="sx-log"]'); if(!t) return; e.preventDefault(); e.stopPropagation(); sxLogOpen(); },true);
+/* сколько нового в журнале — один раз после загрузки (директору) */
+if(typeof shpSetRole==="function"){ const _sxSR=shpSetRole; shpSetRole=function(){ const r=_sxSR.apply(this,arguments);
+    try{ if(Date.now()-SX.newAt>10*60e3&&!(window.APP_DEMO)){ SX.newAt=Date.now(); setTimeout(()=>{ if(!sxDirNow()){ SX.newAt=0; return; } shpGet("action=secNew",true).then(j=>{ if(j&&j.ok) SX.newN=+j.n||0; }).catch(()=>{}); },1500); } }catch(_){} return r; }; }   /* сборка «Безопасность»: «директор ли» — через 1,5 с, когда site_dir уже записал dir/hasDir (раньше технолог спрашивал журнал и получал «dir») */
+
 /* ---------- этапы через Google Таблицу (только на сайте) ---------- */
 function siteRoleText(){ if(typeof siteIsGuest==="function"&&siteIsGuest()) return "Арендатор цеха"+(S.who?": "+S.who:"");   // вход по Телеграму, без PIN
   return S.site&&S.site.stagesUrl&&S.pin ? ("Мастер: "+S.who) : ""; }   // «Вход мастера» не показываем: PIN спросим при отметке этапа
@@ -13941,9 +14092,9 @@ function ntHead(sub){ return `<div class="nt-head">${ntBackBtn()}<div class="nt-
 function ntNeedHtml(){
   const tg=window.vtTg&&window.vtTg.on;
   return ntHead("Только для вас")+`<div class="nt-empty"><div class="nt-big">${ni("lock",44)}</div><h2>Войдите лично</h2>
-    <p>Чтобы заметки были только вашими, войдите через Телеграм или войдите своим личным PIN (мастер придумывает его сам при первом входе).</p>
+    <p>Чтобы заметки были только вашими, войдите своим PIN или через Телеграм. Своего PIN ещё нет — придумайте его: это 20 секунд.</p>
     <div class="nt-info">${ni("lock",18)}<span>${S.nt.dead?"Пропуск устарел — войдите ещё раз. ":""}Вход по общему PIN не показывает, кто именно вы, поэтому заметки по нему не открываются.</span></div>
-    <button type="button" class="btn primary nt-wide" data-nt="pplogin">Войти по личному PIN</button>
+    <button type="button" class="btn primary nt-wide" data-nt="pplogin">Придумать свой PIN</button>
     <p class="muted nt-small">${tg?"В Телеграме вход будет сам, если технолог вписал ваш номер Телеграма в «Сотрудники».":"Через Телеграм: откройте Work24link кнопкой в боте @timebel_ceh_bot — вход будет сам."}</p></div>`;
 }
 function ntCard(n){
@@ -14033,7 +14184,7 @@ async function ntSaveNow(){
 function ntSheet(id,html){ document.getElementById(id)?.remove(); const m=document.createElement("div"); m.className="modal nt-sheet"; m.id=id; m.style.zIndex=160;
   m.innerHTML=`<div class="modal-card" role="dialog" aria-modal="true">${html}</div>`; m.addEventListener("click",e=>{ if(e.target===m) m.remove(); }); document.body.appendChild(m); return m; }
 function ntQuick(pre){
-  if(!ntPass()){ const m=ntSheet("ntQuickM",`<h2 class="nt-sh2">Новая заметка</h2><p style="margin:0 0 12px">Чтобы заметки были только вашими, войдите через Телеграм или войдите своим личным PIN (мастер придумывает его сам при первом входе).</p><div class="nt-shb"><button type="button" class="btn primary" data-nt="pplogin">Войти по личному PIN</button><button type="button" class="btn" data-act="ntq-close">Отмена</button></div>`); return m; }
+  if(!ntPass()){ const m=ntSheet("ntQuickM",`<h2 class="nt-sh2">Новая заметка</h2><p style="margin:0 0 12px">Чтобы заметки были только вашими, войдите своим PIN или через Телеграм. Своего PIN ещё нет — придумайте его: это 20 секунд.</p><div class="nt-shb"><button type="button" class="btn primary" data-nt="pplogin">Придумать свой PIN</button><button type="button" class="btn" data-act="ntq-close">Отмена</button></div>`); return m; }
   const q={pinned:false,remind:0,kind:"text"}, lbl=pre.deal?ntDealLbl(pre.deal):pre.t3d?"заказ "+pre.t3d:"";
   const m=ntSheet("ntQuickM",`<div class="nt-shh"><h2 class="nt-sh2">Новая заметка</h2><span class="nt-lk">${ni("lock",13)}только вам</span></div>
     ${lbl?`<p class="nt-row" style="margin:0 0 10px"><span class="nt-dl">${ni(pre.deal?"link":"cube",14)}${esc(lbl)}</span><span class="muted" style="font-size:13px">привязано само</span></p>`:""}
@@ -14083,7 +14234,7 @@ function ntLinkSheet(){
 }
 function ntLoginSheet(){
   const names=(S.shop&&S.shop.staff||[]).map(p=>p.name).filter(Boolean);
-  const m=ntSheet("ntPpM",`<form id="ntPpForm" autocomplete="off"><h2 class="nt-sh2">Вход по личному PIN</h2><p class="muted" style="margin:0 0 12px">Личный PIN даёт технолог. С ним заметки видите только вы, а приложение знает, кто вы.</p>
+  const m=ntSheet("ntPpM",`<form id="ntPpForm" autocomplete="off"><h2 class="nt-sh2">Вход по личному PIN</h2><p class="muted" style="margin:0 0 12px">Свой PIN каждый придумывает сам после входа. С ним заметки видите только вы, а приложение знает, кто вы.</p>
     <label class="nt-fl">Ваше имя (как в «Сотрудники»)<input name="name" required maxlength="40" value="${esc(S.who||"")}" list="ntPpNames" autocomplete="username"></label>
     <label class="nt-fl">Личный PIN<input name="ppin" type="password" inputmode="numeric" pattern="[0-9]*" required minlength="4" maxlength="12" autocomplete="current-password"></label>
     <div class="nt-shb"><button class="btn primary nt-wide" type="submit">Войти</button><button type="button" class="btn" data-act="ntq-close">Отмена</button></div>
@@ -14192,7 +14343,7 @@ async function ntPpSet(btn,clear){ const box=btn.closest(".nt-pp"), name=box&&bo
   if(clear&&!(await appConfirm("Убрать личный PIN у «"+name+"»? Его вход по личному PIN перестанет работать.","Убрать"))) return;
   btn.disabled=true; let j=null; try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"ppSet",pin:shpPin(),name,ppin:v})}); j=await r.json(); }catch(_){} btn.disabled=false;
   if(inp) inp.value="";
-  if(!j||!j.ok){ toast(!j?"Нет связи с таблицей":j.error==="pp_same"?"Этот PIN совпадает с общим PIN роли — придумайте другой":j.error==="tech"?"Личный PIN задаёт только технолог":j.error==="notfound"?"Сначала сохраните сотрудника":j.error==="action"?"Обновите скрипт таблицы":"Не сохранилось"); return; }
+  if(!j||!j.ok){ toast(!j?"Нет связи с таблицей":j.error==="pp_same"?"Этот PIN не подходит — придумайте другой":j.error==="pp_short"||j.error==="pp_format"?"PIN — от 6 до 12 цифр":j.error==="dir"?(j.msg||"PIN директора задаёт только сам директор"):j.error==="tech"?"Личный PIN задаёт директор или технолог":j.error==="notfound"?"Сначала сохраните сотрудника":j.error==="action"?"Обновите скрипт таблицы":"Не сохранилось"); return; }
   toast(clear?"Личный PIN убран":"Личный PIN задан. Сообщите его человеку лично."); ntPpState(name); }
 
 /* ---- Технолог 3D: «Мастер ▾» → «Мои заметки»; на странице заказа — «Заметка» (заказ привязан сам) ---- */
@@ -15321,7 +15472,7 @@ const LV_ST={"ниже минимума":"low","минимум":"min","сред�
 function dpState(d){ if(!d.Mk) return "est"; return LV_ST[d.lv||dpLv(d.k)]||"norm"; }
 const DOT={low:"#FF453A",min:"#FFD60A",norm:"#fff",high:"#30D158",top:"#30D158",est:"#777"};
 function dpRow(d){ const st=dpState(d);
-  const sub=st==="est"?"нет «материал + расходы» — коэффициент не посчитать":"продано по "+nf(d.k)+" · "+(d.lv||dpLv(d.k))+(st==="top"?" ★":"");
+  const sub=(st==="est"?"нет «материал + расходы» — коэффициент не посчитать":"продано по "+nf(d.k)+" · "+(d.lv||dpLv(d.k))+(st==="top"?" ★":""))+((d.lines||[]).some(x=>x.nobr)?" · нет бригады":"");
   return `<li><button type="button" class="dp-row" data-dp="open" data-id="${esc(d.id)}"><span class="dp-dot" style="background:${DOT[st]}"></span><span class="dp-rt"><b>№ ${esc(d.num)} ${esc(d.client||"")}</b><small>${esc(sub)}</small></span>
     <span class="dp-rs"><b class="${st==="low"?"dp-r":st==="min"?"dp-y2":st==="high"||st==="top"?"dp-g":""}">${N(d.S)}</b><small>фирме ${N(d.firm)}</small></span></button></li>`; }
 function dpListHtml(){ const D=S.dp.data, ym=dpYm(), [y,m]=ym.split("-").map(Number), cur=ymOf(new Date());
@@ -15412,7 +15563,7 @@ function dpDealHtml(d){ const st=dpState(d), c=dpCalc(d,S.dp.ed), k=K(), own=Obj
     <div class="dp-tr dp-big"><span>Продано за</span><b class="${st==="low"?"dp-r":st==="high"?"dp-g":""}">${N(d.S)}${d.Mk?` <small>(${nf(d.k)})</small>`:""}</b></div>
     ${c.fzW>0?`<div class="dp-tr"><span>в том числе Работы<small>клиенту отдельно от мебели · доход фирмы, бригаде — в выплатах</small></span><b>${N(c.fzW)}</b></div>`:""}
     ${d.Mk?`<div class="dp-tr"><span>${d.lv||dpLv(d.k)} · дороже ${nf(k.k)} на</span><b class="${c.ex<0?"dp-r":c.ex>0?"dp-g":""}">${c.ex>0?"+":""}${N(c.ex)}</b></div>`:""}
-    ${c.lines.map((x,i)=>`<div class="dp-tr"><span>${esc(x.name)}${x.fixed?`<small>${x.bw?"по работам сметы"+(x.cut>0?" · без доставки и подъёма "+N(x.cut)+" — везёт водитель":""):"вписано в сделке"}</small>`:`<span class="dp-pin"><input name="p${i}" inputmode="decimal" value="${x.pct==null?"":nf(x.pct)}" aria-label="${esc(x.name)}, процент"> %</span><small>от ${N(x.b0)}${x.to?" · "+esc(x.to):""}</small>`}</span><b>${N(x.amt)}</b></div>`).join("")}
+    ${c.lines.map((x,i)=>`<div class="dp-tr"><span>${esc(x.name)}${x.fixed?`<small>${x.bw?"по работам сметы"+(x.cut>0?" · без доставки и подъёма "+N(x.cut)+" — везёт водитель":""):"вписано в сделке"}</small>`:`<span class="dp-pin"><input name="p${i}" inputmode="decimal" value="${x.pct==null?"":nf(x.pct)}" aria-label="${esc(x.name)}, процент"> %</span><small>от ${N(x.b0)}${x.to?" · "+esc(x.to):""}</small>`}${x.nobr?`<small class="dp-nobr">нет бригады — назначьте мастера, пока никому не начислено</small>`:""}</span><b class="${x.nobr?"dp-y2":""}">${N(x.amt)}</b></div>`).join("")}
     <div class="dp-tr"><span>Премия дизайнеру<span class="dp-pin"><input name="bon" inputmode="decimal" value="${nf(c.bon)}" aria-label="Премия, процент"> %</span><small>${c.ok?"от "+N(c.ex)+" сверху нормы":d.S<k.min?"договор меньше "+N(k.min):"нет — не дороже нормы"}</small></span><b class="${c.prem?"dp-g":"muted"}">${c.prem?N(c.prem):"—"}</b></div>
     <div class="dp-tr dp-sum"><span>Всем выплатам</span><b>${N(c.pay)}</b></div>
     ${c.F?`<div class="dp-tr"><span>Забыли в смете<small>${esc(dpFg(d).items.map(y=>y.t).join(", "))}</small></span><b class="dp-y2">−${N(c.F)}</b></div>`:""}
@@ -15488,6 +15639,7 @@ if(typeof viewShop==="function"){ const _dpView=viewShop; viewShop=function(){
 if(typeof shpRenderKeep==="function"){ const _dpRK=shpRenderKeep; shpRenderKeep=function(){ const ae=document.activeElement;
   if(S.shop&&S.shop.mode==="dpay"&&ae&&ae.closest&&ae.closest("[data-dp-form]")&&ae.tagName==="INPUT") return; return _dpRK.apply(this,arguments); }; }
 const st=document.createElement("style"); st.textContent=`
+.dp-tr>span small.dp-nobr,html .dp-tr small.dp-nobr,html.vt.sk.sk.sk[data-vt] .dp-tr small.dp-nobr{display:block;color:#b58500!important;opacity:1!important;font-size:12.5px;margin-top:2px}html.vt[data-vt="dark"] .dp-tr small.dp-nobr,html.vt.sk.sk.sk[data-vt="dark"] .dp-tr small.dp-nobr{color:#ffd60a!important}html.vt[data-vt="dark"] .dp-tr b.dp-y2{color:#ffd60a}
 .dp-wrap{max-width:760px;margin:0 auto;padding:0 14px 90px}
 .dp-mon{display:flex;align-items:center;justify-content:center;gap:16px;margin:4px 0 12px}.dp-mon b{min-width:140px;text-align:center;text-transform:capitalize}
 .dp-card{border:1px solid rgba(127,127,127,.28);background:rgba(127,127,127,.07);border-radius:14px;padding:12px 14px;margin:0 0 10px}
@@ -15538,6 +15690,12 @@ window.__dp={cmp:v=>dpCmpHtml(v),base:dpBase,vals:f=>dpSetVals(f)};
 function dpEffPct(r,c,v){ const KK=K(); if(!(c>KK.kLow+1e-9)) return r.pct; const t=String(r.to||"").toLowerCase(); if(/бригад|мастер заказа/.test(t)) return r.pct;
   if(/дизайнер заказа/.test(t)) return Math.min(r.pct,KK.dLow); const f=Math.max(KK.ofLow/100,Math.min(1,1-(c-KK.kLow)/Math.max(0.0001,KK.lMin-KK.kLow)*(1-KK.ofLow/100))); return Math.round(r.pct*f*100)/100; }
 })();
+
+/* «Без мастера — «Бригада» никому» (Кирилл 15.11): сделка закрыта без «Бригады (кто получает)» и «Мастера заказа» — деньги бригады никому не начислены. Директору — жёлтым в «Зарплате» */
+if(typeof shpZpHtml==="function"){ const _dpNB=shpZpHtml; shpZpHtml=function(){ const h=_dpNB.apply(this,arguments); try{ const W=S.shop&&S.shop.tech&&S.shop.zp&&S.shop.zp.noBr; if(!W||!W.length) return h; const sum=W.reduce((a,x)=>a+(+x.amount||0),0);
+  const b=`<div class="card dp-nbw"><h2 style="margin:0 0 4px">Нет бригады · ${shpRub(sum)}</h2><p class="muted" style="margin:0 0 6px">Сделка закрыта без мастера — деньги бригады пока никому не начислены. Назначьте мастера или бригаду в сделке.</p><ul class="doc-l">${W.map(x=>`<li class="doc-r"><span>№ ${esc(x.num||"")} ${esc(x.client||"")}</span><b>${shpRub(x.amount)}</b><button type="button" class="btn sm" data-act="shp-open" data-id="${esc(x.order)}">Открыть</button></li>`).join("")}</ul></div>`;
+  const i=String(h).indexOf("</div></div>"); return i>0?h.slice(0,i+12)+b+h.slice(i+12):b+h; }catch(_){ return h; } }; }
+(function(){ const st2=document.createElement("style"); st2.textContent=`.dp-nbw{border-color:rgba(255,214,10,.45)!important}.dp-nbw h2{color:#b58500}html.vt[data-vt="dark"] .dp-nbw h2{color:#ffd60a}`; document.head.appendChild(st2); })();
 
 /* ---------- ЧЕРТЕЖИ ЧЁРНО-БЕЛЫЕ (утверждённый вариант 3): присадка детали/фасада и «Вид спереди» ----------
    Подключается после site_draw.js. Заменяет (обёртками, без правки исходных функций):
@@ -20972,7 +21130,7 @@ if(typeof shpMoreHtml==="function"){ const _drM2=shpMoreHtml; shpMoreHtml=functi
 (function(){ const H=v=>`li:has(> [data-act="shp-tab"][data-v="${v}"]),[data-act="shp-tab"][data-v="${v}"]:not(.app-tab):not(nav *),[data-dv="${v}"]`; const st=document.createElement("style");
   st.textContent=`body.dir-mst:not(.r4-yes-deals) :is(${["board","feed"].map(H).join(",")}),body.dir-mst :is(${H("cal")}){display:none!important}`; document.head.appendChild(st); })();   /* Р4: «Все сделки» мастеру включил директор — «Сделки» и лента открыты */
 /* Кирилл 07.11: «в Все разделы мастеру оставить только: Замер, Заметки, Моя зарплата, Сотрудники, Склад» (+ помощь и выход) */
-const DIR_MST_OK=["zamers","zp","notes","staff","stock"], DIR_MST_ACT=["help-open","shp-myname","shp-reload","shp-out","pr-help"];
+const DIR_MST_OK=["zamers","zp","notes","staff","stock"], DIR_MST_ACT=["help-open","shp-myname","shp-reload","shp-out","pr-help","lg-mypin"];   /* lg-mypin — «Сменить / Придумать свой PIN» (15.11) */
 function dirMstTrim(){ if(!dirMaster()) return; if(!(S.view==="shop"&&S.shop&&S.shop.mode==="more")) return;   /* только экран «Все разделы» — не трогать «Сотрудники» и другие списки */ document.querySelectorAll(".shp-list > li, .pr-dolist > li").forEach(li=>{ const b=li.querySelector("[data-act]"); if(!b) return; const a=b.dataset.act, v=b.dataset.v||b.dataset.dv||"";
   const ok=(a==="shp-tab"&&DIR_MST_OK.includes(v))||(a==="pr-do"&&(b.dataset.do!=="shp-tab"||DIR_MST_OK.includes(v)))||DIR_MST_ACT.includes(a)||(a==="app-nav"&&v==="help-site");
   if(!ok){ li.hidden=true; li.style.display="none"; } });
@@ -21012,8 +21170,10 @@ document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closes
 /* Кирилл 07.11: «у мастера наверху почему Технолог: Кирилл» — плашка показывает роль входа в Work24link (сделки), а не старый вход технолога на сайте */
 if(typeof accLabel==="function"){ const _drAL=accLabel; accLabel=function(){ try{ if(S.shop&&!S.shop.loaded&&typeof shpPin==="function"&&shpPin()){ const r0=S.shop.techPin?"Технолог":S.shop.officePin?"Офис":S.shop.supPin?"Снабженец":"Мастер"; return r0+(S.who?": "+S.who:""); }   /* пока грузится — роль по сохранённому входу, а не старый вход технолога (Кирилл 07.11) */
     if(S.shop&&S.shop.loaded&&(S.shop.role||S.shop.tech)){ const r=S.shop.tech?(S.shop.dir&&S.shop.hasDir?"Директор":"Технолог"):({office:"Офис",supply:"Снабженец",master:"Мастер"}[S.shop.role]||"Мастер"); return r+(S.who?": "+S.who:""); } }catch(_){} return _drAL.apply(this,arguments); }; }
-/* «Мои заметки» → «Войти по личному PIN»: мастеру — новый вход (имя → свой PIN, первый раз придумать) */
-document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-nt="pplogin"]'); if(!t) return; if(!(S.shop&&!S.shop.tech&&(S.shop.role||"master")==="master")) return; e.stopPropagation(); e.preventDefault(); document.getElementById("ntQuickM")?.remove(); mstLoginModal(); },true);
+/* «Мои заметки» → «Придумать свой PIN»: тот же экран «Кто вы?» → свой PIN, что после входа (site_login.js, 15.11 вариант А) — второго пути больше нет */
+document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest('[data-nt="pplogin"]'); if(!t) return; e.stopPropagation(); e.preventDefault(); document.getElementById("ntQuickM")?.remove();
+  if(typeof window.w24Who==="function"&&typeof shpPin==="function"&&shpPin()){ window.w24Who(); return; }
+  if(S.shop&&!S.shop.tech&&(S.shop.role||"master")==="master") mstLoginModal(); },true);
 /* Кирилл 07.11: мастеру в заказе кнопка «Сделка» лишняя; и в пустых «Задачах» — без «поручить самому» */
 (function(){ const st=document.createElement("style"); st.textContent=`body.dir-mst .oc-deal,body.dir-mst [data-op="deal"]{display:none!important}`; document.head.appendChild(st); })();
 { const _drR5=render; render=function(){ const r=_drR5.apply(this,arguments); try{ if(dirMaster()) document.querySelectorAll("li").forEach(li=>{ if(/Нужно поручить самому/.test(li.textContent)&&li.children.length<4) li.style.display="none"; }); }catch(_){} return r; }; }
@@ -23799,7 +23959,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="b5f757e728";
+const CHK_BUILD="66a35b157a";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -24862,12 +25022,18 @@ body.pp-on #toast{display:none!important}
    1) Первый экран без входа на / и /vertaks/ — сразу клавиатура PIN (окно site_pinpad.js, форма #lgF). Сервер по PIN сам понимает, кто это (pinWho).
       Личный PIN — пропуск «tgs.…»; PIN директора и общие PIN ролей — телефон хранит PIN, как раньше (остальное приложение не меняется).
    2) «Забыл PIN» / новый телефон: почта, телефон или имя → код (codeSend) → 6 цифр (codeCheck) → «Придумайте PIN» (codeSet) → вход.
-   3) Вошёл по общему PIN роли или по короткому личному — окно «Придумайте свой PIN» (ppMine) при каждом входе, можно «Позже».
+   3) Вошёл по общему PIN роли — сразу «Кто вы?» → свой PIN (ppWho → ppMine), пропустить нельзя (15.11, вариант А). Короткий личный — предложить новый.
    4) Директор/технолог: почта в карточке сотрудника и «Пригласить» (invSend), почта/Телеграм в «Пригласить работника»; директор — «Только личные PIN».
+   8) 15.11 19:06 (Кирилл: «Общий PIN удаляем, заходят через СМС… придумывают свой пароль. Всё»): первый экран — «Номер телефона» → код из СМС → свой пароль
+      (нет пароля — придумать; есть — сразу вход). Номер ищется только в ЭТОЙ компании (?f= в адресе; без него — основная), СМС — её ключом (проверка входа 15.11:
+      выбора фирмы больше нет). Вход бессрочный. «Войти паролем» — прежнее окно PIN.
+      Пока директор не подключил СМС (telInfo) — первый экран прежний (окно PIN). Директор: ключ SMS.ru и «Вход только по номеру телефона» в «Права сотрудников»;
+      в карточке сотрудника — «Выйти на всех телефонах». «Выйти» гасит вход и на сервере (sessOut — на всех телефонах этого человека).
+      «Вход только по номеру» — своё свойство (telOnly); прежний переключатель «Только личные PIN» (ppOnly) — как был.
    PIN и коды живут только в полях форм, пока открыто окно; в адрес, журнал и консоль не попадают. Заказ по QR-ссылке открывается без входа, как раньше. ===== */
 (function(){
   if(window.APP_DES) return;   // «Смета для дизайнера» — свой вход
-  const LG={pin:"",to:"",ticket:"",tname:"",sent:0,msg:"",pause:0,asked:false};
+  const LG={pin:"",to:"",ticket:"",tname:"",sent:0,msg:"",pause:0,asked:false,tel:null,telT:0,forcePin:false};
   const KEYS=()=>typeof MST_KEYS!=="undefined"?MST_KEYS:{tech:"cehqr-techpin",tester:"cehqr-techpin",office:"cehqr-officepin",supply:"cehqr-suppin",master:"cehqr-pin"};
   const ls={ g:k=>{ try{ return localStorage.getItem(k)||""; }catch(_){ return ""; } }, s:(k,v)=>{ try{ localStorage.setItem(k,v); }catch(_){} }, d:k=>{ try{ localStorage.removeItem(k); }catch(_){} } };
   const ss={ g:k=>{ try{ return sessionStorage.getItem(k)||""; }catch(_){ return ""; } }, s:(k,v)=>{ try{ sessionStorage.setItem(k,v); }catch(_){} }, d:k=>{ try{ sessionStorage.removeItem(k); }catch(_){} } };
@@ -24884,7 +25050,7 @@ body.pp-on #toast{display:none!important}
     if(window.APP_DEMO||!S.site||!S.site.stagesUrl||lgIn()||inTg()) return false;
     if(S.inv&&S.inv.code) return false;                                   // открыли приглашение — своя страница
     if(ss.g("w24-newfirm")||ss.g("w24-lgskip")) return false;              // только что создали фирму / «Мои заказы по QR»
-    if(mine("lgX")||mine("lgNM")||mine("lgNewM")||mine("lgCoM")) return false;
+    if(mine("lgX")||mine("lgNM")||mine("lgNewM")||mine("lgCoM")||mine("whoX")) return false;
     if(Date.now()<LG.pause||document.querySelector(".modal:not(#lgM):not(.pp-hid)")) { if(document.querySelector(".modal:not(#lgM):not(.pp-hid)")) LG.pause=Date.now()+800; return false; }   // другое окно (код компании, новая фирма…) — не перекрываем
     const v=S.view; return v==="orders"||v==="shop"||v==="home";
   }
@@ -24894,13 +25060,18 @@ body.pp-on #toast{display:none!important}
 
   /* ---------- 1. первый экран: сразу клавиатура PIN ---------- */
   function lockShow(){ if(mine("lgM")) return; const m=document.createElement("div"); m.className="modal lg-m"; m.id="lgM"; const q=qrCount(), who=ls.g("cehqr-who"), fn=firmName();
-    m.innerHTML=`<form class="modal-card" id="lgF" data-pptitle="Введите PIN" data-ppsub="${H([who,fn].filter(Boolean).join(" · "))}" autocomplete="off">
+    m.innerHTML=`<form class="modal-card" id="lgF" data-pptitle="${LG.tel?"Введите пароль":"Введите PIN"}" data-ppsub="${H([who,fn].filter(Boolean).join(" · "))}" autocomplete="off">
       <label>PIN<input id="lgPin" type="password" inputmode="numeric" maxlength="20" autocomplete="current-password" required></label>
       <button type="submit">Войти</button>
-      <button type="button" data-ppfoot="1" data-lg="forgot">Забыл PIN</button>${window.APP_FIRM?`<button type="button" data-ppfoot="1" data-lg="otherco">Другая компания</button>`:`<button type="button" data-ppfoot="1" data-lg="newco">Новая компания</button>`}${q?`<button type="button" data-ppfoot="1" data-lg="qr">Мои заказы по QR · ${q}</button>`:""}</form>`;
+      ${LG.tel?`<button type="button" data-ppfoot="1" data-lg="tel">Войти по номеру телефона</button>`:""}<button type="button" data-ppfoot="1" data-lg="forgot">${LG.tel?"Забыл пароль":"Забыл PIN"}</button>${window.APP_FIRM?`<button type="button" data-ppfoot="1" data-lg="otherco">Другая компания</button>`:`<button type="button" data-ppfoot="1" data-lg="newco">Новая компания</button>`}${q?`<button type="button" data-ppfoot="1" data-lg="qr">Мои заказы по QR · ${q}</button>`:""}</form>`;
     document.body.appendChild(m); }
   function lockHide(){ document.getElementById("lgM")?.remove(); }
-  function tick(){ try{ if(lgNeed()) lockShow(); else if(mine("lgM")&&(lgIn()||!(S.view==="orders"||S.view==="shop"||S.view==="home")||(S.inv&&S.inv.code))) lockHide(); }catch(_){} }
+  /* 15.11: подключён ли в этой фирме вход по СМС — запоминаем на телефоне, чтобы первый экран не мигал; уточняем у сервера при каждом открытии */
+  function telInfo(){ if(LG.telAsk||window.APP_DEMO||!S.site||!S.site.stagesUrl) return; LG.telAsk=1; LG.telT=Date.now();
+    post({action:"telInfo"}).then(j=>{ const on=!!(j&&j.ok&&j.sms); const was=LG.tel; LG.tel=on; ls.s("w24-telon",on?"1":"0");
+      if(was!==on&&mine("lgM")&&!LG.forcePin&&on){ lockHide(); tick(); } }); }
+  { const c=ls.g("w24-telon"); if(c) LG.tel=c==="1"; }
+  function tick(){ try{ if(lgNeed()){ telInfo(); if(LG.tel===null&&Date.now()-LG.telT<2500) return; if(LG.tel&&!LG.forcePin) telOpen("tel"); else lockShow(); } else { const away=lgIn()||!(S.view==="orders"||S.view==="shop"||S.view==="home")||(S.inv&&S.inv.code); if(mine("lgM")&&away) lockHide(); if(away&&W.on&&W.mode==="tel"&&W.step==="tel"&&!W.busy) whoClose(); } }catch(_){} }
   if(typeof render==="function"){ const _lgR=render; render=function(){ const r=_lgR.apply(this,arguments); try{ setTimeout(tick,0); }catch(_){} return r; }; }
   setInterval(tick,700); setTimeout(tick,300);
 
@@ -24925,7 +25096,10 @@ body.pp-on #toast{display:none!important}
     if(!j){ fieldErr(inp,"Нет связи — повторите"); return; }   // 13.11: введённый PIN не стираем — нажать «Войти» ещё раз
     if(!j.ok){ if(j.error==="need_name"){ LG.pin=pin; inp.value=""; lockHide(); nameStep(); return; }
       fieldErr(inp,j.error==="action"?"Обновите скрипт таблицы":j.error==="wait"?(j.msg||"Слишком много попыток, подождите 10 мин"):j.error==="bad"?"Неверный PIN":j.msg||"Неверный PIN"); inp.value=""; return; }
-    lgDone(j,pin); }
+    lgRole(j,pin); }
+  /* 15.11 (вариант А): общий PIN роли — сначала «Кто вы?» (раздел 3); личный PIN и PIN директора — сразу вход */
+  function lgRole(j,pin){ if(j.kind==="role"&&!j.dir){ inpClear(); lockHide(); whoAfterLogin(j,pin); return; } lgDone(j,pin); }
+  function inpClear(){ const i=document.getElementById("lgPin"); if(i) i.value=""; }
   /* такой PIN у двоих (старые PIN) — спросить имя */
   function nameStep(){ document.getElementById("lgNM")?.remove(); const m=document.createElement("div"); m.className="modal lg-m"; m.id="lgNM";
     m.innerHTML=`<form class="modal-card" id="lgNameF" autocomplete="off"><label>Ваше имя<input id="lgN" maxlength="40" autocomplete="username" required value=""></label><button type="submit">Дальше</button>
@@ -24936,7 +25110,7 @@ body.pp-on #toast{display:none!important}
     const sb=f.querySelector("[type=submit]"); sb.disabled=true; const j=await post({action:"pinWho",ppin:LG.pin,name}); sb.disabled=false;
     if(!j){ fieldErr(n,"Нет связи — проверьте интернет"); return; }
     if(!j.ok){ if(j.error==="need_name"||j.error==="bad"){ fieldErr(n,j.error==="bad"?"С этим именем PIN не подходит — проверьте имя":j.msg); return; } LG.pin=""; document.getElementById("lgNM")?.remove(); try{ toast(j.msg||"Неверный PIN"); }catch(_){} return; }
-    const pin=LG.pin; LG.pin=""; lgDone(j,pin); }
+    const pin=LG.pin; LG.pin=""; document.getElementById("lgNM")?.remove(); lgRole(j,pin); }
 
   /* ---------- 2. «Забыл PIN» / новый телефон: код → свой PIN ---------- */
   function xOpen(step){ lockHide(); let x=document.getElementById("lgX"); if(!x){ x=document.createElement("div"); x.id="lgX"; x.className="lg-x"; x.setAttribute("role","dialog"); x.setAttribute("aria-modal","true"); x.setAttribute("aria-label","Вход по коду"); document.body.appendChild(x); document.body.classList.add("pp-on"); }
@@ -24997,7 +25171,7 @@ body.pp-on #toast{display:none!important}
     LG.ticket=""; ls.d("w24-ppask"); m.remove(); lgDone(j,""); }
 
   /* «Забыл PIN» — отовсюду (кнопка в окне PIN) */
-  window.w24Forgot=function(){ LG.msg=""; xOpen("to"); };
+  window.w24Forgot=function(){ LG.msg=""; if(LG.tel){ lockHide(); telOpen("forgot"); return; } xOpen("to"); };
 
   /* «Новая компания»: подключить свою фирму · войти в другую компанию по коду · демо */
   function coSheet(){ lockHide(); document.getElementById("lgCoM")?.remove(); const m=document.createElement("div"); m.id="lgCoM"; m.className="lg-x"; m.setAttribute("role","dialog"); m.setAttribute("aria-modal","true"); document.body.classList.add("pp-on");
@@ -25018,6 +25192,7 @@ body.pp-on #toast{display:none!important}
     else if(f.id==="lgCodeF"){ e.preventDefault(); e.stopPropagation(); checkCode(); } },true);
   document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-lg],[data-lgx]"); if(!b) return; const a=b.dataset.lg||b.dataset.lgx;
     if(a==="forgot"){ e.preventDefault(); window.w24Forgot(); }
+    else if(a==="tel"){ e.preventDefault(); LG.forcePin=false; lockHide(); telOpen("tel"); }
     else if(a==="newco"){ e.preventDefault(); coSheet(); }
     else if(a==="otherco"){ e.preventDefault(); location.href=location.pathname+"?f=0"; }   /* это не моя фирма — выйти из неё на общий вход (11.11: в приложении фирмы «Новая компания» не показываем) */
     else if(a==="qr"){ e.preventDefault(); ss.s("w24-lgskip","1"); lockHide(); try{ setView("orders"); }catch(_){ try{ render(); }catch(__){} } }
@@ -25030,16 +25205,253 @@ body.pp-on #toast{display:none!important}
   document.addEventListener("click",e=>{ if(e.target.closest&&e.target.closest('[data-act="staff-in"]')) ss.d("w24-lgskip"); },true);   // «Я сотрудник» — снова экран PIN
   document.addEventListener("input",e=>{ if(e.target&&e.target.id==="lgCode"){ e.target.value=e.target.value.replace(/\D/g,"").slice(0,6); LG.msg=""; const er=document.querySelector("#lgCodeF .lg-e"); if(er) er.textContent=""; cells(); if(e.target.value.length===6) checkCode(); } });
 
-  /* ---------- 3. «Придумайте свой PIN» после входа по общему PIN роли или по короткому личному ---------- */
-  function askNeed(){ try{
-    if(LG.asked||ss.g("w24-ppask-x")||!lgIn()||!S.shop||!S.shop.loaded||typeof shpPin!=="function") return false;
-    if(mine("lgNewM")||mine("lgX")||document.querySelector(".modal:not(.pp-hid)")||document.getElementById("ppad")) return false;
-    const p=shpPin(); if(!p) return false;
-    if(/^tgs\./.test(p)) return ls.g("w24-ppask")==="weak";                      // вошёл своим, но коротким PIN
-    if(ls.g("w24-lgdir")==="1"||(S.shop.tech&&S.shop.dir&&S.shop.hasDir)) return false;   // PIN директора — свой, не общий
-    return true;                                                                  // общий PIN роли
-  }catch(_){ return false; } }
-  setInterval(()=>{ if(askNeed()){ LG.asked=true; newPin("ask"); } },1500);
+  /* ---------- 3. «Кто вы?» → свой PIN (Кирилл 15.11 17:06, вариант А). Пропустить нельзя.
+     После входа по общему PIN роли (и если на телефоне сохранён общий PIN со старого входа) — сразу экран на весь экран:
+     выбрать себя из «Сотрудников» своей роли → придумать свой PIN (2 шага) → «Коля, готово» → «Начать работу». Выйти — только «‹» на экран входа.
+     Общий PIN в режиме «Кто вы?» на телефоне НЕ сохраняется. В роли нет людей / технолог без назначенного директора — пускаем как раньше (сервер: ppWho free).
+     Мастер с общим PIN внутри приложения (чек, согласование) — лист «… только под своим именем» → тот же экран; запрос потом уходит сам, форма не теряется. ---------- */
+  const WR={master:["мастера","мастеров"],office:["офис","офиса"],supply:["снабжение","снабжения"],tech:["технологи","технологов"]};
+  const WN={master:"мастер",office:"офис",supply:"снабженец",tech:"технолог",tester:"технолог"};
+  const W={on:false};
+  const ICO={back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
+    ok:'<svg viewBox="0 0 24 24" fill="none" stroke="#30d158" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
+    list:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>',
+    info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>',
+    user:'<svg viewBox="0 0 24 24" fill="none" stroke="#ffd60a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
+    del:'<svg width="30" height="22" viewBox="0 0 30 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M9 2h18a1.5 1.5 0 0 1 1.5 1.5v15A1.5 1.5 0 0 1 27 20H9L1.5 11z"/><path d="M14 7l8 8M22 7l-8 8" stroke-linecap="round"/></svg>'};
+  const curPin=()=>{ try{ return typeof shpPin==="function"?shpPin():""; }catch(_){ return ""; } };
+  function passRole(){ const K=KEYS(); for(const r of ["tech","office","supply","master"]) if(/^tgs\./.test(ls.g(K[r]))) return r; return (S.shop&&S.shop.role)||"master"; }
+  function lgShared(){ const p=curPin(); return !!p&&!/^tgs\./.test(p)&&ls.g("w24-lgdir")!=="1"; }
+  async function whoGet(pin){ try{ const u=S.site.stagesUrl; const r=await fetch(u+(u.includes("?")?"&":"?")+"action=ppWho&pin="+encodeURIComponent(pin),{cache:"no-cache"}); return await r.json(); }catch(_){ return null; } }
+  /* старый сервер (нет ppWho) или нет связи — не держим человека: как раньше */
+  const whoBad=j=>!j||(!j.ok&&j.error!=="pin")||(j.ok&&!j.free&&!Array.isArray(j.list));
+  const whoSort=L=>Array.isArray(L)?L.slice().sort((a,b)=>(a.has||a.dup?1:0)-(b.has||b.dup?1:0)):L;
+  const isTel=()=>W.mode==="tel"||W.mode==="forgot";
+  function whoOpen(o){ whoClose(); Object.assign(W,{on:true,mode:o.mode,pin:o.pin||"",role:o.role||"master",firm:o.firm||firmName()||"",list:whoSort(o.list)||null,sel:o.name?{name:o.name,post:""}:null,
+      step:o.mode==="change"?"p1":(o.mode==="tel"||o.mode==="forgot")?"tel":"who",b1:"",b2:"",msg:"",busy:false,shake:false,done:null,resolve:o.resolve||null,
+      tel:W.tel||"",mask:"",sent:0,ticket:"",via:""});
+    const x=document.createElement("div"); x.id="whoX"; x.setAttribute("role","dialog"); x.setAttribute("aria-modal","true"); x.setAttribute("aria-label","Кто вы?");
+    x.addEventListener("click",whoClick); document.body.appendChild(x); document.body.classList.add("pp-on"); whoDraw(); }
+  function whoClose(){ clearInterval(W.cd); document.getElementById("whoX")?.remove(); if(W.on){ W.on=false; if(!document.getElementById("ppad")&&!document.querySelector(".lg-x")) document.body.classList.remove("pp-on"); } }
+  function whoDots(n){ const c=Math.min(12,Math.max(6,n)); return Array.from({length:c},(_,k)=>`<i class="${k<n?"on":""}"></i>`).join(""); }
+  function whoKeys(n,goT){ return `<div class="wk${W.busy?" off":""}">${[1,2,3,4,5,6,7,8,9].map(d=>`<button type="button" data-wd="${d}" aria-label="${d}"><b>${d}</b><small>${["","","АБВГ","ДЕЖЗ","ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪЫ","ЬЭЮЯ"][d]}</small></button>`).join("")}
+      <button type="button" class="x go" data-wa="go"${n>=6&&!W.busy?"":' aria-disabled="true"'}>${goT}</button><button type="button" data-wd="0" aria-label="0"><b>0</b><small></small></button>
+      <button type="button" class="x" data-wa="del" aria-label="Стереть цифру"${n?"":' aria-disabled="true"'}>${ICO.del}</button></div>`; }
+  function whoTop(t,noBack){ return `<div class="wt">${noBack?`<span class="wsp"></span>`:`<button type="button" class="wb" data-wa="back" aria-label="Назад">${ICO.back}</button>`}<span class="wf">${H(t)}</span><span class="wsp"></span></div>`; }
+  /* номер как на iPhone: +7 914 000-00-07 */
+  function fmtTel(v){ let d=String(v||"").replace(/\D/g,""); if(!d) return String(v||"").trim()==="+"?"+":""; if(d[0]==="8") d="7"+d.slice(1); else if(d[0]==="9") d="7"+d; if(d[0]!=="7") return "+"+d.slice(0,15);
+    d=d.slice(0,11); const a=d.slice(1,4),b=d.slice(4,7),c=d.slice(7,9),e=d.slice(9,11); return "+7"+(a?" "+a:"")+(b?" "+b:"")+(c?"-"+c:"")+(e?"-"+e:""); }
+  const telDigits=v=>{ let d=String(v||"").replace(/\D/g,""); if(/^\s*\+/.test(String(v||""))) return d; if(d.length===10) d="7"+d; else if(d.length===11&&d[0]==="8") d="7"+d.slice(1); return d; };
+  function againTxt(){ const l=Math.min(59,Math.max(0,Math.ceil((W.sent+60e3-Date.now())/1000))); return l?`Отправить ещё раз через 0:${String(l).padStart(2,"0")}`:""; }
+  function codeCells(){ const i=document.getElementById("wCode"); if(!i) return; const v=i.value.replace(/\D/g,"").slice(0,6); document.querySelectorAll("#whoX .wcells span").forEach((s,k)=>{ s.textContent=v[k]||""; s.classList.toggle("cur",k===v.length&&document.activeElement===i); }); }
+  function whoDraw(){ const x=document.getElementById("whoX"); if(!x||!W.on) return; if(W.info&&!W.msg) W.info=false; const r=WR[W.role]||WR.master, fn=W.firm; let h="";
+    if(W.step==="who"){
+      const L=W.list; let rows;
+      if(!L) rows=`<div class="wg sk" aria-busy="true">${[0,1,2].map(()=>`<div class="wr"><span class="wav"></span><span class="wl"><i></i><i></i></span></div>`).join("")}</div>`;
+      else rows=`<div class="wg">${L.map((p,k)=>{ const off=p.has||p.dup; return `<button type="button" class="wr${off?" off":""}" data-wa="pick" data-k="${k}"${off?' aria-disabled="true"':""}><span class="wav" aria-hidden="true">${H(String(p.name).charAt(0).toUpperCase())}</span><span class="wl"><b>${H(p.name)}</b><small>${off?(p.dup?"одинаковое имя — скажите директору":"уже входит своим PIN"):H(String(p.post||WN[W.role]||"").toLowerCase())}</small></span>${off?"":`<span class="wch" aria-hidden="true">›</span>`}</button>`; }).join("")}</div>`;
+      h=`${whoTop([fn,r[0]].filter(Boolean).join(" · "))}<h1 class="wh">Кто вы?</h1><p class="ws">Нажмите на своё имя. Дальше вы придумаете свой PIN — и будете входить только им.</p>
+        ${rows}<p class="we${W.info?" info":""}" role="alert">${H(W.msg)}</p><p class="wn">Нет себя в списке — скажите директору: он добавит вас в «Сотрудники».</p>
+        <div class="wfoot"><p class="wn">Без своего PIN приложение не знает, кто вносит чеки и отмечает работу.</p></div>`;
+    } else if(W.step==="tel"){
+      const q=qrCount(), fg=W.mode==="forgot";
+      h=`${whoTop(fn,!fg)}<div class="wlogo">${LOGO}</div><h1 class="wh wc">${fg?"Забыли пароль?":"Вход"}</h1>
+        <p class="ws wc">${fg?"Введите свой номер — придёт СМС с кодом, потом придумаете новый пароль.":"Номер телефона, который записан у директора в «Сотрудниках». Придёт СМС с кодом."}</p>
+        <form id="wTelF" autocomplete="on" novalidate><label class="wlab" for="wTel">Номер телефона</label><input id="wTel" class="wtel" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="+7 900 000-00-00" value="${H(W.tel)}" enterkeyhint="send">
+        <button type="submit" class="wbtn w wgo"${W.busy?' aria-disabled="true"':""}>${W.busy?"Отправляю…":"Получить код"}</button></form>
+        <p class="we${W.info?" info":""}" role="alert">${H(W.msg)}</p>
+        <div class="wfoot">${fg?"":`<button type="button" class="wbtn g" data-wa="pass">Войти паролем</button>`}
+          <div class="wlinks">${fg?`<button type="button" data-wa="pass">Вспомнил пароль</button>`:`${window.APP_FIRM?`<button type="button" data-wa="otherco">Другая компания</button>`:`<button type="button" data-wa="newco">Новая компания</button>`}${q?`<button type="button" data-wa="qr">Мои заказы по QR · ${q}</button>`:""}`}</div></div>`;
+    } else if(W.step==="code"){
+      const who=!isTel(), a=againTxt();
+      h=`${whoTop(fn)}<h1 class="wh">Код из СМС</h1><p class="ws">${W.mask?`Отправили на <b class="wmask">${H(W.mask)}</b>.`:"Отправили СМС."} ${who?"Введите 6 цифр — так мы знаем, что это вы.":"Если номер есть в «Сотрудниках», СМС придёт через несколько секунд."}</p>
+        <form id="wCodeF" autocomplete="off" class="wcf${W.shake?" sh":""}"><div class="wcells" aria-hidden="true">${[0,1,2,3,4,5].map(()=>"<span></span>").join("")}</div>
+        <input id="wCode" class="wcode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" aria-label="Код из 6 цифр"${W.busy?" disabled":""}></form>
+        <p class="we" role="alert">${W.busy?"":H(W.msg)}</p><p class="wn wbusy">${W.busy?"Проверяю…":""}</p>
+        <p class="wn" id="wAgain">${a?H(a):`<button type="button" class="wlnk" data-wa="again">Отправить код ещё раз</button>`}</p>
+        <div class="wfoot"><p class="wn">Не пришёл код?${who?" Скажите директору — пусть проверит ваш номер в «Сотрудниках».":""}</p>${who?"":`<button type="button" class="wbtn g" data-wa="pass">Войти паролем</button>`}<button type="button" class="wbtn t" data-wa="${who?"back":"retel"}">${who?"Назад к списку":"Другой номер"}</button></div>`;
+    } else if(W.step==="p1"||W.step==="p2"){
+      const n=(W.step==="p1"?W.b1:W.b2).length, nm=W.sel?W.sel.name:(S.who||ls.g("cehqr-who")||""), ch=W.mode==="change"||W.mode==="forgot", pw=isTel()||!!W.ticket;
+      h=`${whoTop(fn)}${nm||!isTel()?`<div class="wpl"><span class="wav sm" aria-hidden="true">${H(nm.charAt(0).toUpperCase())}</span><span>${H(nm)}${W.role?" · "+H(WN[W.role]||""):""}</span></div>`:""}
+        <div class="wpt">${W.step==="p1"?(ch?(pw?"Новый пароль":"Новый PIN"):(pw?"Придумайте пароль":"Придумайте свой PIN")):(pw?"Повторите пароль":"Повторите PIN")}</div><div class="wps">Шаг ${W.step==="p1"?1:2} из 2 · 6 цифр</div>
+        <div class="wdots${W.shake?" sh":""}" aria-label="Введено цифр: ${n}">${whoDots(n)}</div>
+        <div class="wpe${W.msg?" bad":""}" role="alert">${W.busy?"Сохраняю…":W.msg?H(W.msg):W.step==="p1"?(pw?"Не дату рождения и не 111111.<br>Пароль знаете только вы — даже директор его не видит.":"Не дату рождения и не 111111.<br>Этот PIN знаете только вы — даже директор его не видит."):(pw?"Введите тот же пароль ещё раз":"Введите тот же PIN ещё раз")}</div>
+        ${whoKeys(n,W.step==="p1"?"Далее":"Готово")}<div style="height:12px"></div>`;
+    } else if(W.step==="done"){
+      const nm=(W.done&&W.done.name)||(W.sel&&W.sel.name)||"", ch=W.mode==="change";
+      if(isTel()) h=`<div class="wok">${ICO.ok}</div><div class="wct"><h1 class="wh">${H(nm?nm+", готово":"Готово")}</h1><p class="ws" style="margin:0">${W.mode==="forgot"?"Пароль изменён":"Вы вошли"}</p></div>
+        <div class="wcard"><div class="wli">${ICO.lock}<span>Вход сохранён на этом телефоне — больше ничего вводить не нужно.</span></div><div class="wli">${ICO.list}<span>На новом телефоне — номер и код из СМС${W.mode==="forgot"?". На других телефонах вход закрыт — войдите заново":""}.</span></div><div class="wli">${ICO.info}<span>Забыли пароль — «Забыл пароль» на экране входа: снова придёт СМС.</span></div></div>
+        <div class="wfoot"><button type="button" class="wbtn w" data-wa="start">Начать работу</button></div>`;
+      else h=`<div class="wok">${ICO.ok}</div><div class="wct"><h1 class="wh">${H(nm?nm+", готово":"Готово")}</h1><p class="ws" style="margin:0">${ch?"PIN изменён — входите новым":"Теперь вы входите своим PIN"}</p></div>
+        ${ch?"":`<div class="wcard"><div class="wli">${ICO.lock}<span>Общий PIN ${H(r[1])} больше не нужен — забудьте его.</span></div><div class="wli">${ICO.list}<span>Чеки, отметки и задачи теперь подписаны вашим именем — подменить нельзя.</span></div><div class="wli">${ICO.info}<span>Забыли PIN — «Забыл PIN» на экране входа или скажите директору: он сбросит.</span></div></div>`}
+        <div class="wfoot"><button type="button" class="wbtn w" data-wa="start">${W.mode==="app"?"Продолжить":ch?"Готово":"Начать работу"}</button></div>`;
+    }
+    x.innerHTML=`<div class="wi">${h}</div>`; W.shake=false;
+    if(W.step==="done") setTimeout(()=>{ const b=x.querySelector('[data-wa="start"]'); b&&b.focus(); },60);
+    if(W.step==="tel"&&!W.busy) setTimeout(()=>{ const i=document.getElementById("wTel"); if(i&&document.activeElement!==i){ i.focus(); try{ i.setSelectionRange(i.value.length,i.value.length); }catch(_){} } },60);
+    if(W.step==="code"){ codeCells(); if(!W.busy) setTimeout(()=>{ const i=document.getElementById("wCode"); if(i){ i.focus(); codeCells(); } },60);
+      clearInterval(W.cd); if(againTxt()) W.cd=setInterval(()=>{ const a=document.getElementById("wAgain"); if(!a||W.step!=="code"){ clearInterval(W.cd); return; } const t=againTxt(); if(t) a.textContent=t; else { a.innerHTML=`<button type="button" class="wlnk" data-wa="again">Отправить код ещё раз</button>`; clearInterval(W.cd); } },1000); } }
+  function weak(p){ if(/^(\d)\1+$/.test(p)) return true; const s="01234567890", r="09876543210"; return s.includes(p)||r.includes(p); }
+  function wBuzz(p){ try{ navigator.vibrate&&navigator.vibrate(p); }catch(_){} }
+  function wDigit(d){ if(!W.on||W.busy||!(W.step==="p1"||W.step==="p2")) return; const k=W.step==="p1"?"b1":"b2"; if(W[k].length>=12) return; W[k]+=d; W.msg=""; wBuzz(8); whoDraw(); }
+  function wDel(){ if(!W.on||W.busy) return; const k=W.step==="p1"?"b1":W.step==="p2"?"b2":""; if(!k||!W[k]) return; W[k]=W[k].slice(0,-1); wBuzz(8); whoDraw(); }
+  function wBack(){ if(W.busy) return;
+    if(W.step==="p2"){ W.step="p1"; W.b1=""; W.b2=""; W.msg=""; return whoDraw(); }
+    if(isTel()&&(W.step==="p1"||W.step==="code")){ W.step="tel"; W.b1=""; W.msg=""; W.ticket=""; return whoDraw(); }
+    if((W.step==="p1"||W.step==="code")&&W.mode!=="change"){ W.step="who"; W.b1=""; W.msg=""; W.ticket=""; return whoDraw(); }
+    if(W.step==="done") return;
+    if(W.mode==="tel") return;   // первый экран — назад некуда
+    if(W.mode==="forgot"){ whoClose(); LG.forcePin=true; tick(); return; }
+    const m=W.mode, res=W.resolve; whoClose();
+    if(m==="login"){ LG.pin=""; tick(); return; }
+    if(m==="stored"){ const K=KEYS(); Object.values(K).forEach(k=>ls.d(k)); ls.d("w24-ppask"); window.w24Cover(()=>{ try{ location.reload(); }catch(_){} }); return; }   /* общий PIN со старого входа — «‹» = выйти на экран входа */
+    if(res) res(false); }
+  async function wGo(){ if(!W.on||W.busy) return;
+    if(W.step==="p1"){ if(W.b1.length<6){ W.shake=true; wBuzz([20,40,20]); return whoDraw(); }
+      if(weak(W.b1)){ W.b1=""; W.msg="Слишком простой — придумайте другой"; W.shake=true; wBuzz([30,40,30]); return whoDraw(); }
+      W.step="p2"; W.b2=""; W.msg=""; return whoDraw(); }
+    if(W.step!=="p2") return;
+    if(W.b2.length<6){ W.shake=true; wBuzz([20,40,20]); return whoDraw(); }
+    if(W.b2!==W.b1){ W.step="p1"; W.b1=""; W.b2=""; W.msg="Не совпало — придумайте ещё раз"; W.shake=true; wBuzz([30,40,30]); return whoDraw(); }
+    W.busy=true; W.msg=""; whoDraw();
+    const body=W.mode==="change"?{action:"ppMine",pin:curPin(),ppin:W.b1}:isTel()?{action:"telSet",ticket:W.ticket,ppin:W.b1}:W.ticket?{action:"codeSet",ticket:W.ticket,ppin:W.b1}:{action:"ppMine",pin:W.pin,name:W.sel.name,ppin:W.b1};
+    const j=await post(body); W.busy=false;
+    if(!W.on) return;
+    if(!j){ W.msg="Нет связи — нажмите «Готово» ещё раз"; return whoDraw(); }   // введённое не стираем
+    if(!j.ok||!/^tgs\./.test(j.session||"")){
+      const e=j.error;
+      if(e==="ticket"){ W.step=isTel()?"tel":"who"; W.ticket=""; W.b1=""; W.b2=""; W.msg=j.msg||"Время вышло — получите код ещё раз"; return whoDraw(); }
+      if(e==="need_code"){ W.b1=""; W.b2=""; return wPick(W.sel); }
+      if(isTel()&&(e==="notfound"||e==="dup"||e==="tg_nopin")){ W.step="tel"; W.ticket=""; W.b1=""; W.b2=""; W.msg=j.msg||"Не получилось"; return whoDraw(); }
+      if(e==="pin"){ W.msg=""; whoClose(); if(W.mode==="app"&&W.resolve) W.resolve(false); toast(j.msg||"Войдите заново — PIN не подошёл"); if(W.mode!=="app"&&W.mode!=="change"){ LG.pin=""; tick(); } return; }
+      if(e==="pp_exists"||e==="role"||e==="notfound"||e==="name"){ if(W.list&&W.sel){ const q=W.list.find(p=>p.name===W.sel.name); if(q&&e==="pp_exists") q.has=true; } W.step=W.mode==="change"?"p1":"who"; W.b1=""; W.b2=""; W.info=false; W.msg=j.msg||"Не получилось"; return whoDraw(); }
+      if(e==="often"||e==="pp_often"){ W.msg=j.msg||"Много попыток — подождите"; return whoDraw(); }
+      W.step="p1"; W.b1=""; W.b2=""; W.msg=j.msg||"Этот PIN не подходит — придумайте другой"; W.shake=true; wBuzz([30,40,30]); return whoDraw(); }
+    W.done=j; W.step="done"; W.b1=""; W.b2=""; whoDraw(); }
+  /* пропуск — в телефон без перезагрузки (чек в открытой форме не теряется) */
+  function applySess(j){ const K=KEYS(); Object.values(K).forEach(k=>ls.d(k)); ls.d("w24-pin-dir"); ls.d("w24-pin-tech"); ls.d("w24-altpin"); ls.d("w24-lgdir"); ls.d("w24-ppask");
+    ls.s(K[j.role]||K.master,j.session); if(j.name){ ls.s("cehqr-who",String(j.name).slice(0,40)); try{ S.who=String(j.name).slice(0,40); }catch(_){} }
+    try{ const sp=j.session, r=j.role; if(S.shop){ S.shop.techPin=(r==="tech"||r==="tester")?sp:""; S.shop.officePin=r==="office"?sp:""; S.shop.supPin=r==="supply"?sp:""; } S.pin=r==="master"?sp:""; if(r==="supply"&&S.sup) S.sup.pin=sp; }catch(_){} }
+  function wStart(){ const j=W.done, m=W.mode, res=W.resolve; if(!j) return; whoClose();
+    if(m==="tel"||m==="forgot"){ lgDone(j,""); return; }
+    if(m==="login"||m==="stored"){ LG.pin=""; lgDone(j,""); return; }
+    applySess(j); if(m==="change") toast("PIN изменён"); if(res) res(true); }
+  function whoClick(e){ const b=e.target.closest&&e.target.closest("button"); if(!b) return;
+    if(b.dataset.wd!=null){ if(b.getAttribute("aria-disabled")!=="true") wDigit(b.dataset.wd); return; }
+    const a=b.dataset.wa;
+    if(a==="pick"){ const p=W.list&&W.list[+b.dataset.k]; if(!p) return; if(p.has||p.dup){ W.info=true; W.msg=p.dup?"Два сотрудника с именем «"+p.name+"» — скажите директору, пусть уточнит имя":p.name+" уже входит своим PIN. Это вы — нажмите «‹» и войдите своим PIN. Забыли — «Забыл PIN»"; return whoDraw(); }
+      return wPick(p); }
+    if(b.getAttribute("aria-disabled")==="true") return;
+    if(a==="back") return wBack(); if(a==="del") return wDel(); if(a==="go") return wGo(); if(a==="start") return wStart();
+    if(a==="again") return isTel()?telSend(true):wPick(W.sel,true);
+    if(a==="retel"){ W.step="tel"; W.msg=""; W.ticket=""; return whoDraw(); }
+    if(a==="pass"){ whoClose(); LG.forcePin=true; LG.pause=0; tick(); return; }
+    if(a==="newco"){ whoClose(); coSheet(); return; }
+    if(a==="otherco"){ location.href=location.pathname+"?f=0"; return; }
+    if(a==="qr"){ whoClose(); ss.s("w24-lgskip","1"); try{ setView("orders"); }catch(_){ try{ render(); }catch(__){} } return; } }
+  /* «Кто вы?» → выбрал себя → код по СМС на его номер из «Сотрудников» (15.11). СМС не подключены / нет номера — как раньше, сразу свой PIN */
+  async function wPick(p,again){ if(!p||W.busy) return; W.sel=p; W.busy=true; W.msg=""; W.info=false; if(!again){ W.step="code"; W.mask=""; W.ticket=""; } whoDraw();
+    const j=await post({action:"ppCode",pin:W.pin,name:p.name}); W.busy=false; if(!W.on) return;
+    if(!j){ W.step=again?"code":"who"; W.msg="Нет связи — попробуйте ещё раз"; return whoDraw(); }
+    if(j.ok&&j.via==="sms"){ W.step="code"; W.mask=j.mask||""; W.sent=Date.now(); W.msg=""; return whoDraw(); }
+    if(j.ok&&j.via==="none"||j.error==="action"){ W.step="p1"; W.b1=""; W.b2=""; W.msg=""; return whoDraw(); }   // нет СМС (или старый сервер) — как раньше
+    if(j.error==="often"&&W.step==="code"&&j.wait===60){ W.msg=j.msg; return whoDraw(); }
+    if(j.error==="pin"){ whoClose(); toast(j.msg||"Войдите заново — PIN не подошёл"); if(W.mode==="login"){ LG.pin=""; tick(); } return; }
+    if(j.error==="pp_exists"&&W.list){ const q=W.list.find(x=>x.name===p.name); if(q) q.has=true; }
+    W.step=again?"code":"who"; W.msg=j.msg||"Не получилось"; whoDraw(); }
+  /* вход по номеру: номер → СМС */
+  async function telSend(again){ const i=document.getElementById("wTel"); if(!again&&i) W.tel=fmtTel(i.value); const d=telDigits(W.tel);
+    if(d.length<11||d.length>15){ W.msg="Введите номер полностью: +7 и 10 цифр"; W.shake=true; return whoDraw(); }
+    W.busy=true; W.msg=""; whoDraw(); const j=await post({action:"telCode",tel:d}); W.busy=false; if(!W.on) return;
+    if(!j){ W.msg="Нет связи — проверьте интернет"; return whoDraw(); }
+    if(!j.ok){ if(j.error==="often"&&j.wait===60&&W.sent){ W.step="code"; W.msg=j.msg; return whoDraw(); } W.msg=j.msg||"Не получилось"; return whoDraw(); }
+    W.mask=j.mask||fmtTel(d); W.sent=Date.now(); W.step="code"; W.msg=""; whoDraw(); }
+  async function codeGo(){ const i=document.getElementById("wCode"), v=String(i&&i.value||"").replace(/\D/g,""); if(v.length!==6||W.busy) return;
+    W.busy=true; W.msg=""; whoDraw();
+    const j=isTel()?await post({action:"telCheck",tel:telDigits(W.tel),code:v}):await post({action:"codeCheck",to:W.sel&&W.sel.name,code:v}); W.busy=false; if(!W.on) return;
+    if(!j){ W.msg="Нет связи — введите код ещё раз"; return whoDraw(); }
+    if(!j.ok){ W.msg=j.msg||"Неверный код"; W.shake=true; wBuzz([30,40,30]); return whoDraw(); }
+    W.ticket=j.ticket; W.msg="";
+    if(!isTel()){ W.step="p1"; W.b1=""; W.b2=""; return whoDraw(); }
+    telFirm(); }   /* только эта компания: номер ищется в её «Сотрудниках» (проверка входа 15.11 — выбора фирмы нет) */
+  /* код верный: пароль есть — сразу вход; нет — «Придумайте пароль». «Забыл пароль» — всегда новый пароль */
+  async function telFirm(){
+    if(W.mode==="forgot"){ W.step="p1"; W.b1=""; W.b2=""; W.sel=null; return whoDraw(); }
+    W.busy=true; whoDraw(); const j=await post({action:"telSet",ticket:W.ticket}); W.busy=false; if(!W.on) return;
+    if(!j){ W.msg="Нет связи — попробуйте ещё раз"; return whoDraw(); }
+    if(j.ok&&/^tgs\./.test(j.session||"")){ whoClose(); lgDone(j,""); return; }   // пароль уже есть — новый телефон подтвердили кодом: сразу в приложение
+    if(j.error==="need_pin"){ W.sel={name:j.name||"",post:""}; W.role=j.role||W.role; W.step="p1"; W.b1=""; W.b2=""; W.msg=""; return whoDraw(); }
+    W.step="tel"; W.ticket=""; W.msg=j.msg||"Не получилось"; whoDraw(); }
+  function telOpen(mode){ if(W.on) return; whoOpen({mode,role:"master",firm:firmName()}); }
+  window.addEventListener("keydown",e=>{ if(!W.on) return; const t=e.target; if(t&&/^(INPUT|TEXTAREA)$/.test(t.tagName)){ if(e.key==="Escape"&&document.getElementById("whoX")?.contains(t)){ e.preventDefault(); wBack(); } return; }
+    if(e.ctrlKey||e.metaKey||e.altKey) return;
+    if(/^[0-9]$/.test(e.key)){ e.preventDefault(); e.stopPropagation(); wDigit(e.key); return; }
+    if(e.key==="Backspace"){ e.preventDefault(); e.stopPropagation(); wDel(); return; }
+    if(e.key==="Enter"){ if(W.step==="p1"||W.step==="p2"){ e.preventDefault(); e.stopPropagation(); wGo(); } return; }
+    if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); wBack(); } },true);
+
+  document.addEventListener("submit",e=>{ const f=e.target; if(!f||(f.id!=="wTelF"&&f.id!=="wCodeF")) return; e.preventDefault(); e.stopPropagation(); if(f.id==="wTelF") telSend(false); else codeGo(); },true);
+  document.addEventListener("input",e=>{ const t=e.target; if(!t||!W.on) return;
+    if(t.id==="wTel"){ const v=fmtTel(t.value); if(v!==t.value){ t.value=v; try{ t.setSelectionRange(v.length,v.length); }catch(_){} } W.tel=v; if(W.msg){ W.msg=""; const er=document.querySelector("#whoX .we"); if(er) er.textContent=""; } }
+    if(t.id==="wCode"){ t.value=t.value.replace(/\D/g,"").slice(0,6); if(W.msg){ W.msg=""; const er=document.querySelector("#whoX .we"); if(er) er.textContent=""; } codeCells(); if(t.value.length===6) codeGo(); } });
+  document.addEventListener("focusin",e=>{ if(e.target&&e.target.id==="wCode") codeCells(); }); document.addEventListener("focusout",e=>{ if(e.target&&e.target.id==="wCode") setTimeout(codeCells,0); });
+  /* вход общим PIN роли (из onStart): сразу «Кто вы?» с серыми заготовками, список — следом */
+  async function whoAfterLogin(j,pin){ LG.pin=pin; whoOpen({mode:"login",pin,role:j.role});
+    const w=await whoGet(pin); if(!W.on||W.mode!=="login") return;
+    if(whoBad(w)||(w.ok&&w.free)){ whoClose(); if(w&&w.ok&&w.why==="empty") ss.s("w24-whohint",j.role); LG.pin=""; lgDone(j,pin); return; }
+    if(!w.ok){ whoClose(); LG.pin=""; tick(); return; }
+    W.role=w.role||j.role; W.firm=w.firm||W.firm; W.list=whoSort(w.list); whoDraw(); }
+  /* фирма без «Сотрудников» своей роли — пустили как раньше, подсказка один раз */
+  setTimeout(()=>{ const r=ss.g("w24-whohint"); if(!r) return; ss.d("w24-whohint"); setTimeout(()=>{ try{ toast(r==="tech"?"Добавьте сотрудников в «Сотрудники» — тогда у каждого будет свой PIN":"Директор ещё не добавил сотрудников — потом у каждого будет свой PIN"); }catch(_){} },2500); },400);
+
+  /* старый вход: на телефоне сохранён общий PIN роли — при открытии тот же «Кто вы?». Короткий личный PIN — предложить новый (можно назад) */
+  let whoChecked=false, whoTries=0;
+  async function storedCheck(){ if(whoChecked||W.on) return; try{
+    if(window.APP_DEMO||!S.site||!S.site.stagesUrl||inTg()||!lgIn()) return;
+    const p=curPin(); if(!p) return; whoChecked=true;
+    if(/^tgs\./.test(p)){ if(ls.g("w24-ppask")==="weak"&&!ss.g("w24-ppask-x")){ ss.s("w24-ppask-x","1"); whoOpen({mode:"change",role:passRole()}); } return; }
+    if(ls.g("w24-lgdir")==="1") return;
+    const w=await whoGet(p); if(!w&&++whoTries<4){ whoChecked=false; return; }   // нет связи — ещё попытка (до 4)
+    if(whoBad(w)||!w.ok||w.free) return;
+    whoOpen({mode:"stored",pin:p,role:w.role,firm:w.firm,list:w.list}); }catch(_){} }
+  setInterval(storedCheck,1200); setTimeout(storedCheck,300);
+
+  /* общим PIN внутри приложения — чек, согласование: лист «… только под своим именем» вместо всплывающей надписи */
+  function meSheet(body){ return new Promise(res=>{ document.getElementById("whoSh")?.remove(); const a=String(body&&body.action||""), r=WR[(S.shop&&S.shop.role)||"master"]||WR.master;
+    const what=/^receipt/.test(a)?["Чек","чек не пропадёт"]:/^buy/.test(a)?["Согласование","введённое не пропадёт"]:["Это","введённое не пропадёт"];
+    const m=document.createElement("div"); m.id="whoSh"; m.setAttribute("role","dialog"); m.setAttribute("aria-modal","true"); m.setAttribute("aria-label",what[0]+" — только под своим именем");
+    m.innerHTML=`<div class="wsd" data-ws="x"></div><div class="wsc"><div class="wgrab" aria-hidden="true"></div><div class="wico">${ICO.user}</div><h2>${what[0]} — только под своим именем</h2>
+      <p>Вы вошли общим PIN ${H(r[1])}, и приложение не знает, кто вы. Придумайте свой PIN — это 20 секунд, ${what[1]}.</p>
+      <button type="button" class="wbtn w" data-ws="pin">Придумать свой PIN</button><button type="button" class="wbtn g" data-ws="x">Не сейчас</button></div>`;
+    const done=v=>{ m.classList.remove("on"); setTimeout(()=>m.remove(),200); res(v); };
+    m.addEventListener("click",e=>{ const b=e.target.closest("[data-ws]"); if(!b) return; done(b.dataset.ws==="pin"); });
+    document.body.appendChild(m); requestAnimationFrame(()=>m.classList.add("on")); setTimeout(()=>{ const b=m.querySelector('[data-ws="pin"]'); b&&b.focus(); },60); }); }
+  async function meFlow(body){ if(!(await meSheet(body))) return false;
+    const pin=curPin(), w=await whoGet(pin);
+    if(!w){ toast("Нет связи — попробуйте ещё раз"); return false; }
+    if(!w.ok){ toast("Войдите заново — PIN не подошёл"); return false; }
+    if(w.free){ toast(w.why==="empty"?"Директор ещё не добавил вас в «Сотрудники» — скажите ему":"Не получилось — войдите заново"); return false; }
+    return await new Promise(res=>whoOpen({mode:"app",pin,role:w.role,firm:w.firm,list:w.list,resolve:res})); }
+  window.w24Who=async function(){ if(W.on) return; const p=curPin(); if(!p) return;
+    if(/^tgs\./.test(p)) return whoOpen({mode:"change",role:passRole()});
+    const w=await whoGet(p); if(!w||!w.ok){ toast(!w?"Нет связи — попробуйте ещё раз":"Войдите заново — PIN не подошёл"); return; }
+    if(w.free){ toast(w.why==="empty"?"Директор ещё не добавил вас в «Сотрудники» — скажите ему":w.why==="dir"?"Вы вошли PIN директора — он и есть ваш личный":"Свой PIN здесь не нужен"); return; }
+    whoOpen({mode:"app",pin:p,role:w.role,firm:w.firm,list:w.list,resolve:ok=>{ if(ok) setTimeout(()=>{ try{ render(); }catch(_){} },50); }}); };
+  if(typeof shpPostRaw==="function"){ const _lgMe=shpPostRaw; shpPostRaw=async function(body){ const j=await _lgMe.apply(this,arguments);
+    try{ if(j&&j.ok===false&&j.right==="me"&&lgShared()&&!W.on){ const old=curPin(), ok=await meFlow(body);
+        if(ok&&curPin()!==old){ const b2=Object.assign({},body); if(b2.pin===old) delete b2.pin; delete b2.who; return await _lgMe.call(this,b2); }
+        return Object.assign({},j,{msg:"Не сохранено — нужен свой PIN. Введённое осталось в форме"}); } }catch(_){}
+    return j; }; }
+
+  /* «Сменить свой PIN» / «Придумать свой PIN» — в «Ещё» (Work24link) и в меню профиля (Технолог 3D) */
+  const myPinT=()=>/^tgs\./.test(curPin())?["Сменить свой PIN","Новый PIN — старый перестанет работать"]:["Придумать свой PIN","Чтобы чеки и отметки были под вашим именем"];
+  const myPinOk=()=>{ const p=curPin(); return !!p&&!window.APP_DEMO&&(/^tgs\./.test(p)||lgShared()); };
+  if(typeof shpMoreHtml==="function"){ const _lgMH=shpMoreHtml; shpMoreHtml=function(){ const h=String(_lgMH.apply(this,arguments)); try{ if(!myPinOk()||h.includes('data-act="lg-mypin"')) return h; const t=myPinT();
+      const li=`<li><button type="button" class="shp-row" data-act="lg-mypin" data-v=""><span class="shp-av" aria-hidden="true">${ICO.lock}</span><span class="shp-rb"><b>${t[0]}</b><span class="muted">${t[1]}</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
+      const k=h.indexOf('<li><button type="button" class="shp-row" data-act="shp-out"'); return k>=0?h.slice(0,k)+li+h.slice(k):h; }catch(_){ return h; } }; }
+  if(typeof accOpen==="function"){ const _lgAO=accOpen; accOpen=function(){ const r=_lgAO.apply(this,arguments);
+    try{ const g=document.querySelector("#accM .modal-card > div"); if(g&&myPinOk()&&!g.querySelector('[data-act="lg-mypin"]')){ const b=document.createElement("button"); b.type="button"; b.className="btn"; b.dataset.act="lg-mypin"; b.textContent=myPinT()[0]; const o=g.querySelector("[data-acc-out],[data-acc='pin'],[data-acc='all']"); g.insertBefore(b,o||null); } }catch(_){} return r; }; }
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-act="lg-mypin"]'); if(!b) return; e.preventDefault(); e.stopPropagation(); document.getElementById("accM")?.remove(); window.w24Who(); },true);
 
   /* ---------- 4. карточка сотрудника: почта и «Пригласить»; «Пригласить работника» — почта или Телеграм ---------- */
   const siteInv=()=>{ try{ return typeof invWebUrl==="function"?invWebUrl("").replace(/#inv=.*$/,"#inv="):""; }catch(_){ return ""; } };
@@ -25069,16 +25481,71 @@ body.pp-on #toast{display:none!important}
         return _lgPR.call(this,body).then(j=>{ if(j&&j.ok&&j.msg) setTimeout(()=>{ try{ toast(j.msg); }catch(_){} },700); return j; }); } } }catch(_){}
     return _lgPR.apply(this,arguments); }; }
 
-  /* ---------- 5. «Только личные PIN» — в окне директора «Что можно технологу» ---------- */
-  if(typeof dirModal==="function"){ const _lgDM=dirModal; dirModal=function(){ const r=_lgDM.apply(this,arguments);
+  /* ---------- 5а. «Только личные PIN» — в окне директора (как на живом сайте; свойство PP_ONLY, проверка входа 15.11: не трогаем) ---------- */
+  if(typeof dirModal==="function"){ const _lgDM0=dirModal; dirModal=function(){ const r=_lgDM0.apply(this,arguments);
     try{ const m=document.getElementById("dirM"); if(!m||!S.shop||!S.shop.hasDir) return r; const paint=on=>{ const c=m.querySelector(".dir-pin"); if(!c) return; let w=m.querySelector(".lg-only"); if(!w){ w=document.createElement("div"); w.className="dir-pin lg-only"; c.insertAdjacentElement("afterend",w); }
-        w.innerHTML=`<label class="dir-r" style="border:0;padding:0"><span><b>Только личные PIN</b><small>Общие PIN ролей (мастера, офис, технолог, снабженец) больше не пускают. Каждый входит своим PIN. PIN директора остаётся.</small></span><input type="checkbox" role="switch" data-lgonly="1"${on?" checked":""}></label>`; };
+        w.innerHTML=`<label class="dir-r" style="border:0;padding:0"><span><b>Только личные PIN</b><small>Общие PIN ролей (мастера, офис, технолог, снабженец) больше не пускают. Каждый входит своим PIN. PIN директора остаётся.</small></span><input type="checkbox" role="switch" data-lgpp="1"${on?" checked":""}></label>`; };
       paint(!!S.shop.ppOnly); shpPostRaw({action:"ppOnly"}).then(j=>{ if(j&&j.ok){ S.shop.ppOnly=!!j.on; if(document.getElementById("dirM")===m) paint(S.shop.ppOnly); } });
-      m.addEventListener("change",async e=>{ const c=e.target.closest&&e.target.closest("[data-lgonly]"); if(!c) return; e.stopPropagation(); const on=c.checked;
+      m.addEventListener("change",async e=>{ const c=e.target.closest&&e.target.closest("[data-lgpp]"); if(!c) return; e.stopPropagation(); const on=c.checked;
         if(on&&!(await appConfirm("Включить «Только личные PIN»? Кто входит общим PIN роли, не войдёт — ему нужно придумать свой PIN (кнопка «Забыл PIN» на экране входа или приглашение).","Включить"))){ c.checked=false; return; }
         c.disabled=true; const j=await shpPostRaw({action:"ppOnly",on}); c.disabled=false;
         if(!j||!j.ok){ c.checked=!on; toast((j&&j.msg)||"Не получилось — нет связи"); return; } S.shop.ppOnly=!!j.on; toast(j.on?"Включено: только личные PIN":"Выключено: общие PIN ролей снова пускают"); },true);
     }catch(_){} return r; }; }
+
+  /* ---------- 5. «Вход по номеру телефона» — в окне директора «Права сотрудников» (15.11 19:06): ключ SMS.ru и «Вход только по номеру телефона» (telOnly) ----------
+     Ключ вводит только директор; сервер проверяет его запросом баланса и хранит у себя. Обратно приходит только «подключено / нет» — поле ключа после сохранения пустое. */
+  if(typeof dirModal==="function"){ const _lgDM=dirModal; dirModal=function(){ const r=_lgDM.apply(this,arguments);
+    try{ const m=document.getElementById("dirM"); if(!m||!S.shop) return r; const c=m.querySelector(".dir-pin"); if(!c) return r;
+      const T={st:null,only:!!S.shop.telOnly,form:false,busy:false,msg:""};
+      let w=m.querySelector(".lg-tel"); if(!w){ w=document.createElement("div"); w.className="dir-pin lg-tel"; c.insertAdjacentElement("afterend",w); }
+      const paint=()=>{ if(!w.isConnected) return; const st=T.st, on=!!(st&&st.on);
+        w.innerHTML=`<b>Вход по номеру телефона</b><p class="muted" style="margin:2px 0 10px">Сотрудник вводит свой номер из «Сотрудников» → код по СМС → свой пароль. Общий PIN не нужен.</p>
+          <div class="lgt-row"><span>СМС для входа (SMS.ru)</span><span class="lgt-st ${st===null?"":on?"ok":"no"}">${st===null?"проверяю…":on?"подключено"+(st.today!=null?` · сегодня ${st.today} из ${st.max||30}`:""):"не подключено"}</span></div>
+          ${T.form?`<form class="lgt-f" autocomplete="off"><label>Ключ API из кабинета SMS.ru<input name="k" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="64" placeholder="вставьте ключ" required></label>
+            <label>Имя отправителя (необязательно)<input name="from" maxlength="11" autocomplete="off" autocapitalize="none" placeholder="латиницей, если одобрено в SMS.ru" value="${H(st&&st.from||"")}"></label>
+            <p class="muted lgt-n">Ключ хранится только на сервере — здесь его больше не покажем. Каждое СМС оплачивается с баланса SMS.ru.</p>
+            ${T.msg?`<p class="field-err" role="alert">${H(T.msg)}</p>`:""}<div class="lgt-b"><button type="submit" class="btn primary"${T.busy?" disabled":""}>${T.busy?"Проверяю…":"Подключить"}</button><button type="button" class="btn" data-lgt="cancel">Отмена</button></div></form>`
+          :`<div class="lgt-b"><button type="button" class="btn${on?"":" primary"}" data-lgt="form">${on?"Заменить ключ":"Вставить ключ"}</button>${on?`<button type="button" class="btn" data-lgt="off">Отключить</button>`:""}</div>`}
+          <label class="dir-r lgt-sw"><span><b>Вход только по номеру телефона</b><small>Общие PIN ролей и PIN директора больше не пускают — каждый входит своим номером и паролем. Включить можно, когда СМС подключены, вы сами вошли по номеру и ваш номер ни у кого больше не записан. Скрипт Базиса и расширение SketchUp работают как раньше.</small></span><input type="checkbox" role="switch" data-lgonly="1"${T.only?" checked":""}></label>`;
+        if(T.form) setTimeout(()=>{ const i=w.querySelector('input[name="k"]'); i&&i.focus(); },40); };
+      paint();
+      shpPostRaw({action:"smsKey"}).then(j=>{ T.st=j&&j.ok?j:{on:false}; paint(); });
+      shpPostRaw({action:"telOnly"}).then(j=>{ if(j&&j.ok){ S.shop.telOnly=T.only=!!j.on; paint(); } });
+      w.addEventListener("click",async e=>{ const b=e.target.closest("[data-lgt]"); if(!b) return; e.stopPropagation(); const a=b.dataset.lgt;
+        if(a==="form"){ T.form=true; T.msg=""; return paint(); } if(a==="cancel"){ T.form=false; T.msg=""; return paint(); }
+        if(a==="off"){ if(T.only){ toast("Сначала выключите «Вход только по номеру телефона»"); return; } if(!(await appConfirm("Отключить вход по СМС? Новые сотрудники не смогут войти по номеру, пока не подключите снова.","Отключить",true))) return;
+          b.disabled=true; const j=await shpPostRaw({action:"smsKey",off:true}); b.disabled=false; if(!j||!j.ok){ toast((j&&j.msg)||"Не получилось — нет связи"); return; } T.st={on:false}; paint(); toast("Вход по СМС отключён"); } });
+      w.addEventListener("submit",async e=>{ const f=e.target.closest(".lgt-f"); if(!f) return; e.preventDefault(); e.stopPropagation(); const k=String(f.elements.k.value||"").trim(), from=String(f.elements.from.value||"").trim();
+        if(!k){ T.msg="Вставьте ключ из кабинета SMS.ru"; return paint(); }
+        T.busy=true; T.msg=""; paint(); const j=await shpPostRaw({action:"smsKey",key:k,from}); T.busy=false;
+        if(!j||!j.ok){ T.msg=(j&&j.msg)||"Нет связи — попробуйте ещё раз"; paint(); return; }   // поле ключа очищается (перерисовка) — ключ не остаётся на экране
+        T.form=false; T.st={on:true,from:j.from||"",today:0,max:30}; paint(); toast("СМС подключены"+(j.bal!=null?` · баланс ${j.bal} ₽`:"")); ls.s("w24-telon","1"); },true);
+      w.addEventListener("change",async e=>{ const cb=e.target.closest&&e.target.closest("[data-lgonly]"); if(!cb) return; e.stopPropagation(); const on=cb.checked;
+        if(on&&!(await appConfirm("Включить «Вход только по номеру телефона»? Общие PIN ролей и PIN директора перестанут пускать сразу — у всех. Кто ещё не вошёл по номеру, войдёт так: номер → код из СМС → свой пароль.","Включить"))){ cb.checked=false; return; }
+        cb.disabled=true; const j=await shpPostRaw({action:"telOnly",on}); cb.disabled=false;
+        if(!j||!j.ok){ cb.checked=!on; toast((j&&j.msg)||"Не получилось — нет связи"); return; } S.shop.telOnly=T.only=!!j.on; toast(j.on?"Включено: вход только по номеру телефона":"Выключено: общие PIN снова пускают"); },true);
+    }catch(_){} return r; }; }
+
+  /* карточка сотрудника: номер — для входа по СМС; у директора — «Выйти на всех телефонах» (потеряли телефон) */
+  if(typeof shpPersonModal==="function"){ const _lgPM2=shpPersonModal; shpPersonModal=function(name){ const r=_lgPM2.apply(this,arguments);
+    try{ const f=document.getElementById("shpPersonForm"); if(!f) return r; const ph=f.elements.phone&&f.elements.phone.closest("label");
+      if(ph&&!ph.querySelector(".lgt-ph")){ const sp=document.createElement("span"); sp.className="shp-tghint lgt-ph"; sp.textContent="По этому номеру человек входит: придёт СМС с кодом."; ph.appendChild(sp); }
+      const isDir=typeof dirIs==="function"?dirIs():!!(S.shop&&S.shop.tech&&S.shop.dir);
+      if(name&&isDir&&!f.querySelector('[data-lgt="kill"]')){ const b=document.createElement("button"); b.type="button"; b.className="btn lgt-kill"; b.dataset.lgt="kill"; b.dataset.k=name; b.textContent="Выйти на всех телефонах";
+        const box=document.createElement("div"); box.className="lgt-kbox"; box.appendChild(b); const s2=document.createElement("span"); s2.className="shp-tghint"; s2.textContent="Если телефон потеряли: все входы этого человека закроются сразу. Его пароль остаётся — войдёт заново."; box.appendChild(s2);
+        const pp=f.querySelector(".nt-pp"), mb=f.querySelector(".shp-mb"); if(pp) pp.appendChild(box); else if(mb) mb.insertAdjacentElement("beforebegin",box); else f.appendChild(box); } }catch(_){} return r; }; }
+  document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.closest('[data-lgt="kill"]'); if(!b) return; e.preventDefault(); e.stopPropagation(); const nm=b.dataset.k;
+    if(!(await appConfirm("Закрыть все входы «"+nm+"» на всех телефонах? Он сразу выйдет из приложения.","Выйти на всех",true))) return;
+    b.disabled=true; const j=await shpPostRaw({action:"sessKill",name:nm}); b.disabled=false;
+    if(!j||!j.ok){ toast((j&&j.msg)||"Не получилось — нет связи"); return; } toast("«"+nm+"» вышел на всех телефонах"); },true);
+
+  /* сборка «Безопасность» (15.11): «Выйти» гасит вход через версию входа человека — выходят все его телефоны. Окно «Выйти?» говорит об этом честно */
+  if(typeof appConfirm==="function"){ const _lgAC=appConfirm; appConfirm=function(msg){ try{ if(msg==="Выйти из всех режимов на этом телефоне?"&&Object.values(KEYS()).some(k=>/^tgs\./.test(ls.g(k)))) arguments[0]="Выйти? Вход закроется и на других ваших телефонах — войти снова можно номером и кодом или своим паролем."; }catch(_){} return _lgAC.apply(this,arguments); }; }
+  /* «Выйти» на телефоне: когда пропуск исчез с телефона (после окна «Выйти?»), гасим его и на сервере — копия пропуска тоже не войдёт */
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-acc-out],[data-act="shp-out"],[data-act="site-logout"]'); if(!b) return;
+    const K=KEYS(), had=Object.values(K).map(k=>ls.g(k)).filter(v=>/^tgs\./.test(v)); if(!had.length) return; const T0=Date.now();
+    clearInterval(LG.outT); LG.outT=setInterval(()=>{ if(Date.now()-T0>60000){ clearInterval(LG.outT); return; } const now=Object.values(K).map(k=>ls.g(k));
+      const gone=had.filter(v=>!now.includes(v)); if(!gone.length) return; clearInterval(LG.outT); gone.forEach(v=>post({action:"sessOut",pin:v})); },500); },true);
 
   /* ---------- 6. старые экраны «Проекты открываются по QR-коду» и кнопки ролей больше не видны (их перекрывает экран PIN) ---------- */
   const lockable=()=>!window.APP_DEMO&&!!(S.site&&S.site.stagesUrl)&&!lgIn()&&!inTg()&&!ss.g("w24-lgskip")&&!ss.g("w24-newfirm");
@@ -25097,6 +25564,123 @@ body.pp-on #toast{display:none!important}
   /* ---------- оформление (как окно PIN: графит, тёплый серый, без фиолетового) ---------- */
   const st=document.createElement("style"); st.textContent=`
 #lgM,#lgNM,#lgNewM{visibility:hidden}
+/* «Кто вы?» и «Придумайте свой PIN» (15.11, вариант А) — чёрный iPhone/Claude; светлая тема — ниже */
+#whoX{--wbg:#0b0b0b;--wl1:#1c1c1e;--wl2:#2a2a2c;--wln:rgba(255,255,255,.08);--wt1:#fff;--wt2:rgba(255,255,255,.6);--wt3:rgba(255,255,255,.35);--wk:rgba(255,255,255,.10);--wkb:rgba(255,255,255,.14);--wka:rgba(255,255,255,.38);
+  position:fixed;inset:0;z-index:2147482500;display:flex;justify-content:center;background:var(--wbg);color:var(--wt1);font:400 16px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;overscroll-behavior:contain;animation:whoIn .2s ease}
+@keyframes whoIn{from{opacity:0}to{opacity:1}}
+#whoX *{box-sizing:border-box}
+#whoX button{all:unset;box-sizing:border-box;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#whoX button:focus-visible{outline:2px solid var(--wt2);outline-offset:3px}
+#whoX .wi{width:100%;max-width:430px;height:100%;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top,0px) + 14px) 20px calc(env(safe-area-inset-bottom,0px) + 18px);overflow:auto}
+#whoX .wt{display:flex;align-items:center;justify-content:space-between;min-height:44px;gap:8px}
+#whoX .wb{width:44px;height:44px;border-radius:50%;background:var(--wk);border:1px solid var(--wln)!important;display:grid;place-items:center;color:var(--wt1);flex:none}
+#whoX .wb svg{width:22px;height:22px}#whoX .wb:active{transform:scale(.94);transition:transform .15s}
+#whoX .wf{flex:1;text-align:center;font-size:13.5px;color:var(--wt2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#whoX .wsp{width:44px;flex:none}
+#whoX .wh{font-size:30px;font-weight:700;margin:22px 0 6px;letter-spacing:.2px;color:var(--wt1)}
+#whoX .ws{font-size:15px;color:var(--wt2);margin:0 0 20px;line-height:1.35}
+#whoX .wg{background:var(--wl1);border-radius:20px;overflow:hidden;flex:none}
+#whoX .wr{display:flex;align-items:center;gap:14px;min-height:62px;padding:8px 16px;width:100%;color:var(--wt1)}
+#whoX .wr+.wr{border-top:1px solid var(--wln)!important}
+#whoX .wr:not(.off):active{background:var(--wk)}
+#whoX .wav{flex:none;width:40px;height:40px;border-radius:50%;background:var(--wl2);display:grid;place-items:center;font-weight:600;font-size:17px;color:var(--wt1)}
+#whoX .wav.sm{width:32px;height:32px;font-size:15px;font-weight:700}
+#whoX .wl{display:flex;flex-direction:column;min-width:0;flex:1}
+#whoX .wl b{font-weight:500;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#whoX .wl small{font-size:13px;color:var(--wt2);margin-top:2px}
+#whoX .wch{margin-left:auto;color:var(--wt3);font-size:24px;line-height:1}
+#whoX .wr.off{cursor:default}#whoX .wr.off b{color:var(--wt3)}#whoX .wr.off .wav{opacity:.45}#whoX .wr.off small{color:var(--wt3)}
+#whoX .wg.sk .wav,#whoX .wg.sk .wl i{background:var(--wl2);animation:whoSk 1.2s ease-in-out infinite}
+#whoX .wg.sk .wl i{display:block;height:12px;border-radius:6px;width:42%;margin:3px 0}#whoX .wg.sk .wl i+i{width:26%;height:10px}
+@keyframes whoSk{0%,100%{opacity:.55}50%{opacity:1}}
+#whoX .we{min-height:0;margin:10px 4px 0;font-size:14px;color:#ff453a;text-align:center;line-height:1.35}#whoX .we.info{color:var(--wt1)}#whoX .we:empty{display:none}
+#whoX .wn{font-size:13.5px;color:var(--wt2);text-align:center;margin:16px 8px 0;line-height:1.4}
+#whoX .wfoot{margin-top:auto;padding-top:18px}#whoX .wfoot .wn{margin-bottom:6px}
+#whoX .wpl{align-self:center;display:inline-flex;align-items:center;gap:10px;max-width:100%;padding:6px 16px 6px 6px;border-radius:999px;background:var(--wk);font-size:17px;margin-top:6px;min-height:44px}
+#whoX .wpl>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#whoX .wpt{text-align:center;font-size:23px;margin:24px 0 4px}
+#whoX .wps{text-align:center;font-size:13.5px;color:var(--wt2)}
+#whoX .wdots{display:flex;flex-wrap:wrap;justify-content:center;gap:16px;margin:18px auto 0;max-width:280px}
+#whoX .wdots i{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--wt1)!important;background:none;transition:background .1s}
+#whoX .wdots i.on{background:var(--wt1)!important}
+#whoX .wdots.sh{animation:ppSh .42s}
+#whoX .wpe{min-height:44px;text-align:center;font-size:13.5px;color:var(--wt2);margin:12px 10px 0;line-height:1.4}
+#whoX .wpe.bad{color:#ff453a;font-size:14px}
+#whoX .wk{display:grid;grid-template-columns:repeat(3,78px);gap:16px 26px;justify-content:center;margin-top:auto;padding-top:8px}
+#whoX .wk button{width:78px;height:78px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--wk);border:1px solid var(--wkb)!important;color:var(--wt1);transition:background .12s}
+#whoX .wk button b{font-weight:400;font-size:34px;line-height:1}
+#whoX .wk button small{font-size:10px;letter-spacing:2px;color:var(--wt2);min-height:12px;margin-top:2px}
+#whoX .wk button:active{background:var(--wka)}
+#whoX .wk button.x{background:none;border-color:transparent!important;font-size:17px}
+#whoX .wk button.x:active{background:var(--wk)}
+#whoX .wk button.go{font-weight:600}
+#whoX .wk button[aria-disabled="true"]{color:var(--wt3);pointer-events:none}
+#whoX .wk.off button{pointer-events:none;opacity:.55}
+#whoX .wok{width:84px;height:84px;border-radius:50%;background:rgba(48,209,88,.14);display:grid;place-items:center;margin:64px auto 0;animation:whoPop .25s ease}
+#whoX .wok svg{width:42px;height:42px}
+@keyframes whoPop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+#whoX .wct{text-align:center}#whoX .wct .wh{margin-top:26px}
+#whoX .wcard{background:var(--wl1);border-radius:20px;padding:4px 0;margin-top:26px}
+#whoX .wli{display:flex;gap:12px;padding:12px 16px;font-size:15px;line-height:1.35;color:var(--wt1)}
+#whoX .wli+.wli{border-top:1px solid var(--wln)}
+#whoX .wli svg{flex:none;width:22px;height:22px;margin-top:1px;color:var(--wt2)}
+#whoX .wbtn,#whoSh .wbtn{width:100%;min-height:54px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;text-align:center}
+#whoX .wbtn.w,#whoSh .wbtn.w{background:#f5f5f5;color:#000}
+#whoX .wbtn:active,#whoSh .wbtn:active{transform:scale(.98);transition:transform .15s}
+@media (max-height:700px){#whoX .wk{grid-template-columns:repeat(3,70px);gap:12px 24px}#whoX .wk button{width:70px;height:70px}#whoX .wk button b{font-size:30px}#whoX .wpt{margin-top:14px}#whoX .wh{margin-top:12px}#whoX .wok{margin-top:30px}}
+@media (min-width:720px){#whoX{background:rgba(0,0,0,.6);align-items:center}#whoX .wi{height:auto;max-height:calc(100vh - 40px);min-height:min(780px,calc(100vh - 40px));border-radius:28px;background:var(--wbg);box-shadow:0 20px 60px rgba(0,0,0,.5);border:1px solid var(--wln);padding:24px 24px 20px}}
+html[data-theme="light"] #whoX{--wbg:#f2f2f2;--wl1:#fff;--wl2:#e5e5e5;--wln:rgba(0,0,0,.1);--wt1:#000;--wt2:rgba(0,0,0,.55);--wt3:rgba(0,0,0,.3);--wk:rgba(0,0,0,.06);--wkb:rgba(0,0,0,.08);--wka:rgba(0,0,0,.18)}
+html[data-theme="light"] #whoX .wbtn.w{background:#000;color:#fff}
+@media (min-width:720px){html[data-theme="light"] #whoX{background:rgba(0,0,0,.35)}}
+/* вход по номеру телефона (15.11 19:06): номер → код из СМС → свой пароль */
+#whoX .wlogo{display:flex;justify-content:center;margin:18px 0 0}#whoX .wlogo svg{width:64px;height:64px;border-radius:15px;box-shadow:0 0 0 1px var(--wln)}
+#whoX .wc{text-align:center}#whoX .wh.wc{margin-top:16px}
+#whoX .wlab{display:block;font-size:13px;color:var(--wt2);margin:4px 4px 8px}
+#whoX .wtel{width:100%;height:58px;padding:0 18px;border-radius:16px;border:1px solid var(--wln);background:var(--wl1);color:var(--wt1);font:inherit;font-size:22px;letter-spacing:.5px;outline:none;-webkit-user-select:text;user-select:text;-webkit-appearance:none;appearance:none}
+#whoX .wtel:focus{border-color:var(--wka)}#whoX .wtel::placeholder{color:var(--wt3)}
+#whoX .wgo{margin-top:14px}#whoX .wgo[aria-disabled="true"]{opacity:.6;pointer-events:none}
+#whoX .wbtn.g{background:var(--wk);color:var(--wt1);border:1px solid var(--wln)!important;font-weight:500}
+#whoX .wbtn.t{background:none;color:var(--wt2);font-weight:500;min-height:44px;margin-top:6px}
+#whoX .wfoot .wbtn+.wbtn{margin-top:10px}
+#whoX .wlinks{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;margin-top:12px}
+#whoX .wlinks button{min-height:44px;padding:0 6px;display:inline-flex;align-items:center;font-size:15px;color:var(--wt2)}
+#whoX .wmask{color:var(--wt1);font-weight:600;white-space:nowrap}
+#whoX .wcf{position:relative;margin-top:6px}#whoX .wcf.sh .wcells{animation:ppSh .42s}
+#whoX .wcells{display:flex;gap:10px;justify-content:center;pointer-events:none}
+#whoX .wcells span{width:48px;height:60px;border-radius:14px;background:var(--wl1);border:1px solid var(--wln);display:grid;place-items:center;font-size:28px;font-weight:500;color:var(--wt1);transition:border-color .15s}
+#whoX .wcells span.cur{border-color:var(--wt2)}
+#whoX .wcode{position:absolute;inset:0;width:100%;height:60px;opacity:0;font-size:16px;caret-color:transparent;border:0;background:transparent;color:transparent;-webkit-user-select:text;user-select:text}
+#whoX .wlnk{color:var(--wt1);text-decoration:underline;font-size:15px;min-height:44px;display:inline-flex;align-items:center;padding:0 8px}
+#whoX .wbusy:empty{display:none}
+@media (max-width:360px){#whoX .wcells span{width:42px;height:54px}#whoX .wcells{gap:8px}}
+/* «Права сотрудников» → вход по номеру; карточка сотрудника */
+.lgt-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;font-size:15px}
+.lgt-st{font-size:14px;color:var(--muted,#999);text-align:right}.lgt-st.ok{color:#30d158}.lgt-st.no{color:#ffd60a}
+.lgt-b{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 4px}.lgt-b .btn{min-height:44px}
+.lgt-f label{display:block;margin:8px 0 0;font-size:14px}.lgt-f input{display:block;width:100%;margin-top:4px;min-height:44px}
+.lgt-n{font-size:13px;margin:8px 0 0}.lgt-sw{border-bottom:0!important;margin-top:6px}
+.lgt-kbox{margin:14px 0 4px}.lgt-kbox .btn{width:100%;min-height:44px;color:#ff453a!important;opacity:1}.lgt-kbox .shp-tghint{display:block;margin-top:6px}
+/* лист «Чек — только под своим именем» */
+#whoSh{position:fixed;inset:0;z-index:2147482400;display:flex;align-items:flex-end;justify-content:center;font:400 16px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+#whoSh *{box-sizing:border-box}
+#whoSh button{all:unset;box-sizing:border-box;cursor:pointer}
+#whoSh button:focus-visible{outline:2px solid rgba(127,127,127,.8);outline-offset:3px}
+#whoSh .wsd{position:absolute;inset:0;background:rgba(0,0,0,.55);opacity:0;transition:opacity .2s ease}
+#whoSh .wsc{position:relative;width:100%;max-width:520px;background:#1c1c1e;color:#fff;border-radius:26px 26px 0 0;border-top:1px solid rgba(255,255,255,.08);padding:10px 20px calc(env(safe-area-inset-bottom,0px) + 24px);transform:translateY(100%);transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+#whoSh.on .wsd{opacity:1}#whoSh.on .wsc{transform:none}
+#whoSh .wgrab{width:38px;height:5px;border-radius:3px;background:rgba(255,255,255,.25);margin:0 auto 18px}
+#whoSh .wico{width:56px;height:56px;border-radius:50%;background:rgba(255,214,10,.14);display:grid;place-items:center;margin:4px auto 0}
+#whoSh .wico svg{width:28px;height:28px}
+#whoSh h2{text-align:center;font-size:22px;font-weight:700;margin:14px 0 8px;color:inherit}
+#whoSh p{text-align:center;color:rgba(255,255,255,.6);font-size:15px;line-height:1.4;margin:0 6px 20px}
+#whoSh .wbtn.g{background:rgba(255,255,255,.10);color:#fff;border:1px solid rgba(255,255,255,.08);font-weight:500;margin-top:10px}
+html[data-theme="light"] #whoSh .wsc{background:#fff;color:#000;border-top-color:rgba(0,0,0,.1)}
+html[data-theme="light"] #whoSh p{color:rgba(0,0,0,.55)}
+html[data-theme="light"] #whoSh .wgrab{background:rgba(0,0,0,.2)}
+html[data-theme="light"] #whoSh .wbtn.w{background:#000;color:#fff}
+html[data-theme="light"] #whoSh .wbtn.g{background:rgba(0,0,0,.06);color:#000;border-color:rgba(0,0,0,.08)}
+@media (min-width:720px){#whoSh{align-items:center}#whoSh .wsc{border-radius:26px;padding-bottom:24px}}
+
 #w24cv{position:fixed;inset:0;z-index:2147483100;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#0b0b0b 0%,#0b0b0b 100%);opacity:0;transition:opacity .2s ease;pointer-events:all}
 #w24cv.on{opacity:1}
 .lg-wait{min-height:60vh}
@@ -29136,7 +29720,23 @@ if(typeof shpFormHtml==="function"){ const _prFH=shpFormHtml; shpFormHtml=functi
     /* Права-2б: у сделки без дизайнера его % получает «Ответственный», если он офис — тогда менять его с офиса или на офис может только директор (сервер так же) */
     if(!String(e.designer||"").trim()){ const isOf=n=>{ const k=String(n||"").trim().toLowerCase(); return !!k&&((S.shop.staff)||[]).some(p=>String(p.name||"").trim().toLowerCase()===k&&/офис|дизайн|менедж/i.test(p.role||"")&&!/технолог|директор/i.test(p.role||"")); };
       if(isOf(e.owner)) h=h.replace(/(<input\b[^>]*\bname="owner")/,'$1 readonly aria-readonly="true" class="pr-ro" title="У сделки нет дизайнера — проценты дизайнера получает ответственный. Менять его может только директор"').replace(">Ответственный<",">Ответственный — получает % дизайнера, меняет только директор<");
-      else if(S.shop.role==="office") h=h.replace(">Ответственный<",">Ответственный — себя или дизайнера ставит только директор<"); } }catch(_){} return h; }; }
+      else if(S.shop.role==="office") h=h.replace(">Ответственный<",String(e.owner||"").trim()?">Ответственный — себя или дизайнера ставит только директор<":">Ответственный — можно поставить себя; менять потом — только директор<"); } }catch(_){} return h; }; }
+/* Права-2в + сборка «Безопасность» (15.11): «Материал + расходы», «ЗП бригаде» и «Бригада (кто получает)» — только с правом «Деньги фирмы» (и главному дизайнеру), в новой сделке — «Материал + расходы» и «Бригада» (ЗП — от материалов сметы; «ЗП бригаде» новой сделки ставит смета, как раньше); сервер без права оставляет как было */
+if(typeof shpFormHtml==="function"){ const _prMX=shpFormHtml; shpFormHtml=function(){ let h=String(_prMX.apply(this,arguments)); try{ const e=S.shop.edit, P=prMy(); if(!e||!P||P.mx!==false) return h;
+    h=h.replace(e.id?/(<input\b[^>]*\bname="(?:matx|zpBr|brigade)")/g:/(<input\b[^>]*\bname="(?:matx|brigade)")/g,'$1 readonly aria-readonly="true" class="pr-ro" title="Меняет директор или сотрудник с правом «Деньги фирмы»"').replace(/<legend>Зарплата по заказу<\/legend>/,"<legend>Зарплата по заказу — меняет директор</legend>"); }catch(_){} return h; }; }
+/* Права-2в: нанятый технолог без «Видеть все сделки» и без своих сделок — не «Создайте первую сделку», а спокойная подсказка, что права включает директор */
+function prTechNoDeals(){ const P=prMy(); return !!(S.shop&&S.shop.tech&&S.shop.hasDir&&!S.shop.dir&&P&&P.x&&P.x.deals===false); }
+if(typeof prEmpty==="function"&&typeof prCard==="function"){ const _prE=prEmpty; prEmpty=function(h){ try{ if(prTechNoDeals()){ const card=prCard("pr-tnd",typeof prSi==="function"?prSi("deals"):"","Сделки вам пока не открыты","Права включает директор. Здесь появятся сделки, где вы мастер, ответственный или у вас задача.",[],"");
+      h=String(h).replace(/<p class="note[^"]*">Заказов пока нет\. Нажмите «\+ Заказ», когда будет первый замер\.<\/p>/g,card); } }catch(_){} return _prE.apply(this,[h].concat([].slice.call(arguments,1))); }; }
+/* Права-2в + сборка «Безопасность» (15.11): сотрудников меняют только директор и технолог с правом «Сотрудники»; офис — ничего, даже телефон (номер = вход в приложение; сервер так же) */
+function prStfAll(){ return !!(S.shop&&S.shop.tech&&(typeof techCan!=="function"||techCan("staff"))); }
+if(typeof shpStaffHtml==="function"){ const _prSt=shpStaffHtml; shpStaffHtml=function(){ let h=String(_prSt.apply(this,arguments)); try{ if(prStfAll()) return h;
+    h=h.replace(/<button type="button" class="btn(?: primary)?" data-act="shp-pedit">\+ Сотрудник<\/button>/,"");
+    h=h.replace(/<button type="button" class="btn sm r3-addtel" data-act="shp-pedit"[^>]*>[^<]*<\/button>/g,'<span class="muted r3-notel">телефон не записан</span>'); }catch(_){} return h; }; }
+if(typeof shpPersonHtml==="function"){ const _prPh=shpPersonHtml; shpPersonHtml=function(){ let h=String(_prPh.apply(this,arguments)); try{ if(prStfAll()) return h;
+    h=h.replace(/(<button type="button" class="btn" data-act="shp-pedit"[^>]*>)Изменить(<\/button>)/,"").replace("не записан — «Изменить»","не записан — запишет директор"); }catch(_){} return h; }; }
+if(typeof shpPersonModal==="function"){ const _prPM=shpPersonModal; shpPersonModal=function(name){ if(prStfAll()||!S.shop) return _prPM.apply(this,arguments);
+    toast("Сотрудников добавляет и меняет директор или технолог с правом «Сотрудники». Номер телефона — это вход в приложение"); }; }
 /* Права-2б: технологу без «Сотрудники» список приглашений сервер не отдаёт — не ждём его вечно («Загружаю приглашения…») */
 if(typeof invLoad==="function"){ const _prIL=invLoad; invLoad=async function(){ try{ if(S.shop&&S.shop.tech&&typeof techCan==="function"&&!techCan("staff")){ S.inv.list=[]; S.inv.at=Date.now(); return; } }catch(_){} return _prIL.apply(this,arguments); }; }
 if(typeof toast==="function"){ const _prTo=toast; toast=function(m){ if(m==="Заказ удалён") arguments[0]="Сделка в корзине — 30 дней можно вернуть (Ещё → Корзина)"; return _prTo.apply(this,arguments); }; }
@@ -29166,7 +29766,7 @@ document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closes
 .pr-act{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}.pr-act .pr-bt{margin:0!important;border:0!important;outline:0!important;box-shadow:none!important}
 .pr-bt{box-sizing:border-box;width:auto;min-width:0;height:44px;min-height:44px;padding:0 18px;border-radius:22px;border:0;font:inherit;font-size:15px;font-weight:600;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;transition:opacity .15s,transform .15s}.pr-bt:active{opacity:.6;transform:scale(.97)}
 .pr-ok{background:#fff;color:#000}.pr-danger{background:rgba(255,69,58,.16);color:#ff453a}html.vt[data-vt="light"] .pr-ok{background:#000;color:#fff}
-.pr-empty{display:flex;flex-direction:column;align-items:center;gap:4px;padding:40px 10px;text-align:center}.pr-empty span{font-size:40px;opacity:.6}.pr-empty b{font-size:17px}.pr-empty small{color:var(--muted,#8e8e93)}
+.pr-empty{display:flex;flex-direction:column;align-items:center;gap:4px;padding:40px 10px;text-align:center}div.pr-empty>span{font-size:40px;opacity:.6}.pr-empty b{font-size:17px}.pr-empty small{color:var(--muted,#8e8e93)}
 .pr-sk{gap:8px}.pr-skl{display:block;height:13px;border-radius:7px;background:rgba(128,128,128,.22);animation:prSk 1.2s ease-in-out infinite}@keyframes prSk{50%{opacity:.45}}
 .pr-seg{display:flex;gap:4px;padding:3px;margin:0 0 10px;border-radius:12px;background:rgba(128,128,128,.16)}.pr-seg button{flex:1;min-height:36px;border:0;border-radius:9px;background:none;color:inherit;font:inherit;font-size:14px;cursor:pointer}.pr-seg button[aria-pressed="true"]{background:var(--surface,#2c2c2e);font-weight:600}
 .pr-pick{display:flex;align-items:center;gap:10px;width:100%;min-height:56px;padding:8px 14px;border-radius:14px;border:0;background:var(--surface,#1c1c1e);outline:1px solid rgba(128,128,128,.22);outline-offset:-1px;color:inherit;font:inherit;text-align:left;cursor:pointer}
@@ -29174,6 +29774,7 @@ document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closes
 .pr-hbtn{min-height:44px}
 .pr-gl2{margin-top:6px;padding-top:4px;border-top:1px solid rgba(128,128,128,.28)}
 .pr-gh{list-style:none;padding:14px 0 4px;font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--muted,#8e8e93);border:0!important}.pr-gh:first-child{padding-top:4px}
+.pr-stn{margin:-4px 0 10px;font-size:14px}
 .pr-xn{list-style:none;padding:8px 0 4px;font-size:13px;line-height:1.35;color:var(--muted,#8e8e93);border:0!important}
 input.pr-ro{opacity:.6;pointer-events:none}
 body.pr-no-bz .app-bar [data-v="orders"],body.pr-no-bz nav [data-v="orders"]{display:none!important}
@@ -29758,7 +30359,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="b5f757e728"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="66a35b157a"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -37533,7 +38134,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="b5f757e728";/*cehqr-build*/
+  const BUILD="66a35b157a";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
