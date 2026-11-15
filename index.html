@@ -5938,7 +5938,7 @@ function shpOrderHtml(){
   if(o.stage==="proekt"&&r==="tech") h+=`<button type="button" class="btn primary shp-bigact" data-act="shp-projready" data-id="${esc(o.id)}">✓ Проект готов</button>`;
   const row=(l,v)=>v?`<div><dt>${l}</dt><dd>${v}</dd></div>`:"";
   const tel=String(o.phone||"").replace(/[^\d+]/g,"");
-  const rest=(+o.sum||0)-(+o.prepay||0);
+  const rest=(+o.sum||0)-(+o.prepay||0)-(+o.disc||0);   /* 15.11: скидка за срок уменьшает только остаток клиента (сервер отдаёт o.disc тем, кто видит суммы) */
   if(full){ const sum=+o.sum||0, buy=+o.receiptsTotal||0, has=o.sum!==""&&o.sum!=null;
     /* Кирилл 05.11: «непонятно, как работает — сделай пояснительно»: под каждой цифрой — откуда она */
     const it=(l,v,c,hint)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b>${hint?`<small class="shp-mh">${hint}</small>`:""}</div>`, pre=+o.prepay||0, hand=pre-buy;
@@ -5947,7 +5947,7 @@ function shpOrderHtml(){
     /* Кирилл 05.11: светофор по деньгам — до 35 % зелёный, 35–45 % жёлтый, больше 45 % красный */
     const lv=has&&sum>0?(buy/sum<=0.35?"lv-g":buy/sum<=0.45?"lv-y":"lv-r"):"";
     const mBuy=it("Закупка по чекам",shpMoney(buy)+(has&&sum>0?` · ${Math.round(buy/sum*100)} %`:""),(has&&buy>sum*SHP_NORM?"neg ":"")+"wide lv "+lv,shpNormHint(sum,buy,has));
-    h+=`<div class="card shp-money" aria-label="Деньги по заказу">${it("Сумма",has?shpMoney(sum):"—","","цена по договору")}${it("Остаток клиента",has?shpMoney(rest):"—",rest>0?"due":"","ещё заплатит: сумма − предоплата")}${mBuy}${S.shop.rcpt?`<button type="button" class="btn shp-exp-b" data-act="shp-exp" data-id="${esc(o.id)}">− Расход</button>`:""}<details class="shp-mmore"${mo?" open":""}><summary>Подробнее</summary><div class="shp-mmore-in">${it("Предоплата",shpMoney(o.prepay),"","клиент уже заплатил")}${it("На руках сейчас",shpMoney(hand),hand<0?"neg":"",hand<0?"потратили больше, чем дал клиент — докладываем свои":"предоплата − потратили: деньги клиента, ещё не потраченные")}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has?(sum-buy<0?"neg":"ok")+" lv "+lv:"","когда клиент заплатит всё: сумма − потратили. Из этого — зарплата бригаде, доли офиса и прибыль")}</div></details></div>`; }
+    h+=`<div class="card shp-money" aria-label="Деньги по заказу">${it("Сумма",has?shpMoney(sum):"—","","цена по договору")}${it("Остаток клиента",has?shpMoney(rest):"—",rest>0?"due":"",+o.disc?"ещё заплатит: сумма − предоплата − скидка за срок":"ещё заплатит: сумма − предоплата")}${mBuy}${S.shop.rcpt?`<button type="button" class="btn shp-exp-b" data-act="shp-exp" data-id="${esc(o.id)}">− Расход</button>`:""}<details class="shp-mmore"${mo?" open":""}><summary>Подробнее</summary><div class="shp-mmore-in">${it("Предоплата",shpMoney(o.prepay),"","клиент уже заплатил")}${it("На руках сейчас",shpMoney(hand),hand<0?"neg":"",hand<0?"потратили больше, чем дал клиент — докладываем свои":"предоплата − потратили: деньги клиента, ещё не потраченные")}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has?(sum-buy<0?"neg":"ok")+" lv "+lv:"","когда клиент заплатит всё: сумма − потратили. Из этого — зарплата бригаде, доли офиса и прибыль")}</div></details></div>`; }
   else if(S.shop.sumSee){ const sum=+o.sum||0, buy=+o.receiptsTotal||0, has=o.sum!==""&&o.sum!=null;   /* снабженец: сумма заказа и закупка */
     const it=(l,v,c,hint)=>`<div class="shp-m${c?" "+c:""}"><span>${l}</span><b>${esc(v)}</b>${hint?`<small class="shp-mh">${hint}</small>`:""}</div>`;
     h+=`<div class="card shp-money" aria-label="Сумма заказа">${it("Сумма заказа",has?shpMoney(sum):"—")}${it("Закупка по чекам",shpMoney(buy)+(has&&sum>0?` · ${Math.round(buy/sum*100)} %`:""),has&&buy>sum*SHP_NORM?"neg":"",shpNormHint(sum,buy,has))}${it("Остаётся (сумма − закупка)",has?shpMoney(sum-buy):"—",has?(sum-buy<0?"neg":"ok"):"")}${S.shop.rcpt?`<button type="button" class="btn shp-exp-b" data-act="shp-exp" data-id="${esc(o.id)}">− Расход</button>`:""}</div><p class="muted shp-mh2">Сумма — цена по договору. Закупка — чеки снабженца. Остаётся — сумма минус закупка.</p>`; }
@@ -14480,50 +14480,193 @@ function ksRedraw(){ if(S.view==="shop"&&S.shop&&S.shop.mode==="kassa"&&!documen
 function ksWhen(ms){ const d=new Date(ms), t=new Date(), y=new Date(Date.now()-864e5), hm=d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
   return d.toDateString()===t.toDateString()?"сегодня "+hm:d.toDateString()===y.toDateString()?"вчера "+hm:d.toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"})+" "+hm; }
 function ksDeal(id){ const o=id&&typeof shpById==="function"?shpById(id):null; return o?shpTitle(o):""; }
+/* 15.11: значки подтверждения (без цветных эмодзи) */
+const KI={chk:'<path d="M7 3h10v18l-2.5-1.6L12 21l-2.5-1.6L7 21z"/><path d="M9.5 8h5M9.5 11.5h5"/>',sg:'<path d="M3 17c3-4 5-9 7-9s-1 9 2 9 3-5 5-5 1 3 4 3"/>',warn:'<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',bank:'<path d="M3 10l9-5 9 5M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',card:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>',cash:'<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 10v4M18 10v4"/>',gear:'<circle cx="5" cy="7" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="5" cy="17" r="1.6"/><path d="M10 7h10M10 12h10M10 17h10"/>'};
+const ki=(k,sz)=>`<svg class="ks-i" viewBox="0 0 24 24" width="${sz||14}" height="${sz||14}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${KI[k]}</svg>`;
+const KPK={cash:"Наличные",card:"Карта сотрудника",ip:"Счёт ИП",other:"Счёт другого человека"};
+function ksProof(o){ const c=o.cf||{}, L=[], hs=v=>/^https:\/\//i.test(String(v||""));   /* 15.11 (проверка): ссылки чека и подписи — только https:// */
+  const lnk=(u,ico,t)=>hs(u)?`<a class="ks-pf" href="${ke(u)}" target="_blank" rel="noopener">${ki(ico)}${t}</a>`:`<span class="ks-pf">${ki(ico)}${t}</span>`;
+  if(o.photo) L.push(lnk(o.photo,"chk","чек"));
+  if(c.sg) L.push(lnk(c.sg,"sg","подпись"+(c.sn?" · "+ke(c.sn):"")));
+  if(c.nc) L.push(`<span class="ks-pf ks-ncb">${ki("warn")}без чека: ${ke(c.nc)}</span>`);
+  else if(!o.photo&&!c.sg&&(o.t==="out"||o.t==="move")&&(!o.zp||o.to)) L.push(`<span class="ks-pf ks-old">без чека</span>`);   /* выдача ЗП из «Выплат» без подписи — тоже серое «без чека» (чужую выплату без имени — не помечаем) */
+  return L.length?`<span class="ks-pfs">${L.join("")}</span>`:""; }
 function ksHtml(){ const D=KS.data;
-  let h=`<div class="ks-wrap"><div class="ks-head"><h2>Касса</h2><button type="button" class="btn sm" data-ks="reload" aria-label="Обновить">↻</button></div>`;
-  if(!D) return h+(KS.err?`<p class="note">Не получилось загрузить кассу. <button type="button" class="linkbtn" data-ks="reload">Ещё раз</button></p>`:`<p class="muted">Загружаю…</p>`)+`</div>`;
+  let h=`<div class="ks-wrap"><div class="ks-head"><h2>${D&&D.all?"Деньги фирмы":"Касса"}</h2>${D&&D.dir?`<button type="button" class="btn sm" data-ks="places" aria-label="Куда приходят деньги">${ki("gear",18)}</button>`:""}<button type="button" class="btn sm" data-ks="reload" aria-label="Обновить">↻</button></div>`;
+  if(!D) return h+(KS.err?`<p class="note">Не получилось загрузить кассу. <button type="button" class="linkbtn" data-ks="reload">Ещё раз</button></p>`:`<section class="ks-card ks-skel" aria-busy="true" aria-label="Загружаю кассу"><i></i><i></i><i></i></section>`)+`</div>`;
   const me=shpNorm(shpWho());
-  h+=`<section class="ks-card">${D.all?`<p class="muted ks-l">Наличных всего</p><p class="ks-big">${rub(D.total)}</p>`
+  if(D.all) h+=dfHtml(D); else h+=`<section class="ks-card">${D.all?`<p class="muted ks-l">Денег всего</p><p class="ks-big">${rub(D.total)}</p>`
     :`<p class="muted ks-l">У вас на руках</p><p class="ks-big">${rub((D.hold.find(x=>shpNorm(x.name)===me)||{sum:0}).sum)}</p>`}
-    ${D.all&&D.hold.length?D.hold.map(x=>`<div class="ks-pp"><span>${ke(x.name)}</span><b class="${x.sum<0?"ks-neg":""}">${rub(x.sum)}</b></div>`).join(""):""}</section>`;
+    ${D.all&&D.hold.length?D.hold.map(x=>`<div class="ks-pp"><span>${x.pl?ki("bank",15)+" ":""}${ke(x.name)}${x.pl?"":` <small class="muted">на руках</small>`}</span><b class="${x.sum<0?"ks-neg":""}">${rub(x.sum)}</b></div>`).join(""):""}${!D.all?D.hold.filter(x=>x.pl==="card").map(x=>`<div class="ks-pp"><span>${ki("card",15)} ${ke(x.name)}</span><b class="${x.sum<0?"ks-neg":""}">${rub(x.sum)}</b></div>`).join(""):""}</section>`;
   h+=`<div class="ks-bt"><button type="button" class="ks-in" data-ks="add" data-t="in">+ Принял</button><button type="button" class="ks-out" data-ks="add" data-t="out">− Выдал</button><button type="button" class="ks-mv" data-ks="add" data-t="move">⇄ Передал</button></div>`;
   if(!D.ops.length) return h+`<p class="note">Записей пока нет. Начните с остатка: «+ Принял» → сумма, что сейчас в кассе, комментарий «остаток на начало».</p></div>`;
-  h+=`<section class="ks-card ks-ops">${D.ops.map(o=>{ const dl=ksDeal(o.deal), sg=o.t==="in"?"+":o.t==="out"?"−":"", cls=o.t==="in"?"ks-p":o.t==="out"?"ks-m":"ks-v";
-      const who=o.t==="move"?`${ke(o.holder)} → ${ke(o.to)}`:(o.t==="in"?"принял ":"выдал ")+ke(o.holder);
-      const can=!o.zp&&((D.del!==undefined?D.del:D.all)||(shpNorm(o.by)===me&&new Date(o.when).toDateString()===new Date().toDateString()));   /* Р5 (13.11): чужую запись удаляет только директор (del от сервера) */
-      return `<div class="ks-op"><div class="ks-ot"><b>${ke(o.note||dl||(o.t==="in"?"Приход":o.t==="out"?"Расход":"Передача"))}</b><small>${ksWhen(o.when)} · ${who}${dl&&o.note?" · "+ke(dl):""}${o.zp?" · из выплат":""}${o.photo?` · <a href="${ke(o.photo)}" target="_blank" rel="noopener">📷 чек</a>`:""}</small></div><b class="${cls}">${sg}${(Math.round(o.sum)).toLocaleString("ru-RU")}</b>${can?`<button type="button" class="ks-x" data-ks="del" data-id="${ke(o.id)}" aria-label="Удалить запись">✕</button>`:""}</div>`; }).join("")}</section>`;
+  h+=(D.all?`<h3 class="ks-h3">Записи</h3>`:"")+`<section class="ks-card ks-ops">${D.ops.map(o=>ksOp(o,D,me)).join("")}</section>`;
   return h+`</div>`; }
-function ksForm(t){ const D=KS.data||{people:[],hold:[]}, me=shpWho();
-  const names=[...new Set([me].concat(D.people||[],(D.hold||[]).map(x=>x.name)).filter(Boolean))];
-  const opt=(sel)=>names.map(n=>`<option${shpNorm(n)===shpNorm(sel)?" selected":""}>${ke(n)}</option>`).join("");
+function ksOp(o,D,me,noDel){ const dl=ksDeal(o.deal), c=o.cf||{};
+  if(o.t==="fix"){ const v=Math.round(+o.sum||0);   /* 15.11 «Деньги фирмы»: сверка остатка — не приход и не расход */
+    return `<div class="ks-op ks-fixr"><div class="ks-ot"><b>${ke(o.note||"Сверка остатка")}</b><small>${ksWhen(o.when)} · ${ke(o.holder)}${c.fx!=null?" · по выписке "+rub(c.fx):""}</small></div><b class="ks-v">${v>0?"+":v<0?"−":""}${Math.abs(v).toLocaleString("ru-RU")}</b>${!noDel&&(D.del!==undefined?D.del:D.all)?`<button type="button" class="ks-x" data-ks="del" data-id="${ke(o.id)}" aria-label="Удалить запись">✕</button>`:""}</div>`; }
+  const sg=o.t==="in"?"+":o.t==="out"?"−":"", cls=o.t==="in"?"ks-p":o.t==="out"?"ks-m":"ks-v";
+  const who=o.t==="move"?`${ke(o.holder)} → ${ke(o.to)}`:(o.t==="in"?(c.pk&&c.pk!=="cash"?"принял "+ke(o.by)+" · "+ke(c.pl||o.holder):"принял "+ke(o.holder)):"выдал "+ke(o.holder))+(o.t==="out"&&c.w?(c.w==="card"?" · переводом":" · наличными"):"");
+  const can=!noDel&&!o.zp&&((D.del!==undefined?D.del:D.all)||(shpNorm(o.by)===me&&new Date(o.when).toDateString()===new Date().toDateString()));   /* Р5 (13.11): чужую запись удаляет только директор (del от сервера) */
+  return `<div class="ks-op${c.nc?" ks-nc":""}"><div class="ks-ot"><b>${ke(o.note||dl||(o.t==="in"?"Приход":o.t==="out"?"Расход":"Передача"))}</b><small>${ksWhen(o.when)} · ${who}${dl&&o.note?" · "+ke(dl):""}${o.zp?" · из выплат":""}</small>${ksProof(o)}</div><b class="${cls}">${sg}${(Math.round(o.sum)).toLocaleString("ru-RU")}</b>${can?`<button type="button" class="ks-x" data-ks="del" data-id="${ke(o.id)}" aria-label="Удалить запись">✕</button>`:""}</div>`; }
+/* ===== «Деньги фирмы» (Кирилл 15.11 16:41, вариант А): у кого полная касса — сверху «Всего», ниже Наличные / Счета / Карты.
+   Нажал на строку — её записи и «Сверить остаток» (счёт, карта). Сверка — строка fix: меняет только остаток места, в прибыль и ЗП не идёт. ===== */
+const DF_LIM=20e6, DF_OLD=7;   // предел приходов за год на счёт другого человека (пока константа); «не сверено» — старше 7 дней
+const dfNum=v=>(Math.round(+v||0)).toLocaleString("ru-RU");
+function dfFix(x){ if(!x.pl) return ""; const has=x.sum!==0||(+x.year||0)>0;
+  if(!x.fixAt) return has?`<small class="ks-warn">не сверяли</small>`:"";
+  const d=Math.floor((Date.now()-x.fixAt)/864e5); if(d>DF_OLD) return `<small class="ks-warn">не сверено ${d} дн</small>`;
+  return `<small class="muted">сверено ${d<=0?"сегодня":d===1?"вчера":d+" дн назад"}</small>`; }
+function dfYear(x){ if(x.pl!=="other") return ""; const y=+x.year||0, m=v=>(v/1e6).toLocaleString("ru-RU",{maximumFractionDigits:1});
+  return `<small class="${y>=DF_LIM?"ks-negt":y>=DF_LIM*.9?"ks-warn":"muted"}">за год ${m(y)} из ${m(DF_LIM)} млн</small>`; }
+function dfRow(x){ const sub=[x.pl?dfYear(x):`<small class="muted">на руках</small>`,dfFix(x)].filter(Boolean).join(`<i class="ks-dot" aria-hidden="true">·</i>`);
+  return `<button type="button" class="ks-dr" data-ks="place" data-n="${ke(x.name)}"><span class="ks-dn"><span>${ke(x.name)}</span>${sub?`<span class="ks-ds">${sub}</span>`:""}</span><b class="${x.sum<0?"ks-neg":""}">${dfNum(x.sum)}</b><span class="ks-chev" aria-hidden="true">›</span></button>`; }
+function dfSec(ico,title,L,first){ const t=L.reduce((a,x)=>a+(+x.sum||0),0);
+  return `<div class="ks-sec${first?" first":""}"><span>${ki(ico,17)} <b>${title}</b></span><b>${dfNum(t)}</b></div>${L.map(dfRow).join("")}`; }
+function dfHtml(D){ const cash=D.hold.filter(x=>!x.pl), acc=D.hold.filter(x=>x.pl==="ip"||x.pl==="other"), cards=D.hold.filter(x=>x.pl==="card");
+  let h=`<section class="ks-card ks-df"><p class="muted ks-l">Всего</p><p class="ks-big">${rub(D.total)}</p>${dfSec("cash","Наличные",cash,true)}</section>`;
+  if(acc.length) h+=`<section class="ks-card ks-df">${dfSec("bank","Счета",acc,true)}</section>`;
+  if(cards.length) h+=`<section class="ks-card ks-df">${dfSec("card","Карты",cards,true)}</section>`;
+  if(!acc.length&&!cards.length&&D.dir) h+=`<button type="button" class="linkbtn ks-addpl" data-ks="places">+ Счёт или карта — куда приходят деньги</button>`;
+  return h; }
+/* лист места: записи и «Сверить остаток» */
+function dfSheet(name,fixMode){ const D=KS.data; if(!D) return; const x=(D.hold||[]).find(y=>shpNorm(y.name)===shpNorm(name))||{name,sum:0}, me=shpNorm(shpWho()), k=shpNorm(name);
+  const canFix=!!(D.fix&&x.pl), card=x.pl==="card";
+  let w=document.getElementById("ksPlD"); const fresh=!w; if(fresh){ w=document.createElement("div"); w.id="ksPlD"; w.className="ks-sgw ks-shw"; document.body.appendChild(w); }
+  if(!fixMode){ const L=(D.ops||[]).filter(o=>shpNorm(o.holder)===k||shpNorm(o.to)===k);
+    w.innerHTML=`<div class="ks-sgc ks-shc" role="dialog" aria-modal="true" aria-labelledby="ksPlT"><div class="ks-sgh"><h2 id="ksPlT">${ke(x.name)}</h2><button type="button" class="ks-sgx" data-kpd="x" aria-label="Закрыть">✕</button></div>
+      <div class="ks-card ks-fc"><p class="muted ks-l">${x.pl?"По записям":"На руках"}</p><p class="ks-big">${rub(x.sum)}</p>${x.pl?`<p class="ks-ds">${[dfYear(x),dfFix(x)].filter(Boolean).join(`<i class="ks-dot" aria-hidden="true">·</i>`)}</p>`:""}</div>
+      ${canFix?`<button type="button" class="ks-fixb" data-kpd="fix">Сверить остаток</button>`:""}
+      <div class="ks-card ks-ops ks-shl">${L.length?L.map(o=>ksOp(o,D,me,true)).join(""):`<p class="muted" style="margin:6px 0">Записей пока нет</p>`}</div></div>`; }
+  else { w.innerHTML=`<form class="ks-sgc ks-shc" role="dialog" aria-modal="true" aria-labelledby="ksPlT" data-kpdform="1" novalidate><div class="ks-sgh"><button type="button" class="ks-sgx" data-kpd="back" aria-label="Назад">‹</button><h2 id="ksPlT">Сверить остаток</h2><button type="button" class="ks-sgx" data-kpd="x" aria-label="Закрыть">✕</button></div>
+      <div class="ks-card ks-fc"><p class="muted ks-l">${ke(x.name)} · по записям</p><p class="ks-big">${rub(x.sum)}</p></div>
+      <label class="ks-card ks-fc ks-fin"><span class="muted ks-l">${card?"Сейчас на карте":"Сейчас по выписке банка"}</span><span class="ks-fiw"><input name="now" inputmode="decimal" maxlength="14" autocomplete="off" placeholder="0" aria-label="${card?"Сейчас на карте":"Сейчас по выписке банка"}, рублей"><i>₽</i></span></label>
+      <div class="ks-card ks-fc"><p class="muted ks-l">Разница</p><p class="ks-fd">—</p><p class="muted ks-fdn">запишется строкой «Сверка остатка» — в прибыль и зарплату не идёт</p></div>
+      <p class="ks-err" role="alert" hidden></p><button type="submit" class="ks-fixs">Сохранить</button></form>`;
+    const f=w.querySelector("form"), inp=f.elements.now, fd=f.querySelector(".ks-fd");
+    inp.addEventListener("input",()=>{ const v=String(inp.value).replace(/\s/g,"").replace(",","."), n=+v; if(v===""||!isFinite(n)){ fd.textContent="—"; fd.className="ks-fd"; return; }
+      const d=Math.round((n-(+x.sum||0))*100)/100; fd.textContent=(d>0?"+":d<0?"−":"")+Math.abs(d).toLocaleString("ru-RU")+" ₽"; fd.className="ks-fd"+(d>0?" ks-p":d<0?" ks-m":""); });
+    setTimeout(()=>inp.focus(),60);
+    f.addEventListener("submit",async ev=>{ ev.preventDefault(); const v=String(inp.value).replace(/\s/g,"").replace(",","."), er=f.querySelector(".ks-err");
+      if(v===""||!isFinite(+v)){ er.textContent=card?"Впишите, сколько сейчас на карте":"Впишите, сколько сейчас по выписке"; er.hidden=false; inp.focus(); return; }
+      const b=f.querySelector(".ks-fixs"); b.disabled=true; b.textContent="Сохраняю…";
+      const j=await shpPostRaw({action:"kassaFix",pl:x.name,now:v}); if(!j||!j.ok){ b.disabled=false; b.textContent="Сохранить"; if(j&&j.error==="pin"){ shpBadPin(); return; } er.textContent=!j?"Нет связи с таблицей. Не сохранилось — попробуйте ещё раз.":(j.msg||"Не сохранилось. Попробуйте ещё раз."); er.hidden=false; return; }
+      dfClose(); toast(j.diff?"Сверено: разница "+(j.diff>0?"+":"−")+Math.abs(Math.round(j.diff)).toLocaleString("ru-RU")+" ₽":"Сверено — сходится"); ksLoad(); }); }
+  if(fresh){ w.addEventListener("click",e=>{ if(e.target===w) return dfClose(); const b=e.target.closest("[data-kpd]"); if(!b) return; const a=b.dataset.kpd;
+      if(a==="x") return dfClose(); if(a==="fix") return dfSheet(w.dataset.n,true); if(a==="back") return dfSheet(w.dataset.n,false); });
+    requestAnimationFrame(()=>w.classList.add("on")); }
+  w.dataset.n=x.name; }
+function dfClose(){ const w=document.getElementById("ksPlD"); if(!w) return; w.classList.remove("on"); setTimeout(()=>w.remove(),200); }
+/* ===== Подпись пальцем (15.11): окно поверх всего. Кто подписывает, сумма и дата — прямо на картинке подписи.
+   Возвращает base64 JPEG (чёрным по белому) или null — отмена. Нужна и в других местах (ЗП наличными) — window.ksSignPad ===== */
+function ksSignPad(o){ o=o||{}; return new Promise(done=>{ const w=document.createElement("div"); w.className="ks-sgw"; w.id="ksSg";
+  const line=o.line||"";
+  w.innerHTML=`<div class="ks-sgc" role="dialog" aria-modal="true" aria-labelledby="ksSgT"><div class="ks-sgh"><h2 id="ksSgT">Подпись${o.name?": "+ke(o.name):""}</h2><button type="button" class="ks-sgx" data-ksg="x" aria-label="Закрыть">✕</button></div>
+    <p class="ks-sgl">${ke(line)}</p><div class="ks-sgb"><canvas aria-label="Поле для подписи пальцем"></canvas><span class="ks-sgph">Распишитесь пальцем здесь</span></div>
+    <div class="ks-sgf"><button type="button" class="btn" data-ksg="clr">Стереть</button>${o.skip?`<button type="button" class="btn" data-ksg="skip">Без подписи</button>`:""}<button type="button" class="btn primary" data-ksg="ok" disabled>Готово</button></div></div>`;
+  document.body.appendChild(w); const cv=w.querySelector("canvas"), box=w.querySelector(".ks-sgb"), ok=w.querySelector('[data-ksg="ok"]'), ph=w.querySelector(".ks-sgph");
+  const dpr=Math.min(3,window.devicePixelRatio||1); let W=0,H=0, strokes=[], cur=null;
+  const fit=()=>{ const r=box.getBoundingClientRect(); W=Math.round(r.width); H=Math.round(r.height); cv.width=W*dpr; cv.height=H*dpr; cv.style.width=W+"px"; cv.style.height=H+"px"; paint(); };
+  const ink=getComputedStyle(document.documentElement).getPropertyValue("--ink").trim()||"#fff";
+  const drawOn=(g,sc,col,lw)=>{ g.strokeStyle=col; g.lineWidth=lw; g.lineCap="round"; g.lineJoin="round"; strokes.forEach(s=>{ if(!s.length) return; g.beginPath(); g.moveTo(s[0][0]*sc,s[0][1]*sc); if(s.length===1) g.lineTo(s[0][0]*sc+.1,s[0][1]*sc); s.forEach(p=>g.lineTo(p[0]*sc,p[1]*sc)); g.stroke(); }); };
+  const paint=()=>{ const g=cv.getContext("2d"); g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,cv.width,cv.height); drawOn(g,dpr,ink,2.6*dpr); ok.disabled=!strokes.some(s=>s.length>2); ph.hidden=strokes.length>0; };
+  const pt=e=>{ const r=cv.getBoundingClientRect(); return [Math.max(0,Math.min(W,e.clientX-r.left)),Math.max(0,Math.min(H,e.clientY-r.top))]; };
+  cv.addEventListener("pointerdown",e=>{ e.preventDefault(); try{ cv.setPointerCapture(e.pointerId); }catch(_){} cur=[pt(e)]; strokes.push(cur); paint(); });
+  cv.addEventListener("pointermove",e=>{ if(!cur) return; e.preventDefault(); cur.push(pt(e)); paint(); });
+  const up=()=>{ cur=null; }; cv.addEventListener("pointerup",up); cv.addEventListener("pointercancel",up);
+  cv.style.touchAction="none";
+  const close=v=>{ removeEventListener("resize",fit); w.classList.remove("on"); setTimeout(()=>w.remove(),200); done(v); };
+  w.addEventListener("click",e=>{ const b=e.target.closest("[data-ksg]"); if(!b) return; const a=b.dataset.ksg;
+    if(a==="x") return close(null); if(a==="skip") return close(""); if(a==="clr"){ strokes=[]; paint(); return; }
+    if(a==="ok"){ const k=2, ex=document.createElement("canvas"), top=58; ex.width=W*k; ex.height=(H+top)*k; const g=ex.getContext("2d");
+      g.fillStyle="#fff"; g.fillRect(0,0,ex.width,ex.height); g.fillStyle="#000"; g.font=`600 ${15*k}px system-ui,sans-serif`; g.fillText((o.name?o.name+" — ":"")+(o.what||"подпись"),12*k,22*k);
+      g.font=`${13*k}px system-ui,sans-serif`; g.fillText(line,12*k,44*k); g.strokeStyle="#bbb"; g.lineWidth=k; g.beginPath(); g.moveTo(0,top*k-1); g.lineTo(ex.width,top*k-1); g.stroke();
+      g.save(); g.translate(0,top*k); drawOn(g,k,"#000",2.6*k); g.restore();
+      return close(ex.toDataURL("image/jpeg",0.85).split(",")[1]); } });
+  requestAnimationFrame(()=>{ fit(); w.classList.add("on"); }); addEventListener("resize",fit); }); }
+window.ksSignPad=ksSignPad;
+const ksNow=()=>{ const d=new Date(); return d.toLocaleDateString("ru-RU")+" "+d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}); };
+/* форма записи. pre — {deal, pay:1} (кнопка «Прими оплату» в сделке) */
+function ksForm(t,pre){ pre=pre||{}; const D=KS.data||{people:[],hold:[],places:[]}, me=shpWho();
+  const names=[...new Set([me].concat(D.people||[],(D.hold||[]).filter(x=>!x.pl).map(x=>x.name)).filter(Boolean))];
+  const holders=[...new Set(names.concat((D.hold||[]).filter(x=>x.pl).map(x=>x.name)))];
+  const opt=(L,sel)=>L.map(n=>`<option${shpNorm(n)===shpNorm(sel)?" selected":""}>${ke(n)}</option>`).join("");
   const deals=(S.shop.orders||[]).filter(o=>o.stage!=="lost").slice(0,300);
-  const T={in:"Принял наличные",out:"Выдал / потратил",move:"Передал другому"};
+  const PL=(D.places&&D.places.length?D.places:[{n:"Наличные",k:"cash"}]);
+  const T={in:"Принял деньги",out:"Выдал / потратил",move:"Передал другому"};
   const x=document.createElement("div"); x.className="modal"; x.id="ksM";
-  x.innerHTML=`<form class="modal-card ks-f" data-ksform="${t}"><h2 style="margin:0 0 10px">${T[t]}</h2>
+  x.innerHTML=`<form class="modal-card ks-f" data-ksform="${t}" novalidate><h2 style="margin:0 0 10px">${T[t]}</h2>
     <div class="ks-seg" role="radiogroup">${["in","out","move"].map(k=>`<button type="button" data-ks="seg" data-t="${k}" aria-pressed="${k===t}">${k==="in"?"Принял":k==="out"?"Выдал":"Передал"}</button>`).join("")}</div>
     <label>Сумма, ₽<input name="sum" inputmode="decimal" required maxlength="12" autocomplete="off"></label>
-    ${D.all?`<label>${t==="move"?"От кого":"У кого деньги"}<select name="holder">${opt(me)}</select></label>`:""}
+    ${D.all?`<label>${t==="move"?"От кого":t==="in"?"Кто принял":"У кого деньги"}<select name="holder">${opt(t==="in"?names:holders,me)}</select></label>`:""}
+    ${!D.all&&t!=="in"&&(D.hold||[]).some(x=>x.pl==="card")?`<label>Откуда<select name="holder">${opt([me].concat((D.hold||[]).filter(x=>x.pl==="card").map(x=>x.name)),me)}</select></label>`:""}
+    ${t==="in"?`<fieldset class="ks-fs"><legend>Куда пришли деньги</legend><div class="ks-pls">${PL.map((p,i)=>`<label class="ks-pl"><input type="radio" name="pl" value="${ke(p.n)}"${i===0?" checked":""}><span><b>${ke(p.n)}</b><small>${p.k==="card"?"на руках у "+ke(p.who||"того, кто принял")+" — пока не передаст":p.k==="cash"?"на руках у того, кто принял":KPK[p.k]||""}</small></span></label>`).join("")}</div></fieldset>`:""}
+    ${t==="out"?`<fieldset class="ks-fs"><legend>Как выдали</legend><div class="ks-way"><label><input type="radio" name="way" value="card"><span>Переводом</span></label><label><input type="radio" name="way" value="cash"><span>Наличными</span></label></div></fieldset>
+      <label class="ks-rcv" hidden>Кто получил<input name="sn" maxlength="40" list="ksPpl" autocomplete="off" placeholder="имя получателя"></label><datalist id="ksPpl">${names.map(n=>`<option value="${ke(n)}">`).join("")}</datalist>`:""}
     ${t==="move"?`<label>Кому<select name="to"><option value="">— выберите —</option>${names.filter(n=>shpNorm(n)!==shpNorm(me)||D.all).map(n=>`<option>${ke(n)}</option>`).join("")}</select></label>`:""}
-    ${t!=="move"?`<label>Сделка <span class="muted">(если по заказу)</span><select name="deal"><option value="">— без сделки —</option>${deals.map(o=>`<option value="${ke(o.id)}">${ke(shpTitle(o))}</option>`).join("")}</select></label>`:""}
-    ${t==="in"?`<label class="ks-chk" hidden><input type="checkbox" name="pay" checked> Засчитать в оплату сделки</label>`:""}
+    <div class="ks-proof">
+      <div class="ks-sgrow"${t==="in"||t==="out"?" hidden":""}><button type="button" class="btn ks-sgbtn" data-ksf="sign">${ki("sg",18)} <span>Подпись ${t==="move"?"того, кто принял":"получателя"}</span></button><img class="ks-sgim" alt="Подпись" hidden></div>
+      <label class="ks-ph"${t==="out"?" hidden":""}><span class="ks-phl">${t==="in"?"Фото: деньги, чек или скрин перевода":t==="move"?"или фото расписки":"Фото"}</span><span class="ks-phb">${ki("chk",18)}<span class="ks-pht">Сфотографировать или выбрать</span></span><input name="f" type="file" accept="image/*" class="ks-fi"></label>
+    </div>
+    ${t!=="move"?`<label>Сделка <span class="muted">(если по заказу)</span><select name="deal"><option value="">— без сделки —</option>${deals.map(o=>`<option value="${ke(o.id)}"${pre.deal===o.id?" selected":""}>${ke(shpTitle(o))}</option>`).join("")}</select></label>`:""}
+    ${t==="in"?`<label class="ks-chk"${pre.deal?"":" hidden"}><input type="checkbox" name="pay" checked> Засчитать в оплату сделки</label>`:""}
     <label>Комментарий<input name="note" maxlength="200" placeholder="${t==="in"?"предоплата, остаток, из банка…":t==="out"?"на что: фурнитура, бензин…":"под отчёт на закупку…"}"></label>
-    ${t!=="in"?`<label>Фото чека <span class="muted">(можно не прикладывать)</span><input name="f" type="file" accept="image/*"></label>`:""}
+    ${D.dir?`<div class="ks-ncw"><button type="button" class="linkbtn ks-ncbtn" data-ksf="nc">Сохранить без чека</button><label class="ks-ncl" hidden>Почему без чека <span class="muted">(запись будет красной)</span><input name="nochk" maxlength="200" placeholder="например: чек потерян, отдал лично"></label></div>`:""}
+    <p class="ks-err" role="alert" hidden></p>
     <div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" type="submit">Записать</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
   document.body.appendChild(x); setTimeout(()=>{ const i=x.querySelector("[name=sum]"); i&&i.focus(); },50);
-  const dsel=x.querySelector("[name=deal]"), chk=x.querySelector(".ks-chk"); if(dsel&&chk) dsel.addEventListener("change",()=>{ chk.hidden=!dsel.value; });
-  x.addEventListener("click",e=>{ const s=e.target.closest('[data-ks="seg"]'); if(s){ e.preventDefault(); x.remove(); return ksForm(s.dataset.t); } if(e.target===x||e.target.closest('[data-act="qr-close"]')) x.remove(); }); }
-async function ksSave(f){ const t=f.dataset.ksform, g=n=>f.elements[n]?String(f.elements[n].value||"").trim():"";
-  const sum=g("sum").replace(/\s/g,"").replace(",","."); if(!(+sum>0)){ toast("Впишите сумму"); f.elements.sum.focus(); return; }
-  if(t==="move"&&!g("to")){ toast("Кому передали?"); return; }
+  const f=x.querySelector("form"), dsel=f.querySelector("[name=deal]"), chk=f.querySelector(".ks-chk"); if(dsel&&chk) dsel.addEventListener("change",()=>{ chk.hidden=!dsel.value; });
+  if(t==="out") f.addEventListener("change",e=>{ if(e.target.name!=="way") return; const v=e.target.value, ph=f.querySelector(".ks-ph"), sr=f.querySelector(".ks-sgrow");
+    ph.hidden=false; f.querySelector(".ks-phl").textContent=v==="card"?"Фото чека или скрин перевода":"или фото расписки"; sr.hidden=v!=="cash"; f.querySelector(".ks-rcv").hidden=v!=="cash"; ksErr(f,""); });
+  f.addEventListener("change",e=>{ if(e.target.name==="f"){ const on=!!e.target.files[0], b=f.querySelector(".ks-phb"); if(b){ b.classList.toggle("ok",on); b.querySelector(".ks-pht").textContent=on?"Фото выбрано · заменить":"Сфотографировать или выбрать"; } ksErr(f,""); } });
+  x.addEventListener("click",async e=>{ const s=e.target.closest('[data-ks="seg"]'); if(s){ e.preventDefault(); x.remove(); return ksForm(s.dataset.t,pre); }
+    const k=e.target.closest("[data-ksf]");
+    if(k&&k.dataset.ksf==="nc"){ e.preventDefault(); const l=f.querySelector(".ks-ncl"); l.hidden=!l.hidden; if(!l.hidden) l.querySelector("input").focus(); return; }
+    if(k&&k.dataset.ksf==="sign"){ e.preventDefault(); const sum=(f.elements.sum.value||"").replace(/\s/g,""); const nm=t==="move"?(f.elements.to.value||""):(f.elements.sn.value||"").trim();
+      if(!nm){ ksErr(f,t==="move"?"Сначала выберите, кому передали":"Сначала впишите, кто получил"); return; }
+      const sg=await ksSignPad({name:nm,what:t==="move"?"принял(а)":"получил(а)",line:(t==="move"?"Принял(а) ":"Получил(а) ")+(+sum.replace(",",".")>0?(+sum.replace(",",".")).toLocaleString("ru-RU")+" ₽ · ":"")+ksNow()});
+      if(sg){ f._sign=sg; f._signFor=nm; const im=f.querySelector(".ks-sgim"); im.src="data:image/jpeg;base64,"+sg; im.hidden=false; k.querySelector("span").textContent="Подпись есть · переподписать"; k.classList.add("ok"); ksErr(f,""); } return; }
+    if(e.target===x||e.target.closest('[data-act="qr-close"]')) x.remove(); }); }
+function ksErr(f,m){ const p=f.querySelector(".ks-err"); if(!p) return; p.textContent=m; p.hidden=!m; if(m) p.scrollIntoView({block:"nearest",behavior:"smooth"}); }
+async function ksSave(f){ const t=f.dataset.ksform, g=n=>f.elements[n]&&f.elements[n].value!==undefined?String(f.elements[n].value||"").trim():"";
+  const sum=g("sum").replace(/\s/g,"").replace(",","."); if(!(+sum>0)){ ksErr(f,"Впишите сумму"); f.elements.sum.focus(); return; }
+  if(t==="move"&&!g("to")){ ksErr(f,"Кому передали?"); return; }
+  const fi=f.elements.f&&f.elements.f.files[0], nc=g("nochk"), way=t==="out"?(f.querySelector("[name=way]:checked")||{}).value||"":"";
+  let sign=f._sign||""; if(sign&&t==="move"&&shpNorm(f._signFor)!==shpNorm(g("to"))) sign="";   /* сменили «Кому» — подпись не того человека */
+  if(sign&&t==="out"&&shpNorm(f._signFor)!==shpNorm(g("sn"))) sign="";
+  if(t==="out"&&!way){ ksErr(f,"Как выдали: переводом или наличными?"); return; }
+  if(!nc){ if(t==="out"&&way==="card"&&!fi){ ksErr(f,"Переводом — приложите фото чека или скрин перевода"); return; }
+    if(t==="out"&&way==="cash"&&!fi&&!sign){ ksErr(f,"Наличными — нужна подпись получателя или фото расписки"); return; }
+    if(t==="move"&&!fi&&!sign){ ksErr(f,"Нужна подпись того, кто принял, или фото расписки"); return; }
+    if(t==="in"&&!fi){ ksErr(f,"Приложите фото: деньги, чек или скрин перевода"); return; } }
+  else if(nc.length<3){ ksErr(f,"Напишите, почему без чека"); return; }
   const btn=f.querySelector('[type="submit"]'); btn.disabled=true; btn.textContent="Записываю…";
-  let photo=""; const fi=f.elements.f&&f.elements.f.files[0]; if(fi&&typeof siteShrink==="function"){ try{ photo=await siteShrink(fi); }catch(_){ toast("Не получилось открыть фото"); } }
+  let photo=""; if(fi&&typeof siteShrink==="function"){ try{ photo=await siteShrink(fi); }catch(_){ btn.disabled=false; btn.textContent="Записать"; ksErr(f,"Не получилось открыть фото — выберите другое"); return; } }
   const b={action:"kassaAdd",t,sum,note:g("note"),deal:g("deal"),holder:g("holder"),to:g("to")}; if(t==="in"&&g("deal")&&f.elements.pay&&f.elements.pay.checked) b.pay=1; if(photo) b.photo=photo;
-  const j=await shpPost(b); if(!j){ btn.disabled=false; btn.textContent="Записать"; return; }
+  if(t==="in") b.pl=(f.querySelector("[name=pl]:checked")||{}).value||""; if(way) b.way=way; if(sign){ b.sign=sign; b.sn=t==="move"?g("to"):g("sn"); } if(nc) b.nochk=nc;
+  const j=await shpPostRaw(b); if(!j||!j.ok){ btn.disabled=false; btn.textContent="Записать"; if(j&&j.error==="pin"){ shpBadPin(); return; } ksErr(f,!j?"Нет связи с таблицей. Не сохранилось — попробуйте ещё раз.":(j.msg||(j.error==="role"?"Нет прав на это действие":"Не сохранилось. Попробуйте ещё раз."))); return; }
   document.getElementById("ksM")?.remove(); toast(b.pay?"Записано и засчитано в оплату сделки":"Записано"); await ksLoad(); if(b.pay&&typeof shpLoad==="function") try{ shpLoad(); }catch(_){} }
+window.ksOpenForm=async(t,pre)=>{ if(!KS.data) await ksLoad(); ksForm(t,pre); };
+window.ksState=()=>KS; window.ksLoadNow=ksLoad;
+/* директор: «Куда приходят деньги» — список мест */
+function ksPlaces(){ const D=KS.data||{}, L=(D.places||[{n:"Наличные",k:"cash"}]).map(p=>Object.assign({},p)), ppl=D.people||[];
+  const x=document.createElement("div"); x.className="modal"; x.id="ksPl";
+  const row=(p,i)=>`<div class="ks-plr" data-i="${i}"><input name="n" maxlength="40" value="${ke(p.n)}" placeholder="Название, например «Счёт ИП Иванов»" aria-label="Название места"><select name="k" aria-label="Вид">${Object.keys(KPK).map(k=>`<option value="${k}"${p.k===k?" selected":""}>${KPK[k]}</option>`).join("")}</select><select name="who" aria-label="Чья карта"${p.k==="card"?"":" hidden"}><option value="">— кто принял —</option>${ppl.map(n=>`<option${shpNorm(n)===shpNorm(p.who)?" selected":""}>${ke(n)}</option>`).join("")}</select><button type="button" class="ks-x" data-kpl="del" aria-label="Убрать">✕</button></div>`;
+  const draw=()=>{ x.querySelector(".ks-pll").innerHTML=L.map(row).join(""); };
+  x.innerHTML=`<div class="modal-card ks-f"><h2 style="margin:0 0 6px">Куда приходят деньги</h2><p class="muted" style="margin:0 0 8px">Сотрудник при «+ Принял» выбирает одно из мест и прикладывает фото. Деньги на карте сотрудника считаются у него на руках, пока он не сделает «Передал».</p><div class="ks-pll"></div>
+    <button type="button" class="btn" data-kpl="add">+ Место</button><p class="ks-err" role="alert" hidden></p><div style="display:flex;gap:8px;margin-top:12px"><button type="button" class="btn primary" data-kpl="save">Сохранить</button><button type="button" class="btn" data-kpl="x">Отмена</button></div></div>`;
+  document.body.appendChild(x); draw();
+  const sync=()=>{ x.querySelectorAll(".ks-plr").forEach(r=>{ const p=L[+r.dataset.i]; p.n=r.querySelector("[name=n]").value.trim(); p.k=r.querySelector("[name=k]").value; p.who=r.querySelector("[name=who]").value; }); };
+  x.addEventListener("change",e=>{ if(e.target.name==="k"){ sync(); draw(); } });
+  x.addEventListener("click",async e=>{ const b=e.target.closest("[data-kpl]"); if(e.target===x) return x.remove(); if(!b) return; const a=b.dataset.kpl; sync();
+    if(a==="x") return x.remove(); if(a==="add"){ L.push({n:"",k:"ip"}); draw(); const i=x.querySelectorAll(".ks-plr [name=n]"); i[i.length-1].focus(); return; }
+    if(a==="del"){ L.splice(+b.closest(".ks-plr").dataset.i,1); draw(); return; }
+    if(a==="save"){ const list=L.filter(p=>p.n); const er=x.querySelector(".ks-err"); if(!list.length){ er.textContent="Нужно хотя бы одно место"; er.hidden=false; return; }
+      b.disabled=true; b.textContent="Сохраняю…"; const j=await shpPostRaw({action:"kassaPlSave",list}); if(!j||!j.ok){ b.disabled=false; b.textContent="Сохранить"; er.textContent=!j?"Нет связи с таблицей. Не сохранилось.":(j.msg||"Не сохранилось"); er.hidden=false; return; }
+      if(KS.data) KS.data.places=list; x.remove(); toast("Места сохранены"); ksLoad(); } }); }
 document.addEventListener("submit",ev=>{ const f=ev.target.closest&&ev.target.closest("[data-ksform]"); if(!f) return; ev.preventDefault(); ksSave(f); });
-document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.target.closest("[data-ks]"); if(!b||b.dataset.ks==="seg") return; if(!(S.shop&&S.shop.mode==="kassa")) return; ev.preventDefault();
-  const a=b.dataset.ks; if(a==="reload"){ KS.data=null; ksRedraw(); return ksLoad(); } if(a==="add") return ksForm(b.dataset.t);
+document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.target.closest("[data-ks]"); if(!b||b.dataset.ks==="seg"||b.closest("#ksM")) return; if(!(S.shop&&S.shop.mode==="kassa")) return; ev.preventDefault();
+  const a=b.dataset.ks; if(a==="reload"){ KS.data=null; ksRedraw(); return ksLoad(); } if(a==="add") return ksForm(b.dataset.t); if(a==="places") return ksPlaces(); if(a==="place") return dfSheet(b.dataset.n);
   if(a==="del"){ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Удалить?"; b.classList.add("sure"); setTimeout(()=>{ if(b.isConnected){ b.dataset.sure=""; b.textContent="✕"; b.classList.remove("sure"); } },3000); return; }
     const j=await shpPost({action:"kassaDel",id:b.dataset.id}); if(j){ toast("Удалено"); ksLoad(); } } });
 /* пункт в «Все разделы», экран, вкладка */
@@ -14551,6 +14694,154 @@ const st=document.createElement("style"); st.textContent=`
 .ks-x{border:0;background:none;color:var(--muted,#999);font:inherit;cursor:pointer;padding:6px;border-radius:8px}.ks-x.sure{color:#fff;background:#e0533f;font-size:12.5px}
 .ks-f{width:min(460px,100%);display:flex;flex-direction:column;gap:10px}.ks-f label{display:flex;flex-direction:column;gap:4px;font-size:14px}.ks-f input:not([type=checkbox]),.ks-f select{min-height:44px;font:inherit;font-size:16px}
 .ks-f .ks-chk{flex-direction:row;align-items:center;gap:8px}.ks-seg{display:flex;gap:6px}.ks-seg button{flex:1;min-height:40px;border-radius:10px;border:1px solid var(--line);background:none;color:inherit;font:inherit;cursor:pointer}.ks-seg button[aria-pressed=true]{background:var(--ink,#2b2f33);color:var(--bg,#fff)}
+/* 15.11: подтверждение выдачи, места денег, подпись */
+.ks-i{vertical-align:-2px;flex:none}
+.ks-pfs{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}.ks-pf{display:inline-flex;align-items:center;gap:4px;min-height:26px;padding:2px 9px;border-radius:8px;box-shadow:none;font-size:12.5px;color:inherit;text-decoration:none}
+a.ks-pf:any-link{color:inherit;text-decoration:none}.ks-ncb{color:#ff6b5e;box-shadow:inset 0 0 0 1px rgba(255,107,94,.55)}.ks-old{color:var(--muted,#888)}
+.ks-op.ks-nc{box-shadow:inset 3px 0 0 #e0533f;background:rgba(224,83,63,.08);padding-left:10px;border-radius:6px}
+.ks-fs{border:0;margin:0;padding:0;min-width:0}.ks-fs legend{font-size:14px;margin:0 0 6px;padding:0}
+.ks-pls{display:grid;gap:6px}.ks-pl{flex-direction:row!important;align-items:center;gap:10px!important;min-height:50px;padding:8px 12px;border-radius:12px;box-shadow:none;cursor:pointer}
+.ks-pl input{width:20px;height:20px;margin:0;accent-color:#1f9d4c;flex:none}.ks-pl span{display:flex;flex-direction:column;min-width:0}.ks-pl b{font-size:15px}.ks-pl small{color:var(--muted,#888);font-size:12.5px}
+.ks-pl:has(input:checked){box-shadow:inset 0 0 0 2px #1f9d4c}
+.ks-way{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ks-way label{position:relative;display:block!important}.ks-way input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.ks-way span{display:flex;align-items:center;justify-content:center;min-height:50px;border-radius:12px;background:var(--sunk,rgba(127,127,127,.14));box-shadow:none;font-weight:700;font-size:15.5px;transition:box-shadow .15s,background-color .15s}
+.ks-way input:checked+span{box-shadow:inset 0 0 0 2px var(--ink,#fff)}.ks-way input:focus-visible+span{outline:2px solid var(--accent,#ffc21a);outline-offset:2px}
+.ks-proof{display:flex;flex-direction:column;gap:8px}.ks-proof [hidden]{display:none!important}
+.ks-sgrow{display:flex;align-items:center;gap:10px}.ks-sgbtn{flex:1;min-height:50px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:700}.ks-sgbtn.ok{box-shadow:inset 0 0 0 2px #1f9d4c;color:#34c77b}
+.ks-sgim{height:50px;max-width:40%;border-radius:8px;background:#fff;object-fit:contain}
+.ks-ph{position:relative}.ks-phb{display:flex;align-items:center;justify-content:center;gap:8px;min-height:50px;border-radius:12px;background:var(--sunk,rgba(127,127,127,.14));box-shadow:none;font-weight:700;font-size:15px;cursor:pointer}.ks-phb.ok{box-shadow:inset 0 0 0 2px #1f9d4c;color:#34c77b}
+.ks-fi{position:absolute!important;width:1px!important;height:1px!important;opacity:0;overflow:hidden;clip:rect(0 0 0 0)}.ks-ph:focus-within .ks-phb{outline:2px solid var(--accent,#ffc21a);outline-offset:2px}
+.ks-err{margin:4px 0 0;padding:9px 12px;border-radius:10px;background:rgba(224,83,63,.12);color:#ff6b5e;font-size:14px}
+.ks-ncw{display:flex;flex-direction:column;gap:6px}.ks-ncbtn{align-self:flex-start;color:#ff6b5e!important;min-height:44px;font-size:14px}.ks-ncl input{box-shadow:inset 0 0 0 1.5px rgba(255,107,94,.6)}
+.ks-skel i{display:block;height:18px;margin:8px 0;border-radius:8px;background:var(--sunk,rgba(127,127,127,.15))}.ks-skel i:nth-child(2){height:34px;width:55%}.ks-skel i:nth-child(3){width:80%}
+.ks-sgw{position:fixed;inset:0;z-index:10060;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.6);opacity:0;transition:opacity .2s}
+.ks-sgw.on{opacity:1}.ks-sgc{width:min(620px,100%);background:var(--surface,#1c1c1e);color:var(--ink,#fff);border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));transform:translateY(24px);transition:transform .22s}
+.ks-sgw.on .ks-sgc{transform:none}@media (min-width:700px){.ks-sgw{align-items:center}.ks-sgc{border-radius:16px}}
+.ks-sgh{display:flex;align-items:center;gap:8px}.ks-sgh h2{flex:1;margin:0;font-size:19px}.ks-sgx{min-width:44px;min-height:44px;border:0;border-radius:22px;background:var(--sunk,rgba(127,127,127,.15));color:inherit;font:inherit;cursor:pointer}
+.ks-sgl{margin:4px 0 10px;color:var(--muted,#999);font-size:14px}
+.ks-sgb{position:relative;height:min(42vh,280px);border-radius:12px;box-shadow:none;overflow:hidden;background:var(--bg,#000)}
+.ks-sgb canvas{display:block;touch-action:none;cursor:crosshair}.ks-sgph{position:absolute;left:0;right:0;bottom:22%;text-align:center;color:var(--muted,#777);pointer-events:none;border-top:1px dashed var(--frame,var(--line));margin:0 12%;padding-top:6px;font-size:13.5px}
+.ks-sgph[hidden]{display:none}.ks-sgf{display:flex;gap:8px;margin-top:12px}.ks-sgf .btn{flex:1;min-height:50px}
+.ks-plr{display:grid;grid-template-columns:1fr auto 44px;gap:6px;align-items:center;margin:0 0 8px}.ks-plr [name=who]{grid-column:1/3}.ks-plr [name=who][hidden]{display:none}.ks-plr input,.ks-plr select{min-height:44px;font:inherit;font-size:16px;min-width:0}
+/* 15.11 «Деньги фирмы» */
+.ks-df{padding:12px 14px 4px}.ks-sec{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0 6px;border-top:1px solid var(--line);font-size:15.5px}.ks-sec.first{border-top:0}.ks-df .ks-big+.ks-sec{border-top:1px solid var(--line)}
+.ks-sec span{display:inline-flex;align-items:center;gap:7px}
+.ks-dr{display:flex;align-items:center;gap:8px;width:100%;min-height:48px;padding:8px 0;border:0;border-top:1px solid var(--line);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:opacity .15s}
+.ks-dr:active{opacity:.55}.ks-dn{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;font-size:15px}.ks-dn>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ks-ds{display:flex;flex-wrap:wrap;align-items:center;gap:0 2px;margin:0}.ks-ds small{font-size:12.5px}.ks-dot{font-style:normal;color:var(--muted,#888);font-size:12px;margin:0 3px}
+.ks-dr>b{font-size:15.5px;font-weight:600;white-space:nowrap}.ks-chev{color:var(--muted,#888);font-size:18px;width:10px}
+.ks-warn{color:#ffd60a}.ks-negt{color:#ff6b5e}:root[data-theme="light"] .ks-warn{color:var(--w2-yt)}
+.ks-wrap:has(.ks-df){padding-bottom:170px}body:has(#ksPlD) .ai-fab{display:none!important}
+@media (max-width:700px){body:has(.ai-fab) .ks-df .ks-sec{padding-right:44px}body:has(.ai-fab) .ks-df .ks-dr>b{margin-right:26px}}   /* кнопка микрофона не закрывает суммы */
+.ks-h3{margin:14px 4px 6px;font-size:15px;color:var(--muted,#888);font-weight:600}.ks-addpl{display:block;min-height:44px;margin:0 0 10px;font-size:14.5px}
+.ks-fixr .ks-ot b{font-weight:600}
+.ks-shc{max-height:92vh;overflow:auto;display:flex;flex-direction:column;gap:10px}.ks-shc .ks-card{margin:0}.ks-fc{padding:12px 14px}.ks-fc .ks-big{margin:2px 0 2px}
+.ks-fixb,.ks-fixs{min-height:50px;border-radius:999px;border:0;font:inherit;font-weight:700;font-size:16px;cursor:pointer;transition:opacity .15s}.ks-fixb:active,.ks-fixs:active{opacity:.7}
+.ks-fixb{background:var(--sunk,rgba(127,127,127,.16));color:inherit;box-shadow:none}.ks-fixs{background:var(--ink,#fff);color:var(--bg,#000)}.ks-fixs:disabled{opacity:.5}
+.ks-fin{display:flex;flex-direction:column;gap:2px;cursor:text}.ks-fiw{display:flex;align-items:baseline;gap:6px}#ksPlD .ks-fin .ks-fiw input{flex:1;min-width:0;min-height:48px;border:0!important;background:none!important;box-shadow:none!important;border-radius:0!important;color:#30d158!important;font:inherit;font-size:32px!important;font-weight:800;padding:0!important;outline:none}#ksPlD .ks-fin .ks-fiw input::placeholder{color:var(--muted,#666)}
+.ks-fiw i{font-style:normal;font-size:28px;font-weight:800;color:#30d158}:root[data-theme="light"] #ksPlD .ks-fin .ks-fiw input,:root[data-theme="light"] .ks-fiw i{color:#1f9d4c!important}.ks-fin:focus-within{box-shadow:inset 0 0 0 2px #30d158}
+.ks-fd{margin:2px 0;font-size:24px;font-weight:800}.ks-fdn{margin:0;font-size:13px}.ks-shl{padding:4px 14px}
+:root:not([data-theme="light"]):not([data-vt="light"]) .ks-in{background:#1e3a2a!important;color:#30d158!important;border-color:transparent!important}:root:not([data-theme="light"]):not([data-vt="light"]) .ks-out{background:#3a1e1e!important;color:#ff6b6b!important;border-color:transparent!important}
+.ks-bt button{border-radius:999px}
+@media (prefers-reduced-motion:reduce){.ks-sgw,.ks-sgc{transition:none}}
+`; document.head.appendChild(st);
+})();
+
+/* ===== Касса на главном, «прими оплату» после монтажа, скидка за срок (Кирилл 15.11, 02:56–03:30, утверждено 03:30) =====
+   1) Плашка «Касса •••» на экране «Сегодня» — директору и тому, кому разрешена касса целиком (pr.kassa от сервера). Касание — показать сумму, второе — открыть кассу.
+   2) Акт подписан, а клиент ещё должен (сумма − оплачено − скидка > 0) — ответственному дизайнеру и директору красная пульсирующая рамка и плашка «№ N — прими оплату»,
+      пока оплата не внесена в кассу с фото. Список даёт сервер (payWait в ответе «Сделок»). Директор может поставить «оплата до даты» с причиной — до этой даты молчит.
+   3) Скидка за срок — ставит только директор, в сделке. Уменьшает только остаток к оплате клиента; ЗП и проценты — от полной суммы договора. Клиенту не показываем.
+   4) Подпись получателя при выдаче ЗП наличными (ksSignPad из site_kassa.js). Директор может «без подписи». ===== */
+(function(){
+const KZ={show:0,timer:0};
+const ze=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const zr=v=>(Math.round(+v||0)).toLocaleString("ru-RU")+" ₽";
+const zDir=()=>typeof prDir==="function"?prDir():!!(S.shop&&S.shop.tech);
+const zCashOk=()=>typeof shpPin==="function"&&!!shpPin()&&!!S.shop&&!!S.shop.loaded&&(zDir()||!!(S.shop.pr&&S.shop.pr.kassa));
+const zWait=()=>(S.shop&&Array.isArray(S.shop.payWait)?S.shop.payWait:[]);
+const zDue=()=>zWait().filter(x=>!x.wait);
+/* ответ «Сделок»: список «прими оплату» */
+if(typeof shpSetRole==="function"){ const _kzSR=shpSetRole; shpSetRole=function(j){ const r=_kzSR.apply(this,arguments); try{ S.shop.payWait=j&&Array.isArray(j.payWait)?j.payWait:[]; }catch(_){} kzFrame(); return r; }; }
+/* рамка на весь экран — пока есть сделки «прими оплату» (только тем, кому сервер их отдал) */
+function kzFrame(){ try{ document.documentElement.classList.toggle("kz-pulse",zDue().length>0&&S.view==="shop"); }catch(_){} }
+if(typeof render==="function"){ const _kzR=render; render=function(){ const r=_kzR.apply(this,arguments); kzFrame(); return r; }; }
+/* остаток клиента — с учётом скидки за срок (плитка «ждём денег», доплата при монтаже) */
+if(typeof plRest==="function"){ const _kzRest=plRest; plRest=function(o){ return Math.max(0,_kzRest.apply(this,arguments)-(+(o&&o.disc)||0)); }; }
+/* ---- «Сегодня»: плашка кассы и «прими оплату» сверху ---- */
+function kzCashSum(){ const st=typeof ksState==="function"?ksState():null, D=st&&st.data; if(!D) return null; if(D.all) return D.total; const me=shpNorm(shpWho()); return (D.hold.find(x=>shpNorm(x.name)===me)||{sum:0}).sum; }
+function kzCashHtml(){ if(!zCashOk()) return ""; const on=KZ.show&&Date.now()-KZ.show<12000, v=on?kzCashSum():null;
+  return `<button type="button" class="kz-cash${on?" on":""}" data-kz="cash" aria-label="${on?"Открыть кассу":"Касса: показать сумму"}"><span class="kz-ci" aria-hidden="true">${typeof shpIco==="function"?shpIco("cash",22):""}</span><span class="kz-cl">Касса</span><b class="kz-cv">${on?(v==null?`<i class="kz-sk" aria-label="Загружаю"></i>`:ze(zr(v))):"•••"}</b><span class="kz-ch" aria-hidden="true">${on?"открыть ›":"показать"}</span></button>`; }
+function kzPayHtml(){ const L=zDue(); if(!L.length) return "";
+  return `<section class="kz-pay" role="alert" aria-label="Прими оплату"><h2 class="kz-ph"><span class="kz-dot" aria-hidden="true"></span>Прими оплату<span class="kz-pn">${L.length}</span></h2>${L.slice(0,5).map(x=>`<button type="button" class="kz-pr" data-act="shp-open" data-id="${ze(x.id)}"><span class="kz-prt"><b>№ ${ze(x.num)} — прими оплату</b><small>${ze(x.client||"")} · акт подписан${x.at?" "+new Date(x.at).toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"}):""}</small></span>${x.rest!=null?`<b class="kz-prs">${ze(zr(x.rest))}</b>`:""}<i aria-hidden="true">›</i></button>`).join("")}${L.length>5?`<p class="kz-more">и ещё ${L.length-5}</p>`:""}</section>`; }
+if(typeof plHtml==="function"){ const _kzPl=plHtml; plHtml=function(){ const h=_kzPl.apply(this,arguments); let top=""; try{ top=kzPayHtml()+kzCashHtml(); }catch(e){ console.error("касса на главном",e); } return top+h; }; }
+/* экран «Цех» (первый после входа, site_zhivoj.js — грузится позже): плашки — над сеткой заказов. Обёртку ставим, когда все модули уже на месте */
+setTimeout(()=>{ if(typeof shpBoardHtml!=="function") return; const _kzB=shpBoardHtml; shpBoardHtml=function(){ const h=_kzB.apply(this,arguments); try{ if(S.shop.bview!=="ceh"||!S.shop.loaded) return h; const top=kzPayHtml()+kzCashHtml(); if(!top) return h;
+  for(const m of ['<div class="zj-grid">','<div class="zj-empty">']){ const i=h.indexOf(m); if(i>=0) return h.slice(0,i)+top+h.slice(i); } return h+top; }catch(e){ console.error("касса на «Цехе»",e); return h; } }; },0);
+function kzRepaint(){ const b=document.querySelector(".kz-cash"); if(!b) return; const t=document.createElement("div"); t.innerHTML=kzCashHtml(); const n=t.firstElementChild; if(n) b.replaceWith(n); else b.remove(); }
+addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.target.closest('[data-kz="cash"]'); if(!b) return; ev.preventDefault(); ev.stopPropagation();
+  const on=KZ.show&&Date.now()-KZ.show<12000;
+  if(on){ KZ.show=0; clearTimeout(KZ.timer); if(typeof shpGo==="function") shpGo("kassa"); return; }
+  KZ.show=Date.now(); kzRepaint(); clearTimeout(KZ.timer); KZ.timer=setTimeout(()=>{ KZ.show=0; kzRepaint(); },12000);
+  try{ if(typeof ksLoadNow==="function") await ksLoadNow(); }catch(_){} kzRepaint(); },true);
+/* ---- сделка: «прими оплату», скидка за срок, «оплата до даты» ---- */
+function kzOrderCard(o){ if(!o||!S.shop.full) return ""; const w=zWait().find(x=>x.id===o.id), dir=zDir(), sum=+o.sum||0, pre=+o.prepay||0, disc=+o.disc||0, has=o.sum!==""&&o.sum!=null&&sum>0;
+  if(!w&&!(dir&&has)) return "";
+  let h=`<div class="card kz-oc${w&&!w.wait?" due":""}" aria-label="Расчёт с клиентом">`;
+  if(w&&!w.wait) h+=`<p class="kz-ot"><span class="kz-dot" aria-hidden="true"></span><b>Акт подписан — прими оплату${w.rest!=null?" "+ze(zr(w.rest)):""}</b></p><p class="kz-os muted">Внесите оплату в кассу с фото денег, чека или скрина перевода. Пока не внесено — рамка мигает у вас и у директора.</p>${typeof ksOpenForm==="function"?`<button type="button" class="btn primary kz-ob" data-kzo="pay" data-id="${ze(o.id)}">Принять оплату</button>`:""}`;
+  else if(w&&w.wait) h+=`<p class="kz-ot"><b>Оплата до ${ze(String(w.wait.until).split("-").reverse().join("."))}</b></p><p class="kz-os muted">${ze(w.wait.why)}${w.wait.by?" · "+ze(w.wait.by):""}</p>`;
+  if(has&&(dir||disc)) h+=`<div class="kz-om"><span>Сумма договора</span><b>${ze(zr(sum))}</b></div><div class="kz-om"><span>Оплачено</span><b>${ze(zr(pre))}</b></div>`
+    +(o.discL||[]).map(d=>`<div class="kz-om kz-dc"><span>Скидка за срок<small>${ze(d.why)}${d.by?" · согласовал "+ze(d.by):""}</small></span><b>−${ze(zr(d.sum))}</b>${dir?`<button type="button" class="kz-x" data-kzo="ddel" data-rid="${ze(d.id)}" aria-label="Убрать скидку">✕</button>`:""}</div>`).join("")
+    +`<div class="kz-om kz-tot"><span>К оплате клиенту</span><b>${ze(zr(Math.max(0,sum-pre-disc)))}</b></div>${disc?`<p class="kz-os muted">Зарплата и проценты — от полной суммы договора. Клиент видит только «к оплате».</p>`:""}`;
+  if(dir&&has) h+=`<div class="kz-obs"><button type="button" class="btn" data-kzo="disc" data-id="${ze(o.id)}">Скидка за срок</button><button type="button" class="btn" data-kzo="wait" data-id="${ze(o.id)}">Оплата до даты</button></div>`;
+  return h+`</div>`; }
+if(typeof shpOrderHtml==="function"){ const _kzO=shpOrderHtml; shpOrderHtml=function(){ const h=_kzO.apply(this,arguments); try{ const o=S.shop.cur&&typeof shpById==="function"?shpById(S.shop.cur):null, c=kzOrderCard(o); if(!c) return h;
+    const i=h.indexOf('class="card shp-money"'); if(i<0) return h; const e=h.indexOf("</details></div>",i); if(e<0) return h; const at=e+"</details></div>".length; return h.slice(0,at)+c+h.slice(at); }catch(err){ console.error("расчёт с клиентом",err); return h; } }; }
+function kzModal(title,body,onOk){ const x=document.createElement("div"); x.className="modal"; x.id="kzM";
+  x.innerHTML=`<form class="modal-card ks-f" novalidate><h2 style="margin:0 0 8px">${title}</h2>${body}<p class="ks-err" role="alert" hidden></p><div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-kzm="x">Отмена</button></div></form>`;
+  document.body.appendChild(x); const f=x.querySelector("form"); setTimeout(()=>{ const i=f.querySelector("input"); i&&i.focus(); },50);
+  const err=m=>{ const p=f.querySelector(".ks-err"); p.textContent=m; p.hidden=!m; };
+  x.addEventListener("click",e=>{ if(e.target===x||e.target.closest('[data-kzm="x"]')) x.remove(); });
+  f.addEventListener("submit",async e=>{ e.preventDefault(); const b=f.querySelector("[type=submit]"); const m=onOk(f); if(typeof m==="string"){ err(m); return; }
+    b.disabled=true; b.textContent="Сохраняю…"; const j=await shpPostRaw(m); if(!j||!j.ok){ b.disabled=false; b.textContent="Сохранить"; if(j&&j.error==="pin"){ shpBadPin(); return; } err(!j?"Нет связи с таблицей. Не сохранилось.":(j.msg||"Не сохранилось. Попробуйте ещё раз.")); return; }
+    x.remove(); toast("Сохранено"); if(typeof shpLoad==="function") try{ await shpLoad(true); }catch(_){} if(typeof shpRenderKeep==="function"&&S.shop.mode==="order") shpRenderKeep(); }); }
+document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.target.closest("[data-kzo]"); if(!b) return; ev.preventDefault(); const a=b.dataset.kzo, id=b.dataset.id, o=id?shpById(id):null;
+  if(a==="pay"){ if(typeof ksOpenForm==="function") ksOpenForm("in",{deal:id,pay:1}); return; }
+  if(a==="disc"){ const rest=o?Math.max(0,(+o.sum||0)-(+o.prepay||0)-(+o.disc||0)):0;
+    return kzModal("Скидка за срок",`<p class="muted" style="margin:0 0 6px">${ze(o?shpTitle(o):"")}. Уменьшает только остаток к оплате клиента (сейчас ${ze(zr(rest))}). Зарплата и проценты — от полной суммы договора. Клиент скидку не видит — только итог к оплате.</p><label>Сумма скидки, ₽<input name="sum" inputmode="decimal" maxlength="12" autocomplete="off"></label><label>Причина<input name="why" maxlength="200" placeholder="например: опоздали со сроком на 5 дней"></label>`,
+      f=>{ const s=String(f.elements.sum.value||"").replace(/\s/g,"").replace(",","."), w=String(f.elements.why.value||"").trim(); if(!(+s>0)) return "Впишите сумму скидки"; if(+s>rest) return "Скидка больше остатка к оплате ("+zr(rest)+")"; if(w.length<3) return "Напишите причину"; return {action:"kassaDisc",id,sum:s,why:w}; }); }
+  if(a==="wait"){ const t=new Date(); t.setDate(t.getDate()+1); const d0=t.toISOString().slice(0,10);
+    return kzModal("Оплата до даты",`<p class="muted" style="margin:0 0 6px">${ze(o?shpTitle(o):"")}. До этой даты напоминание «прими оплату» не мигает.</p><label>Клиент заплатит до<input name="until" type="date" min="${d0}" value="${d0}"></label><label>Причина<input name="why" maxlength="200" placeholder="например: клиент ждёт зарплату"></label>`,
+      f=>{ const u=f.elements.until.value, w=String(f.elements.why.value||"").trim(); if(!/^\d{4}-\d{2}-\d{2}$/.test(u)) return "Выберите дату"; if(w.length<3) return "Напишите причину"; return {action:"kassaWait",id,until:u,why:w}; }); }
+  if(a==="ddel"){ if(b.dataset.sure!=="1"){ b.dataset.sure="1"; b.textContent="Убрать?"; b.classList.add("sure"); setTimeout(()=>{ if(b.isConnected){ b.dataset.sure=""; b.textContent="✕"; b.classList.remove("sure"); } },3000); return; }
+    const j=await shpPost({action:"kassaDiscDel",rid:b.dataset.rid}); if(j){ toast("Скидка убрана"); if(typeof shpLoad==="function") try{ await shpLoad(true); }catch(_){} if(typeof shpRenderKeep==="function") shpRenderKeep(); } } });
+/* ---- ЗП наличными: подпись получателя (Кирилл 03:30 «вкл. проценты/ЗП/наличные»). Директор может без подписи. Ведомость на много людей — без подписи (как раньше) ---- */
+if(typeof shpZpPost==="function"){ const _kzZp=shpZpPost; shpZpPost=async function(body){
+  if(body&&body.action==="zpPay"&&body.way==="Касса"&&!body.sign&&typeof ksSignPad==="function"){ const n=Math.round(+String(body.sum||"").replace(",",".")||0), d=new Date();
+    const sg=await ksSignPad({name:body.to,what:"получил(а)",skip:zDir(),line:"Получил(а) "+n.toLocaleString("ru-RU")+" ₽ · "+(body.vid||"Зарплата")+" · "+d.toLocaleDateString("ru-RU")+" "+d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})});
+    if(sg===null){ toast("Выдача не записана — нужна подпись получателя"); return null; }
+    if(sg) body=Object.assign({},body,{sign:sg}); }
+  return _kzZp.call(this,body); }; }
+const st=document.createElement("style"); st.textContent=`
+.kz-cash{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;column-gap:12px;align-items:center;width:100%;min-height:64px;margin:12px 0 0;padding:10px 14px;border:0;border-radius:14px;background:var(--surface);color:var(--ink);box-shadow:none;font:inherit;text-align:left;cursor:pointer}
+.kz-ci{grid-row:1/3;display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--sunk,rgba(127,127,127,.14))}
+.kz-cl{font-size:14px;color:var(--muted)}.kz-cv{grid-column:2;font:800 24px/1.15 var(--f-num,var(--f-brand,var(--f-body,system-ui)));letter-spacing:.5px;min-height:28px}
+.kz-ch{grid-row:1/3;grid-column:3;font-size:13.5px;color:var(--muted)}.kz-cash.on .kz-ch{color:var(--ink)}.kz-cash.on .kz-cv{letter-spacing:0}
+@media (min-width:900px){.kz-cash{max-width:520px}}
+.kz-sk{display:inline-block;width:110px;height:22px;border-radius:8px;background:var(--sunk,rgba(127,127,127,.18));vertical-align:middle}
+.kz-pay{margin:12px 0 0;padding:10px 12px 6px;border-radius:14px;background:var(--surface);box-shadow:inset 0 0 0 2px #ff453a}
+.kz-ph{display:flex;align-items:center;gap:8px;margin:0 0 4px;font:700 17px var(--f-brand,var(--f-body,system-ui));color:var(--ink)}.kz-pn{margin-left:auto;font-size:14px;color:#ff6b5e}
+.kz-dot{width:10px;height:10px;border-radius:5px;background:#ff453a;flex:none;animation:kzDot 1.4s ease-in-out infinite}
+.kz-pr{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:8px 2px;border:0;border-top:1px solid var(--frame,var(--line));background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.kz-pr:first-of-type{border-top:0}.kz-prt{flex:1;min-width:0;display:flex;flex-direction:column}.kz-prt b{font-size:15.5px}.kz-prt small{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kz-prs{font-size:15px;color:#ff6b5e;white-space:nowrap}.kz-pr i{font-style:normal;color:var(--muted)}.kz-more{margin:2px 0 6px;font-size:13px;color:var(--muted)}
+html.kz-pulse::after{content:"";position:fixed;inset:0;z-index:9990;pointer-events:none;border:3px solid #ff453a;border-radius:max(0px,env(safe-area-inset-top,0px));animation:kzPulse 1.6s ease-in-out infinite}
+@keyframes kzPulse{0%,100%{opacity:.25}50%{opacity:1}}@keyframes kzDot{0%,100%{opacity:.35}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){html.kz-pulse::after,.kz-dot{animation:none;opacity:1}}
+.kz-oc{margin-top:10px}.kz-oc.due{position:relative}.kz-oc.due::after{content:"";position:absolute;inset:0;border-radius:inherit;border:2px solid #ff453a;pointer-events:none}.kz-ot{display:flex;align-items:center;gap:8px;margin:0 0 4px;font-size:16px}.kz-os{margin:0 0 8px;font-size:13.5px}
+.kz-ob{width:100%;min-height:50px;margin:0 0 8px}.kz-om{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--frame,var(--line));font-size:15px}.kz-om span{flex:1;min-width:0;display:flex;flex-direction:column}.kz-om small{font-size:12.5px;color:var(--muted)}
+.kz-dc b{color:#ff6b5e}.kz-tot b{font-size:17px}.kz-obs{display:flex;gap:8px;margin-top:8px}.kz-obs .btn{flex:1;min-height:46px}
+.kz-x{min-width:44px;min-height:40px;border:0;background:none;color:var(--muted);font:inherit;cursor:pointer;border-radius:8px}.kz-x.sure{color:#fff;background:#e0533f;font-size:12.5px}
 `; document.head.appendChild(st);
 })();
 
@@ -16038,7 +16329,7 @@ function inbFirst(n){ n=String(n||"").trim(); if(!n||/^(ооо|ип|ао|зао)
 function inbDay(d){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d||""); return m?(+m[3])+" "+SHP_MON[+m[2]-1]:""; }
 function inbFill(text,chat){
   const id=/^K:/.test(chat)?chat.slice(2):"", o=id?shpById(id):null, c=inbConv(chat)||{}, cfg=(S.inb.d&&S.inb.d.cfg)||{};
-  const has=v=>v!==""&&v!=null&&!isNaN(+v), rest=o&&has(o.sum)?(+o.sum)-(+o.prepay||0):null;
+  const has=v=>v!==""&&v!=null&&!isNaN(+v), rest=o&&has(o.sum)?(+o.sum)-(+o.prepay||0)-(+o.disc||0):null;   /* 15.11: остаток — за вычетом скидки за срок, как у клиента */
   const V={"{имя}":inbFirst(o?o.client:c.cname||c.name),"{дата замера}":o?inbDay(o.zamerDate):"","{дата монтажа}":o?inbDay(o.montazhDate):"","{остаток}":rest!=null?shpMoney(Math.max(0,rest)):"","{сумма}":o&&has(o.sum)?shpMoney(o.sum):"","{номер заказа}":o?o.num:"","{адрес}":o?o.address||"":"","{телефон офиса}":cfg.officePhone||""};
   const miss=[]; const out=String(text).replace(/\{[^{}]{2,20}\}/g,k=>V[k]?V[k]:(miss.includes(k)||miss.push(k),k));
   return {text:out,miss}; }
@@ -23494,7 +23785,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="c3d2eae510";
+const CHK_BUILD="bc29c6960a";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -29407,7 +29698,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="c3d2eae510"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="bc29c6960a"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -36544,7 +36835,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="c3d2eae510";/*cehqr-build*/
+  const BUILD="bc29c6960a";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
