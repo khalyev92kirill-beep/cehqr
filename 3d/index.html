@@ -24807,7 +24807,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="efcfec43f8";
+const CHK_BUILD="02b7b8e035";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -32057,7 +32057,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="efcfec43f8"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="02b7b8e035"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -40231,6 +40231,27 @@ function sfSay(A){ A=A||SF.ana||sfAnalyze(); const I=A.items, s=A.s, L=[], x=I[0
   return {L,sub:sub.join(" "),more:Math.max(0,I.length-main.length)}; }
 function sfSayRaw(){ const z=sfSay(); return z.L.map(l=>l.h+(l.w||"")).join(" ")+" "+z.sub; }
 function sfSayPlain(){ return unM(sfSayRaw()); }
+/* 16.11 13:39 (Кирилл: «нажимаю слушать, там 0000… Номер заказов не надо… главное важная информация и все»): голосом — без номеров и сумм,
+   фамилия клиента вместо номера («Лебедев опаздывает на 2 дня, отвечает Коля»), самое важное — 1–2 пункта, остальное — «ещё N замечаний». На экране текст прежний. */
+function sfSurname(o){ const c=String(o&&o.client||"").trim().split(/\s+/)[0]||""; return /[А-Яа-яЁёA-Za-z]{2,}/.test(c)?c:""; }
+function sfWhoOrder(x){ const o=x&&x.deal?sfOrders().find(y=>y.id===x.deal):null; const n=sfSurname(o); return n||"один заказ"; }
+function sfVoiceClean(t){ return String(t==null?"":t).replace(/[\u0001][^\u0002]*[\u0002]/g,"").replace(/№\s*0*(\d+)/g,(m0,n)=>{ const o=sfOrders().find(y=>String(y.num||"").replace(/^0+/,"")===String(+n)); return sfSurname(o)||"заказ"; })
+  .replace(/0\d{2,}/g,(m0,off,str)=>{ const pv=str.slice(Math.max(0,off-2),off); if(/[\d.,]$/.test(pv)||/\d[\s\u00a0]$/.test(pv)) return m0;   /* «0004» — номер заказа; «1 000» — сумма, не трогаем */
+    const o=sfOrders().find(y=>String(y.num||"").replace(/^0+/,"")===String(+m0)); return sfSurname(o)||"заказ"; }).replace(/\s{2,}/g," ").trim(); }
+function sfVoiceItem(x){ const k=String(x.key||"").split(":")[0], who=x.who&&!/^(цех|снабжение|технолог)$/i.test(x.who)?x.who:x.who||"", nm=sfWhoOrder(x), by=who?", отвечает "+who:"";
+  if(k==="late") return `${nm} опаздывает на ${dn(x.late||0)}${by}.`;
+  if(k==="pila") return `${nm==="один заказ"?"Один заказ":nm}: распил не отмечен${by}.`;
+  if(k==="task") return `Задача просрочена${by}.`;
+  if(k==="pay") return `${nm==="один заказ"?"Один клиент":nm}: акт подписан, а оплаты нет${by}.`;
+  if(k==="chk") return `Не приложен чек${by}.`;
+  if(k==="hold") return `${x.who||"Кто-то"} держит деньги на руках больше трёх дней.`;
+  if(k==="nom") return `${nm} в производстве без мастера.`;
+  if(k==="no3d") return `${nm}: нет модели из Базиса${by}.`;
+  if(k==="pr0"||k==="prj") return "Проверьте прайс.";
+  return sfVoiceClean(unM(x.head))+"."; }
+function sfVoiceText(){ const A=SF.ana||sfAnalyze(), I=A.items; if(!I.length) return "Всё по плану, замечаний нет.";
+  const main=[I[0]]; if(I[1]&&I[1].lv!=="later") main.push(I[1]); const rest=I.length-main.length;
+  return sfVoiceClean(main.map(sfVoiceItem).join(" ")+(rest>0?` Ещё ${rest} ${plur(rest,"замечание","замечания","замечаний")} — на экране.`:"")); }
 
 /* ---------- обход 9:00 и итог 18:00: показ при первом открытии после этого времени ---------- */
 function sfModeNow(){ const d=new Date(), h=d.getHours(), k=today(); if(h>=18&&lsG("sf-ev")!==k) return "ev"; if(h>=9&&lsG("sf-mo")!==k) return "mo"; return ""; }
@@ -40248,7 +40269,9 @@ function sfPlates(A){ const s=A.s, ld=k=>SF[k]&&!SF[k].err, hid=!SF.show;
   const debt=hid?`<b>•••</b><small>показать</small>`:`<b>${RK(s.debt)}</b><small>${s.brig==null?(SF.dp&&SF.dp.err?"по "+s.debtN+" договорам":"считаю ЗП…"):"из них ЗП ≈ "+RK(s.brig)}</small>`;
   return `<div class="sf-pl"><button type="button" class="sf-p" data-sf="${hid?"show":"q"}" data-q="Сколько в кассе?"><span>Касса сегодня</span>${cash}</button><button type="button" class="sf-p" data-sf="q" data-q="Что на пиле?"><span>Пила сегодня</span>${ceh}</button><button type="button" class="sf-p" data-sf="${hid?"show":"q"}" data-q="Кто должен?"><span>Должны клиенты</span>${debt}</button></div>`; }
 function sfLastI(){ for(let i=SF.hist.length-1;i>=0;i--) if(SF.hist[i].r==="q") return i; return -1; }
-function sfLastHtml(){ const k=sfLastI(); if(k<0) return SF.think?`<div class="sf-a sf-th"><span></span><span></span><span></span></div>`:""; return SF.hist.slice(k).map((m,j)=>sfMsgHtml(m,k+j)).join("")+(SF.think?`<div class="sf-a sf-th"><span></span><span></span><span></span></div>`:""); }
+function sfLastHtml(ov){ const k=sfLastI(), th=SF.think?`<div class="sf-a sf-th"><span></span><span></span><span></span></div>`:""; if(k<0) return th;
+  if(ov&&SF.lastX===k&&!SF.think) return "";   /* 16.11 13:27: на главной ответ — карточкой над нижним меню; закрыл (или ушёл в раздел) — не показываем, пока не спросит снова */
+  return (ov?`<div class="sf-lhd" data-sfdrag="1"><i class="sf-sgrab" aria-hidden="true"></i><div class="sf-lhr"><button type="button" class="sf-chip sf-lall" data-sf="lastall">Открыть всё</button><button type="button" class="sf-x sf-lx" data-sf="lastx" aria-label="Закрыть ответ">${SVG(IC.x,16)}</button></div></div>`:"")+`<div class="sf-lbd">`+SF.hist.slice(k).map((m,j)=>sfMsgHtml(m,k+j)).join("")+th+`</div>`; }
 function sfCapText(){ return SF.rec?(SF.draft?"«"+SF.draft+"»":"Слушаю…"):SF.think?"Думаю…":"Нажмите и говорите"; }
 function sfCapHtml(){ if(SF.rec) return `<b>Слушаю</b><small>${SF.draft?E("«"+SF.draft+"»"):"скажите, например, «покажи кассу»"}</small>`; if(SF.think) return `<b>Думаю…</b><small>${SF.capQ?E("«"+SF.capQ+"»"):""}</small>`;
   if(SF.capA&&Date.now()-SF.capA.at<9000) return `<span class="sf-ans">${E(SF.capA.t)}</span>`; return `<b>Нажмите и говорите</b><small>подержите — написать</small>`; }
@@ -40274,7 +40297,29 @@ const HUD_IC={dog:'<path d="M7 3h7l4 4v14H7z M14 3v4h4 M9.5 12h6 M9.5 15.5h6"/>'
   kassa:'<path d="M4 7h15a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4z M4 7l11-3v3 M16 13h2"/>',zakazy:'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z M4 7.5l8 4.5 8-4.5 M12 12v9"/>',zp:'<circle cx="12" cy="12" r="9"/><path d="M10 7.5v9 M10 7.5h3a2.2 2.2 0 0 1 0 4.4h-4.5 M8.5 14.5h4.5"/>',
   zadachi:'<path d="M4 6l1.5 1.5L8 5 M11 6.5h9 M4 12l1.5 1.5L8 11 M11 12.5h9 M4 18h4 M11 18.5h9"/>',chaty:'<path d="M4 5h16v11H9l-5 4z"/>',cfg:'<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3 M12 18.5v3 M2.5 12h3 M18.5 12h3 M5.3 5.3l2.1 2.1 M16.6 16.6l2.1 2.1 M5.3 18.7l2.1-2.1 M16.6 7.4l2.1-2.1"/>'};
 function hudOrder(){ if(SF.hud) return SF.hud; let o=null; try{ o=JSON.parse(lsG("sf-hud")||"null"); }catch(_){ o=null; } if(!Array.isArray(o)||o.length!==8||HUD_DEF.some(k=>o.indexOf(k)<0)) o=HUD_DEF.slice(); SF.hud=o; return o; }
-function hudSlot(i){ const L=i<4, a=HUD.ANG[i%4]*Math.PI/180, x=HUD.LX+HUD.AR*Math.cos(a); return {x:L?x:HUD.W-x, y:HUD.CY+HUD.AR*Math.sin(a)}; }
+/* 16.11 13:27: высота главной — под экран (от переключателя до нижнего меню), значки расходятся по дугам вверх и вниз, сфера чуть крупнее на высоких экранах.
+   H — высота в единицах макета 390 шириной; дуги становятся положе (AR больше), чтобы крайние значки не уходили за край. */
+function hudGeom(H){ H=Math.round(Math.max(430,Math.min(700,H))); if(HUD.H===H&&HUD.ok) return false;
+  /* CI — середина значков: на 22 выше центра сферы (подписи висят под значком — так значок с подписью стоит ровно вокруг сферы и не налезает на её кольцо) */
+  const span=Math.min((H-102)/2,235), AR=Math.max(562,span*span/52), m=Math.asin(span/AR)*180/Math.PI, CI=Math.round((H-40)/2);
+  Object.assign(HUD,{H,CI,CY:CI+22,R:Math.round(84+Math.max(0,Math.min(6,(H-450)*0.03))),AR,LX:62-AR,RX:HUD.W-62+AR,ANG:[-m,-m*0.45,m*0.45,m],ok:1}); return true; }
+function hudFit(box){ const par=box.parentElement, pw=par?par.clientWidth:0; if(!pw||!box.offsetWidth) return;
+  /* 16.11 13:40 «иногда дёргаются»: высота окна на телефоне скачет (адресная строка, клавиатура) — круг значков не пересчитываем.
+     Пересчёт — только если сменилась ширина (поворот, окно компьютера) или высота изменилась больше чем на 20 % и ничего не печатают; уже подогнанный круг на месте — выходим */
+  { const ae=document.activeElement, typing=!!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)), F=SF.fit, ih=innerHeight, tp=Math.round(box.getBoundingClientRect().top+(window.scrollY||0));
+    const same=F&&F.pw===pw&&Math.abs(tp-F.tp)<3&&(typing||Math.abs(ih-F.ih)<ih*0.2);   /* шапка над кругом сменила высоту (догрузился шрифт, колокольчик) — пересчитать */
+    if(same&&F.box===box) return;
+    if(same&&F.w){ box.style.width=F.w; box.style.height=F.h; box.style.aspectRatio="auto"; SF.fit={...F,box}; return; }
+    SF.fit={box,pw,ih,tp}; }
+  const z=(box.getBoundingClientRect().width/box.offsetWidth)||1, top=box.getBoundingClientRect().top+(window.scrollY||0);   /* z — сжатие страницы (body zoom): экранные px ÷ px стилей */
+  let bot=innerHeight; const ab=document.getElementById("appBar"); if(ab&&ab.offsetHeight){ const q=ab.getBoundingClientRect(); if(q.width>q.height&&q.top>innerHeight*0.5) bot=Math.min(bot,q.top); }   /* компьютер: меню сбоку — до низа окна */
+  const set=(k,H)=>{ const g=hudGeom(H), w=(HUD.W*k).toFixed(1)+"px", h=(HUD.H*k).toFixed(1)+"px"; if(box.style.width!==w) box.style.width=w; if(box.style.height!==h) box.style.height=h; box.style.aspectRatio="auto";
+    if(g){ const sv=box.querySelector(".sf-hsvg"); if(sv) sv.outerHTML=hudSvg(); } };
+  const avail=(bot-top)/z-6; let k=Math.min(pw,560)/HUD.W, H=avail/k; if(H<430){ k=Math.max(0.78,avail/430); H=430; } set(k,H);
+  /* второй проход: что-то ниже (отступ страницы) всё равно даёт прокрутку — ужимаем на эту разницу */
+  const se=document.scrollingElement||document.documentElement, over=(se.scrollHeight-se.clientHeight)/z; if(over>1&&HUD.H>430) set(k,HUD.H-over/k-1);
+  SF.fit.w=box.style.width; SF.fit.h=box.style.height; }
+function hudSlot(i){ const L=i<4, a=HUD.ANG[i%4]*Math.PI/180, x=HUD.LX+HUD.AR*Math.cos(a); return {x:L?x:HUD.W-x, y:(HUD.CI==null?HUD.CY:HUD.CI)+HUD.AR*Math.sin(a)}; }
 const plur=(n,a,b,c)=>{ n=Math.abs(n)%100; const d=n%10; return n>10&&n<20?c:d===1?a:d>=2&&d<=4?b:c; };
 function hudSub(id){ const T=today(), O=sfOrders(), open=O.filter(o=>!(o.stage==="closed"||o.stage==="lost"));
   if(id==="dog"){ const n=O.filter(o=>msDay(o.created)===T).length; return n?{s:n+" сегодня",c:"sf-g",b:n,bc:"g"}:{s:open.length+" в работе"}; }
@@ -40288,18 +40333,19 @@ function hudSub(id){ const T=today(), O=sfOrders(), open=O.filter(o=>!(o.stage==
   if(id==="chaty"){ let n=0; try{ n=typeof shpChatUnread==="function"?shpChatUnread():0; }catch(_){ n=0; } return n?{s:n+" "+plur(n,"новый","новых","новых"),b:n,bc:"r"}:{s:"нет новых"}; }
   return {s:""}; }
 function hudItemHtml(id){ const u=hudSub(id); return `<button type="button" class="sf-hb" data-hud="${id}" aria-label="${E(HUD_ITEMS[id])}${u.s&&u.s!=="•••"?": "+E(u.s):""}"><span class="sf-hc">${SVG(HUD_IC[id],22)}${u.b?`<i class="sf-hbg ${u.bc||"r"}">${E(u.b)}</i>`:""}</span><b>${E(HUD_ITEMS[id])}</b><small class="${u.c||""}">${E(u.s)}</small></button>`; }
-function hudSvg(){ const a=v=>v.toFixed(1), arc=(cx,cy,r,d0,d1)=>{ const t0=d0*Math.PI/180,t1=d1*Math.PI/180; return `M${a(cx+Math.cos(t0)*r)} ${a(cy+Math.sin(t0)*r)} A${r} ${r} 0 0 ${d1>d0?1:0} ${a(cx+Math.cos(t1)*r)} ${a(cy+Math.sin(t1)*r)}`; };
-  const ticks=(cx,cy,r,a0,a1,st,len,op,maj)=>{ let o=""; for(let d=a0;d<=a1+1e-3;d+=st){ const t=d*Math.PI/180, L=maj&&Math.abs(Math.round(d*10)%Math.round(maj*10))<1?len*2:len; o+=`<line x1="${a(cx+Math.cos(t)*r)}" y1="${a(cy+Math.sin(t)*r)}" x2="${a(cx+Math.cos(t)*(r+L))}" y2="${a(cy+Math.sin(t)*(r+L))}"/>`; } return o; };
-  const {W,H,CY,R,AR,LX,RX}=HUD, cx=W/2; let o=`<svg class="sf-hsvg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">`;
-  o+=`<path class="sf-harc" d="${arc(LX,CY,AR,-25,25)}"/><path class="sf-harc" d="${arc(RX,CY,AR,155,205)}"/>`;
-  o+=`<g class="sf-htk">${ticks(LX,CY,AR+40,-24,24,1.5,4,0,6)}${ticks(RX,CY,AR-44,156,204,1.5,4,0,6)}</g>`;
-  o+=`<circle class="sf-horb" cx="${cx}" cy="${CY}" r="${R+22}"/><g class="sf-htk">${ticks(cx,CY,R+22,0,350,10,3,0,0)}</g>`;
+function hudSvg(){ const a=v=>v.toFixed(1), arc=(cx,cy,r,d0,d1)=>{ const t0=d0*Math.PI/180,t1=d1*Math.PI/180; return `M${a(cx+Math.cos(t0)*r)} ${a(cy+Math.sin(t0)*r)} A${r.toFixed(1)} ${r.toFixed(1)} 0 0 ${d1>d0?1:0} ${a(cx+Math.cos(t1)*r)} ${a(cy+Math.sin(t1)*r)}`; };
+  const ticks=(cx,cy,r,a0,a1,st,len,maj)=>{ let o=""; const n=Math.floor((a1-a0)/st+1e-6); for(let i=0;i<=n;i++){ const d=a0+i*st, t=d*Math.PI/180, L=maj&&i%maj===0?len*2:len; o+=`<line x1="${a(cx+Math.cos(t)*r)}" y1="${a(cy+Math.sin(t)*r)}" x2="${a(cx+Math.cos(t)*(r+L))}" y2="${a(cy+Math.sin(t)*(r+L))}"/>`; } return o; };
+  const {W,H,CY,R,AR,LX,RX}=HUD, CI=HUD.CI==null?CY:HUD.CI, cx=W/2, dg=v=>Math.asin(Math.max(-0.99,Math.min(0.99,v)))*180/Math.PI, a0=dg((-10-CI)/AR), a1=dg((H+10-CI)/AR), st=1.5*562/AR;
+  let o=`<svg class="sf-hsvg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">`;
+  o+=`<path class="sf-harc" d="${arc(LX,CI,AR,a0,a1)}"/><path class="sf-harc" d="${arc(RX,CI,AR,180-a1,180-a0)}"/>`;
+  o+=`<g class="sf-htk">${ticks(LX,CI,AR+40,a0+1,a1-1,st,4,4)}${ticks(RX,CI,AR-44,181-a1,179-a0,st,4,4)}</g>`;
+  o+=`<circle class="sf-horb" cx="${cx}" cy="${CY}" r="${R+22}"/><g class="sf-htk">${ticks(cx,CY,R+22,0,350,10,3,0)}</g>`;
   for(let i=0;i<8;i++){ const p=hudSlot(i), dx=cx-p.x, dy=CY-p.y, L=Math.hypot(dx,dy), sx=p.x+dx/L*30, sy=p.y+dy/L*30, ex=cx-dx/L*(R+24), ey=CY-dy/L*(R+24);
     o+=`<line class="sf-hln" x1="${a(sx)}" y1="${a(sy)}" x2="${a(ex)}" y2="${a(ey)}"/><line class="sf-hnot" data-slot="${i}" x1="${a(ex-dx/L*6)}" y1="${a(ey-dy/L*6)}" x2="${a(ex)}" y2="${a(ey)}"/>`; }
   return o+`</svg>`; }
-function hudLayout(prev,drag){ const box=document.getElementById("sfHud"); if(!box) return; const k=box.clientWidth/HUD.W, ord=prev||hudOrder();
+function hudLayout(prev,drag){ const box=document.getElementById("sfHud"); if(!box) return; if(!drag) hudFit(box); const k=box.clientWidth/HUD.W, ord=prev||hudOrder();
   ord.forEach((id,i)=>{ const b=box.querySelector(`.sf-hb[data-hud="${id}"]`); if(!b||b===drag) return; const p=hudSlot(i); b.style.transform=`translate3d(${(p.x*k-25).toFixed(1)}px,${(p.y*k-25).toFixed(1)}px,0)`; b.dataset.slot=i; });
-  const c=box.querySelector(".sf-sph"); if(c){ const w=Math.round(300*k); c.style.width=w+"px"; c.style.height=w+"px"; c.style.transform=`translate3d(${(HUD.W/2*k-w/2).toFixed(1)}px,${(HUD.CY*k-w/2).toFixed(1)}px,0)`; const cv=c.querySelector("canvas"); if(cv){ cv.style.width=w+"px"; cv.style.height=w+"px"; } }
+  const c=box.querySelector(".sf-sph"); if(c){ const w=Math.round(300*(HUD.R/84)*k); c.style.width=w+"px"; c.style.height=w+"px"; c.style.transform=`translate3d(${(HUD.W/2*k-w/2).toFixed(1)}px,${(HUD.CY*k-w/2).toFixed(1)}px,0)`; const cv=c.querySelector("canvas"); if(cv){ cv.style.width=w+"px"; cv.style.height=w+"px"; } }
   const cp=document.getElementById("sfCap"); if(cp){ cp.style.top=((HUD.CY+HUD.R+30)*k).toFixed(0)+"px"; } }
 function hudPaint(){ const box=document.getElementById("sfHud"); if(!box) return; box.dataset.tone=SF.ana?SF.ana.tone||"":""; if(SF.edit) return; hudOrder().forEach(id=>{ const b=box.querySelector(`.sf-hb[data-hud="${id}"]`); if(!b) return; const h=hudItemHtml(id), t=document.createElement("div"); t.innerHTML=h; const n=t.firstElementChild; if(b.innerHTML!==n.innerHTML) b.innerHTML=n.innerHTML; b.setAttribute("aria-label",n.getAttribute("aria-label")); }); }
 function hudGo(id){ document.getElementById("sfSheet")?.remove();
@@ -40312,30 +40358,39 @@ function hudEdit(on){ SF.edit=!!on; const m=document.getElementById("sfMain"); i
 function hudHeadHtml(){ const d=new Date(), hr=d.getHours(), gr=hr<5?"Доброй ночи":hr<12?"Доброе утро":hr<18?"Добрый день":hr<23?"Добрый вечер":"Доброй ночи";
   if(SF.edit) return `<div class="sf-hh"><div><small>Перестановка</small><b>Тяните пункт</b></div><button type="button" class="sf-w sf-done2" data-sf="hudok">Готово</button></div>`;
   return `<div class="sf-hh"><div><small><i class="sf-live"></i>${E(d.toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long"}).replace(/^./,c=>c.toUpperCase()))}</small><b>${gr}${sfMe()?", "+E(sfMe().split(/\s+/)[0]):""}</b></div>${typeof sgBellBtn==="function"?sgBellBtn():""}<button type="button" class="sf-rb" data-sf="gear" aria-label="Настройки">${SVG(HUD_IC.cfg,22)}</button></div>`; }
-function sfHtml(){ const A=sfAnalyze(), z=sfSay(A), mode=SF.mode||sfModeNow(); SF.mode=mode;
+/* 16.11 13:27 (Кирилл, видео): «тут главный экран, только эта сфера… по краям круглые значки и все… внизу всю информацию отсюда убрать вообще… Без лишних».
+   Главная — только шапка, переключатель, сфера со значками и подпись под ней; страница не листается (hudLayout подгоняет высоту под экран).
+   Сводка, «Слушать», «Горит / Сегодня / Можно позже», плитки, подсказки и разговор — во вкладке «Сегодня» (sfTodayHtml), работают как раньше. */
+function sfHtml(){ const A=sfAnalyze(); { const k=sfLastI(), m=k>=0?SF.hist[SF.hist.length-1]:null; if(k>=0&&!SF.think&&m&&Date.now()-(m.at||0)>120000) SF.lastX=k; }   /* старый ответ (больше 2 мин) при новом открытии главной не всплывает */
+  const lh=sfLastHtml(true);
+  return `<div class="sf-top" id="sfHead">${hudHeadHtml()}</div>${sgSegHtml()}
+<section class="sf-main sf-only${SF.edit?" sf-edit":""}" id="sfMain" data-st="${SF.st}">
+<div class="sf-hud" id="sfHud" data-tone="${E(A.tone||"")}">${hudSvg()}<div class="sf-sph" role="button" tabindex="0" aria-label="Помощник Work24link: нажмите и говорите; подержите — написать текстом"><canvas class="sf-cv" data-big="1"></canvas></div>
+${hudOrder().map(hudItemHtml).join("")}<div class="sf-cap" id="sfCap" aria-live="polite">${sfCapHtml()}</div><p class="sf-ehint">Ведите пункт по дуге или на другую сторону — остальные расступаются. Нажмите «Готово».</p></div>
+<div class="sf-last${lh?" on":""}" id="sfLast" aria-live="polite">${lh}</div>
+</section>
+<form class="sf-in sf-type" id="sfIn" autocomplete="off" ${SF.typing?"":"hidden"}><input type="text" id="sfInp" placeholder="Напишите вопрос…" aria-label="Вопрос помощнику" value="${E(SF.draft)}" enterkeyhint="send"><button type="submit" class="sf-mic" aria-label="Спросить">${SVG(IC.up,22)}</button><button type="button" class="sf-x sf-tx" data-sf="untype" aria-label="Закрыть">${SVG(IC.x,18)}</button></form>`; }
+/* сводка директора — во вкладке «Сегодня», сразу под переключателем (то, что раньше было под сферой) */
+function sfTodayHtml(){ const A=sfAnalyze(), z=sfSay(A), mode=SF.mode||sfModeNow(); SF.mode=mode;
   const head=mode==="mo"?`<p class="sf-mode">Обход в 9:00 · проверил ${A.s.chains} цепочек · замечаний ${A.items.length}</p>`:mode==="ev"?`<p class="sf-mode">Итог дня · сделано задач ${A.s.doneTasks}, распилов ${A.s.pilaDone} из ${A.s.pilaN} · осталось ${A.items.length}</p>`:"";
   const say=mask(z.L.map(l=>`<span class="${l.c==="rd"?"sf-r":l.c==="yl"?"sf-y":""}">${E(l.h)}</span>${E(l.w||"")} `).join(""));
-  return `<div class="sf-top" id="sfHead">${hudHeadHtml()}</div>${sgSegHtml()}
-<section class="sf-main${SF.edit?" sf-edit":""}" id="sfMain" data-st="${SF.st}">
-<div class="sf-hud" id="sfHud" data-tone="${E(A.tone||"")}">${hudSvg()}<div class="sf-sph" role="button" tabindex="0" aria-label="Помощник Work24link: нажмите и говорите; подержите — написать текстом"><canvas class="sf-cv" data-big="1"></canvas></div>
-${hudOrder().map(hudItemHtml).join("")}<div class="sf-cap" id="sfCap" aria-live="polite">${sfCapHtml()}</div></div><p class="sf-ehint">Ведите пункт по дуге или на другую сторону — остальные расступаются. Нажмите «Готово».</p>
-<div class="sf-last" id="sfLast">${sfLastHtml()}</div>
+  return `<section class="sf-tday" id="sfToday" aria-label="Сводка помощника">
 <h2 class="sf-h2">Сводка</h2>
 <div class="sf-say" id="sfSay">${head}<p class="sf-l1">${say}</p>${z.sub?`<p class="sf-l2" data-sf="show">${mask(E(z.sub))}</p>`:`<p class="sf-l2 sf-skel s"></p>`}</div>
 <div class="sf-btns sf-acts"><button type="button" class="sf-chip" data-sf="talk">${SVG(IC.spk,16)} Слушать</button></div>
 <div id="sfGroups">${sfGroupsHtml(A,false)}</div>
 <div id="sfPl">${sfPlates(A)}</div>
 <div class="sf-sug">${["Кто что делает?","Что горит?","Касса за сегодня","Мои поручения"].map(q=>`<button type="button" class="sf-chip" data-sf="q" data-q="${E(q)}">${E(q)}</button>`).join("")}</div>
+<div class="sf-last" id="sfLast" aria-live="polite">${sfLastHtml(false)}</div>
 <div class="sf-chat" id="sfChat">${sfChatHtml(true)}</div>
-</section>
-<form class="sf-in sf-type" id="sfIn" autocomplete="off" ${SF.typing?"":"hidden"}><input type="text" id="sfInp" placeholder="Напишите вопрос…" aria-label="Вопрос помощнику" value="${E(SF.draft)}" enterkeyhint="send"><button type="submit" class="sf-mic" aria-label="Спросить">${SVG(IC.up,22)}</button><button type="button" class="sf-x sf-tx" data-sf="untype" aria-label="Закрыть">${SVG(IC.x,18)}</button></form>`; }
-function sfPaint(){ { const sa=document.querySelector('#sfChatS > .sf-a[data-sf="show"]'); if(sa) sa.innerHTML=mask(E(sfSayRaw())); } if(!document.getElementById("sfMain")) return; const A=sfAnalyze(), z=sfSay(A), mode=SF.mode;
+</section>`; }
+function sfPaint(){ { const sa=document.querySelector('#sfChatS > .sf-a[data-sf="show"]'); if(sa) sa.innerHTML=mask(E(sfSayRaw())); } if(!document.getElementById("sfMain")&&!document.getElementById("sfToday")) return; const A=sfAnalyze(), z=sfSay(A), mode=SF.mode;
   const s=document.getElementById("sfSay"); if(s){ const say=mask(z.L.map(l=>`<span class="${l.c==="rd"?"sf-r":l.c==="yl"?"sf-y":""}">${E(l.h)}</span>${E(l.w||"")} `).join("")); const l1=s.querySelector(".sf-l1"), l2=s.querySelector(".sf-l2"); if(l1&&l1.innerHTML!==say) l1.innerHTML=say; if(l2&&z.sub){ l2.className="sf-l2"; l2.dataset.sf="show"; l2.innerHTML=mask(E(z.sub)); } const m=s.querySelector(".sf-mode"); if(m&&mode==="mo") m.textContent=`Обход в 9:00 · проверил ${A.s.chains} цепочек · замечаний ${A.items.length}`; }
   const g=document.getElementById("sfGroups"); if(g){ const h=sfGroupsHtml(A,false); if(g.innerHTML!==h) g.innerHTML=h; }
   const mb=document.querySelector('#sfMain [data-sf="more"]'); if(mb&&!(SF.open||mode)) mb.textContent="Ещё замечаний: "+A.items.length;
   const p=document.getElementById("sfPl"); if(p){ const h=sfPlates(A); if(p.innerHTML!==h) p.innerHTML=h; } hudPaint(); }
 function sfChatPaint(){ const cs=document.getElementById("sfChatS"); if(cs){ cs.innerHTML=sfChatHtml(); const l=cs.lastElementChild; if(l&&l.scrollIntoView) l.scrollIntoView({block:"nearest",behavior:"smooth"}); }
-  const c=document.getElementById("sfChat"); if(c) c.innerHTML=sfChatHtml(true); const L=document.getElementById("sfLast"); if(L) L.innerHTML=sfLastHtml(); sfCap(); }
+  const c=document.getElementById("sfChat"); if(c) c.innerHTML=sfChatHtml(true); const L=document.getElementById("sfLast"); if(L){ const ov=!!L.closest(".sf-main"); L.innerHTML=sfLastHtml(ov); L.classList.toggle("on",ov&&!!L.innerHTML); } sfCap(); }
 function sfCap(){ const c=document.getElementById("sfCap"); if(c){ const h=sfCapHtml(); if(c.innerHTML!==h){ c.innerHTML=h; c.classList.remove("sf-fade"); } c.classList.toggle("on",!!SF.rec); } }
 
 /* ---------- сфера: три вида, по времени t; цвет по делам ---------- */
@@ -40382,7 +40437,7 @@ document.addEventListener("visibilitychange",()=>{ if(!document.hidden) sfKick()
 function sfState(st,ms){ SF.st=st; clearTimeout(SF.stTo); if(ms) SF.stTo=setTimeout(()=>{ SF.st="idle"; },ms); const m=document.getElementById("sfMain"); if(m) m.dataset.st=st; sfKick(); }
 
 /* ---------- голос ---------- */
-function sfSpeak(t){ if(!SF.voice||!window.speechSynthesis||!t) return; try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(String(t).replace(/[«»"]/g,"").replace(/№\s*/g,"номер ").slice(0,700)); u.lang="ru-RU"; u.rate=1.04;
+function sfSpeak(t){ if(!SF.voice||!window.speechSynthesis||!t) return; try{ speechSynthesis.cancel(); t=sfVoiceClean(t); const u=new SpeechSynthesisUtterance(String(t).replace(/[«»"]/g,"").slice(0,700)); u.lang="ru-RU"; u.rate=1.04;
   try{ const v=typeof aiVoice==="function"?aiVoice():null; if(v) u.voice=v; }catch(_){}
   u.onstart=()=>sfState("talk"); u.onend=u.onerror=()=>sfState("idle"); speechSynthesis.speak(u); sfState("talk",Math.min(20000,t.length*75)); }catch(_){} }
 function sfMic(){ const SRc=window.SpeechRecognition||window.webkitSpeechRecognition; if(SF.rec){ try{ SF.rec.stop(); }catch(_){} return; }
@@ -40406,7 +40461,7 @@ function sfFindDeal(q){ const m=/(?:№|номер|n)\s*0*(\d{1,6})/i.exec(q)||/
 function sfDue(q){ const n=norm(q), T=today(); if(/послезавтра/.test(n)) return addD(T,2); if(/завтра/.test(n)) return addD(T,1); if(/сегодня/.test(n)) return T;
   const W=["воскрес","понедельн","вторн","сред","четверг","пятниц","суббот"]; for(let i=0;i<7;i++) if(new RegExp("\\b(в|во|на)\\s+"+W[i]).test(n)){ const d=new Date(); let k=(i-d.getDay()+7)%7; if(k===0) k=7; return addD(T,k); }
   const m=/(\d{1,2})[./](\d{1,2})/.exec(n); if(m){ const d=new Date(); let y=d.getFullYear(); const s=y+"-"+P2(+m[2])+"-"+P2(+m[1]); return s<T?(y+1)+s.slice(4):s; } return ""; }
-function sfPush(m){ SF.hist.push(m); if(SF.hist.length>40) SF.hist.splice(0,SF.hist.length-40); sfChatPaint(); }
+function sfPush(m){ m.at=m.at||Date.now(); SF.hist.push(m); if(SF.hist.length>40) SF.hist.splice(0,SF.hist.length-40); sfChatPaint(); }
 function sfAnswer(h,plain,card){ h=unM(h); plain=unM(plain); const sh=String(plain).length>150?String(plain).slice(0,147).replace(/\s+\S*$/,"")+"…":String(plain); SF.capA={t:sh,at:Date.now()}; sfPush({r:"a",h,t:plain,card}); sfSpeak(plain);
   clearTimeout(SF.capTo); SF.capTo=setTimeout(()=>{ const c=document.getElementById("sfCap"); if(c) c.classList.add("sf-fade"); setTimeout(()=>{ SF.capA=null; sfCap(); },600); },8000); }   /* ответ под сферой тает через 8 с */
 async function sfAsk(q){ q=String(q||"").trim(); if(!q) return; SF.capQ=q; SF.capA=null; sfPush({r:"q",t:q}); SF.think=1; sfState("think"); sfChatPaint(); { const L=document.getElementById("sfLast"); if(L&&!document.getElementById("sfHud")&&L.getBoundingClientRect().top>innerHeight*0.7) L.scrollIntoView({block:"start",behavior:"smooth"}); }   /* на дугах ответ — под сферой, страницу не двигаем */
@@ -40484,7 +40539,7 @@ function sfLocal(q){ const n=norm(q), A=SF.ana, s=A.s, T=today();
   if(/(прайс|цен[аы]|подорож)/.test(n)){ const P=sfPrice(); if(!P.length){ sfAnswer(SF.lg&&!SF.lg.err?"По журналу цен за 2 недели замечаний нет.":"Журнал цен ещё не загрузился.","Замечаний по ценам нет."); return true; }
     sfAnswer(P.map(p=>E(p.head)).join("<br>"),P.map(p=>p.head).join(". ")); return true; }
   /* сводка / что горит */
-  if(/(горит|опазд|просроч|сводк|обход|итог|что нового|как дела|замечан|проблем|что не так)/.test(n)){ sfAnswer(A.items.length?`Проверил ${s.chains} цепочек — замечаний ${A.items.length}.`:"Проверил всё — замечаний нет.",sfSayPlain(),{type:"groups"}); return true; }
+  if(/(горит|опазд|просроч|сводк|обход|итог|что нового|как дела|замечан|проблем|что не так)/.test(n)){ sfAnswer(A.items.length?`Проверил ${s.chains} цепочек — замечаний ${A.items.length}.`:"Проверил всё — замечаний нет.",sfVoiceText(),{type:"groups"}); return true; }
   return false; }
 async function sfFree(q){ const url=typeof helpUrl==="function"?helpUrl():""; const s=SF.ana.s;
   /* наружу — только нужные цифры: без телефонов, паролей, ключей и закупочных цен */
@@ -40527,7 +40582,7 @@ document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closes
   if(b.dataset.act==="sf-bv"){ e.preventDefault(); e.stopImmediatePropagation(); S.shop.bview="sf"; try{ sessionStorage.setItem("zj-bv","sf"); }catch(_){} render(); window.scrollTo(0,0); return; }
   const a=b.dataset.sf; if(b.closest("form")&&a!=="mic"&&a!=="untype") return; e.preventDefault(); e.stopPropagation();
   const i=+b.dataset.i;
-  if(a==="talk"){ const t=sfSayPlain(); if(!SF.voice){ toast("Голос выключен: «⋯ → Голос»"); return; } sfSpeak(t); return; }
+  if(a==="talk"){ const t=sfVoiceText(); if(!SF.voice){ toast("Голос выключен: «⋯ → Голос»"); return; } sfSpeak(t); return; }
   if(a==="more"){ SF.open=!(SF.open||SF.mode); SF.mode=""; const g=document.getElementById("sfGroups"); if(g) g.hidden=!SF.open; b.setAttribute("aria-expanded",String(SF.open)); b.textContent=SF.open?"Свернуть":"Ещё замечаний: "+(SF.ana?SF.ana.items.length:0); return; }
   if(a==="show"){ if(SF.show){ if(b.dataset.q) return sfAsk(b.dataset.q); return; } SF.show=true; clearTimeout(SF.showTo); SF.showTo=setTimeout(()=>{ SF.show=false; sfPaint(); },30000); sfPaint(); return; }   /* первое касание — показать суммы на 30 с, второе — открыть ответ */
   if(a==="q") return sfAsk(b.dataset.q);
@@ -40543,6 +40598,8 @@ document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closes
   if(a==="kassa"){ document.getElementById("sfSheet")?.remove(); return sfClick({act:"shp-tab",v:"kassa"}); }
   if(a==="close"){ document.getElementById("sfSheet")?.remove(); return; }
   if(a==="untype"){ sfType(false); return; }
+  if(a==="lastx"){ sfLastClose(); return; }
+  if(a==="lastall"){ SF.lastX=sfLastI(); sfChatPaint(); sfAnalyze(); sfLoad(); sfSheet(); return; }   /* «Открыть всё» — весь разговор в шторке (прокрутка, строка вопроса) */
   if(a==="hudok"){ hudEdit(false); return; }
   if(a==="gear") return sfGear();
   if(a==="gcfg"){ document.getElementById("sfGear")?.remove(); return hudGo("cfg"); }
@@ -40565,19 +40622,48 @@ document.addEventListener("keydown",e=>{ if((e.key==="Enter"||e.key===" ")&&e.ta
   document.addEventListener("click",e=>{ const t=e.target.closest&&e.target.closest(".sf-sph,.sf-shd canvas"); if(!t) return; e.preventDefault(); e.stopPropagation(); clearTimeout(lp); lp=0; if(longed){ longed=false; return; } sfMic(); },true);
   document.addEventListener("contextmenu",e=>{ if(e.target.closest&&e.target.closest(".sf-sph")) e.preventDefault(); },true); }
 
+/* ---------- карточка ответа на главной: смахнул вниз — закрылась (как шторки iPhone) ---------- */
+function sfLastClose(anim){ const L=document.getElementById("sfLast"); const fin=()=>{ SF.lastX=sfLastI(); sfChatPaint(); };
+  if(!L||!anim||RM||!L.animate) return fin(); const a=L.animate([{transform:getComputedStyle(L).transform==="none"?"none":getComputedStyle(L).transform,opacity:1},{transform:"translateY(110%)",opacity:0}],{duration:200,easing:"cubic-bezier(.4,0,1,1)",fill:"forwards"}); a.onfinish=()=>{ fin(); a.cancel(); L.style.transform=""; }; }
+{ let d=null;
+  const st=(e,y)=>{ const L=e.target.closest&&e.target.closest(".sf-main .sf-last.on"); if(!L) return false; if(e.target.closest("button")&&!e.target.closest(".sf-lhd")) return false;
+    const onHead=!!e.target.closest(".sf-lhd"); if(!onHead&&L.scrollTop>0) return false; if(e.target.closest(".sf-lhd button")) { d={L,y0:y,t0:performance.now(),dy:0,btn:1}; return true; } d={L,y0:y,t0:performance.now(),dy:0}; return true; };
+  const mv=(y,e)=>{ if(!d) return; const dy=Math.max(0,y-d.y0); if(d.btn&&dy<8) return; d.btn=0; d.dy=dy; if(dy>4){ d.L.style.transition="none"; d.L.style.transform=`translateY(${dy}px)`; if(e&&e.cancelable) e.preventDefault(); } };
+  const en=()=>{ if(!d) return; const {L,dy,t0}=d; d=null; const v=dy/Math.max(1,performance.now()-t0); if(dy>90||(dy>30&&v>0.5)){ sfLastClose(true); return; }
+    if(dy>0){ if(RM||!L.animate){ L.style.transform=""; return; } const a=L.animate([{transform:`translateY(${dy}px)`},{transform:"translateY(0)"}],{duration:260,easing:"cubic-bezier(.3,1.35,.5,1)"}); L.style.transform=""; } };
+  document.addEventListener("touchstart",e=>{ if(e.touches.length===1) st(e,e.touches[0].clientY); },{passive:true,capture:true});
+  document.addEventListener("touchmove",e=>{ if(d) mv(e.touches[0].clientY,e); },{passive:false,capture:true});
+  document.addEventListener("touchend",en,true); document.addEventListener("touchcancel",en,true);
+  document.addEventListener("pointerdown",e=>{ if(e.pointerType==="mouse"&&e.button===0) st(e,e.clientY); },true);
+  document.addEventListener("pointermove",e=>{ if(d&&e.pointerType==="mouse") mv(e.clientY,null); },true);
+  document.addEventListener("pointerup",e=>{ if(e.pointerType==="mouse") en(); },true); }
+
+/* ---------- нажатие на значок: подрастает и пружинит, соседи чуть расступаются (Кирилл 16.11 13:27, «как на iPhone») ----------
+   Только transform (60 кадров), через Web Animations — без перерисовки страницы. «Уменьшить движение» — без пружины и без сдвига соседей. */
+let hudPr=null;
+function hudPress(b){ if(RM||SF.edit||!b) return; hudUnpress(false); const c=b.querySelector(".sf-hc"); if(!c||!c.animate) return; hudPr=b;
+  c.getAnimations().forEach(a=>a.cancel()); c._pa=c.animate([{transform:"scale(1)"},{transform:"scale(1.12)"}],{duration:180,easing:"cubic-bezier(.2,.9,.3,1.15)",fill:"forwards"});
+  const p=c.getBoundingClientRect(), x0=p.left+p.width/2, y0=p.top+p.height/2;
+  document.querySelectorAll("#sfHud .sf-hc").forEach(o=>{ if(o===c) return; const q=o.getBoundingClientRect(), dx=q.left+q.width/2-x0, dy=q.top+q.height/2-y0, d=Math.hypot(dx,dy)||1, f=Math.max(0,1-d/340); if(f<=0.02) return;
+    o.getAnimations().forEach(a=>a.cancel()); const m=6*f; o._na=o.animate([{transform:"none"},{transform:`translate(${(dx/d*m).toFixed(1)}px,${(dy/d*m).toFixed(1)}px) scale(${(1-0.05*f).toFixed(3)})`}],{duration:200,delay:Math.round(d/6),easing:"cubic-bezier(.2,.8,.2,1)",fill:"forwards"}); }); }
+function hudUnpress(spring){ const b=hudPr; hudPr=null; if(!b) return; const c=b.querySelector(".sf-hc"); const cur=el=>{ const t=getComputedStyle(el).transform; return t&&t!=="none"?t:"none"; };
+  if(c){ const t=cur(c); c.getAnimations().forEach(a=>a.cancel()); if(spring&&c.animate) c.animate([{transform:t},{transform:"scale(1.12)",offset:.22},{transform:"scale(.96)",offset:.58},{transform:"scale(1.015)",offset:.82},{transform:"scale(1)"}],{duration:340,easing:"ease-out"}); }
+  document.querySelectorAll("#sfHud .sf-hc").forEach(o=>{ if(o===c||!o._na) return; const t=cur(o); o._na=null; o.getAnimations().forEach(a=>a.cancel()); if(spring&&o.animate&&t!=="none") o.animate([{transform:t},{transform:"none"}],{duration:300,easing:"cubic-bezier(.3,1.5,.5,1)"}); }); }
+
 /* ---------- дуги: нажатие, долгое нажатие, перестановка ---------- */
 { let lp=0, sx=0, sy=0, drag=null, moved=false, longed=false;
   const boxPt=e=>{ const box=document.getElementById("sfHud"), r=box.getBoundingClientRect(), k=box.clientWidth/HUD.W; return {x:(e.clientX-r.left)/k, y:(e.clientY-r.top)/k, k}; };
   const near=pt=>{ let bi=0, bd=1e9; for(let i=0;i<8;i++){ const p=hudSlot(i), d=(p.x-pt.x)**2+(p.y-pt.y)**2; if(d<bd){ bd=d; bi=i; } } return bi; };
   document.addEventListener("pointerdown",e=>{ const b=e.target.closest&&e.target.closest(".sf-hb"); if(!b||!document.getElementById("sfHud")) return; sx=e.clientX; sy=e.clientY; moved=false; longed=false; clearTimeout(lp);
     if(SF.edit){ e.preventDefault(); drag={b,id:b.dataset.hud,ord:hudOrder().filter(x=>x!==b.dataset.hud),to:+b.dataset.slot}; b.classList.add("drag"); try{ b.setPointerCapture(e.pointerId); }catch(_){} return; }
-    lp=setTimeout(()=>{ longed=true; lp=0; hudEdit(true); try{ navigator.vibrate&&navigator.vibrate(12); }catch(_){} },500); },true);
-  document.addEventListener("pointermove",e=>{ if(lp&&(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10)){ clearTimeout(lp); lp=0; }
+    hudPress(b); lp=setTimeout(()=>{ longed=true; lp=0; hudUnpress(false); hudEdit(true); try{ navigator.vibrate&&navigator.vibrate(12); }catch(_){} },500); },true);
+  document.addEventListener("pointermove",e=>{ if(lp&&(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10)){ clearTimeout(lp); lp=0; hudUnpress(true); }
     if(!drag) return; moved=true; const pt=boxPt(e); drag.b.style.transform=`translate3d(${(pt.x*pt.k-25).toFixed(1)}px,${(pt.y*pt.k-25).toFixed(1)}px,0) scale(1.12)`;
     const to=near(pt); if(to!==drag.to){ drag.to=to; const pv=drag.ord.slice(); pv.splice(to,0,drag.id); hudLayout(pv,drag.b); } },true);
-  const end=()=>{ clearTimeout(lp); lp=0; if(!drag) return; const d=drag; drag=null; d.b.classList.remove("drag"); const o=d.ord.slice(); o.splice(d.to,0,d.id); SF.hud=o; lsS("sf-hud",JSON.stringify(o)); hudLayout(o); };
+  const end=()=>{ clearTimeout(lp); lp=0; hudUnpress(true); if(!drag) return; const d=drag; drag=null; d.b.classList.remove("drag"); const o=d.ord.slice(); o.splice(d.to,0,d.id); SF.hud=o; lsS("sf-hud",JSON.stringify(o)); hudLayout(o); };
   document.addEventListener("pointerup",end,true); document.addEventListener("pointercancel",end,true);
-  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest(".sf-hb"); if(!b||!document.getElementById("sfHud")) return; e.preventDefault(); e.stopPropagation(); if(SF.edit||longed){ longed=false; return; } hudGo(b.dataset.hud); },true);
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest(".sf-hb"); if(!b||!document.getElementById("sfHud")) return; e.preventDefault(); e.stopPropagation(); if(SF.edit||longed){ longed=false; return; } if(SF.going) return;
+    const id=b.dataset.hud; SF.lastX=sfLastI(); hudUnpress(true); if(RM) return hudGo(id); SF.going=1; setTimeout(()=>{ SF.going=0; hudGo(id); },160); },true);   /* пружинку видно (0,16 с), потом раздел */
   document.addEventListener("contextmenu",e=>{ if(e.target.closest&&e.target.closest(".sf-hb")) e.preventDefault(); },true);
   window.addEventListener("resize",()=>{ if(document.getElementById("sfHud")) hudLayout(); }); }
 function sfGear(){ document.getElementById("sfGear")?.remove(); const d=document.createElement("div"); d.id="sfGear"; d.className="modal sf-sheet"; d.setAttribute("role","dialog"); d.setAttribute("aria-label","Настройки главной");
@@ -40590,13 +40676,110 @@ const SEG=[["sf","Главная"],["ceh","Цех"],["today","Сегодня"],[
 const segHtml=(cls)=>{ const b=S.shop.bview; return `<div class="${cls} sf4" role="group" aria-label="Что показать" data-on="${E(b)}">${SEG.map(([k,n])=>`<button type="button" data-act="${k==="sf"?"sf-bv":"vx-bv"}" data-v="${k}" aria-pressed="${b===k}">${n}</button>`).join("")}</div>`; };
 { const _sg=sgSegHtml; sgSegHtml=function(){ if(!sfDir()) return _sg.apply(this,arguments); return segHtml("sg-seg zj3"); }; }
 if(typeof vxSwitch==="function"){ const _vs=vxSwitch; vxSwitch=function(){ if(!sfDir()) return _vs.apply(this,arguments); return segHtml("shp-seg vx-bv"); }; }
+/* 16.11 13:44 (Кирилл, скрин: «внизу договора. Почему это так называется? Сфера — это наш главный экран»): у директора первый пункт нижнего меню —
+   «Главная» со значком сферы (открывает экран сферы); «Договоры» — значком у сферы. У остальных ролей меню прежнее (у них нет экрана сферы). */
+const SF_ICO='<circle cx="12" cy="12" r="8.6"/><path d="M4.6 9.3c4.6 1.9 10.2 1.9 14.8 0M4.6 14.7c4.6-1.9 10.2-1.9 14.8 0"/><path d="M12 3.4c-2.6 2.4-3.6 5.3-3.6 8.6s1 6.2 3.6 8.6"/>';
+try{ if(typeof SHP_I==="object"&&SHP_I&&!SHP_I.sfera) SHP_I.sfera=SF_ICO; }catch(_){}
+/* нижнее меню строит site_app.js внутри своего блока (if(window.APP_ONE){…}) — обёртки снаружи туда не доходят, поэтому правим готовую кнопку:
+   после каждой замены панели (наблюдатель за body) — значок сферы и «Главная»; нажатие — экран сферы (до click: его site_app забирает себе на window) */
+function sfBarFix(){ if(!sfDir()) return; const b=document.querySelector('#appBar button[data-v="board"]'); if(!b) return; const lb=b.querySelector(".lb"); if(b.dataset.sf==="1"&&(!lb||lb.textContent==="Главная")) return; b.dataset.sf="1";
+  const ic=b.querySelector("svg:not([data-sfi])"); if(ic) ic.outerHTML=typeof shpIco==="function"?shpIco("sfera").replace("<svg ","<svg data-sfi=\"1\" "):`<svg data-sfi="1" class="shp-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SF_ICO}</svg>`; if(lb) lb.textContent="Главная"; b.setAttribute("aria-label","Главная"); }
+try{ new MutationObserver(()=>sfBarFix()).observe(document.body,{childList:true}); }catch(_){}
+{ const home=()=>{ if(!sfDir()) return; S.shop.bview="sf"; try{ sessionStorage.setItem("zj-bv","sf"); }catch(_){} setTimeout(()=>{ if(S.view==="shop"&&S.shop.mode==="board"&&S.shop.bview==="sf"&&!document.getElementById("sfMain")){ render(); window.scrollTo(0,0); } },0); };
+  let px=0, py=0; window.addEventListener("pointerdown",e=>{ px=e.clientX; py=e.clientY; },true);
+  window.addEventListener("pointerup",e=>{ const b=e.target.closest&&e.target.closest('#appBar button[data-v="board"]'); if(b&&Math.abs(e.clientX-px)<12&&Math.abs(e.clientY-py)<12) home(); },true);
+  window.addEventListener("keydown",e=>{ if((e.key==="Enter"||e.key===" ")&&e.target.closest&&e.target.closest('#appBar button[data-v="board"]')) home(); },true); }
 const GOLOS=(()=>{ try{ return /[?&]golos=1\b/.test(location.search); }catch(_){ return false; } })();   /* ярлык: открыть главную и сразу слушать (только директор, вход уже выполнен) */
 function sfInit(){ if(SF.init||!sfDir()) return; SF.init=true; if(GOLOS){ S.shop.bview="sf"; return; } if(window.APP_DEMO) return; let b=null; try{ b=sessionStorage.getItem("zj-bv"); }catch(_){} if(!b) S.shop.bview="sf"; }   /* директору первым после входа — «Главная»; в том же сеансе — где был; в демо (?demo=1) первым — как было, «Главная» — вкладкой */
-{ const _bh=shpBoardHtml; shpBoardHtml=function(){ sfInit(); if(S.shop.bview==="sf"){ if(sfDir()){ try{ return sfHtml(); }catch(e){ console.error("сфера",e); } } S.shop.bview="today"; } return _bh.apply(this,arguments); }; }
-{ const _r=render; render=function(){ const r=_r.apply(this,arguments); try{ const on=!!document.getElementById("sfMain"); document.documentElement.classList.toggle("sf-scr",on); document.documentElement.classList.toggle("sf-acc-b",SF.acc==="blue"); { const ab=document.getElementById("appBar"); if(ab&&ab.offsetHeight){ const q=ab.getBoundingClientRect(); document.documentElement.style.setProperty("--sf-ab",(q.width>q.height?ab.offsetHeight:0)+"px"); } }   /* на компьютере меню сбоку — строка ввода у нижнего края */
+{ const _bh=shpBoardHtml; shpBoardHtml=function(){ sfInit(); if(S.shop.bview==="sf"){ if(sfDir()){ try{ return sfHtml(); }catch(e){ console.error("сфера",e); } } S.shop.bview="today"; }
+  const h=_bh.apply(this,arguments); if(S.shop.bview!=="today"||!sfDir()) return h;
+  /* 16.11 13:27: сводка директора — во «Сегодня», сразу под переключателем «Главная · Цех · Сегодня · Доска» */
+  try{ const s=String(h), sg=sgSegHtml(), i=s.indexOf(sg), add=sfTodayHtml(); return i>=0?s.slice(0,i+sg.length)+add+s.slice(i+sg.length):add+s; }catch(e){ console.error("сфера",e); return h; } }; }
+{ const _r=render; render=function(){ const oH=document.getElementById("sfHud"), oL=document.getElementById("sfLast"), oLov=!!(oL&&oL.closest(".sf-main")), oLh=oL?oL.innerHTML:""; const r=_r.apply(this,arguments);
+  /* 16.11 13:40 «сфера и значки иногда дёргаются»: тихое обновление данных (раз в минуту, при возврате в приложение) перерисовывало главную целиком —
+     новые значки и новая сфера. Теперь старый круг ставим обратно (сфера крутится дальше, значки на месте), цифры обновляет hudPaint */
+  try{ const nH=document.getElementById("sfHud"); if(oH&&nH&&oH!==nH){ nH.replaceWith(oH); hudPaint(); sfCap(); }
+    const nL=document.getElementById("sfLast"); if(oL&&nL&&oL!==nL&&oLov&&nL.closest(".sf-main")&&nL.innerHTML===oLh) nL.replaceWith(oL); }catch(e){ console.error("сфера",e); } try{ const on=!!document.getElementById("sfMain"); document.documentElement.classList.toggle("sf-scr",on); document.documentElement.classList.toggle("sf-acc-b",SF.acc==="blue"); { const ab=document.getElementById("appBar"); if(ab&&ab.offsetHeight){ const q=ab.getBoundingClientRect(); document.documentElement.style.setProperty("--sf-ab",(q.width>q.height?ab.offsetHeight:0)+"px"); } }   /* на компьютере меню сбоку — строка ввода у нижнего края */
     if(on&&GOLOS&&!SF.golos){ SF.golos=1; try{ history.replaceState(null,"",location.pathname+location.search.replace(/([?&])golos=1(&|$)/,(m0,a,b)=>b?a:"").replace(/[?&]$/,"")+location.hash); }catch(_){} setTimeout(()=>{ if(document.getElementById("sfMain")&&!SF.rec) sfMic(); },400); }
-    if(on){ hudLayout(); requestAnimationFrame(()=>hudLayout()); { const hb=document.getElementById("sfHud"); if(hb&&!hb._ro&&window.ResizeObserver){ hb._ro=new ResizeObserver(()=>hudLayout()); hb._ro.observe(hb); } }   /* размер поменялся (окно, шторка, поворот) — пункты на своих местах */ sfLoad(); sfKick(); const m=SF.mode; if(m){ lsS(m==="mo"?"sf-mo":"sf-ev",today()); } } }catch(e){ console.error("сфера",e); } return r; }; }
-setInterval(()=>{ if(document.getElementById("sfMain")&&!document.hidden){ sfLoad(); sfPaint(); } },30000);   /* живое: раз в 30 с тихо обновляем и пересчитываем */
+    sfBarFix();
+    if(!on&&document.getElementById("sfToday")){ sfLoad(); sfKick(); const m=SF.mode; if(m){ lsS(m==="mo"?"sf-mo":"sf-ev",today()); } }
+    if(on){ hudLayout(); requestAnimationFrame(()=>hudLayout()); { const hb=document.getElementById("sfHud"); if(hb&&!hb._ro&&window.ResizeObserver){ hb._ro=new ResizeObserver(()=>hudLayout()); hb._ro.observe(hb); } }   /* размер поменялся (окно, шторка, поворот) — пункты на своих местах */ sfLoad(); sfKick(); } }catch(e){ console.error("сфера",e); } return r; }; }
+setInterval(()=>{ if((document.getElementById("sfMain")||document.getElementById("sfToday"))&&!document.hidden){ sfLoad(); sfPaint(); } },30000);   /* живое: раз в 30 с тихо обновляем и пересчитываем */
+
+/* ---------- свайп между экранами «Главная · Цех · Сегодня · Доска» (Кирилл 16.11 13:39: «4 экрана налево-направо… компьютер — так же, один экран») ----------
+   Телефон: экран едет за пальцем, рядом — соседний (последний его вид; не открывали — серые заготовки), полоска под вкладкой едет следом;
+   отпустил — доезжает с пружинкой к ближайшему. Жест начат на том, что само листается вбок (доска, подсказки), или почти вертикально — не трогаем.
+   Компьютер: два пальца по тачпаду (колесо вбок), стрелки ← →, нажатие на вкладку — та же анимация. «Уменьшить движение» — без анимации.
+   Только transform; экран меняется настоящим нажатием на вкладку (все обработчики прежние). Работает у всех ролей, где есть такие вкладки. */
+const SW={cache:{},busy:0,pass:0,lock:0};
+function swSeg(){ const v=document.getElementById("view"); if(!v||S.view!=="shop"||S.shop.mode!=="board") return null; const g=v.querySelector(":scope > .sg-seg"); return g&&g.querySelectorAll("button[data-v]").length>1?g:null; }
+function swTabs(g){ return [...g.querySelectorAll("button[data-v]")]; }
+function swCur(g){ const L=swTabs(g); const i=L.findIndex(b=>b.getAttribute("aria-pressed")==="true"); return i<0?0:i; }
+function swContent(g){ const L=[]; let n=g.nextElementSibling; while(n){ if(n.id!=="sfIn"&&getComputedStyle(n).position!=="fixed") L.push(n); n=n.nextElementSibling; } return L; }
+function swZ(){ const v=document.getElementById("view"); return v&&v.offsetWidth?(v.getBoundingClientRect().width/v.offsetWidth)||1:1; }
+function swBlocked(t){ if(!t||!t.closest) return true; if(document.querySelector(".modal,.sf-sheet,#sfSheet")||SF.edit) return true;
+  if(t.closest('input,textarea,select,[contenteditable="true"],.sf-last,.fv-win,[data-noswipe]')) return true;
+  for(let e=t;e&&e.id!=="view"&&e!==document.body;e=e.parentElement){ const cs=getComputedStyle(e); if(/(auto|scroll)/.test(cs.overflowX)&&e.scrollWidth>e.clientWidth+2) return true; }
+  return !t.closest("#view"); }
+function swSkel(){ const d=document.createElement("div"); d.className="sw-sk"; d.innerHTML="<i></i><i></i><i class=s></i><i></i><i class=s></i>"; return d; }
+/* начать: контент текущего экрана и слой соседнего */
+function swBegin(g){ const v=document.getElementById("view"), C=swContent(g); if(!C.length) return null; const z=swZ(), W=v.getBoundingClientRect().width/z;
+  document.documentElement.classList.add("sw-on"); const top=C[0].offsetTop;
+  C.forEach(e=>{ e.style.willChange="transform"; e.style.transition="none"; });
+  return {g,v,C,z,W,top,i:swCur(g),n:swTabs(g).length,peek:null,pdir:0,dx:0}; }
+function swPeek(st,dir){ if(st.pdir===dir) return; if(st.peek){ st.peek.remove(); st.peek=null; } st.pdir=dir; const j=st.i+dir; if(!dir||j<0||j>=st.n) return;
+  const id=swTabs(st.g)[j].dataset.v, L=document.createElement("div"); L.className="sw-peek"; L.setAttribute("aria-hidden","true"); L.inert=true;
+  const sc=Math.max(0,(window.scrollY||0)/st.z-(st.v.getBoundingClientRect().top+(window.scrollY||0))/st.z), y=Math.max(st.top,sc);
+  L.style.top=y+"px"; L.style.height=Math.max(200,innerHeight/st.z-(y-sc))+"px";
+  const c=SW.cache[id]; if(c&&Date.now()-c.at<6e5) c.nodes.forEach(n=>L.appendChild(n)); else L.appendChild(swSkel());
+  st.v.appendChild(L); st.peek=L; sfKick(); }
+function swSet(st,dx){ st.dx=dx; const dir=dx<0?1:dx>0?-1:0; swPeek(st,dir); const has=dir&&st.i+dir>=0&&st.i+dir<st.n; const x=has?dx:dx*0.28;   /* у края — резинка */
+  const t=`translate3d(${x.toFixed(1)}px,0,0)`; st.C.forEach(e=>{ e.style.transform=t; }); if(st.peek) st.peek.style.transform=`translate3d(${(dir*st.W+x).toFixed(1)}px,0,0)`;
+  st.g.classList.add("sw-drag"); st.g.style.setProperty("--sw",String(Math.max(-0.15,Math.min(st.n-0.85,st.i-x/st.W)))); }
+function swEnd(st,j){ const ok=j!=null&&j>=0&&j<st.n&&j!==st.i, dir=ok?(j>st.i?1:-1):(st.pdir||1), to=ok?-dir*st.W:0, rest=Math.abs(to-st.dx), dur=Math.round(Math.max(150,Math.min(260,rest/st.W*320)));
+  const ez=ok?"cubic-bezier(.22,1.08,.36,1)":"cubic-bezier(.3,1.25,.5,1)", t=`translate3d(${to.toFixed(1)}px,0,0)`;   /* доезжает с лёгким перелётом — пружинка */
+  st.C.forEach(e=>{ e.style.transition=`transform ${dur}ms ${ez}`; e.style.transform=t; }); if(st.peek){ st.peek.style.transition=`transform ${dur}ms ${ez}`; st.peek.style.transform=`translate3d(${(ok?0:st.pdir*st.W).toFixed(1)}px,0,0)`; }
+  st.g.classList.remove("sw-drag"); st.g.style.setProperty("--sw-d",dur+"ms"); st.g.classList.add("sw-anim"); void st.g.offsetWidth; st.g.style.setProperty("--sw",String(ok?j:st.i));
+  SW.busy=1; setTimeout(()=>swDone(st,ok?swTabs(st.g)[j]:null),dur+10); }
+function swDone(st,btn){ const back=()=>{ if(st.peek){ const id=st.pdir?((swTabs(st.g)[st.i+st.pdir]||{}).dataset||{}).v:""; const c=SW.cache[id]; if(c) c.nodes.forEach(n=>{ if(n.parentNode===st.peek) st.peek.removeChild(n); }); st.peek.remove(); st.peek=null; } };
+  if(btn){ back(); SW.pass=1; try{ btn.click(); }catch(e){ console.error("свайп",e); }finally{ SW.pass=0; } }
+  if(!btn||st.g.isConnected){ if(btn) back(); back(); st.C.forEach(e=>{ e.style.transform=""; e.style.transition=""; e.style.willChange=""; }); st.g.classList.remove("sw-anim","sw-drag"); }
+  document.documentElement.classList.remove("sw-on"); SW.busy=0; SW.lock=Date.now(); }
+/* нажатие на вкладку / стрелки: та же анимация к нужному экрану */
+function swGoTo(btn){ const pass=()=>{ SW.pass=1; try{ btn.click(); }finally{ SW.pass=0; } };
+  const g=swSeg(); if(!g||RM||SW.busy) return pass(); const j=swTabs(g).indexOf(btn), st=swBegin(g); if(!st) return pass();
+  if(j<0||j===st.i){ swDone(st,null); return; } const dir=j>st.i?1:-1, i0=st.i;
+  st.i=j-dir; swPeek(st,dir); st.i=i0;   /* сосед — нужная вкладка (и через одну — сразу она) */
+  st.g.classList.add("sw-drag"); st.g.style.setProperty("--sw",String(i0)); if(st.peek) st.peek.style.transform=`translate3d(${(dir*st.W).toFixed(1)}px,0,0)`;
+  requestAnimationFrame(()=>swEnd(st,j)); }
+window.addEventListener("click",e=>{ if(SW.pass) return; const b=e.target.closest&&e.target.closest("#view > .sg-seg button[data-v]"); if(!b||b.getAttribute("aria-pressed")==="true"||RM) return; if(!swSeg()) return;
+  e.preventDefault(); e.stopImmediatePropagation(); swGoTo(b); },true);
+/* палец */
+{ let t0=null, st=null, hist=[];
+  document.addEventListener("touchstart",e=>{ t0=null; if(SW.busy||e.touches.length!==1) return; const p=e.touches[0]; if(p.clientX<24||p.clientX>innerWidth-24) return;   /* края — жест «назад» (site_swipe.js) */
+    if(!swSeg()||swBlocked(e.target)) return; t0={x:p.clientX,y:p.clientY,dec:0}; hist=[]; },{passive:true,capture:true});
+  document.addEventListener("touchmove",e=>{ if(!t0) return; const p=e.touches[0], dx=p.clientX-t0.x, dy=p.clientY-t0.y;
+    if(!t0.dec){ if(Math.abs(dx)<10&&Math.abs(dy)<10) return; if(Math.abs(dx)<Math.abs(dy)*1.3){ t0=null; return; } t0.dec=1; const g=swSeg(); st=g&&swBegin(g); if(!st){ t0=null; return; } t0.x=p.clientX-(dx>0?1:-1)*0.01; }
+    if(e.cancelable) e.preventDefault(); const d=(p.clientX-t0.x)/st.z; hist.push([performance.now(),d]); if(hist.length>6) hist.shift(); if(RM) { st.dx=d; return; } swSet(st,d); },{passive:false,capture:true});
+  const end=()=>{ if(!t0||!st){ t0=null; return; } const h=hist, v=h.length>1?(h[h.length-1][1]-h[0][1])/Math.max(1,h[h.length-1][0]-h[0][0]):0, dx=st.dx;
+    const go=Math.abs(dx)>st.W*0.3||(Math.abs(v)>0.35&&Math.sign(v)===Math.sign(dx)&&Math.abs(dx)>20); const s=st; t0=null; st=null;
+    const j=s.i+(dx<0?1:-1); if(RM){ swDone(s,go&&j>=0&&j<s.n?swTabs(s.g)[j]:null); return; } swEnd(s,go?j:null); };
+  document.addEventListener("touchend",end,true); document.addEventListener("touchcancel",end,true); }
+/* компьютер: тачпад двумя пальцами (колесо вбок) */
+{ let st=null, tm=0;
+  window.addEventListener("wheel",e=>{ if(SW.busy||Date.now()-SW.lock<700) { if(st||Math.abs(e.deltaX)>Math.abs(e.deltaY)) { if(swSeg()&&e.cancelable&&!swBlocked(e.target)) e.preventDefault(); } return; }
+    if(!st){ if(Math.abs(e.deltaX)<=Math.abs(e.deltaY)*1.3||Math.abs(e.deltaX)<2) return; const g=swSeg(); if(!g||swBlocked(e.target)) return; st=swBegin(g); if(!st) return; }
+    if(e.cancelable) e.preventDefault(); const dx=Math.max(-st.W,Math.min(st.W,st.dx-e.deltaX/st.z)); if(RM) st.dx=dx; else swSet(st,dx);
+    clearTimeout(tm); tm=setTimeout(()=>{ const s=st; st=null; if(!s) return; const go=Math.abs(s.dx)>Math.min(160,s.W*0.22); const j=s.i+(s.dx<0?1:-1); if(RM){ swDone(s,go&&j>=0&&j<s.n?swTabs(s.g)[j]:null); return; } swEnd(s,go?j:null); },140); },{passive:false}); }
+/* стрелки ← → (фокус не в поле ввода) */
+document.addEventListener("keydown",e=>{ if((e.key!=="ArrowLeft"&&e.key!=="ArrowRight")||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey) return; const ae=document.activeElement;
+  if(ae&&(/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)||ae.isContentEditable)) return; if(document.querySelector(".modal,.sf-sheet,#sfSheet")||SF.edit) return;
+  const g=swSeg(); if(!g) return; const L=swTabs(g), j=swCur(g)+(e.key==="ArrowRight"?1:-1); if(j<0||j>=L.length) return; e.preventDefault(); swGoTo(L[j]); });
+/* последний вид каждого экрана — для соседа при свайпе (узлы старого экрана после перерисовки; без id, неактивные) */
+{ const _r=render; render=function(){ const g=swSeg(), cur=g?((swTabs(g)[swCur(g)]||{}).dataset||{}).v:"", old=g?swContent(g):null; const r=_r.apply(this,arguments);
+  try{ if(g&&cur&&old&&old.length&&!g.isConnected){ const g2=swSeg(), now=g2?((swTabs(g2)[swCur(g2)]||{}).dataset||{}).v:""; if(now!==cur){
+      old.forEach(n=>{ n.style.transform=""; n.style.transition=""; n.style.willChange=""; n.removeAttribute("id"); n.querySelectorAll("[id]").forEach(x=>x.removeAttribute("id")); });
+      SW.cache[cur]={nodes:old,at:Date.now()}; } } }catch(e){ console.error("свайп",e); } return r; }; }
 
 /* ---------- стиль ---------- */
 (function(){ const st=document.createElement("style"); st.id="sfCss"; st.textContent=`
@@ -40653,21 +40836,37 @@ html body .sf-in input[type=text],html body .sf-in input[type=text]:focus{flex:1
 .sf-edit .sf-hln,.sf-edit .sf-hnot{opacity:0}
 .sf-hud[data-tone="y"] .sf-horb{stroke:var(--ink);stroke-opacity:.22}.sf-hud[data-tone="r"] .sf-horb{stroke:var(--w-r,#ff453a);stroke-opacity:.55}   /* цвет по делам — кольцом вокруг синей сферы; 16.11 «единый вид»: жёлтое (золотое) кольцо убрано — «на сегодня» кольцо тёмно-синее, как сфера; красное — только опоздания */
 .sf-hud .sf-sph{position:absolute;left:0;top:0;margin:0;height:auto;display:block}.sf-hud .sf-sph canvas{width:100%;height:100%}
-.sf-hb{position:absolute;left:0;top:0;width:50px;display:flex;flex-direction:column;align-items:center;gap:0;padding:0;border:0;background:none;color:var(--w-ink);cursor:pointer;font:inherit;transition:transform .22s cubic-bezier(.2,.8,.2,1);-webkit-tap-highlight-color:transparent;touch-action:manipulation;z-index:2}
-.sf-hc{position:relative;width:50px;height:50px;border-radius:25px;display:grid;place-items:center;background:var(--w2-solid);border:1px solid rgba(255,255,255,.2);transition:box-shadow .2s,border-color .2s,transform .15s}
+.sf-hb{position:absolute;left:0;top:0;width:50px;display:flex;flex-direction:column;align-items:center;gap:0;padding:0;border:0;background:none;color:var(--w-ink);cursor:pointer;font:inherit;font-variant-numeric:tabular-nums;transition:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;z-index:2}
+.sf-hc{position:relative;width:50px;height:50px;border-radius:25px;display:grid;place-items:center;background:var(--w2-solid);border:1px solid rgba(255,255,255,.2);transition:box-shadow .2s,border-color .2s;will-change:transform}
 html:not([data-vt="dark"]) .sf-hc{background:var(--w-l1,#fff);border-color:rgba(0,0,0,.12)}
-.sf-hb:active .sf-hc{transform:scale(.94)}
+@media (prefers-reduced-motion:reduce){.sf-hb:active .sf-hc{opacity:.7}}
 .sf-hb b{font-size:12.5px;font-weight:500;margin-top:6px;white-space:nowrap;opacity:.9}.sf-hb small{font-size:11.5px;color:var(--w-t2);white-space:nowrap;margin-top:1px}.sf-hb small.sf-g{color:var(--w-g,#30d158)}.sf-hb small.sf-r{color:var(--w-r,#ff453a)}
 .sf-hbg{position:absolute;right:-3px;top:-3px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font:700 11px/18px var(--f-body,system-ui);font-style:normal;color:#000;background:var(--w-r,#ff453a);text-align:center}.sf-hbg.g{background:var(--w-g,#30d158)}.sf-hbg.w{background:#fff}
 .sf-hb.fl .sf-hc{border-color:var(--w-sfacc);box-shadow:0 0 0 6px color-mix(in srgb,var(--w-sfacc) 18%,transparent),0 0 18px color-mix(in srgb,var(--w-sfacc) 60%,transparent)}
 .sf-edit .sf-hb small{opacity:0}.sf-edit .sf-hb .sf-hc{animation:sfJig .28s ease-in-out infinite alternate}.sf-edit .sf-hb:nth-of-type(2n) .sf-hc{animation-delay:-.14s}
 .sf-hb.drag{transition:none;z-index:5}.sf-hb.drag .sf-hc{animation:none;border-color:var(--w-sfacc);box-shadow:0 0 0 10px color-mix(in srgb,var(--w-sfacc) 14%,transparent)}
-.sf-edit .sf-hb{touch-action:none}
+.sf-edit .sf-hb{touch-action:none;transition:transform .22s cubic-bezier(.2,.8,.2,1)}   /* 16.11 13:40: переезд значков плавно — только в перестановке; раньше переход стоял всегда, и при каждой перерисовке значки на 0,2 с вылетали из левого верхнего угла */
 @keyframes sfJig{from{transform:rotate(-3deg)}to{transform:rotate(3deg)}}
 .sf-hud .sf-cap{position:absolute;left:22%;right:22%;top:76%;margin:0;text-align:center;font-size:13px;color:var(--w-t2);transition:opacity .5s;z-index:1}.sf-hud .sf-cap b{display:block;font-size:15px;font-weight:500;color:var(--w-ink)}.sf-hud .sf-cap small{display:block;font-size:12.5px;margin-top:2px}
 .sf-ans{display:block;font-size:14px;line-height:1.35;color:var(--w-ink)}.sf-cap.sf-fade{opacity:0}
-.sf-ehint{display:none;margin:4px 12px 0;text-align:center;font-size:13px;color:var(--w-t2)}.sf-edit .sf-ehint{display:block}.sf-edit .sf-cap{opacity:0}
+.sf-ehint{display:none;margin:0;position:absolute;left:8%;right:8%;bottom:4px;text-align:center;font-size:13px;color:var(--w-t2);z-index:1}.sf-edit .sf-ehint{display:block}.sf-edit .sf-cap{opacity:0}
 .sf-h2{margin:18px 6px 4px;font-size:17px;font-weight:600}
+/* 16.11 13:27: главная — только сфера и значки, без прокрутки; последний ответ — карточкой над нижним меню */
+.sf-main.sf-only{padding-bottom:0;margin-bottom:0}html.sf-scr:not(#sfEvA):not(#sfEvB):not(#sfEvC) body main.wrap{padding-bottom:0!important}   /* место под нижнее меню считает hudLayout (до верха меню) — запас страницы снизу (site_edvid.js, 150 px) не нужен, иначе листается; вес трёх id — сильнее его двух */.sf-only .sf-hud{margin:0 auto;max-width:none}
+.sf-main .sf-last{position:fixed;left:12px;right:12px;bottom:calc(var(--sf-ab,64px) + 10px);z-index:29;max-width:560px;margin:0 auto;max-height:36vh;overflow-y:auto;overscroll-behavior:contain;padding:12px 62px 12px 16px;border-radius:24px;background:var(--w-glass,rgba(28,28,30,.86));-webkit-backdrop-filter:var(--w-blur,blur(24px));backdrop-filter:var(--w-blur,blur(24px));border:1px solid var(--w-line,rgba(255,255,255,.1));animation:sfIn .2s ease-out}
+.sf-main .sf-last:not(.on){display:none}html.sf-scr .sf-main:has(~ .sf-in:not([hidden])) .sf-last{bottom:calc(var(--sf-ab,64px) + 80px)}
+.sf-main .sf-last{padding:0 14px 12px;max-height:46vh}.sf-lhd{position:sticky;top:0;z-index:1;margin:0 -14px 6px;padding:2px 10px 6px;background:inherit;touch-action:none;cursor:grab;border-radius:24px 24px 0 0}
+.sf-lhd .sf-sgrab{display:block;margin:6px auto 4px}.sf-lhr{display:flex;align-items:center;justify-content:space-between;gap:8px}.sf-lall{min-height:44px}.sf-lx{width:44px;height:44px;flex:none}
+@media (min-width:900px){.sf-main.sf-only{position:relative}.sf-main .sf-last{position:absolute;left:0;right:0;bottom:8px}}
+html.sw-on #view{position:relative;overflow-x:clip}html.sw-on{overflow-x:hidden}
+.sw-peek{position:absolute;left:0;right:0;overflow:hidden;pointer-events:none;will-change:transform;z-index:1}
+html:not(#swA):not(#swB):not(#swC):not(#swD):not(#swE) body .sg-seg:is(.sw-drag,.sw-anim)>button{box-shadow:none!important;transition:none!important}   /* у выбранной вкладки своя черта (тень, site_edvid.js: её :is() склеен с id — вес 4 id) — пока едем, видна одна, та что за пальцем */
+html body .sg-seg.sw-drag::before{transform:translateX(calc(var(--sw,0) * 100%))!important;transition:none!important}
+html body .sg-seg.sw-anim::before{transform:translateX(calc(var(--sw,0) * 100%))!important;transition:transform var(--sw-d,220ms) cubic-bezier(.22,1.08,.36,1)!important}
+.sw-sk{display:flex;flex-direction:column;gap:12px;padding:12px 2px}.sw-sk i{display:block;height:84px;border-radius:18px;background:var(--w-l1,#1c1c1e);opacity:.8}.sw-sk i.s{height:52px}
+@media (prefers-reduced-motion:reduce){html body .sg-seg.sw-anim::before{transition:none!important}}
+.sf-tday{margin:6px 0 10px}.sf-tday .sf-h2{margin-top:10px}
+@media (prefers-reduced-motion:reduce){.sf-main .sf-last{animation:none}}
 .sf-gc{height:auto;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}.sf-gl{display:flex;flex-direction:column;margin-top:6px;background:var(--w-l1,#1c1c1e);border-radius:18px;overflow:hidden}
 .sf-gi{display:flex;justify-content:space-between;align-items:center;min-height:52px;padding:0 16px;border:0;background:none;color:var(--w-ink);font:16px var(--f-body,system-ui);text-align:left;cursor:pointer}.sf-gi+.sf-gi{border-top:1px solid var(--w-line,rgba(255,255,255,.08))}.sf-gi span{color:var(--w-t3);font-size:20px}
 html.sf-scr .ai-fab{visibility:hidden!important;pointer-events:none!important}
@@ -43313,7 +43512,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="efcfec43f8";/*cehqr-build*/
+  const BUILD="02b7b8e035";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -43408,7 +43607,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="efcfec43f8";/*cehqr-build*/
+  const BUILD="02b7b8e035";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
