@@ -6499,6 +6499,25 @@ function shpFormRead(fm){
     if(o.prodFrom&&o.prodTo&&o.prodTo<o.prodFrom){ const x=o.prodTo; o.prodTo=o.prodFrom; o.prodFrom=x; } if(o.montazhDate&&o.montazhTo&&o.montazhTo<o.montazhDate) o.montazhTo=""; }
   return o;
 }
+/* 18.11 «пишу только то, что меняли»: какие поля формы человек правил (значение в поле ≠ тому, с чем форма открылась).
+   Сервер запишет только их, остальное возьмёт из таблицы — давно открытая форма не затрёт чужие правки (приход из кассы в «Оплачено», смену этапа, мастера).
+   Зависимые поля идут парой: тип заказа → кто платит и «к заказу»; даты производства и монтажа; этап → причина. */
+function shpFormOnly(fm){
+  const ch={}, base=S.shop.edit||{}, MON={sum:1,prepay:1,zpBr:1,matx:1};
+  /* сравниваем одинаково записанное: деньги — без пробелов и с точкой («200 000» = «200000»), пустое = 0 = нет значения */
+  const nv=(n,v)=>{ v=String(v===undefined||v===null?"":v).trim(); if(MON[n]){ v=v.replace(/\s/g,"").replace(",","."); if(v===""||+v===0) return ""; return String(+v); } return v; };
+  /* поле «менялось», только если отличается и от того, с чем открылась форма, и от снимка сделки (другой модуль мог сам вписать в поле то же значение) */
+  const same=(n,v)=>n in base&&nv(n,v)===nv(n,base[n]);
+  [...fm.elements].forEach(el=>{ if(!el||!el.name) return; const n=el.name;
+    if(el.tagName==="SELECT"){ const d=[...el.options].find(x=>x.defaultSelected)||el.options[0]; if(String(el.value)!==String(d?d.value:"")&&!same(n,el.value)) ch[n]=1; }
+    else if(el.type==="checkbox"||el.type==="radio"){ if(el.checked!==el.defaultChecked) ch[n]=1; }
+    else if(nv(n,el.value)!==nv(n,el.defaultValue)&&!same(n,el.value)) ch[n]=1; });
+  if(ch.otype||ch.payer||ch.repairOf){ ch.otype=ch.payer=ch.repairOf=1; }
+  if(ch.prodFrom||ch.prodTo){ ch.prodFrom=ch.prodTo=1; }
+  if(ch.montazhDate||ch.montazhTo){ ch.montazhDate=ch.montazhTo=1; }
+  if(ch.stage||ch.reason){ ch.stage=ch.reason=1; }
+  return Object.keys(ch);
+}
 
 /* ---------- Work24link как Битрикс: вкладки, перетаскивание, задачи, лента, календарь, клиенты, сотрудники ---------- */
 function shpNorm(s){ return String(s==null?"":s).trim().toLowerCase(); }
@@ -7446,7 +7465,7 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(t.dataset.act==="vtx-new"){ document.getElementById("vtxSheet")?.remove();
     S.shop.edit={stage:"dogovor",client:D.client,kind:D.name,t3d:oid,link:D.link,notes:D.notes}; S.shop.backTo=null; return shpGo("form"); }
   if(t.dataset.act==="vtx-link"){ const d=shpById(t.dataset.id); if(!d) return; t.disabled=true;
-    const j=await shpPost({action:"shopSave",order:Object.assign({},d,{t3d:oid,link:d.link||D.link,v3:1})}); t.disabled=false; if(!j) return;
+    const j=await shpPost({action:"shopSave",order:Object.assign({},d,{t3d:oid,link:d.link||D.link,v3:1,only:["t3d","link"]})}); t.disabled=false; if(!j) return;
     d.t3d=oid; if(!d.link) d.link=D.link; if(j.stage) d.stage=j.stage; document.getElementById("vtxSheet")?.remove(); toast("Привязано к сделке "+shpTitle(d)); return shpGo("order",d.id); }
 },true);
 
@@ -7959,6 +7978,7 @@ document.addEventListener("submit",async ev=>{ const f=ev.target;
     S.shop.rcOpen=false; toast("Чек сохранён: "+shpMoney(+sum)+(debt?" · записан долг поставщику «"+debt+"»":"")); shpRenderKeep(); return; }
   if(f.id==="shpForm"){ ev.preventDefault(); const o=shpFormRead(f); if(!o.client){ toast("Впишите клиента"); return; }
     const btn=f.querySelector('[type="submit"]'); btn.disabled=true; btn.textContent="Сохраняю…";
+    if(o.id){ try{ o.only=shpFormOnly(f); }catch(_){} }   /* 18.11: правка сделки — сервер пишет только изменённые поля */
     const j=await shpPost({action:"shopSave",order:o}); if(!j){ btn.disabled=false; btn.textContent="Сохранить"; return; }
     toast(o.id?"Сохранено":"Заказ № "+j.num+" создан"); S.shop.edit=null;
     await shpLoad(true); if(!shpById(j.id)) S.shop.orders.push(Object.assign({},o,{id:j.id,num:j.num})); shpGo("order",j.id); }
@@ -13932,7 +13952,7 @@ document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.clo
   if(a==="vx-tdone"){ if(typeof shpTaskToggle==="function") shpTaskToggle(t.dataset.id,t); return; }
   if(a==="vx-rem"){ const o=shpById(t.dataset.id); if(o) plRemind(o); return; }
   if(a==="vx-take"){ const o=shpById(t.dataset.id), me=String(S.who||"").trim(); if(!o||!S.shop.full||!me||String(o.owner||"").trim()) return; t.disabled=true; t.textContent="Сохраняю…";
-    shpPost({action:"shopSave",order:Object.assign({},o,{owner:me,v3:1})}).then(j=>{ if(!j){ t.disabled=false; t.textContent="Взять себе"; return; } o.owner=me; toast("Сделка № "+o.num+" — теперь её ведёте вы"); shpRenderKeep(); shpLoad(true); }); return; }
+    shpPost({action:"shopSave",order:Object.assign({},o,{owner:me,v3:1,only:["owner"]})}).then(j=>{ if(!j){ t.disabled=false; t.textContent="Взять себе"; return; } o.owner=me; toast("Сделка № "+o.num+" — теперь её ведёте вы"); shpRenderKeep(); shpLoad(true); }); return; }
   if(a==="vx-acc"){ const v=t.dataset.v, now=plOpen(v,v==="todo"); try{ localStorage.setItem("pl_acc_"+v,now?"0":"1"); }catch(_){} plPaint(); return; }
   if(a==="vx-st"){ const k=t.dataset.v; if(plDesk()){ const g=document.querySelector('.pl-stl[data-k="'+CSS.escape(k)+'"]'); if(g) g.scrollIntoView({block:"start",behavior:"smooth"}); return; } /* 13.11 (видео Кирилла): страница стоит — список открывается под этапами без прокрутки; закрыли — ряд этапов остаётся на том же месте экрана */
     const row=()=>document.querySelector("#vxPult .pl-st"), y0=(row()||t).getBoundingClientRect().top; S.shop.plSt=S.shop.plSt===k?"":k; plPaint();
@@ -24937,7 +24957,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="b975258dec";
+const CHK_BUILD="142024e207";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -27580,7 +27600,7 @@ document.addEventListener("click",ev=>{ const t=ev.target&&ev.target.closest&&ev
   ev.preventDefault(); ev.stopImmediatePropagation(); dkTake(o,me); },true);
 async function dkTake(o,me){ const id=o.id, prev=o.owner||"";
   o.owner=me; dkPendSet(id,{owner:me}); shpRenderKeep(); dkPerfNote("take"); toast("Сделка № "+o.num+" — теперь её ведёте вы");
-  const j=await shpPost({action:"shopSave",order:Object.assign({},o,{owner:me,v3:1})});
+  const j=await shpPost({action:"shopSave",order:Object.assign({},o,{owner:me,v3:1,only:["owner"]})});   /* 18.11: only — сервер пишет одно это поле, остальное берёт из таблицы (старая страница не затрёт чужие правки) */
   dkPendDel(id,["owner"]);
   if(!j){ [o,shpById(id)].forEach(x=>{ if(x&&x.owner===me) x.owner=prev; }); if(S.view==="shop") shpRenderKeep();
     const t=document.getElementById("toast"), tx=t&&!t.hidden?t.textContent:"";
@@ -27644,7 +27664,7 @@ function dkDueModal(o){ if(!S.shop.full) return; document.getElementById("dkDueM
 async function dkDueSave(o,d){ const id=o.id, prev=o.deadline||"";
   o.deadline=d; dkPendSet(id,{deadline:d}); if(!dkLight({perf:"due"})&&S.view==="shop") shpRenderKeep(); toast("№ "+o.num+" — срок до "+shpDM(d));
   try{ if(typeof shpLoad==="function") await shpLoad(true); }catch(_){}   /* перед записью берём свежую сделку — чтобы не затереть чужую правку (новый срок на неё наложен — dkPatch) */
-  const cur=shpById(id)||o, j=await shpPost({action:"shopSave",order:Object.assign({},cur,{deadline:d,v3:1})});
+  const cur=shpById(id)||o, j=await shpPost({action:"shopSave",order:Object.assign({},cur,{deadline:d,v3:1,only:["deadline"]})});
   dkPendDel(id,["deadline"]);
   if(!j){ [o,shpById(id)].forEach(x=>{ if(x&&x.deadline===d) x.deadline=prev; }); if(!dkLight()&&S.view==="shop") shpRenderKeep();
     const t=document.getElementById("toast"), tx=t&&!t.hidden?t.textContent:"";
@@ -32442,7 +32462,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="b975258dec"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="142024e207"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -41864,7 +41884,7 @@ function smmLinkFor(d,oldT,newT){ const l=String(d.link||""); if(!l) return ""; 
 function smmRepaint(){ try{ if(S.view==="shop") shpRenderKeep(); else render(); }catch(_){ try{ render(); }catch(__){} } try{ smoPaint(true); }catch(_){} }
 async function smmSet(d,t3d){ t3d=String(t3d||""); const prev={t3d:String(d.t3d||""),link:String(d.link||"")}, link=smmLinkFor(d,prev.t3d,t3d);
   d.t3d=t3d; d.link=link; smmRepaint();
-  const j=await shpPost({action:"shopSave",order:Object.assign({},d,{t3d,link,v3:1})});
+  const j=await shpPost({action:"shopSave",order:Object.assign({},d,{t3d,link,v3:1,only:["t3d","link"]})});
   if(!j){ if(String(d.t3d||"")===t3d){ d.t3d=prev.t3d; d.link=prev.link; } smmRepaint(); return false; }
   if(j.stage) d.stage=j.stage; return true; }
 /* полоска «Готово · Отменить» снизу на 6 с (как в iPhone) */
@@ -42085,7 +42105,7 @@ async function mvSetMaster(id,name,m){ const o0=shpById(id), prev=o0?String(o0.m
   const put=x=>{ const L=S.shop.orders||[], i=L.findIndex(o=>String(o.id)===String(id)); if(i>=0) L[i]=Object.assign(L[i],x); };
   if(has){ put(f); smmRepaint(); toast("Мастер уже указан: "+has); return false; }
   put(Object.assign({},f,{master:name})); smmRepaint();
-  const j=await shpPost({action:"shopSave",order:Object.assign({},f,{master:name,v3:1})});
+  const j=await shpPost({action:"shopSave",order:Object.assign({},f,{master:name,v3:1,only:["master"]})});
   if(!j){ back(); return false; }   /* причину показал shpPost (нет связи, нет прав на чужую сделку…) */
   if(j.stage){ const g=shpById(id); if(g) g.stage=j.stage; } toast("Мастер заказа: "+name+" — теперь он видит эту сделку"); return true; }
 (function(){ if(document.getElementById("mvCss")) return; const st=document.createElement("style"); st.id="mvCss"; st.textContent=`
@@ -46417,7 +46437,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="b975258dec";/*cehqr-build*/
+  const BUILD="142024e207";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -46528,7 +46548,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="b975258dec";/*cehqr-build*/
+  const BUILD="142024e207";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);

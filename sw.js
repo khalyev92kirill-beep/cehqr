@@ -1,5 +1,5 @@
-// Технолог 3D — работа как приложение и без интернета (для уже открытых заказов). Сборка: b975258dec
-const BUILD="b975258dec", SHELL_C="cehqr-shell", DATA="cehqr-data", LIBC="cehqr-libs";   // имена постоянные: при обновлении сайта сохранённое не стирается
+// Технолог 3D — работа как приложение и без интернета (для уже открытых заказов). Сборка: 142024e207
+const BUILD="142024e207", SHELL_C="cehqr-shell", DATA="cehqr-data", LIBC="cehqr-libs";   // имена постоянные: при обновлении сайта сохранённое не стирается
 const SHELL=["./","3d/","manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"];   // 3d/ («Технолог 3D») — сразу: QR на детали должен открыться и без интернета
 const LIBS=/cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com/;
 // установка: страницы берём прямо с сервера (cache:"reload"), а не из кэша браузера — иначе можно сохранить старую
