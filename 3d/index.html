@@ -7037,13 +7037,13 @@ function shpZpMonSeg(Z){ const sel=shpZpSel(), cur=(Z&&Z.cur)||shpZpYm(), cl=(Z&
 function shpZpHtml(){
   if(S.shop.zpSt&&S.shop.tech) return shpZpStHtml();
   const back=`<button type="button" class="btn" data-act="shp-tab" data-v="more">← Ещё</button>`, ym=shpZpSel(), Z=S.shop.zp, cl=Z&&!Z.err&&Z.closed;
-  let h=`<div class="head"><div><h1>${S.shop.tech?"Зарплата":"Моя зарплата"}</h1><p class="muted" style="margin:4px 0 0">${esc(shpZpMonLbl(ym))}${Z&&!Z.err?(cl?" · месяц закрыт "+SHP_LK:" · месяц открыт"):""}</p></div><div class="head-actions">${back}</div></div>`+shpZpMonSeg(Z&&!Z.err?Z:null);
+  let h=`<div class="head"><div><h1>${S.shop.tech||(Z&&Z.can&&Z.can.view)?"Зарплата":"Моя зарплата"}</h1><p class="muted" style="margin:4px 0 0">${esc(shpZpMonLbl(ym))}${Z&&!Z.err?(cl?" · месяц закрыт "+SHP_LK:" · месяц открыт"):""}</p></div><div class="head-actions">${back}</div></div>`+shpZpMonSeg(Z&&!Z.err?Z:null);
   if(!Z){ shpZpLoad(); return h+`<p class="muted">Считаю…</p>`; } if(Z.err) return h+`<p class="note">Не загрузилось. Обновите скрипт таблицы или проверьте связь.</p>`;
   if(Z.noId&&/^tgs\./.test(shpPin())&&S.shop.zpNoIdPin!==shpPin()){ S.shop.zpNoIdPin=shpPin(); S.shop.zp=null; S.shop.zpBusy=true; setTimeout(()=>{ S.shop.zpBusy=false; shpZpLoad(); },800); return h+`<p class="muted">Считаю…</p>`; }   /* 16.11: после «Придумать свой PIN» — ответ ещё от общего PIN, перечитать один раз */
   if(Z.noId) return h+`<p class="note">${esc(Z.msg||"Войдите своим PIN, чтобы увидеть свою зарплату")}. Сейчас вход общим PIN — приложение не знает, кто вы.</p><button type="button" class="btn" data-act="lg-mypin">Придумать свой PIN</button>`;   /* 16.11: при общем PIN сервер ЗП не отдаёт (имя можно подменить) */
   const P=Z.persons||[];
   const zc=Z.can||{};
-  if(!S.shop.tech&&!zc.pay&&!zc.add){ const me=P[0]; if(!me) return h+`<p class="note">За этот месяц начислений нет. ЗП появляется, когда ваш заказ «Закрыт · успешно». Имя в «Ещё → Моё имя» должно совпадать с именем в заказе.</p>`; S.shop.zpWho=me.name; return h+shpZpPersonBody(me); }
+  if(!S.shop.tech&&!zc.pay&&!zc.add&&!zc.view){ const me=P[0];   /* 18.11: zc.view — главный дизайнер с галочкой директора: видит всех, только просмотр (кнопки записи — по tech / pay / add, от view не зависят) */ if(!me) return h+`<p class="note">За этот месяц начислений нет. ЗП появляется, когда ваш заказ «Закрыт · успешно». Имя в «Ещё → Моё имя» должно совпадать с именем в заказе.</p>`; S.shop.zpWho=me.name; return h+shpZpPersonBody(me); }
   const sum=k=>Math.round(P.reduce((x,p)=>x+(+p[k]||0),0)), st=(Z.stmts||[]).filter(s=>shpZpYm(new Date(s.date))===ym&&s.status!=="отменена");
   const stU=[...new Map(st.map(s=>[s.num,s])).values()].sort((a,b)=>a.num-b.num), end=sum("end");
   h+=`<div class="zt-tot"><div><span>Начислено</span><b>${esc(shpRub(sum("start")+sum("accr")-sum("ded")))}</b></div><div><span>Выдано</span><b class="zt-g">${esc(shpRub(sum("paid")))}</b></div><div><span>${end<0?"Выдали вперёд":"Должны"}</span><b class="${end>0?"zt-y":end<0?"zt-r":"zt-g"}">${esc(shpRub(Math.abs(end)))}</b></div></div>
@@ -7055,7 +7055,7 @@ function shpZpHtml(){
       return `<li><button type="button" class="shp-row" data-act="shp-zpp" data-n="${esc(p.name)}"><span class="shp-av" aria-hidden="true">${esc(p.name.trim().charAt(0).toUpperCase())}</span><span class="shp-rb"><b>${esc(p.name)}</b><span class="muted">${esc(sub||"нет движений")}</span></span><span class="shp-rr shp-zr"><b class="${p.end>0?"due":p.end<0?"badc":"ok"}">${p.end?esc(shpRub(p.end)):"0 ₽ ✓"}</b><span class="muted">взял ${esc(shpZpN(p.paid))}</span></span></button></li>`; }).join("")}</ul>`; };
   h+=grp("brigade","Производство — бригады")+grp("office","Офис — оклад и проценты");
   if(!P.length) h+=`<p class="note">За этот месяц начислений нет. В заказе впишите «ЗП бригаде» (Изменить → Зарплата по заказу), начисление появится, когда заказ «Закрыт · успешно».</p>`;
-  if(stU.length) h+=`<p class="shp-zcap">Ведомости месяца</p><ul class="shp-zl">${stU.map(s=>`<li><div class="shp-zli"><span>№ ${s.num} · ${esc(s.vid)} · ${s.way==="Карта"?"на карту":"касса"}<small class="muted">${esc(shpZpDM(s.date))} · ${s.n} ${shpPl(s.n,"человек","человека","человек")}${s.who?" · провёл "+esc(s.who):""}</small></span><b>${esc(shpRub(s.total))}</b><button type="button" class="btn sm" data-act="shp-zstpr" data-num="${s.num}" aria-label="Печать ведомости № ${s.num}">🖨</button>${cl?"":`<button type="button" class="btn sm" data-act="shp-zstdel" data-num="${s.num}" aria-label="Отменить ведомость № ${s.num}">✕</button>`}</div></li>`).join("")}</ul>`;
+  if(stU.length) h+=`<p class="shp-zcap">Ведомости месяца</p><ul class="shp-zl">${stU.map(s=>`<li><div class="shp-zli"><span>№ ${s.num} · ${esc(s.vid)} · ${s.way==="Карта"?"на карту":"касса"}<small class="muted">${esc(shpZpDM(s.date))} · ${s.n} ${shpPl(s.n,"человек","человека","человек")}${s.who?" · провёл "+esc(s.who):""}</small></span><b>${esc(shpRub(s.total))}</b><button type="button" class="btn sm" data-act="shp-zstpr" data-num="${s.num}" aria-label="Печать ведомости № ${s.num}">🖨</button>${cl||!S.shop.tech?"":`<button type="button" class="btn sm" data-act="shp-zstdel" data-num="${s.num}" aria-label="Отменить ведомость № ${s.num}">✕</button>`}</div></li>`).join("")}</ul>`;
   h+=`${cl||!(S.shop.tech||zc.add)?"":`<div class="shp-zpb"><button type="button" class="btn primary" data-zt="oldall">+ Старый договор</button></div>`}${S.shop.tech?`<details class="zt-more"><summary>Ещё: ведомость, закрыть месяц, проценты, оклады</summary><div class="shp-zpb"><button type="button" class="btn" data-act="shp-zst">Ведомость на выплату</button>${cl?`<button type="button" class="btn" data-act="shp-zopen">Открыть месяц</button>`:`<button type="button" class="btn" data-act="shp-zclose">Закрыть месяц</button>`}<button type="button" class="btn" data-act="shp-zpct">Проценты офиса</button><button type="button" class="btn" data-act="shp-zsal">Оклады</button></div></details>`:""}`;
   return h;
 }
@@ -23109,61 +23109,119 @@ if(typeof module!=="undefined"&&module.exports) module.exports={skToOrder};
   (document.head||document.documentElement).appendChild(st);
 })();
 
-/* ===== Модель Базиса (.b3d) без Базиса (11.11; подключён в сборку после site_sketchup.js — загрузка файла внизу) =====
-   Файл: «BZ85», шапка со своим словарём, картинка PNG, дальше сжатое тело (zlib, 78 9C).
-   Тело: словарь ключей (u32 длина + латиница), потом дерево объектов:
-     объект = u32 класс (0xFFFFFFFF — без класса), u32 число записей, u8 0;
-     запись = u32 номер ключа (с 1), u32 0, u8 тип: 0 объект, 1 да, 2 нет, 3 байт, 4 целое, 5 дробное (double), 6 строка UTF-16, 7 байты;
-     запись без ключа — вложенный объект. Тело может кончиться раньше счётчика (хвост истории правок) — это норма.
-   НОМЕРА КЛАССОВ В РАЗНЫХ ВЕРСИЯХ БАЗИСА РАЗНЫЕ (8.8: панель 16, положение 49; 11: 17 и 44) — узнаём объекты по полям:
-     панель — Contour (байты) + Thick; положение — X Y Z + кватернион Rx Ry Rz Rw; кромка — Mat + Thick + Elem (номер элемента контура);
-     паз — Name + Sign/Trajectory (без Mat); блок — объект с положением, внутри которого есть панели (положение складывается);
-     габаритная рамка — Type 1001; крепёж — FastID (пока не переносим: присадка ставится сама по стыкам).
-   Корень: FurnList / Furniture, иначе — список, где больше всего панелей (история правок — объекты с Made — не считается).
-   Контур: u32 число элементов; 0x10 — отрезок x1 y1 x2 y2; 0x11 — окружность xc yc r; 0x12 — дуга xc yc x1 y1 x2 y2 + байт (1 — против часовой).
+/* ===== Модель Базиса (.b3d, .fr3d, пакет .bln) без Базиса (11.11; подключён в сборку после site_sketchup.js — загрузка файла внизу) =====
+   ФОРМАТ (18.11 — описание переписано: прежнее «объект + записи» было неверным, из-за него часть моделей не открывалась, а в остальных терялись и съезжали детали;
+   новое проверено на всех 10 762 файлах BZ85 заказчика (.b3d, .fr3d, .f3d; Базис 8.7 … 25.16): разбор сходится до последнего байта тела у всех).
+   Файл: «BZ85» + две части. Перед каждой частью метка 01 00 00 FF + байт: 00 — часть как есть, 01 — сжата zlib (78 9C), 03 — сжата и зашифрована (фурнитура с защитой, в шапке набор Encrypt) — не читаем.
+     Часть 1 — шапка, не сжата (корень Header: Version, Thumbnail — картинка PNG, её может не быть, Article). Часть 2 — модель, сжата (корень Document), идёт до конца файла.
+     «BZ80» (сжатый XML) и просто XML — формат Базиса 8, не читаем: просим пересохранить.
+   Часть: u32 (число ключей + 1), u32 0, ключи (u32 длина + латиница), один корневой узел.
+   УЗЕЛ = u32 номер ключа (с 1; 0xFFFFFFFF — без имени, в Базисе 8.7 без имени — 0), u32 число детей, u8 тип:
+     0 — набор: дальше идёт РОВНО столько узлов-детей (0 — пустой набор, тела нет);
+     1 да, 2 нет, 3 байт, 4 целое i32, 5 дробное f64, 6 строка (u32 знаков + UTF-16), 7 байты (u32 длина + байты), 8 пусто (тела нет), 9 дата f64;
+     у значения тоже могут быть дети — идут сразу за ним (редкость: в истории правок строка Butt с Thick, Mat с Width) — их пролистываем.
+   «Номер класса» прежнего описания — это номер ключа набора (Obj, Trans, Objs…), в разных версиях Базиса он разный — узнаём по ИМЕНИ набора (_k) и по полям.
+   Document: VersionMajor, VersionMinor, Estimate (смета — XML в байтах) и наборы: FurnList — библиотека крепежа (F<номер>: Holes, TriData — сетки; панелей там нет),
+     Model — само изделие, ModelParams, Camera, Undo — история правок (копии удалённых и изменённых объектов; в изделие не входят).
+   Model → Obj…, у каждого Type: 4002 — панель (Name, Mat, Thick, Contour, TexDir, ArtPos; внутри наборы Trans, Butts → Butt — кромки, Cuts → Cut — пазы, Params, Plastics);
+     1005 блок, 1002 слой, 4001/4004 сборка фурнитуры, 1004 вычитание тел, 7004 — их дети лежат в наборе Objs;
+     Trans (X Y Z + кватернион Rx Ry Rz Rw) — положение в родителе (складывается сверху вниз), нет Trans — стоит на месте;
+     1001 — габаритная рамка и линии стыка (Width Height Depth); 3001 — крепёж (FastID; пока не переносим: присадка ставится сама по стыкам); 3000 — отверстие (в файлах фурнитуры);
+     999 — гнутая панель (Thickness + MatThick вместо Thick; пока не показываем); 2001/2002/2004/2005 — тела и профили; 10000/10001 — сетки; 6000/8001/8002/8100/9000 — линии и размеры.
+   Панель узнаём по полям Contour (байты) + Thick; положение — X Y Z + кватернион; кромка — Mat + Thick + Elem (номер элемента контура); паз — Name + Sign/Trajectory (без Mat).
+   Корень изделия — набор Model (FurnList и Undo не смотрим вовсе); если Model нет (не встречалось) — набор, где больше всего панелей, кроме истории.
+   Контур: u32 число элементов; 0x10 — отрезок x1 y1 x2 y2; 0x11 и 0x14 — окружность xc yc r (0x14 — обход в другую сторону); 0x12 — дуга xc yc x1 y1 x2 y2 + байт (1 — против часовой);
+     флаг 0x80 в байте вида (Базис 10: 0x90, 0x91) — после него ещё 20 байт (цвет линии), потом сам элемент; после элементов бывает хвост — по 4 байта на элемент, не нужен.
    Название — из сметы модели (Estimate: <OrderName>), иначе — имя единственного блока, иначе — имя файла.
+   СЛОЙ (1002) — не часть изделия, а способ показа в Базисе («стена», «мебель», «Слой1»): его имя не идёт ни в название заказа, ни в модуль детали (mod) —
+     модуль = блок внутри слоя; деталь прямо в слое — без модуля, как деталь прямо в модели (18.11, доводка).
+   Панель с толщиной 0 (в библиотеке так нарисован «Уплотнитель Г-образный») — не плита: в детали не берём (18.11, доводка).
+   ПАКЕТ .bln (18.11) — составной файл OLE (D0 CF 11 E0) с потоками: «$$Lib_structure$$» (XML: File → Name — имя для человека, Storage — имя потока),
+     «FileN.b3d» — целые модели BZ85, «FileN.ldw» — чертежи. Моделей может быть несколько — ставим их в ряд в один заказ (b3dJoin);
+     присадка «по стыкам» считается по каждой модели пакета отдельно (b3dAutoHoles) — иначе фасады узнаются по общей передней плоскости и у неглубоких моделей пропадают петли.
+   ОБОРВАННЫЙ ФАЙЛ (не докачан) — отказ с понятным текстом, а не заказ из части деталей (18.11, доводка): неполный заказ ушёл бы в работу.
+   ПАМЯТЬ (18.11, телефон): тело модели бывает до 360 МБ при файле 100 МБ, из них 80–90% — сетки фурнитуры (TriData). Поэтому тело целиком не держим:
+     распаковываем кусками и сразу разбираем (b3dFeeder); FurnList, Undo, Camera пролистываем, байтовые поля, кроме Contour и Estimate, не храним.
    Наши оси — оси Базиса (мм). Итог b3dToOrder() — заказ в формате выгрузки Базиса (cehqr v2), как parseJSON(). ===== */
-async function b3dInflate(u8){
-  let i=-1; for(let k=0;k<u8.length-4;k++){ if(u8[k]===0x49&&u8[k+1]===0x45&&u8[k+2]===0x4E&&u8[k+3]===0x44){ i=k; break; } }   // «IEND»
-  for(let k=Math.max(0,i);k<u8.length-1;k++){ if(u8[k]===0x78&&(u8[k+1]===0x9C||u8[k+1]===0xDA||u8[k+1]===0x01)){ i=k; break; } }
-  if(i<0) throw new Error("Не нашёл сжатое тело модели");
-  const ds=new DecompressionStream("deflate"), w=ds.writable.getWriter(); w.write(u8.subarray(i)).catch(()=>{}); w.close().catch(()=>{});
-  const r=ds.readable.getReader(), ch=[]; let n=0;
-  try{ for(;;){ const {done,value}=await r.read(); if(done) break; ch.push(value); n+=value.length; } }catch(e){ if(!n) throw e; }   // мусор после потока — не страшно
+const B3D_SKIP=Object.assign(Object.create(null),{FurnList:1,Undo:1,Camera:1}), B3D_KEEP=Object.assign(Object.create(null),{Contour:1,Estimate:1}), B3D_NOB=new Uint8Array(0);   // что пролистываем, какие байты храним, заглушка вместо ненужных байтов
+const B3D_CUT="Файл модели оборван — скачан не до конца. Скачайте его ещё раз", B3D_BLNBAD="Файл Базиса (.bln) повреждён или скачан не до конца. Скачайте его ещё раз";
+/* где начинается тело модели: [место, сжато ли]. 18.11: по шапке (словарь + корневой узел), а не поиском «78 xx» —
+   в шапке без картинки поиск натыкался на ключ «x» (78 01 00 00) и распаковка падала (модели .fr3d) */
+function b3dBodyAt(u8){
+  let enc=false;
+  try{ const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength), n=dv.getUint32(9,true)-1; let p=17;
+    if(dv.getUint32(13,true)===0&&n>0&&n<1e5){ for(let i=0;i<n;i++){ const L=dv.getUint32(p,true); if(L<1||L>255) throw 0; p+=4+L; }
+      for(let left=1;left>0;){ const c=dv.getUint32(p+4,true), t=u8[p+8]; p+=9; left+=c-1;   // пролистать корневой узел шапки со всеми детьми
+        if(t===3) p+=1; else if(t===4) p+=4; else if(t===5||t===9) p+=8; else if(t===6) p+=4+2*dv.getUint32(p,true); else if(t===7) p+=4+dv.getUint32(p,true); else if(!(t<=9)) throw 0; }
+      if(u8[p]===1&&u8[p+1]===0&&u8[p+2]===0&&u8[p+3]===0xFF&&p+5<u8.length){ if(u8[p+4]<2) return [p+5,u8[p+4]===1]; enc=u8[p+4]===3; } } }catch(_){}
+  if(enc) throw new Error("Этот файл Базиса защищён производителем (зашифрован) — открыть его можно только в самом Базисе");   // 18.11: метка 03 + набор Encrypt в шапке (фурнитура с защитой): имена полей в теле зашифрованы
+  for(let k=9;k<u8.length-6;k++){ if(u8[k]===1&&u8[k+1]===0&&u8[k+2]===0&&u8[k+3]===0xFF&&u8[k+4]===1&&u8[k+5]===0x78) return [k+5,true]; }   // шапку не поняли — ищем метку сжатой части
+  let i=-1; for(let k=0;k<u8.length-4;k++){ if(u8[k]===0x49&&u8[k+1]===0x45&&u8[k+2]===0x4E&&u8[k+3]===0x44){ i=k; break; } }   // совсем запасной путь, как до 18.11: после картинки («IEND») первое «78 9C»
+  for(let k=Math.max(0,i);k<u8.length-1;k++){ if(u8[k]===0x78&&(u8[k+1]===0x9C||u8[k+1]===0xDA||u8[k+1]===0x01)) return [k,true]; }
+  throw new Error("Не нашёл сжатое тело модели"); }
+/* распаковка кусками: sink(кусок) — вернёт true, когда ему хватит. 18.11: файл подаём по 256 КБ и ждём, пока кусок заберут, —
+   иначе распакованное тело (в 3–10 раз больше файла) копится в очереди целиком, и телефону не хватает памяти */
+async function b3dPump(u8,i,z,sink){
+  if(!z){ sink(u8.subarray(i)); return; }
+  const ds=new DecompressionStream("deflate"), w=ds.writable.getWriter(), r=ds.readable.getReader(); let n=0;
+  (async()=>{ for(let p=i;p<u8.length;p+=262144) await w.write(u8.subarray(p,Math.min(u8.length,p+262144))); await w.close(); })().catch(()=>{});
+  try{ for(;;){ let x; try{ x=await r.read(); }catch(e){ if(!n) throw new Error("Не смог распаковать модель — файл повреждён или скачан не до конца"); break; }   // обрыв или мусор после потока — берём, что успели
+      if(x.done) break; n+=x.value.length; if(sink(x.value)) break; } }
+  finally{ r.cancel().catch(()=>{}); } }
+/* тело целиком — только для проверок и старых вызовов; приложение читает кусками (b3dRead) */
+async function b3dInflate(u8){ const [i,z]=b3dBodyAt(u8), ch=[]; let n=0; await b3dPump(u8,i,z,c=>{ ch.push(c); n+=c.length; });
   const out=new Uint8Array(n); let o=0; ch.forEach(c=>{ out.set(c,o); o+=c.length; }); return out; }
-function b3dTree(b){
-  const dv=new DataView(b.buffer,b.byteOffset,b.byteLength), u32=p=>dv.getUint32(p,true), td=new TextDecoder("utf-16le"), ta=new TextDecoder("latin1");
-  let p0=-1; for(let k=0;k<Math.min(b.length-12,4096);k++){ if(u32(k)===1&&b[k+4]===84&&u32(k+5)===1&&b[k+9]===88){ p0=k; break; } }   // первый ключ «T», за ним «X»
-  if(p0<0){ const okK=q=>{ const L=q+4<=b.length?u32(q):0; if(L<1||L>40||q+4+L>b.length) return 0; for(let k=0;k<L;k++){ const c=b[q+4+k]; if(c<33||c>126) return 0; } return 4+L; };
-    for(let k=0;k<Math.min(b.length-12,8192)&&p0<0;k++){ let q=k, n=0, d; while(n<12&&(d=okK(q))){ q+=d; n++; } if(n>=12) p0=k; } }   // другой порядок словаря: 12 ключей подряд
-  if(p0<0) throw new Error("Не нашёл словарь модели (файл повреждён или очень старый Базис)");
-  const K=[]; let p=p0;
-  for(;;){ const L=u32(p); if(L<1||L>40) break; let ok=true; for(let k=0;k<L;k++){ const c=b[p+4+k]; if(c<33||c>126){ ok=false; break; } } if(!ok) break; K.push(ta.decode(b.subarray(p+4,p+4+L))); p+=4+L; }
-  const BAD={}; let why="";   // why — что именно не поняли (для подсказки и консоли)
-  function val(t,p){ if(t===0) return obj(p);
-    if(t===8){ const d0=depth; try{ return obj(p); }catch(e){ if(e!==BAD) throw e; depth=d0; return [null,p]; } }   // 8 — необязательный объект (CuttingInfo): бывает пустым, без тела (17.11)
-    if(t===1) return [true,p]; if(t===2) return [false,p]; if(t===3) return [b[p],p+1];
-    if(t===4) return [dv.getInt32(p,true),p+4]; if(t===5) return [dv.getFloat64(p,true),p+8];
-    if(t===6){ const L=u32(p); if(L>1e6||p+4+2*L>b.length) throw BAD;   // длинные строки (примечания, формулы) бывают > 5000 знаков (17.11)
-      return [td.decode(b.subarray(p+4,p+4+2*L)),p+4+2*L]; }
-    if(t===7){ const L=u32(p); if(L>2e6||p+4+L>b.length) throw BAD; return [b.subarray(p+4,p+4+L),p+4+L]; }
-    if(t===9) return [dv.getFloat64(p,true),p+8];   // дата (TDateTime, 8 байт) — поле DateTimeLastSaved в корне модели (17.11: без этого часть моделей Базиса 11.14 не открывалась)
-    throw BAD; }
-  function field(p){ if(p+9>b.length) throw BAD; const k=u32(p), hi=u32(p+4), t=b[p+8]; if(k===0xFFFFFFFF&&hi===0&&t>0&&t<=9&&t!==8){ const [v,q]=val(t,p+9); return [null,v,q]; }   // значение без ключа (список строк и т.п., 17.11)
-    if(!(k>0&&k<=K.length)||t>9||hi!==0){ if(k>0&&k<=K.length&&hi===0) why="тип "+t+" у «"+K[k-1]+"» (место "+p+")"; throw BAD; } const [v,q]=val(t,p+9); return [K[k-1],v,q]; }
-  let depth=0;
-  function obj(p){ if(p+9>b.length) throw BAD; const cls=u32(p), n=u32(p+4); if(b[p+8]!==0||n>100000||(cls>5000&&cls!==0xFFFFFFFF)) throw BAD;
-    if(++depth>400) throw BAD; p+=9; const o={_c:cls}, L=[];
-    for(let i=0;i<n;i++){ if(p>=b.length) break;
-      try{ const [k,v,q]=field(p); if(k===null) (o._v||(o._v=[])).push(v); else o[k]=v; p=q; continue; }catch(e){ if(e!==BAD&&!(e instanceof RangeError)) throw e; }
-      const [v,q]=obj(p); L.push(v); p=q; }
-    depth--; if(L.length) o._l=L; return [o,p]; }
-  try{ return obj(p)[0]; }catch(e){ if(e!==BAD&&!(e instanceof RangeError)) throw e;   // 17.11: раньше сюда летел пустой объект — и на экране был общий текст без причины
-    const er=new Error("Не понял запись в модели"+(why?": "+why:"")+". Пришлите этот файл .b3d — добавим поддержку"); er.b3d={why,keys:K.length}; console.error("b3d: не разобрал дерево", er.b3d); throw er; } }
+/* разбор тела по кускам (18.11): push(кусок) → true, когда дерево дочитано; end() → корень (Document).
+   Набор в дереве = {_c:номер ключа, _k:имя набора, поля…, _l:[вложенные наборы по порядку], _v:[значения без имени]}.
+   all — строить всё (и FurnList, и историю, и все байты); без него — только то, что нужно для деталей.
+   Без рекурсии и без догадок: узел читается ровно по грамматике из шапки файла. */
+function b3dFeeder(all){
+  const sc=new Uint8Array(512), sdv=new DataView(sc.buffer), td=new TextDecoder("utf-16le"), K=[], top={}, so=[top], sn=[1];   // so/sn — стопка: набор (null — пролистываем) и сколько детей ему осталось
+  let scN=0, want=8, st=0, nK=0, sp=0, done=false, left=0, keep=false, dst=null, dn=0, vo=null, vk=null, vt=0, kid=0, undo=false, hist=0;
+  const noDict=()=>new Error("Не нашёл словарь модели (файл повреждён или очень старый Базис)");
+  const fail=w=>{ const er=new Error("Не понял запись в модели"+(w?": "+w:"")+". Пришлите этот файл — добавим поддержку"); er.b3d={why:w,keys:K.length}; console.error("b3d: не разобрал дерево",er.b3d); return er; };
+  const put=v=>{ if(vo){ if(vk===null) (vo._v||(vo._v=[])).push(v); else vo[vk]=v; } };
+  const up=()=>{ if(kid){ so[++sp]=null; sn[sp]=kid; kid=0; if(sp>2000) throw fail("слишком глубокая вложенность"); }   // дети значения (свойства строки в истории правок) — пролистываем
+    while(sp>=0&&sn[sp]===0) sp--; if(sp<2) undo=false; if(sp<0) done=true; want=9; st=3; };   // узел дочитан: закрыть наборы, у которых кончились дети
+  function push(c){ let p=0; const e=c.length, cdv=new DataView(c.buffer,c.byteOffset,e);
+    while(p<e&&!done){
+      if(left){ const m=e-p<left?e-p:left;   // тело строки или байтов (может идти через несколько кусков)
+        if(keep){ if(!dst&&m===left) put(vt===6?td.decode(c.subarray(p,p+m)):c.slice(p,p+m));   // slice — своя копия: иначе маленький контур держал бы в памяти весь кусок
+          else { if(!dst){ dst=new Uint8Array(left); dn=0; } dst.set(c.subarray(p,p+m),dn); dn+=m; if(m===left) put(vt===6?td.decode(dst):dst); } }
+        p+=m; left-=m; if(left) return false; dst=null; up(); continue; }
+      let s=c, q=p, dv=cdv;
+      if(scN||e-p<want){ const m=Math.min(want-scN,e-p); for(let k=0;k<m;k++) sc[scN+k]=c[p+k]; scN+=m; p+=m; if(scN<want) return false; s=sc; q=0; dv=sdv; scN=0; } else p+=want;   // запись легла на стык кусков — собираем в запасе
+      if(st===3){ const id=dv.getUint32(q,true), n=dv.getUint32(q+4,true), t=s[q+8];
+        if(!(id===0xFFFFFFFF||id<=nK)||t>9||(!sp&&t)) throw fail("узел "+(id===0xFFFFFFFF||!id?"без имени":id<=nK?"«"+K[id-1]+"»":"№ "+id)+", детей "+n+", тип "+t);
+        const o=so[sp]; sn[sp]--; vo=o; vk=id===0xFFFFFFFF||!id?null:K[id-1]; vt=t; kid=t?n:0;
+        if(t===0){ let x=null;
+          if(o){ if(sp===1&&!all&&B3D_SKIP[vk]) undo=vk==="Undo"; else { x={_c:id,_k:vk||""}; if(o._l) o._l.push(x); else o._l=[x]; } }
+          so[++sp]=x; sn[sp]=n; if(sp>2000) throw fail("слишком глубокая вложенность"); up(); }
+        else if(t===1){ put(true); up(); } else if(t===2){ put(false); up(); } else if(t===8){ put(null); up(); }   // 8 — «пусто» (CuttingInfo, Val…), тела нет
+        else if(t===3){ want=1; st=4; } else if(t===4){ want=4; st=4; } else if(t===5||t===9){ want=8; st=4; } else { want=4; st=5; }   // 9 — дата (TDateTime), как дробное
+        continue; }
+      if(st===4){ const v=vt===3?s[q]:vt===4?dv.getInt32(q,true):dv.getFloat64(q,true); if(vo) put(v); else if(undo&&v===4002&&vt===4&&vk==="Type") hist++; up(); continue; }   // hist — панели в истории правок (для подсказки «детали удалены»)
+      if(st===5){ const L=dv.getUint32(q,true); left=vt===6?2*L:L; keep=!!vo&&(vt===6||all||!!B3D_KEEP[vk]);
+        if(keep&&left>268435456) throw fail((vt===6?"строка":"байты")+" длиной "+left+(vk?" у «"+vk+"»":""));
+        if(!left){ put(vt===6?"":B3D_NOB); up(); } else if(vo&&!keep) put(B3D_NOB);   // ненужные байты (сетки TriData и т.п.) пролистываем, в дереве — пустая заглушка
+        continue; }
+      if(st===0){ nK=dv.getUint32(q,true)-1; if(dv.getUint32(q+4,true)!==0||nK<1||nK>500000) throw noDict(); want=4; st=1; continue; }
+      if(st===1){ const L=dv.getUint32(q,true); if(L<1||L>255) throw noDict(); want=L; st=2; continue; }
+      let k=""; for(let i=0;i<want;i++) k+=String.fromCharCode(s[q+i]); K.push(k); if(K.length===nK){ want=9; st=3; } else { want=4; st=1; } }
+    return done; }
+  function end(){ const root=top._l&&top._l[0]; if(!root){ if(nK) throw new Error(B3D_CUT); throw noDict(); }   // словарь начат, а до корня не дошли — файл оборван
+    if(!done) root._cut=true;   // тело оборвано (файл не докачан): дерево неполное — b3dOne откажет; сам разбор отдаёт, что успел (для проверок)
+    root._hist=hist; return root; }
+  return {push,end}; }
+/* дерево из целого тела — для проверок и старых вызовов (строит всё, как раньше) */
+function b3dTree(b){ const F=b3dFeeder(true); F.push(b); return F.end(); }
+/* файл модели BZ85 → дерево: распаковка и разбор идут вместе, тело целиком в памяти не лежит */
+async function b3dRead(u8,all){ const [i,z]=b3dBodyAt(u8), F=b3dFeeder(all); await b3dPump(u8,i,z,c=>F.push(c)); return F.end(); }
 function b3dCont(h){ const dv=new DataView(h.buffer,h.byteOffset,h.byteLength), n=h.length>=4?dv.getUint32(0,true):0, E=[]; let p=4;
-  for(let i=0;i<n&&p<h.length;i++){ const t=h[p], d=k=>dv.getFloat64(p+1+8*k,true);
+  for(let i=0;i<n&&p<h.length;i++){ let t=h[p]; if(t&0x80){ t&=0x7F; p+=20; }   // 18.11: флаг 0x80 (Базис 10) — после байта вида ещё 20 байт (цвет линии и запас), потом обычный элемент
+    const d=k=>dv.getFloat64(p+1+8*k,true);
     if(t===0x10&&p+33<=h.length){ E.push(["l",d(0),d(1),d(2),d(3)]); p+=33; }
-    else if(t===0x11&&p+25<=h.length){ E.push(["c",d(0),d(1),d(2)]); p+=25; }
+    else if((t===0x11||t===0x14)&&p+25<=h.length){ E.push(["c",d(0),d(1),d(2)]); p+=25; }   // 18.11: 0x14 — та же окружность, обход в другую сторону (круглые столешницы, отверстия в зеркальных деталях)
     else if(t===0x12&&p+50<=h.length){ const xc=d(0), yc=d(1), x1=d(2), y1=d(3), x2=d(4), y2=d(5), ccw=h[p+49]!==0, r=Math.hypot(x1-xc,y1-yc);   // дуга: центр, начало, конец, направление
       let sw=((Math.atan2(y2-yc,x2-xc)-Math.atan2(y1-yc,x1-xc))%(2*Math.PI)+2*Math.PI)%(2*Math.PI); if(sw<1e-9) sw=2*Math.PI; if(!ccw) sw=-(2*Math.PI-sw);
       E.push(["a",x1,y1,x2,y2,xc,yc,r,sw]); p+=50; }
@@ -23176,10 +23234,10 @@ function b3dElBox(e,xs,ys){
   if(e[0]==="a"){ const [,x1,y1,x2,y2,xc,yc,r,sw]=e, a0=Math.atan2(y1-yc,x1-xc); xs.push(x1,x2); ys.push(y1,y2);
     for(let k=-8;k<=8;k++){ const t=k*Math.PI/2, u=sw>=0?t-a0:a0-t, m=((u%(2*Math.PI))+2*Math.PI)%(2*Math.PI); if(m>1e-9&&m<Math.abs(sw)-1e-9){ xs.push(xc+r*Math.cos(t)); ys.push(yc+r*Math.sin(t)); } } } }
 /* узнаём объекты по полям (не по номеру класса) */
-const b3dOwn=o=>Object.keys(o).filter(k=>k!=="_c"&&k!=="_l"&&k!=="_v");
+const b3dOwn=o=>Object.keys(o).filter(k=>k.charCodeAt(0)!==95);   // служебные (_c, _k, _l, _v, _cut, _hist) — не поля модели
 const b3dIsPos=x=>!!x&&typeof x==="object"&&"X" in x&&"Y" in x&&"Z" in x&&("Rw" in x||"Rx" in x||"Ry" in x||"Rz" in x);
 const b3dIsPanel=o=>!!o&&o.Contour instanceof Uint8Array&&o.Thick!=null&&!("Elem" in o)&&!("Trajectory" in o);   // у паза тоже есть контур — но с Elem/Trajectory
-const b3dIsHist=o=>!!o&&("Made" in o||"Undo" in o);   // запись истории правок — в ней копии удалённых объектов
+const b3dIsHist=o=>!!o&&(o._k==="Undo"||"Made" in o||"Undo" in o);   // история правок — в ней копии удалённых объектов (18.11: набор Undo целиком — у части записей поля Made нет)
 const b3dIsEdge=y=>!!y&&"Mat" in y&&"Thick" in y&&"Elem" in y;
 const b3dIsCut=y=>!!y&&"Name" in y&&("Sign" in y||"Trajectory" in y)&&!("Mat" in y);
 const b3dTxt=v=>String(v==null?"":v).split(/[\r\n]/)[0].trim();   // «ДСП бук 16\r60» → «ДСП бук 16» (после \r — артикул)
@@ -23188,43 +23246,115 @@ function b3dKids(o,d){ const out=[]; d=d||0; (o&&o._l||[]).forEach(x=>{ if(!x||t
 /* всё внутри панели (кромки, пазы) — до 4 уровней */
 function b3dDeep(o,f,d,out){ out=out||[]; d=d||0; (o&&o._l||[]).forEach(x=>{ if(!x||typeof x!=="object") return; if(f(x)) out.push(x); else if(d<4&&!b3dIsPanel(x)) b3dDeep(x,f,d+1,out); }); return out; }
 function b3dCount(o,d){ d=d||0; if(!o||typeof o!=="object"||b3dIsHist(o)) return 0; if(b3dIsPanel(o)) return 1; if(d>30) return 0; let n=0; b3dKids(o).forEach(x=>{ n+=b3dCount(x,d+1); }); return n; }
+const b3dHasModel=root=>(root._l||[]).some(x=>x&&x._k==="Model");
 function b3dRoot(root){
-  const named=[root.FurnList,root.Furniture].find(x=>x&&typeof x==="object"&&b3dCount(x)>0); if(named) return named;
-  const C=[]; b3dOwn(root).forEach(k=>{ const v=root[k]; if(v&&typeof v==="object"&&!(v instanceof Uint8Array)) C.push(v); });
-  (root._l||[]).forEach(x=>{ if(!x||typeof x!=="object"||b3dIsHist(x)) return; C.push(x); b3dOwn(x).forEach(k=>{ const v=x[k]; if(v&&typeof v==="object"&&!(v instanceof Uint8Array)) C.push(v); }); });
-  let best=null, bn=0; C.forEach(x=>{ if(b3dIsPanel(x)) return; const n=b3dCount(x); if(n>bn){ bn=n; best=x; } });
+  /* 18.11: изделие лежит в наборе Model. Раньше брали FurnList (библиотека крепежа) — «работало» только из-за ошибки разбора.
+     Если Model есть — больше нигде не ищем: в истории (Undo) лежат удалённые детали, они в изделие не входят */
+  const mdl=(root._l||[]).find(x=>x&&x._k==="Model"); if(mdl) return mdl;
+  let best=null, bn=0; (root._l||[]).forEach(x=>{ if(!x||typeof x!=="object"||b3dIsHist(x)||b3dIsPanel(x)) return; const n=b3dCount(x); if(n>bn){ bn=n; best=x; } });   // запасной путь (Model не встречался отсутствующим ни разу)
   return best||{}; }
-/* разбор: панели в осях модели */
+/* что лежит в изделии: {Type: сколько} по всем объектам Obj — чтобы честно сказать, почему нет деталей, и сколько гнутых панелей не показали */
+function b3dTypes(F){ const T={}; let g=0; const go=(o,d)=>{ (o&&o._l||[]).forEach(x=>{ if(!x||typeof x!=="object"||g++>2e6) return; if(typeof x.Type==="number"&&(x._k==="Obj"||!x._k)) T[x.Type]=(T[x.Type]||0)+1; if(d<60) go(x,d+1); }); }; go(F,0); return T; }
+function b3dWhy(T,root,thin){   // 18.11: вместо общего «не нашёл панелей» — что именно в модели (из 67 «пустых» моделей 9 пусты честно)
+  const n=(...a)=>a.reduce((s,t)=>s+(T[t]||0),0), L=[], bent=n(999), prof=n(2001,2002,2003,2004,2005,1004), furn=n(3000,3001,4001,4004,10000,10001), draw=n(6000,8001,8002,8100,9000);
+  if(bent) L.push("гнутые панели — "+bent+" (их пока не показываем)"); if(thin) L.push("детали без толщины (уплотнитель) — "+thin); if(prof) L.push("профили и тела — "+prof); if(furn) L.push("фурнитура — "+furn); if(draw) L.push("линии и размеры — "+draw);
+  const del=root&&root._hist;   // в истории правок есть панели, а в изделии ни одной — их удалили (доводка 18.11: говорим об этом и тогда, когда в модели осталось что-то кроме плит)
+  if(L.length) return "В модели нет деталей из плит. В ней только: "+L.join(", ")+(del?". В истории правок есть удалённые детали: если они нужны — откройте модель в Базисе, верните их и сохраните заново":"");
+  if(del) return "В модели сейчас нет деталей — похоже, их удалили (в истории правок они есть). Откройте модель в Базисе, верните детали и сохраните заново";
+  return "Модель пустая — в ней нет деталей"; }
+/* габарит всех панелей в осях модели [x0,y0,z0,x1,y1,z1] */
+function b3dGab(panels){ const G=[1/0,1/0,1/0,-1/0,-1/0,-1/0];
+  panels.forEach(pn=>{ [pn.x0,pn.x0+pn.w].forEach(x=>[pn.y0,pn.y0+pn.h].forEach(y=>[0,pn.thick].forEach(z=>{ const r=pn._qrot(pn.rot,[x,y,z]); for(let k=0;k<3;k++){ const v=pn.pos[k]+r[k]; if(v<G[k]) G[k]=v; if(v>G[k+3]) G[k+3]=v; } }))); });
+  return G; }
+/* разбор: панели в осях модели. 18.11: смотрим на содержимое, а не на расширение — «BZ85» модель (.b3d, .fr3d), D0 CF 11 E0 — пакет .bln */
 async function b3dParse(buf){
   const u8=buf instanceof Uint8Array?buf:new Uint8Array(buf);
-  if(u8.length<16||String.fromCharCode(u8[0],u8[1],u8[2],u8[3])!=="BZ85") throw new Error("Это не модель Базиса (.b3d) — или модель сохранена очень старым Базисом");
-  return b3dModel(b3dTree(await b3dInflate(u8))); }
+  if(u8.length>=16&&u8[0]===0x42&&u8[1]===0x5A&&u8[2]===0x38&&u8[3]===0x35) return b3dOne(u8);
+  if(u8.length>=512&&u8[0]===0xD0&&u8[1]===0xCF&&u8[2]===0x11&&u8[3]===0xE0) return b3dBln(u8);
+  if(u8.length>=5&&((u8[0]===0x42&&u8[1]===0x5A&&u8[2]===0x38&&u8[3]===0x30)||(u8[0]===0xEF&&u8[1]===0xBB&&u8[2]===0xBF&&u8[3]===0x3C)||(u8[0]===0x3C&&u8[1]===0x3F&&u8[2]===0x78)))   // «BZ80» (внутри сжатый XML) или сам XML — так сохранял Базис 8
+    throw new Error("Модель сохранена в старом формате Базиса. Откройте её в своём Базисе, сохраните заново и загрузите ещё раз");
+  throw new Error("Это не модель Базиса (.b3d, .bln) — или модель сохранена очень старым Базисом"); }
+async function b3dOne(u8){ let root=await b3dRead(u8,false);
+  if(root._cut) throw new Error(B3D_CUT);   // доводка 18.11: оборванный файл — отказ. Раньше из прочитанной части собирался заказ (28 деталей из 157), и о неполноте говорила только подсказка на 3 секунды
+  if(!b3dHasModel(root)) root=await b3dRead(u8,true);   // нет Model — читаем заново всё дерево для запасного поиска
+  return b3dModel(root); }
+/* ===== пакет .bln: составной файл OLE (18.11). Читаем только каталог и нужные потоки; поток, лежащий в файле подряд, не копируем ===== */
+function b3dOle(u8){
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength), u32=p=>dv.getUint32(p,true), sh=dv.getUint16(30,true), ss=1<<sh, N=u8.length, END=0xFFFFFFFA, off=s=>(s+1)*ss, per=ss>>2;
+  if((sh!==9&&sh!==12)||dv.getUint16(32,true)!==6) throw new Error("OLE");
+  const nFat=u32(44), cut=u32(56), fs=[];   // fs — в каких секторах лежит таблица цепочек (FAT)
+  for(let i=0;i<109&&fs.length<nFat;i++){ const s=u32(76+4*i); if(s<END) fs.push(s); }
+  for(let d=u32(68),g=0;d<END&&g<1e5&&fs.length<nFat;g++){ const o=off(d); for(let i=0;i<per-1&&fs.length<nFat;i++){ const s=u32(o+4*i); if(s<END) fs.push(s); } d=u32(o+ss-4); }
+  const next=s=>{ const f=fs[Math.floor(s/per)]; if(f===undefined) throw new Error("OLE"); return u32(off(f)+4*(s%per)); };
+  const chain=s=>{ const L=[]; while(s<END){ if(L.length>N/ss+1) throw new Error("OLE"); L.push(s); s=next(s); } return L; };
+  const read=(s,size)=>{ const c=chain(s); if(size==null) size=c.length*ss; if(c.length*ss<size) throw new Error("OLE");
+    const m=Math.ceil(size/ss); let seq=true; for(let i=1;i<m;i++){ if(c[i]!==c[i-1]+1){ seq=false; break; } }
+    if(seq){ if(!m) return B3D_NOB; if(off(c[0])+size>N) throw new Error("OLE"); return u8.subarray(off(c[0]),off(c[0])+size); }   // лежит подряд — отдаём окно в файл, без копии
+    const out=new Uint8Array(size); for(let i=0;i<m;i++){ const a=off(c[i]), k=Math.min(ss,size-i*ss); if(a+k>N) throw new Error("OLE"); out.set(u8.subarray(a,a+k),i*ss); } return out; };
+  const D=read(u32(48)), ddv=new DataView(D.buffer,D.byteOffset,D.byteLength), tn=new TextDecoder("utf-16le"), E=[]; let rootE=null, mini=null, mfat=null;
+  const small=e=>{ if(!mini){ mini=rootE?read(rootE.start,rootE.size):B3D_NOB; const mf=u32(60); mfat=mf<END?read(mf):B3D_NOB; }   // мелкие потоки (< 4096 байт) лежат в общем «мини-потоке» кусками по 64 байта
+    const mv=new DataView(mfat.buffer,mfat.byteOffset,mfat.byteLength), out=new Uint8Array(e.size); let s=e.start;
+    for(let i=0;i*64<e.size;i++){ if(s>=END||s*64>=mini.length) throw new Error("OLE"); out.set(mini.subarray(s*64,s*64+Math.min(64,e.size-i*64)),i*64); s=4*s+4<=mfat.length?mv.getUint32(4*s,true):END; } return out; };
+  for(let p=0;p+128<=D.length;p+=128){ const type=D[p+66], nl=ddv.getUint16(p+64,true); if(type!==2&&type!==5) continue;
+    const e={name:nl>2&&nl<=64?tn.decode(D.subarray(p,p+nl-2)):"",start:ddv.getUint32(p+116,true),size:ddv.getUint32(p+120,true)};
+    if(type===5) rootE=e; else { e.get=()=>e.size<cut?small(e):read(e.start,e.size); E.push(e); } }
+  return E; }
+async function b3dBln(u8){
+  let E; try{ E=b3dOle(u8); }catch(e){ console.error("b3d: не разобрал пакет .bln",e&&e.message); throw new Error(B3D_BLNBAD); }
+  const names={}, order=[], ls=E.find(x=>x.name==="$$Lib_structure$$"), isBZ=d=>d.length>=16&&d[0]===0x42&&d[1]===0x5A&&d[2]===0x38&&d[3]===0x35;
+  if(ls){ try{ const t=new TextDecoder("utf-8").decode(ls.get()), re=/<File>\s*<Name>([^<]*)<\/Name>\s*<Storage>([^<]*)<\/Storage>/g; let m;   // имена моделей для человека и их порядок
+      while((m=re.exec(t))){ const st=m[2].trim(); names[st]=m[1].replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&").replace(/\.(b3d|fr3d)$/i,"").trim(); order.push(st); } }catch(_){} }
+  const S=E.filter(x=>x!==ls&&!/\.ldw$/i.test(x.name)&&x.size>=16), ix=x=>{ const i=order.indexOf(x.name); return i<0?1e9:i; }; S.sort((a,b)=>ix(a)-ix(b));   // чертежи (.ldw) не трогаем
+  const Ms=[]; let er=null, erN="", why="", found=0;
+  for(const x of S){ let d=null, M=null; try{ d=x.get(); }catch(e){ console.error("b3d: поток пакета не читается",x.name,e&&e.message); throw new Error(B3D_BLNBAD); }
+    if(!isBZ(d)) continue; found++; if(er) continue;
+    try{ M=await b3dOne(d); }catch(e){ er=e; erN=names[x.name]||""; console.error("b3d: модель из пакета не прочиталась",x.name,e&&e.message); continue; }
+    M.file=names[x.name]||""; if(M.panels.length) Ms.push(M); else why=why||M.why; }
+  if(!found) throw new Error(E.some(x=>/\.ldw$/i.test(x.name))?"В этом файле Базиса (.bln) нет моделей — только чертежи. Сохраните в Базисе саму модель (.b3d) и загрузите её":"Этот файл Базиса (.bln) пустой — моделей в нём нет");
+  /* доводка 18.11: хоть одна модель пакета не прочиталась — отказ (раньше заказ собирался из остальных, и пропажу целого изделия было видно только в подсказке) */
+  if(er){ const m=String(er&&er.message||""); if(m===B3D_CUT||/скачан не до конца/.test(m)) throw new Error(B3D_BLNBAD); if(found===1||!/[а-яё]/i.test(m)) throw er;
+    throw new Error("В этом файле Базиса (.bln) несколько моделей, и одна из них"+(erN?" («"+erN+"»)":"")+" не прочиталась: "+m); }
+  if(!Ms.length) return {panels:[],skipped:[],fast:0,name:"",box:null,size:null,frame:null,version:[],why:why||"В моделях этого файла нет деталей"};
+  if(Ms.length===1){ const M=Ms[0]; if(!M.name) M.name=M.file; if(found>1) M.lost=found-1; return M; }   // lost — модели пакета без деталей (не ошибка: в них только фурнитура или линии)
+  const J=b3dJoin(Ms); if(found>Ms.length) J.lost=found-Ms.length; return J; }
+/* несколько моделей пакета — в один заказ: ставим в ряд по X с зазором 500 мм (чтобы присадка «по стыкам» не связала соседние изделия), по Z — на одну линию;
+   изделие становится модулем (mod), а его блоки идут дальше в пути (blk); gi — номер модели в пакете: присадка считается по каждой модели отдельно (b3dAutoHoles) */
+function b3dJoin(Ms){
+  const panels=[], skipped=[]; let fast=0, bent=0, thin=0, x=0, z0=null;
+  Ms.forEach((M,i)=>{ const nm=M.file||M.name||("Модель "+(i+1)), dx=x-M.box[0], dz=(z0===null?(z0=M.box[2]):z0)-M.box[2];
+    M.panels.forEach(pn=>{ pn.pos=[pn.pos[0]+dx,pn.pos[1],pn.pos[2]+dz]; pn.blk=[nm].concat(pn.blk||[]); pn.mod=nm; pn.gi=i; panels.push(pn); });
+    x+=M.box[3]-M.box[0]+500; M.skipped.forEach(s=>skipped.push(s)); fast+=M.fast; bent+=M.bent||0; thin+=M.thin||0; });
+  const box=b3dGab(panels).map(v=>Math.round(v*10)/10);
+  return {panels,skipped,fast,bent,thin,cut:false,name:"",box,size:[box[3]-box[0],box[4]-box[1],box[5]-box[2]].map(v=>Math.round(v)),frame:null,version:Ms[0].version,models:Ms.map(M=>({name:M.file||M.name||"",n:M.panels.length}))}; }
 function b3dModel(root){
   const F=b3dRoot(root), panels=[], skipped=[]; let fast=0, frame=null;
   const qmul=(a,c)=>[a[3]*c[0]+a[0]*c[3]+a[1]*c[2]-a[2]*c[1], a[3]*c[1]-a[0]*c[2]+a[1]*c[3]+a[2]*c[0], a[3]*c[2]+a[0]*c[1]-a[1]*c[0]+a[2]*c[3], a[3]*c[3]-a[0]*c[0]-a[1]*c[1]-a[2]*c[2]];
   const qrot=(q,v)=>{ const [x,y,z,w]=q, tx=2*(y*v[2]-z*v[1]), ty=2*(z*v[0]-x*v[2]), tz=2*(x*v[1]-y*v[0]); return [v[0]+w*tx+(y*tz-z*ty), v[1]+w*ty+(z*tx-x*tz), v[2]+w*tz+(x*ty-y*tx)]; };
   const add=(a,c)=>[a[0]+c[0],a[1]+c[1],a[2]+c[2]], num=v=>Number.isFinite(+v)?+v:0;
-  const trOf=o=>{ const t=(o._l||[]).find(b3dIsPos); if(!t) return [[0,0,0],[0,0,0,1]]; let q=[num(t.Rx),num(t.Ry),num(t.Rz),t.Rw==null?1:num(t.Rw)]; const n=Math.hypot(...q)||1; q=q.map(v=>v/n); return [[num(t.X),num(t.Y),num(t.Z)],q]; };
-  const blocks=[];
-  const walk=(L,P0,Q0,path,d)=>{ (L||[]).forEach(o=>{ if(!o||typeof o!=="object"||b3dIsHist(o)) return; const [P,Q]=trOf(o), WP=add(P0,qrot(Q0,P)), WQ=qmul(Q0,Q);
-    if(b3dIsPanel(o)){ const E=b3dCont(o.Contour); if(!E.length||E.some(e=>e[0]==="?")){ skipped.push(b3dTxt(o.Name)||"?"); return; }
+  const trOf=o=>{ const L=o._l||[], t=L.find(x=>x&&x._k==="Trans"&&b3dIsPos(x))||L.find(b3dIsPos); if(!t) return [[0,0,0],[0,0,0,1]];   /* 18.11: сначала набор по имени Trans; нет положения — стоит на месте */ let q=[num(t.Rx),num(t.Ry),num(t.Rz),t.Rw==null?1:num(t.Rw)]; const n=Math.hypot(...q)||1; q=q.map(v=>v/n); return [[num(t.X),num(t.Y),num(t.Z)],q]; };
+  const blocks=[]; let thin=0;
+  /* top — мы на верхнем уровне изделия (или прямо в слое верхнего уровня): здесь блоки идут в счёт для названия изделия. Слой (Type 1002) прозрачен: его имя — не блок и не модуль (доводка 18.11) */
+  const walk=(L,P0,Q0,path,d,top)=>{ (L||[]).forEach(o=>{ if(!o||typeof o!=="object"||b3dIsHist(o)) return; const [P,Q]=trOf(o), WP=add(P0,qrot(Q0,P)), WQ=qmul(Q0,Q);
+    if(b3dIsPanel(o)){ if(!(num(o.Thick)>0)){ thin++; return; }   // доводка 18.11: толщина 0 — не плита («Уплотнитель Г-образный» из библиотеки): в раскрой и в 3D не идёт
+      const E=b3dCont(o.Contour); if(!E.length||E.some(e=>e[0]==="?")){ skipped.push(b3dTxt(o.Name)||"?"); return; }
       const kr=b3dDeep(o,b3dIsEdge).map(y=>({elem:+y.Elem,mat:b3dTxt(y.Mat),t:num(y.Thick)}));
       const cuts=b3dDeep(o,b3dIsCut).map(y=>({name:b3dTxt(y.Name),sign:b3dTxt(y.Sign)}));
       panels.push({name:b3dTxt(o.Name)||"Деталь",art:b3dTxt(o.ArtPos),mat:b3dTxt(o.Mat),thick:num(o.Thick),texDir:num(o.TexDir),cont:E,pos:WP,rot:WQ,butts:kr,cuts,mod:path[0]||"",blk:path.slice()}); return; }
     if(o.Type===1001&&o.Width!=null){ if(!frame) frame=[num(o.Width),num(o.Height),num(o.Depth)]; return; }
     if(o.FastID!=null){ fast++; return; }
-    if(d<30&&b3dCount(o)>0){ const nm=b3dTxt(o.Name); if(!d) blocks.push(nm); walk(b3dKids(o),WP,WQ,nm?path.concat(nm):path,d+1); } }); };
-  walk(b3dKids(F),[0,0,0],[0,0,0,1],[],0);
-  const G=[1/0,1/0,1/0,-1/0,-1/0,-1/0];
+    if(d<30&&b3dCount(o)>0){ const nm=b3dTxt(o.Name), lay=o.Type===1002; if(top&&!lay) blocks.push(nm); walk(b3dKids(o),WP,WQ,nm&&!lay?path.concat(nm):path,d+1,top&&lay); } }); };
+  walk(b3dKids(F),[0,0,0],[0,0,0,1],[],0,true);
   panels.forEach(pn=>{ const xs=[], ys=[]; pn.cont.forEach(e=>b3dElBox(e,xs,ys));
-    pn.x0=Math.min(...xs); pn.y0=Math.min(...ys); pn.w=Math.max(...xs)-pn.x0; pn.h=Math.max(...ys)-pn.y0; pn._qrot=qrot;
-    [pn.x0,pn.x0+pn.w].forEach(x=>[pn.y0,pn.y0+pn.h].forEach(y=>[0,pn.thick].forEach(z=>{ const r=qrot(pn.rot,[x,y,z]); for(let k=0;k<3;k++){ const v=pn.pos[k]+r[k]; if(v<G[k]) G[k]=v; if(v>G[k+3]) G[k+3]=v; } }))); });
-  /* название изделия: смета модели (<OrderName>), иначе единственный верхний блок */
+    pn.x0=Math.min(...xs); pn.y0=Math.min(...ys); pn.w=Math.max(...xs)-pn.x0; pn.h=Math.max(...ys)-pn.y0; pn._qrot=qrot; });
+  const G=b3dGab(panels), T=b3dTypes(F);
+  /* название изделия: смета модели (<OrderName>), иначе единственный верхний блок (слой — не блок: у кухни заказчика всё лежало в слое «стена», и заказ назывался «стена») */
   let name="";
   try{ if(root.Estimate instanceof Uint8Array){ const x=new TextDecoder("utf-8").decode(root.Estimate), m=/<OrderName>([^<]{1,120})<\/OrderName>/.exec(x); if(m) name=m[1].replace(/&quot;/g,'"').replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&").trim(); } }catch(_){}
-  if(!name&&blocks.length===1&&blocks[0]&&!/^(модель|model|новая модель|блок)\s*\d*$/i.test(blocks[0])) name=blocks[0];
+  if(!name&&blocks.length===1&&blocks[0]&&!/^(модель|model|новая модель|блок|слой)\s*\d*$/i.test(blocks[0])) name=blocks[0];   // 18.11: «Слой1» — не название изделия
   const box=panels.length?G.map(v=>Math.round(v*10)/10):null;
-  return {panels,skipped,fast,name,box,size:box?[box[3]-box[0],box[4]-box[1],box[5]-box[2]].map(v=>Math.round(v)):frame,frame,version:[root.VersionMajor,root.VersionMinor]}; }
+  const M={panels,skipped,fast,name,box,size:box?[box[3]-box[0],box[4]-box[1],box[5]-box[2]].map(v=>Math.round(v)):frame,frame,version:[root.VersionMajor,root.VersionMinor],bent:T[999]||0,thin,cut:!!root._cut};
+  if(!panels.length) M.why=skipped.length?"Не прочитал контур ни у одной детали ("+skipped.length+") — пришлите этот файл, добавим поддержку":root._cut?B3D_CUT:b3dWhy(T,root,thin);   // 18.11: человеку — что именно в модели
+  return M; }
 /* панели → заказ, как выгрузка Базиса (поля как у parseJSON: name, art, L, W, T, material, rect, edges[{elem,side,material,t}], box, grain, frame, shape, mod, blk) */
 function b3dToOrder(M,name){
   const R=v=>Math.round(v*10)/10, R4=v=>Math.round(v*1e4)/1e4, parts=[];
@@ -23245,23 +23375,35 @@ function b3dToOrder(M,name){
       const a=toF(e[1],e[2]); return ["c",R(a[0]),R(a[1]),R(e[3])]; });
     if(pn.mod) p.mod=pn.mod; if(pn.blk&&pn.blk.length) p.blk=pn.blk; if(pn.cuts.length) p.cuts0=pn.cuts;   // пазы — пока только названия (контур паза не переносим)
     parts.push(p); });
-  return {format:"cehqr",version:2,source:"b3d",order:String(M.name||name||"Модель из файла"),exportedAt:new Date().toISOString(),parts,fasteners:[]}; }
-if(typeof module!=="undefined") module.exports={b3dParse,b3dToOrder,b3dModel,b3dTree,b3dInflate};
+  const o={format:"cehqr",version:2,source:"b3d",order:String(M.name||name||"Модель из файла"),exportedAt:new Date().toISOString(),parts,fasteners:[]};
+  if(M.panels.some(pn=>pn.gi!=null)) Object.defineProperty(o,"_grp",{value:M.panels.map(pn=>pn.gi||0),enumerable:false});   // пакет .bln: номер модели у каждой детали — для присадки (в заказ и на сервер не уходит)
+  return o; }
+if(typeof module!=="undefined") module.exports={b3dParse,b3dToOrder,b3dModel,b3dTree,b3dInflate,b3dRead,b3dOle,b3dAutoHoles,b3dFileOrder};
 /* ===== Загрузка .b3d в приложении (11.11). Фирма Work24link (?f=код) — на сервер фирмы, как заказ из SketchUp (skPut, src:"b3d"):
    лежит в её папке «Заказы SketchUp», открывается как SK…; в orders/ сайта ничего не кладём.
    Без фирмы (Технолог 3D ТиМебель) — только на этом устройстве (IndexedDB «w24-b3d»), номер B3D + 6 случайных цифр;
    этапы и удаление таких заказов на сервер не уходят (перехват в __fetchHook), чужое удаление их не стирает.
    Присадка — сама по стыкам (skAutoHoles из site_sketchup.js), помечена «авто». ===== */
 function b3dCan(){ return typeof DecompressionStream!=="undefined"; }
+/* какое устройство: "ios", "and" или "" (компьютер) — чтобы подсказка говорила про кнопки этого телефона (доводка 18.11: на Android человек читал про iOS и iCloud) */
+function b3dDev(){ const n=typeof navigator!=="undefined"&&navigator?navigator:{}, ua=String(n.userAgent||""); return /iPhone|iPad|iPod/i.test(ua)||(n.platform==="MacIntel"&&n.maxTouchPoints>1)?"ios":/Android/i.test(ua)?"and":""; }
+function b3dNoFile(){ const d=b3dDev(); return d==="ios"?"Телефон не отдал файл (iCloud ещё не скачал его?). Откройте файл в «Файлах», дождитесь загрузки и выберите снова"
+  :d==="and"?"Телефон не отдал файл. Откройте WhatsApp, нажмите на файл, чтобы он скачался, и выберите его снова":"Не получилось взять файл. Проверьте, что он скачан полностью, и выберите его снова"; }
+const B3D_MAXMB=400;   // телефону: файл больше — не пробуем (модель в памяти в 3–10 раз больше файла, вкладка просто закроется без единого слова)
+/* присадка «по стыкам» (skAutoHoles из site_sketchup.js). Доводка 18.11: заказ из нескольких моделей (пакет .bln) считаем по каждой модели отдельно —
+   skAutoHoles узнаёт фасады по общей передней плоскости всех переданных деталей, и у склеенного заказа двери менее глубоких моделей фасадами не считались:
+   на пакете заказчика (4 модели) пропадало 17 петель из 27 и появлялись 52 лишних конфирмата */
 function b3dAutoHoles(o){
   if(typeof skAutoHoles!=="function"||o.parts.some(p=>p.holes&&p.holes.length)) return;
-  const cr=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
-  const P=o.parts.filter(p=>Array.isArray(p.box)&&Array.isArray(p.frame)&&p.T>0&&!/стена/i.test(p.material||""));
-  P.forEach(p=>{ const f=p.frame; p._O=f.slice(0,3); p._X=f.slice(3,6); p._Y=f.slice(6,9); p._N=cr(p._X,p._Y); });
-  const fas=[]; try{ skAutoHoles(P,fas); }catch(e){ console.error(e); }
-  P.forEach(p=>{ delete p._O; delete p._X; delete p._Y; delete p._N; });
+  const cr=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]], G=o._grp&&o._grp.length===o.parts.length?o._grp:null, sets=new Map(), fas=[];
+  o.parts.forEach((p,i)=>{ if(!(Array.isArray(p.box)&&Array.isArray(p.frame)&&p.T>0)||/стена/i.test(p.material||"")) return; const k=G?G[i]:0; let a=sets.get(k); if(!a) sets.set(k,a=[]); a.push(p); });
+  sets.forEach(P=>{ P.forEach(p=>{ const f=p.frame; p._O=f.slice(0,3); p._X=f.slice(3,6); p._Y=f.slice(6,9); p._N=cr(p._X,p._Y); });
+    try{ skAutoHoles(P,fas); }catch(e){ console.error(e); }
+    P.forEach(p=>{ delete p._O; delete p._X; delete p._Y; delete p._N; }); });
   o.fasteners=fas.concat(o.fasteners||[]); o.auto=true; }
 async function b3dFileOrder(f){
+  const mb=Math.round((+f.size||0)/1048576), dev=b3dDev();
+  if(f.size===0) throw new Error(b3dNoFile());   // доводка 18.11: телефон отдал пустышку (0 байт) — файл ещё в облаке или не докачан мессенджером
   if(/\.json$/i.test(f.name||"")){   // файл SketchUp «….w24.json» (расширение Work24link без интернета) — те же детали и присадка, что у фирм
     let raw=null; try{ raw=JSON.parse(await f.text()); }catch(_){ raw=null; }
     if(!raw||!Array.isArray(raw.panels)||!raw.panels.length) throw new Error("Это не файл Work24link (.w24.json) или в нём нет деталей");
@@ -23269,35 +23411,78 @@ async function b3dFileOrder(f){
     if(!raw.name&&!raw.model) raw.name=String(f.name||"").replace(/(\.w24)?\.json$/i,"").trim()||"Заказ из SketchUp";
     const o=Object.assign({format:"cehqr",version:2,source:"sketchup"},skToOrder(raw)); if(!o.parts.length) throw new Error("В файле не нашёл панелей");
     Object.defineProperty(o,"_raw",{value:raw,enumerable:false}); return o; }
-  if(!b3dCan()) throw new Error("Этот телефон не умеет открывать модели Базиса. Обновите iOS до 16.4 или откройте на компьютере");
-  const M=await b3dParse(await f.arrayBuffer()); if(!M.panels.length) throw new Error("В модели не нашёл панелей");
-  const o=b3dToOrder(M,String(f.name||"").replace(/\.b3d$/i,"").trim()||"Модель Базиса"); b3dAutoHoles(o);
-  if(M.skipped.length) o.skipped=M.skipped.length; return o; }
+  if(!b3dCan()) throw new Error(dev==="ios"?"Этот телефон не умеет открывать модели Базиса. Обновите iOS до 16.4 или откройте на компьютере"
+    :dev==="and"?"Этот телефон не умеет открывать модели Базиса. Обновите Chrome (нужна версия 80 или новее) или откройте на компьютере":"Этот браузер не умеет открывать модели Базиса. Обновите его или откройте приложение в Chrome");
+  if(dev&&mb>B3D_MAXMB) throw new Error(`Модель слишком большая для телефона (файл ${mb} МБ). Откройте её на компьютере или разделите в Базисе на части`);
+  let M; try{ M=await b3dParse(await f.arrayBuffer()); }
+  catch(e){ const m=String(e&&e.message||"");   // память кончилась (Chrome: «Array buffer allocation failed», Safari: «Out of memory») — говорим по-человечески
+    if(!/[а-яё]/i.test(m)&&/alloc|out of memory|invalid (typed )?array( buffer)? length/i.test(m)) throw new Error(`Модель слишком большая для этого ${dev?"телефона":"устройства"}${mb?` (файл ${mb} МБ)`:""} — не хватило памяти. ${dev?"Откройте её на компьютере":"Закройте лишние вкладки и попробуйте снова"}`);
+    throw e; }
+  if(!M.panels.length) throw new Error(M.why||"В модели не нашёл панелей");   // 18.11: M.why — что именно лежит в модели без деталей
+  const o=b3dToOrder(M,String(f.name||"").replace(/\.(b3d|bln|fr3d|f3d)(\.[a-z0-9]{1,5})?$/i,"").trim()||"Модель Базиса"); b3dAutoHoles(o);   // «Шкаф.b3d.bin» (имя испортил мессенджер) → «Шкаф»
+  if(M.skipped.length) o.skipped=M.skipped.length;
+  Object.defineProperty(o,"_b3d",{value:{models:M.models?M.models.length:0,lost:M.lost||0,bent:M.bent||0,thin:M.thin||0},enumerable:false});   // 18.11: для подсказки после загрузки (в заказ и на сервер не уходит)
+  return o; }
 /* хранилище на устройстве */
 function b3dDb(){ return new Promise((ok,no)=>{ const r=indexedDB.open("w24-b3d",1); r.onupgradeneeded=()=>r.result.createObjectStore("o",{keyPath:"id"}); r.onsuccess=()=>ok(r.result); r.onerror=()=>no(r.error); }); }
 async function b3dDbDo(mode,fn){ const db=await b3dDb(); return new Promise((ok,no)=>{ const t=db.transaction("o",mode), st=t.objectStore("o"), r=fn(st); t.oncomplete=()=>{ ok(r&&r.result); db.close(); }; t.onerror=()=>{ no(t.error); db.close(); }; }); }
 const b3dAll=()=>b3dDbDo("readonly",st=>st.getAll()).catch(()=>[]);
+/* фирма: заказ с таким названием уже есть — сервер молча заменил бы его этой моделью (skPut_ ищет строку по названию). Спрашиваем: "new" — отдельным заказом, "upd" — заменить, "no" — отмена */
+function b3dAskSame(nm,nm2){ return new Promise(ok=>{
+  if(typeof document==="undefined"||!document.body||typeof document.createElement!=="function") return ok("upd");
+  const m=document.createElement("div"); m.className="modal"; m.id="b3dAskM";
+  m.innerHTML=`<div class="modal-card" style="width:min(440px,100%)"><h2 style="margin:0 0 8px">Такой заказ уже есть</h2><p style="margin:0 0 14px;line-height:1.45"></p>
+    <div style="display:flex;flex-direction:column;gap:8px"><button type="button" class="btn primary" data-b3a="new">Загрузить отдельным заказом</button><button type="button" class="btn" data-b3a="upd">Заменить прежний заказ</button><button type="button" class="btn" data-b3a="no">Отмена</button></div></div>`;
+  m.querySelector("p").textContent=`Заказ «${nm}» уже есть в списке. Загрузить эту модель отдельно — как «${nm2}» — или заменить ею прежний заказ?`;
+  m.addEventListener("click",e=>{ const b=e.target.closest?e.target.closest("[data-b3a]"):null; if(!b&&e.target!==m) return; e.stopPropagation(); m.remove(); ok(b?b.dataset.b3a:"no"); });
+  document.body.appendChild(m); }); }
 /* загрузить файл: возвращает номер заказа или бросает понятную ошибку */
 async function b3dUpload(f){
   const o=await b3dFileOrder(f), firm=window.APP_FIRM&&S.site&&S.site.stagesUrl;
-  if(firm){ let j=null; try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"skPut",raw:o._raw||{name:o.order,src:"b3d",su:"b3d",panels:o.parts,fasteners:o.fasteners},pin:typeof shpPin==="function"&&S.shop?shpPin():"",who:S.who||""})}); j=await r.json(); }catch(_){ j=null; }
+  if(firm){
+    if(!o._raw&&o.parts.length>3000) throw new Error(`В модели ${o.parts.length} деталей — приложение принимает до 3000. Разделите модель в Базисе на части и загрузите их по отдельности`);   // то же правило, что на сервере, — но до отправки и понятнее
+    const raw=o._raw||{name:o.order,src:"b3d",su:"b3d",panels:o.parts,fasteners:o.fasteners};
+    /* доводка 18.11: названия у моделей часто одинаковые (номер из сметы, «Шкаф») — на корпусе заказчика вторая загрузка стёрла бы первую у 62 групп разных моделей */
+    const nm=String(raw.name||raw.model||"Заказ").slice(0,80).trim()||"Заказ", have=new Set(); Object.keys(S.orders||{}).forEach(id=>{ if(/^SK\d/i.test(id)&&S.orders[id]) have.add(String(S.orders[id].name||"").trim()); });
+    if(have.has(nm)){ let nm2=""; for(let k=2;k<500&&!nm2;k++){ const c=nm.slice(0,74).trim()+" ("+k+")"; if(!have.has(c)) nm2=c; }
+      const a=nm2?await b3dAskSame(nm,nm2):"upd"; if(a==="no") throw new Error("Загрузка отменена — прежний заказ не тронут");
+      if(a==="new"){ raw.name=nm2; if(!o._raw) o.order=nm2; } }
+    const body=JSON.stringify({action:"skPut",raw,pin:typeof shpPin==="function"&&S.shop?shpPin():"",who:S.who||""});
+    if(body.length>9e6) throw new Error("Модель слишком большая для загрузки. Разделите её в Базисе на части и загрузите их по отдельности");
+    let j=null; try{ const r=await fetch(S.site.stagesUrl,{method:"POST",body}); j=await r.json(); }catch(_){ j=null; }
     if(!j) throw new Error("Нет связи — проверьте интернет"); if(!j.ok) throw new Error(j.msg||"Не получилось сохранить");
     return {id:j.id,name:j.name||o.order,n:o.parts.length,upd:!!j.upd,o}; }
   const L=await b3dAll(), have=new Set(L.map(x=>x.id).concat(Object.keys(S.orders||{}))), at=new Date().toISOString(); let id="";
   for(let k=0;k<50&&(!id||have.has(id));k++){ const r=new Uint32Array(1); (window.crypto||{getRandomValues:a=>{ a[0]=Math.random()*4294967295; return a; }}).getRandomValues(r); id="B3D"+String(r[0]%1e6).padStart(6,"0"); }   // B3D + 6 случайных цифр: на разных устройствах не совпадут
   o.exportedAt=at; await b3dDbDo("readwrite",st=>st.put({id,name:o.order,count:o.parts.length,createdAt:at,order:o}));
+  try{ if(typeof navigator!=="undefined"&&navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(_){}   // доводка 18.11: просим телефон не стирать память приложения (модель без фирмы лежит только на этом устройстве)
   return {id,name:o.order,n:o.parts.length,local:true,o}; }
+/* подсказка, которую успеют прочитать: обычная висит 3,2 с при любой длине текста (cehqr.html, toast) — причина отказа на 110 знаков пропадала раньше, чем её дочитают.
+   Длинному тексту продлеваем показ (60 мс на знак, не дольше 15 с) тем же таймером toast._t, чтобы следующая подсказка сняла его как обычно */
+function b3dSay(msg){ msg=String(msg||""); toast(msg);
+  try{ const t=typeof document!=="undefined"&&document.getElementById?document.getElementById("toast"):null; if(t&&msg.length>50){ clearTimeout(toast._t); toast._t=setTimeout(()=>{ t.hidden=true; },Math.min(15000,3200+60*msg.length)); } }catch(_){} }
+let b3dPickAt=0;   // когда человек нажал «Загрузить модель» (0 — не выбирает): пока идёт выбор и чтение, приложение не перезагружается ради обновления — см. __w24Busy ниже
+/* загрузить файл модели и открыть заказ. Вернёт {id,name,n,…} или null; текст причины отказа — в b3dPick.msg (окно фирмы пишет его у себя) */
 async function b3dPick(f){
-  if(!f) return; if(!/\.(b3d|json)$/i.test(f.name||"")){ toast("Нужен файл модели: Базис (.b3d) или SketchUp (.w24.json)"); return; }
-  toast("Читаю модель…"); let r;
-  try{ r=await b3dUpload(f); }catch(e){ console.error("b3d:",e&&e.name,e&&e.message,e); const msg=String(e&&e.message||""), nm=String(e&&e.name||"");
-    toast(/[а-яё]/i.test(msg)?msg
-      :/NotReadable|NotFound|NotAllowed/.test(nm)?"Телефон не отдал файл (iCloud ещё не скачал его?). Откройте файл в «Файлах», дождитесь загрузки и выберите снова"
-      :nm==="QuotaExceededError"?"На телефоне кончилось место для моделей — удалите старые модели с этого устройства"
-      :"Не получилось прочитать модель. Сохраните её в Базисе ещё раз и попробуйте снова"+(nm||msg?" ("+(nm||"ошибка")+(msg?": "+msg.slice(0,60):"")+")":"")); return null; }
-  try{ if(typeof siteLoadIndex==="function") await siteLoadIndex(); }catch(_){}
-  toast(`Готово: «${r.name}» — ${r.n} дет.${r.local?" (на этом устройстве)":""}`+(r.o.skipped?` · не прочитал контур у ${r.o.skipped} дет. — проверьте по Базису`:""));
-  if(typeof goOrder==="function") goOrder(r.id); else if(typeof render==="function") render(); return r; }
+  b3dPick.msg=""; if(!f) return null;
+  const say=m=>{ b3dPick.msg=m; b3dSay(m); };
+  try{
+    if(!/\.(b3d|bln|fr3d|f3d|json)$/i.test(f.name||"")){   // 18.11: телефон и мессенджеры портят имя файла («….b3d.bin», вовсе без расширения) — тогда смотрим на начало файла: «BZ85» или пакет .bln (D0 CF 11 E0)
+      let h=null; try{ h=new Uint8Array(await f.slice(0,4).arrayBuffer()); }catch(_){ h=null; }
+      if(!h||f.size===0){ say(b3dNoFile()); return null; }   // начало файла не прочиталось вовсе — дело в телефоне, а не в файле
+      if(h.length<4||!((h[0]===0x42&&h[1]===0x5A&&h[2]===0x38&&(h[3]===0x35||h[3]===0x30))||(h[0]===0xD0&&h[1]===0xCF&&h[2]===0x11&&h[3]===0xE0))){ say("Это не модель. Нужен файл Базиса (.b3d, .bln, .fr3d) или SketchUp (.w24.json)"); return null; } }
+    toast("Читаю модель…"); let r;
+    try{ r=await b3dUpload(f); }catch(e){ console.error("b3d:",e&&e.name,e&&e.message,e); const msg=String(e&&e.message||""), nm=String(e&&e.name||"");
+      say(/[а-яё]/i.test(msg)?msg
+        :/NotReadable|NotFound|NotAllowed/.test(nm)?b3dNoFile()
+        :nm==="QuotaExceededError"?"На телефоне кончилось место для моделей — удалите старые модели с этого устройства"
+        :"Не получилось прочитать модель. Сохраните её в Базисе ещё раз и попробуйте снова"+(nm||msg?" ("+(nm||"ошибка")+(msg?": "+msg.slice(0,60):"")+")":"")); return null; }
+    try{ if(typeof siteLoadIndex==="function") await siteLoadIndex(); }catch(_){}
+    const bi=r.o._b3d||{}, more=[];   // 18.11: честно говорим, чего в 3D не будет
+    if(r.o.skipped) more.push(`не прочитал контур у ${r.o.skipped} дет. — проверьте по Базису`); if(bi.bent) more.push(`гнутые панели (${bi.bent}) пока не показываем`); if(bi.lost) more.push(`моделей без деталей: ${bi.lost}`);
+    b3dSay(`Готово: «${r.name}» — ${r.n} дет.${bi.models?` (моделей в файле: ${bi.models})`:""}${r.upd?" (прежний заказ заменён)":""}${r.local?" (на этом устройстве)":""}`+more.map(s=>" · "+s).join(""));
+    if(typeof goOrder==="function") goOrder(r.id); else if(typeof render==="function") render(); return r; }
+  finally{ b3dPickAt=0; } }
 if(typeof window!=="undefined"&&typeof document!=="undefined"){
   /* фирма: заказ с сервера (SK…) с пометкой src:"b3d" — уже готовые детали, переводить из SketchUp не надо */
   if(typeof skToOrder==="function"){ const _b3dSk=skToOrder; skToOrder=function(raw){ if(raw&&raw.src==="b3d"&&Array.isArray(raw.panels)) return {format:"cehqr",version:2,source:"b3d",order:String(raw.name||"Модель Базиса"),parts:raw.panels,fasteners:raw.fasteners||[],auto:true}; return _b3dSk.apply(this,arguments); }; }
@@ -23335,10 +23520,39 @@ if(typeof window!=="undefined"&&typeof document!=="undefined"){
       const r=_b3dDH.apply(this,arguments); Object.assign(S.orders,keep); return r; }; }
     if(typeof viewOrders==="function"){ const _b3dVO=viewOrders; viewOrders=function(){ const h=_b3dVO.apply(this,arguments);
       const can=(typeof siteIsAdmin==="function"&&siteIsAdmin())||(S.shop&&S.shop.tech); if(!can) return h;
-      /* 11.11 (проверка): вместо плашки над списком — одна кнопка; пояснение — во всплывающей подсказке */
-      return `<div class="b3d-bar"><label class="btn sm" title="Модель без Базиса: файл Базиса «….b3d» или SketchUp «….w24.json» → 3D, детали, раскрой, присадка (ставится сама — проверьте). Хранится на этом устройстве."><span>📥 Загрузить модель</span><input type="file" id="b3dFile" hidden></label></div>`+h; }; }
+      /* 11.11 (проверка): вместо плашки над списком — одна кнопка; пояснение — во всплывающей подсказке.
+         Доводка 18.11: само поле выбора файла — одно, постоянное, в конце страницы (b3dInp), а здесь только кнопка-ярлык к нему. Раньше поле лежало внутри списка,
+         а список перерисовывается сам (пришёл свежий список с сервера, вернулись в приложение): пока человек искал файл, поле выпадало из страницы,
+         и выбранный файл уходил «в никуда» — без единого сообщения. Перечня расширений (accept) у поля нет нарочно: с ним iPhone показывает файл .b3d серым */
+      return `<div class="b3d-bar"><label class="btn sm" for="b3dFile" title="Модель без Базиса: файл Базиса «….b3d», «….bln» или SketchUp «….w24.json» → 3D, детали, раскрой, присадка (ставится сама — проверьте). Хранится на этом устройстве."><span>📥 Загрузить модель</span></label></div>`+h; }; }
   }
+  const b3dInp=()=>{ let i=document.getElementById("b3dFile"); if(!i&&document.body){ i=document.createElement("input"); i.type="file"; i.id="b3dFile"; i.hidden=true; document.body.appendChild(i); } return i; };
+  if(!window.APP_FIRM){ if(document.body) b3dInp(); else document.addEventListener("DOMContentLoaded",b3dInp,{once:true}); }
   document.addEventListener("change",e=>{ const i=e.target; if(!i||i.id!=="b3dFile") return; const f=i.files&&i.files[0]; i.value=""; b3dPick(f); });
+  /* доводка 18.11: пока человек выбирает файл и модель читается — «занят» для обновления приложения (site_pwa.js спрашивает window.__w24Busy).
+     На Android окно выбора файла — отдельный экран: страница «скрыта», и если искать файл дольше минуты, а обновление уже ждёт, при возврате страница
+     перезагружалась и выбранный файл пропадал. Оборачиваем в момент нажатия (site_smdraft.js ставит свой __w24Busy при загрузке — не затираем его, а зовём следом) */
+  let b3dBusyFn=null;
+  const b3dBusy=()=>{ b3dPickAt=Date.now(); if(b3dBusyFn&&window.__w24Busy===b3dBusyFn) return; const pv=window.__w24Busy;
+    b3dBusyFn=window.__w24Busy=function(){ if(b3dPickAt&&Date.now()-b3dPickAt<600000) return true; try{ return typeof pv==="function"?!!pv.apply(this,arguments):false; }catch(_){ return false; } }; };
+  document.addEventListener("click",e=>{ const t=e.target&&e.target.closest?e.target.closest('label[for="b3dFile"],#b3dFile,#skDrop,#skFile'):null; if(!t) return; if(t.tagName==="LABEL"&&!window.APP_FIRM) b3dInp(); b3dBusy(); },true);
+  document.addEventListener("cancel",e=>{ const i=e.target; if(i&&(i.id==="b3dFile"||i.id==="skFile")) b3dPickAt=0; },true);   // окно выбора закрыли, ничего не выбрав
+  /* 18.11: окно «Загрузить модель» у фирм (site_sketchup.js) отдаёт нам только файл с именем «….b3d», остальное читает как SketchUp — на пакет .bln и на модель
+     с испорченным именем (телефон, WhatsApp) отвечало «Это не файл Work24link». Берём выбор файла раньше окна и смотрим на содержимое; не наш файл — возвращаем окну как было.
+     Доводка: «….b3d» тоже берём сами — чтобы в окне осталась причина отказа (а не «см. сообщение внизу», когда внизу уже пусто) и поле очищалось для повторной попытки */
+  let b3dSkPass=false;
+  const b3dSkOur=f=>!!f&&!/\.json$/i.test(f.name||"");   // «….json» окно разберёт само
+  const b3dSkTake=async(f,drop)=>{ const m=document.getElementById("skUpM"), st=m&&m.querySelector("#skSt"), inp=m&&m.querySelector("#skFile"); let ours=/\.(b3d|bln|fr3d|f3d)$/i.test(f.name||"");
+    if(!ours){ try{ const h=new Uint8Array(await f.slice(0,4).arrayBuffer()); ours=h.length===4&&((h[0]===0x42&&h[1]===0x5A&&h[2]===0x38&&(h[3]===0x35||h[3]===0x30))||(h[0]===0xD0&&h[1]===0xCF&&h[2]===0x11&&h[3]===0xE0)); }catch(_){} }
+    if(ours){ if(inp&&!drop){ try{ inp.value=""; }catch(_){} }   // тот же файл можно выбрать ещё раз (Chrome на Android не сообщает о выборе, если поле не менялось)
+      if(st) st.textContent="Читаю модель Базиса…"; const r=await b3dPick(f); if(st) st.textContent=r?`Готово: «${r.name}» — ${r.n} дет.${r.upd?" (прежний заказ заменён)":""}`:(b3dPick.msg||"Не получилось прочитать модель"); if(r&&m) m.remove(); return; }
+    if(!inp){ b3dPickAt=0; return; }
+    if(drop){ try{ const dt=new DataTransfer(); dt.items.add(f); inp.files=dt.files; }catch(_){ b3dPickAt=0; if(st) st.textContent="Не получилось взять файл — выберите его кнопкой"; return; } }
+    b3dSkPass=true; try{ inp.dispatchEvent(new Event("change",{bubbles:true})); }finally{ b3dSkPass=false; } };
+  document.addEventListener("change",e=>{ const i=e.target; if(b3dSkPass||!i||i.id!=="skFile") return; const f=i.files&&i.files[0]; if(!b3dSkOur(f)) return; e.stopImmediatePropagation(); b3dSkTake(f,false); },true);
+  document.addEventListener("drop",e=>{ const dz=e.target&&e.target.closest?e.target.closest("#skDrop"):null, f=dz&&e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(!b3dSkOur(f)) return; e.preventDefault(); e.stopImmediatePropagation(); dz.classList.remove("on"); b3dSkTake(f,true); },true);
+  /* файл дошёл до самого окна (SketchUp «….json» или не наш): окно уже взяло его в работу — очищаем поле, чтобы после «Нет связи» тот же файл можно было выбрать снова; «занят» держим ещё минуту (идёт отправка) */
+  document.addEventListener("change",e=>{ const i=e.target; if(!i||i.id!=="skFile") return; const at=b3dPickAt; setTimeout(()=>{ try{ i.value=""; }catch(_){} },0); setTimeout(()=>{ if(b3dPickAt===at) b3dPickAt=0; },60000); });
   const st=document.createElement("style"); st.textContent=`.b3d-bar{display:flex;justify-content:flex-end;margin:0 0 10px}
 .b3d-bar>span{display:flex;flex-direction:column;gap:2px;flex:1;min-width:200px}.b3d-bar small{color:var(--muted,#777);font-size:12.5px;line-height:1.35}.b3d-bar label.btn{cursor:pointer;white-space:nowrap;display:inline-flex;flex-direction:row;align-items:center}`;
   (document.head||document.documentElement).appendChild(st);
@@ -24957,7 +25171,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="0630722088";
+const CHK_BUILD="bbecd66ed8";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -31224,7 +31438,7 @@ function r3ZpBlock(Z){ const P=(Z.persons||[]).slice(), staff=(S.shop.staff||[])
     rows.push({p:{name:s.name,kind:"",start:0,accr:0,ded:0,paid:0,end:0,items:[],pays:[]},name:s.name,role:s.role||"",zero:true}); });
   const earn=p=>Math.round((+p.accr||0)-(+p.ded||0)), tot=k=>rows.reduce((a,r)=>a+(k==="earn"?earn(r.p):Math.round(+r.p[k]||0)),0), end=tot("end");
   let h=`<div class="zt-tot r3-ztot"><div><span>Заработали за месяц</span><b>${E(RUBS(tot("earn")))}</b></div><div><span>Взяли</span><b class="zt-g">${E(RUB(tot("paid")))}</b></div><div><span>${end<0?(tot("paid")>0?"Взяли вперёд":"Должны фирме"):"Ещё должны взять"}</span><b class="${end>0?"zt-y":end<0?"zt-r":"zt-g"}">${E(RUB(Math.abs(end)))}</b></div></div>
-    <p class="muted r3-zhint">Каждый человек отдельно. Нажмите на человека — увидите, из чего сложилось, и галочки «взял».</p>`;
+    <p class="muted r3-zhint">Каждый человек отдельно. Нажмите на человека — увидите, из чего сложилось${S.shop.tech?", и галочки «взял»":""}.</p>`;
   const cl=Z.closed; if(cl) h+=`<p class="note" style="margin:0 0 8px">Месяц закрыл ${E(cl.who||"технолог")} ${E(cl.when&&typeof shpZpDM==="function"?shpZpDM(cl.when):"")}. Цифры сохранены и не меняются. Что забыли — попадёт в следующий открытый месяц как «перерасчёт».</p>`;
   const card=r=>{ const p=r.p, e=earn(p), nOrd=new Set((p.items||[]).filter(i=>i.order&&i.kind!=="fine").map(i=>i.order)).size, bon=(p.items||[]).filter(i=>i.kind==="bonus").reduce((x,i)=>x+i.amount,0), sal=(p.items||[]).filter(i=>i.kind==="salary").reduce((x,i)=>x+i.amount,0);
     const did=[nOrd?nOrd+" "+shpPl(nOrd,"заказ","заказа","заказов"):"",sal?"оклад "+NUM(sal):"",bon?"премия "+NUM(bon):"",p.ded?"штраф "+NUM(p.ded):""].filter(Boolean).join(" · ");
@@ -31236,7 +31450,7 @@ function r3ZpBlock(Z){ const P=(Z.persons||[]).slice(), staff=(S.shop.staff||[])
     h+=`<p class="shp-zcap shp-zgcap"><span>${t} · ${L.length}</span><span>ещё должны взять ${E(RUB(L.reduce((x,r)=>x+Math.max(0,Math.round(+r.p.end||0)),0)))}</span></p><ul class="r3-zl">${L.map(card).join("")}</ul>`; });
   return h; }
 if(typeof shpZpHtml==="function"){ const _r3Z=shpZpHtml; shpZpHtml=function(){ const h=String(_r3Z.apply(this,arguments)); try{
-    const Z=S.shop.zp; if(!S.shop.tech||!Z||Z.err||S.shop.zpSt) return h; const a=h.indexOf('<div class="zt-tot">'); if(a<0) return h;
+    const Z=S.shop.zp; if(!(S.shop.tech||(Z&&Z.can&&Z.can.view))||!Z||Z.err||S.shop.zpSt) return h;   /* 18.11: тот же общий список — главному дизайнеру с правом «только смотреть» */ const a=h.indexOf('<div class="zt-tot">'); if(a<0) return h;
     const ends=['<p class="note">За этот месяц начислений нет','<p class="shp-zcap">Ведомости месяца','<div class="shp-zpb">','<details class="zt-more">'].map(x=>h.indexOf(x,a)).filter(i=>i>a);
     const b=ends.length?Math.min.apply(null,ends):h.length; return h.slice(0,a)+r3ZpBlock(Z)+h.slice(b); }catch(e){ console.error("r3 zp",e); } return h; }; }
 
@@ -31661,7 +31875,8 @@ const PR_O=[["smetas","Видеть все сметы","иначе — толь�
   ["sums","Суммы и оплаты сделки","сумма договора, предоплата, остаток",1],["price","Менять цену и сумму","в своих и чужих сделках (если видит суммы)",1],["del","Удалять свои сделки","свои сметы — можно всегда",0],
   ["bz","Заказы из Базиса","3D, детали, раскрой",1],["stock","Склад: «+ Пришло / − Взял»","видит склад, записывает приход и что взял",1],["buy","Закупка и склад","разделы «Закупка» и «Склад» в «Все разделы»",0],["money","Деньги фирмы","деньги по заказам, итог месяца",0],["markup","Менять наценки","наценки по группам и тарифы работ",0]];
 /* главному дизайнеру — касса целиком только по галочке директора (Кирилл 14.11 21:41: по умолчанию выкл; обычным дизайнерам — только свои записи) */
-const PR_G=[["kassaGlav","Касса — полный доступ","все записи и остатки, принимать и выдавать за любого; только если включены «Суммы и оплаты»",0]];
+const PR_G=[["kassaGlav","Касса — полный доступ","все записи и остатки, принимать и выдавать за любого; только если включены «Суммы и оплаты»",0],
+  ["zpGlav","Зарплата всех — только смотреть","экран «Зарплата»: все люди и суммы; выдавать, начислять и закрывать месяц нельзя",0]];   /* 18.11 (Кирилл: «галочку чтобы главный дизайнер доступ просмотру») */
 /* снабженцу: «Менять цены материалов» — по умолчанию да (сервер RR_DEF_), «Касса — полный доступ» — новая */
 try{ if(typeof R4_S!=="undefined"){ const i=R4_S.findIndex(x=>x[0]==="prices"); if(i>=0) R4_S[i]=["prices","Менять цены материалов","цена материала «запомнить в прайсе», убрать из прайса",1];
   if(!R4_S.some(x=>x[0]==="kassa")) R4_S.splice(2,0,["kassa","Касса — полный доступ","все записи и остатки, принимать и выдавать за любого",1]); } }catch(_){}
@@ -32465,7 +32680,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="0630722088"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="bbecd66ed8"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -39198,8 +39413,16 @@ function zkToggle(t){ if(!zkCanTick()){ toast("Отмечает "+zkRoleName().t
   else if(row) row.classList.add("out"); }
 /* долгое нажатие / касание количества — что ещё можно сделать с позицией */
 function zkSheet(html,cls){ document.querySelector(".zk-sh")?.remove(); const m=document.createElement("div"); m.className="zk-sh"+(cls?" "+cls:""); m.innerHTML=`<div class="zk-shc" role="dialog" aria-modal="true">${html}</div>`; document.body.appendChild(m);
-  requestAnimationFrame(()=>m.classList.add("in")); const close=()=>{ m.classList.remove("in"); setTimeout(()=>{ m.remove(); if(ZK.dirty){ ZK.dirty=false; zkPaint(); } },200); document.removeEventListener("keydown",kd); }, kd=e=>{ if(e.key==="Escape") close(); };
-  document.addEventListener("keydown",kd); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-zx]")) close(); }); m._close=close; return m; }
+  requestAnimationFrame(()=>m.classList.add("in")); const close=()=>{ m.classList.remove("in"); setTimeout(()=>{ m.remove(); if(ZK.dirty){ ZK.dirty=false; zkPaint(); } },200); document.removeEventListener("keydown",kd); }, kd=e=>{ if(e.key==="Escape") m._close(); };
+  document.addEventListener("keydown",kd); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-zx]")) m._close(); }); m._close=close; return m; }   // 18.11 «мимо окна», «Отмена» и Esc идут через m._close — окно чека подменяет его вопросом «закрыть без сохранения?» (остальные окна — как раньше)
+/* 18.11 вопрос поверх окна «Закупки» (проверяющий: нажатие мимо окна чека молча теряло прочитанные строки; «Сохранить» во время чтения молча сохранял чек без строк).
+   ПОЧЕМУ свой, а не appConfirm: тот лежит ниже окна .zk-sh (его не видно) и главная кнопка у него всегда «да». Здесь главная (справа, выделена) — безопасный ответ.
+   Ответ: "main" | "other" | "" (Esc или мимо — как главная: ничего не теряем) */
+function zkAsk(text,main,other){ return new Promise(res=>{ const a=document.createElement("div"); a.className="zk-ask";
+  a.innerHTML=`<div class="zk-askc" role="alertdialog" aria-modal="true"><p>${esc(text)}</p><div class="zk-fb"><button type="button" class="zk-cancel" data-za="other">${esc(other)}</button><button type="button" class="zk-ok" data-za="main">${esc(main)}</button></div></div>`;
+  const done=v=>{ a.remove(); document.removeEventListener("keydown",kd,true); res(v); }, kd=e=>{ if(e.key==="Escape"){ e.stopPropagation(); done(""); } };
+  a.addEventListener("click",e=>{ const b=e.target.closest("[data-za]"); if(b) done(b.dataset.za); else if(e.target===a) done(""); });
+  document.addEventListener("keydown",kd,true); document.body.appendChild(a); setTimeout(()=>{ try{ a.querySelector('[data-za="main"]').focus(); }catch(_){} },30); }); }
 function zkRowSheet(refs){ const L=zkRefs(refs); if(!L.length) return; const G=A.snMerge(L), r=G[0]; if(!r) return; const s=zkSt(r), can=zkCanTick(), rq=zkReq(r), boss=zkBoss();
   const tm=new Date(Date.now()+ZK_DAY), def=s.due||shpToday(tm), calc=rq?zkCalcOf(r):null;
   const m=zkSheet(`<div class="zk-shh"><b>${esc(r.name)}</b><small>${esc(zkQty(r.qty,r.unit))}${rq?" · докупка · просил "+esc(rq.who):""}</small></div>
@@ -39254,6 +39477,96 @@ function zkAdd(g){ if(!zkCanTick()&&zkRole()!=="office"){ toast("Добавля�
     m._close(); zkSave([Object.assign({order:oid,key:"A:"+Date.now().toString(36),name:nm,qty:q,unit:u,status:0,op:"add"},c?{comment:c}:{})],"Добавлено: "+nm); }); }
 /* ---- чек ---- */
 function zkDeals(){ return ((S.shop&&S.shop.orders)||[]).filter(d=>!shpClosed(d)&&zkMine(d)).sort((a,b)=>(+b.num||0)-(+a.num||0)); }
+/* ---- 18.11 «Чек → строки» (задание docs/zadaniya/2026-11-18-zakup-chek-nomenklatura.md; Кирилл: «когда снабженец чек загружает — автоматически должен заполнять
+   номенклатуру или выровняет, если там что-то неправильно»). После выбора фото чек читает сервер (aiRc) — строки «название · кол-во · ед. · цена» можно править,
+   убирать, дописывать руками; «это:» — позиция этого заказа или «новая позиция». Строки уходят в receiptAdd полем items — сервер сам заведёт новые позиции
+   и поставит цены в очередь «Цены из чеков» директору. ПОЧЕМУ так: цена «Прайса» отсюда НЕ меняется (ИИ ошибается в цифрах) — только через глаза директора.
+   Чек без строк сохраняется как раньше; цен «Прайса» окно не показывает никому (мастер чужих цен не видит). Строки — отдельные элементы: добавить/убрать
+   строку не перерисовывает окно (без дёрганья). Цвета — только зелёный, красный, синий: синий — переменной --w-rcb (сборка W2 перекрашивает синие цвета
+   в серый, а переменные --w-* не трогает); подсказка о чтении — <span>, не <small> (оформление красит любой small в серый с !important). ---- */
+const ZK_RU=["шт","м","лист","м²","компл.","упак.","кг","л"];   // единицы закупки — те же слова, что в «Номенклатуре» (сервер заводит позицию с единицей из чека)
+function zkRcUnit(u,name){ const s=zkN(u).replace(/\s+/g,""); if(!s) return "шт";
+  if(/^(л|l)$/.test(s)&&/лдсп|(^|[^а-я])дсп|мдф|хдф|двп|плит|столешниц|фанер/.test(zkN(name))) return "лист";   // 18.11 «л» у плиты — лист, а не литр (в «Закупке» листы пишутся «3 л.»; так же в «Загрузить список»)
+  if(/^(шт|штук|pcs|pc|ед)/.test(s)) return "шт"; if(/^(м2|м²|кв\.?м|m2)/.test(s)) return "м²"; if(/^(лист|л\.|лст)/.test(s)) return "лист";
+  if(/^(м|пог\.?м|п\.?м|м\.?п|m)\.?$/.test(s)) return "м"; if(/^(компл|к-т|кмп|набор)/.test(s)) return "компл."; if(/^(уп|пач|pack)/.test(s)) return "упак.";
+  if(/^(кг|kg)/.test(s)) return "кг"; if(/^(л|литр\S*|l)$/.test(s)) return "л"; return String(u).trim().slice(0,12); }
+const zkRcKey=s=>zkN(s).replace(/["'«»]/g,"").replace(/[.,;:()×*\/\\+-]+/g," ").replace(/\s+/g," ").trim();
+/* «совпавшие по названию подставляются сами» — 18.11 (проверяющий «деньги»): САМА подставляется только та же позиция — те же слова и те же цифры (порядок слов, запятые,
+   «19/1» и «19х1», «мм» не важны). ПОЧЕМУ так строго: раньше хватало двух общих слов — «Кромка ПВХ 2 мм белая» сама привязывалась к «Кромка ПВХ 0,4 мм белая»,
+   «Tandem 400» к «Tandem 500», а сервер по такой привязке дописывает слово из чека в «Другие названия» — цена и наценка новой сметы шли от чужой позиции.
+   Похожее (цифры и артикулы те же, слов общих ≥2 и ≥60 %) — только подсказка «Похоже на…» (zkRcNear): выбор остаётся «новая позиция», решает человек. */
+function zkRcMatch(name,P){ const k=zkRcTok(name).sort().join(" "); if(!k) return -1; const L=[]; P.forEach((p,i)=>{ if(zkRcTok(p.name).sort().join(" ")===k) L.push(i); });
+  if(L.length<2) return L.length?L[0]:-1; const e=L.filter(i=>zkRcKey(P[i].name)===zkRcKey(name)); return e.length===1?e[0]:-1; }   // две позиции подходят одинаково — не угадываем
+function zkRcTok(s){ return zkN(s).replace(/["'«»]/g,"").replace(/(\d)[.,](?=\d)/g,"$1~").replace(/(\d)\s*[xх×*\/]\s*(?=\d)/g,"$1 ").replace(/(\d)(мм|mm)(?![а-яa-z])/g,"$1 ").replace(/[.,;:()×*\/\\+-]+/g," ").replace(/~/g,".").split(/\s+/).filter(w=>w&&w!=="мм"&&w!=="mm"); }   // слова названия; «0,4» — одно число, «2х19» — два
+function zkRcNear(name,P){ const a=zkRcTok(name), dg=L=>L.filter(w=>/\d/.test(w)).sort().join(" "), ad=dg(a), aw=a.filter(w=>!/\d/.test(w)); if(aw.length<2) return -1; let best=-1,bs=0,tie=false;
+  P.forEach((p,i)=>{ const b=zkRcTok(p.name); if(dg(b)!==ad) return; const bw=new Set(b.filter(w=>!/\d/.test(w))), c=aw.filter(w=>bw.has(w)).length; if(c<2||!bw.size) return; const s=c/Math.min(aw.length,bw.size); if(s<.6) return;
+    if(s>bs){ bs=s; best=i; tie=false; } else if(s===bs) tie=true; }); return tie?-1:best; }
+/* 18.11 строка чека — не материал (доставка, пакет, скидка): по умолчанию «это: не материал» — в номенклатуру и в очередь цен не идёт, в сумме строк считается. Человек может вернуть «новая позиция» */
+function zkRcNoMat(name){ return /^(доставка|скидка|подъем)(\s|$)|^пакет(\s*-?\s*(майка|фасовочн\S*|полиэтилен\S*|пвд|пнд))?$/.test(zkN(name).replace(/[.,;:!]+$/,"")); }
+function zkRcNid(name){ try{ const D=window.__nom&&window.__nom.data(), k=zkRcKey(name); if(!D||!k) return ""; const x=(D.items||[]).find(x=>zkRcKey(x.name)===k||zkRcKey(x.bzName)===k||(x.alt||[]).some(a=>zkRcKey(a)===k)); return x&&!/^tmp/.test(x.id)?String(x.id):""; }catch(_){ return ""; } }
+const ZK_RIX='<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+function zkRcUi(m,f,g){ const box=m.querySelector(".zk-ri"), ul=box.querySelector(".zk-ril"), stt=box.querySelector(".zk-ris"), dif=box.querySelector(".zk-rid"), addB=box.querySelector('[data-zi="add"]');
+  const P=zkSum(g).G.map(r=>({name:r.name})), num=v=>+String(v||"").replace(/\s/g,"").replace(",",".")||0, val=(li,k)=>{ const x=li.querySelector(`[data-k="${k}"]`); return x?String(x.value||"").trim():""; };
+  const fmt=v=>String(Math.round(v*100)/100).replace(".",","), pl=n=>n%10===1&&n%100!==11?"строку":n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?"строки":"строк";
+  let seq=0, ph=null, dk="", shop="", rd=0;   // rd — сколько чтений чека сейчас идёт (18.11: пока читается, «Сохранить» спрашивает, а не молча сохраняет без строк)
+  const say=(t,c)=>{ stt.textContent=t; stt.className="zk-ris"+(c?" "+c:""); };
+  /* 18.11 (проверяющий «удобство»): название — поле с переносом, растёт по тексту (раньше в одну строку: «…Белый Шагрень 16 мм» обрезалось, толщины не видно);
+     под «это:» — выбранная позиция заказа целиком (в закрытом списке телефона её конец не виден: две плиты с разным декором выглядели одинаково);
+     над полями постоянные подписи «сколько · ед. · цена за 1» и справа «= сумма строки» — видно, цену или сумму вписал ИИ */
+  const fitN=ta=>{ if(!ta||!ta.isConnected) return; ta.style.height="auto"; let h=ta.scrollHeight; if(!h) return; h+=ta.offsetHeight-ta.clientHeight+1; ta.style.height=h+"px";   // + рамка поля (в светлой теме и в виде 2.0 она есть), иначе последняя строка обрезается
+    for(let i=0;i<3&&ta.clientHeight>0&&ta.scrollHeight>ta.clientHeight+1;i++){ h=Math.ceil(h*ta.scrollHeight/ta.clientHeight)+1; ta.style.height=h+"px"; } };   // окно в виде 2.0 уменьшено (zoom): высота текста приходит в экранных пикселях, а задаётся в своих — доводим, пока текст не влезет
+  const rowSum=li=>{ const p=num(val(li,"p")), el=li.querySelector("[data-e]"), tx=p>0?"= "+shpMoney(Math.round(p*(num(val(li,"q"))||1)*100)/100):""; if(el&&el.textContent!==tx) el.textContent=tx; };
+  const sync=li=>{ const t=val(li,"t"), lb=li.querySelector(".zk-rit"), ff=li.querySelector("[data-f]"), nb=li.querySelector(".zk-rin"); if(lb) lb.classList.toggle("hit",t!==""&&t!=="-"); li.classList.toggle("off",t==="-");
+    const tx=t==="-"?"в номенклатуру и на проверку цен не пойдёт, в сумме чека считается":t!==""&&P[+t]?P[+t].name:""; if(ff){ if(ff.textContent!==tx) ff.textContent=tx; ff.hidden=!tx; } if(nb&&t!=="") nb.remove(); };
+  const NO="Не прочитал — впишите строки сами или сохраните только сумму", why=(img,j)=>{ const g=j&&j.error!=="nokey"&&j.msg?String(j.msg).slice(0,140):"";   // ответ сервера уже говорит «впишите сами» — показываем его слова, без повтора
+    return !img?NO+" (фото не открылось)":!j?NO+" (нет связи)":!g?NO:/сами/.test(g)?g.replace(/[.\s]+$/,"")+(/только сумму/.test(g)?"":" или сохраните только сумму"):NO+" ("+g+")"; };
+  const nomWant=()=>{ try{ if(window.__nom&&!window.__nom.data()) window.__nom.load(true); }catch(_){} };   // «это:» → id позиции номенклатуры (nid): справочник нужен только когда появились строки
+  const add=(x,ai)=>{ if(ul.children.length>=60) return null; x=x||{}; const li=document.createElement("li"); li.className="zk-rir"; if(ai) li.dataset.ai="1";
+    const nm=String(x.name||"").replace(/\s+/g," ").trim().slice(0,200), u=zkRcUnit(x.u,nm), hit=nm?zkRcMatch(nm,P):-1, near=nm&&hit<0?zkRcNear(nm,P):-1, off=hit<0&&zkRcNoMat(nm), U=ZK_RU.includes(u)?ZK_RU:ZK_RU.concat([u]);
+    li.innerHTML=`<textarea data-k="n" rows="1" maxlength="200" placeholder="Название" aria-label="Название">${esc(nm)}</textarea><button type="button" class="zk-rix" data-zi="del" aria-label="Убрать строку">${ZK_RIX}</button>
+      <span class="zk-rik q" aria-hidden="true">сколько</span><span class="zk-rik u" aria-hidden="true">ед.</span><span class="zk-rik p"><span aria-hidden="true">цена за 1</span><b class="zk-rie" data-e aria-label="Сумма по строке"></b></span>
+      <input data-k="q" inputmode="decimal" maxlength="10" placeholder="1" aria-label="Количество" value="${+x.qty>0?esc(fmt(+x.qty)):""}"><select data-k="u" aria-label="Единица">${U.map(k=>`<option${k===u?" selected":""}>${esc(k)}</option>`).join("")}</select>
+      <input data-k="p" inputmode="decimal" maxlength="12" placeholder="0" aria-label="Цена за единицу, ₽" value="${+x.price>0?esc(fmt(+x.price)):""}">
+      <label class="zk-rit"><span>это:</span><select data-k="t" aria-label="Это позиция заказа"><option value="">новая позиция</option><option value="-"${off?" selected":""}>не материал (доставка, пакет)</option>${P.map((p,i)=>`<option value="${i}"${i===hit?" selected":""}>${esc(p.name)}</option>`).join("")}</select></label>
+      <span class="zk-rif" data-f hidden></span>${near>=0?`<button type="button" class="zk-rin" data-zi="near" data-i="${near}">Похоже на «${esc(P[near].name)}» — выбрать</button>`:""}`;
+    ul.appendChild(li); sync(li); rowSum(li); { const ta=li.querySelector('[data-k="n"]'); fitN(ta); requestAnimationFrame(()=>fitN(ta)); setTimeout(()=>fitN(ta),400); }   // и ещё раз, когда окно дорисовалось: в виде 2.0 отступы поля в первый миг другие
+    addB.disabled=ul.children.length>=60; nomWant(); return li; };
+  const tot=()=>{ let s=0,n=0; [...ul.children].forEach(li=>{ const p=num(val(li,"p")); if(p>0){ s+=p*(num(val(li,"q"))||1); n++; } }); return {s:Math.round(s*100)/100,n}; };
+  /* сумма строк ≠ сумме чека — спокойная подсказка, не запрет (скидка, доставка, строка не по этому заказу); текст меняем, только если он другой */
+  const hint=()=>{ const t=tot(), sum=num(f.elements.sum.value), d=Math.round((sum-t.s)*100)/100;
+    const k=!t.n?"":!(sum>0)?"e"+t.s:Math.abs(d)<1?"":"d"+t.s+"|"+sum; if(k===dk) return; dk=k; dif.hidden=!k; if(!k) return;
+    dif.innerHTML=k[0]==="e"?`<span>По строкам выходит <b>${esc(shpMoney(t.s))}</b></span><button type="button" class="zk-chip" data-zi="sum">Подставить в сумму</button>`
+      :`<span>По строкам выходит <b>${esc(shpMoney(t.s))}</b>, сумма чека <b>${esc(shpMoney(sum))}</b> — разница ${esc(shpMoney(Math.abs(d)))}. Можно сохранить и так.</span>`; };
+  box.addEventListener("input",e=>{ const li=e.target.closest&&e.target.closest(".zk-rir"); if(li){ rowSum(li); if(e.target.matches('[data-k="n"]')) fitN(e.target); } hint(); }); f.elements.sum.addEventListener("input",hint);
+  box.addEventListener("change",e=>{ const s=e.target.closest&&e.target.closest('[data-k="t"]'); if(s) sync(s.closest(".zk-rir")); });
+  box.addEventListener("keydown",e=>{ if(e.key!=="Enter"||!e.target.matches||!e.target.matches(".zk-rir input,.zk-rir textarea")) return; e.preventDefault();   // «Готово» на клавиатуре телефона — к следующему полю, а не «сохранить чек» (и не перенос строки в названии)
+    const A2=[...box.querySelectorAll(".zk-rir input,.zk-rir textarea")], i=A2.indexOf(e.target); if(A2[i+1]) A2[i+1].focus(); else e.target.blur(); });
+  box.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-zi]"); if(!b) return; const a=b.dataset.zi;
+    if(a==="add"){ const li=add(); if(li){ li.querySelector('[data-k="n"]').focus(); hint(); } else toast("В чеке не больше 60 строк"); }
+    else if(a==="near"){ const li=b.closest(".zk-rir"), s=li&&li.querySelector('[data-k="t"]'); if(s&&P[+b.dataset.i]){ s.value=b.dataset.i; sync(li); } }   // «Похоже на…» — привязку выбирает человек, сама она не ставится
+    else if(a==="del"){ const li=b.closest(".zk-rir"); if(li) li.remove(); addB.disabled=false; hint(); }
+    else if(a==="sum"){ f.elements.sum.value=fmt(tot().s); hint(); } });
+  /* фото выбрано — «Читаю чек…»; ответ ИИ — данные, а не команды: в поля идут только текст и числа. Нет ключа / ошибка / нет связи — строки руками или только сумма */
+  let halt=false; const read=async file=>{ rd++; halt=false; try{ await read1(file); } finally{ rd--; } };
+  const read1=async file=>{ const my=++seq, lab=m.querySelector(".zk-phb span"); ph={file,p:siteShrink(file)}; ph.p.catch(()=>{}); say("Читаю чек…","busy"); if(lab) lab.textContent="Читаю чек…";
+    let img=""; try{ img=await ph.p; }catch(_){} if(my!==seq||!m.isConnected) return;
+    const j=img&&typeof shpPostRaw==="function"?await shpPostRaw({action:"aiRc",img}):null; if(my!==seq||!m.isConnected) return; if(lab) lab.textContent="Фото чека ✓";
+    const L=j&&j.ok&&Array.isArray(j.items)?j.items.filter(x=>x&&String(x.name||"").trim()).slice(0,60):[];
+    if(j&&j.ok&&+j.total>0&&!String(f.elements.sum.value||"").trim()) f.elements.sum.value=fmt(+j.total);   // сумма пустая — подставляем итог чека; вписанную человеком не трогаем
+    if(!L.length){ say(why(img,j&&j.ok?{}:j),"bad"); hint(); return; }
+    shop=String(j.shop||"").replace(/\s+/g," ").trim().slice(0,80);   // магазин из чека — сервер запишет его поставщиком новой позиции
+    [...ul.querySelectorAll("li[data-ai]")].forEach(li=>li.remove()); L.forEach(x=>add(x,true));   // прочитанное заново заменяет прежнее прочитанное; вписанное руками остаётся
+    if(!String(f.elements.text.value||"").trim()) f.elements.text.value=L.map(x=>String(x.name).trim()).join(", ").slice(0,300);
+    say("Прочитал "+L.length+" "+pl(L.length)+(j.shop?" · "+String(j.shop).slice(0,60):"")+" — проверьте цифры и поправьте","ok"); hint(); };
+  /* строки для receiptAdd: пустые пропускаем; «это: позиция заказа» → nid позиции номенклатуры (сервер допишет название из чека в «Другие названия»),
+     а если такой позиции в номенклатуре ещё нет — строка уходит под названием позиции заказа (чтобы цена легла к нашему названию, а не к слову из чека) */
+  const items=()=>{ const out=[]; for(const li of [...ul.children]){ const n=val(li,"n").replace(/\s+/g," "), p=num(val(li,"p")), q=num(val(li,"q")), t=val(li,"t"); if(!n&&!p&&!q) continue;
+      if(!n){ toast("В строке чека нет названия — впишите или уберите строку"); li.querySelector('[data-k="n"]').focus(); return null; }
+      if(t==="-") continue;   // 18.11 «не материал» (доставка, пакет): на сервер строкой не уходит — не станет позицией номенклатуры и карточкой директору; в сумме чека она есть
+      const o={name:n.slice(0,200),qty:q>0?q:1,u:val(li,"u")||"шт",price:Math.round(p*100)/100}; if(t!==""&&P[+t]){ const nid=zkRcNid(P[+t].name); if(nid) o.nid=nid; else o.name=P[+t].name; } out.push(o); }
+    return out.slice(0,60); };
+  return {read,items,shop:()=>shop,photo:file=>ph&&ph.file===file?ph.p:siteShrink(file),   // фото сжимаем один раз: и для чтения, и для сохранения
+    busy:()=>rd>0&&!halt,stop:()=>{ seq++; halt=true; say("Чтение чека остановлено — строки можно вписать самим",""); const lab=m.querySelector(".zk-phb span"); if(lab&&/Читаю/.test(lab.textContent)) lab.textContent="Фото чека ✓"; },count:()=>ul.children.length,refit:()=>[...ul.querySelectorAll('[data-k="n"]')].forEach(fitN)}; }
 function zkCheck(g){ const d=zkDealOf(g); if(!d){ toast("Чек — только по заказу со сделкой"); return; } if(!zkRcOk(d)){ toast(zkRole()==="master"?"Чек можно внести только в свой заказ":"Чеки вносят закупка, офис и директор"); return; }
   const mst=!(S.shop&&S.shop.rcpt);   // мастер: свой чек в свой заказ — без «Для цеха» и «В долг»
   const today=shpToday(), mine=zkMe(), names=[...new Set((ZK.now[g]||[]).concat(zkSum(g).G.filter(r=>r.bought&&r.when&&shpToday(new Date(r.when))===today&&(!r.who||zkN(r.who)===mine)).map(r=>r.name)))];
@@ -39264,29 +39577,50 @@ function zkCheck(g){ const d=zkDealOf(g); if(!d){ toast("Чек — только
     <label class="zk-fl">Сумма, ₽<input name="sum" inputmode="decimal" required maxlength="15" placeholder="12 500" class="zk-sum"></label>
     <label class="zk-fl">Что в чеке<textarea name="text" rows="3" maxlength="300" placeholder="ЛДСП, кромка, фурнитура…">${esc(names.join(", "))}</textarea></label>
     ${names.length?`<p class="zk-note">Подставлено по отмеченному сегодня — поправьте, если не так.</p>`:""}
+    <div class="zk-ri"><div class="zk-rih"><b>Строки чека</b><span class="zk-ris" role="status" aria-live="polite">По желанию: название, сколько и цена за единицу. Новые цены увидит директор и решит, обновлять ли прайс.</span></div>
+      <ul class="zk-ril"></ul><button type="button" class="zk-chip zk-ria" data-zi="add">＋ строка</button><p class="zk-rid" hidden></p></div>
     <div class="zk-split" hidden><label class="zk-fl">Другой заказ<select name="o2">${opts}</select></label><label class="zk-fl">Сколько из суммы, ₽<input name="sum2" inputmode="decimal" maxlength="15" placeholder="3 000"></label></div>
     <div class="zk-rcb">${opts?`<button type="button" class="zk-chip" data-zr="split" aria-pressed="false">Разделить</button>`:""}${mst?"":`<button type="button" class="zk-chip" data-zr="ceh" aria-pressed="false">Для производства</button><button type="button" class="zk-chip" data-zr="debt" aria-pressed="false">В долг</button>`}</div>
     ${mst?`<p class="zk-note">Чек попадёт в расходы заказа. Дороже ${esc(shpMoney(zkLim()))} — сначала согласие директора.</p>`:""}
-    <div class="zk-cehn" hidden><p class="zk-note">${tech?"Покупка для производства (не по заказу) — в разовые расходы месяца, в заказ не попадёт.":"Покупку для производства записывает директор — отдайте ему чек. В заказ она не попадёт."}</p></div>
+    <div class="zk-cehn" hidden><p class="zk-note">${tech?"Покупка для производства (не по заказу) — в разовые расходы месяца, в заказ не попадёт.":"Покупку для производства записывает директор — отдайте ему чек. В заказ она не попадёт."} Строки чека для такой покупки не нужны — она записывается одной суммой.</p></div>
     <div class="zk-debt" hidden><label class="zk-fl">У кого купили в долг<input name="debtTo" maxlength="80" placeholder="Азуми, Ремстрой, рынок…"></label></div>
     <div class="zk-fb"><button type="button" class="zk-cancel" data-zx>Отмена</button><button type="submit" class="zk-ok">Сохранить чек</button></div></form>`,"rc");
   const f=m.querySelector("form"); let mode={split:false,ceh:false,debt:false};
+  const RI=zkRcUi(m,f,g);   // 18.11 строки чека (выше)
+  /* 18.11 (проверяющий «удобство»): в окне чека теперь до 60 строк — нажатие мимо окна, «Отмена» и Esc сначала спрашивают, если есть что терять (строки, сумма, фото, свой текст).
+     После сохранения окно закрывается без вопроса (m._close(true)); пока чек сохраняется — не закрывается */
+  const text0=String(f.elements.text.value||"").trim(), shut=m._close; let asking=false, saving=false;
+  const dirty=()=>RI.count()>0||!!String(f.elements.sum.value||"").trim()||!!f.elements.f.files[0]||String(f.elements.text.value||"").trim()!==text0;
+  m._close=async force=>{ if(force===true||!dirty()) return shut(); if(asking||saving) return; asking=true; const a=await zkAsk("Закрыть чек без сохранения? Строки, сумма и фото пропадут.","Не закрывать","Закрыть"); asking=false; if(a==="other") shut(); };
   m.addEventListener("click",e=>{ const b=e.target.closest("[data-zr]"); if(!b) return; const k=b.dataset.zr; if(mst&&k!=="split") return; mode[k]=!mode[k]; if(k==="ceh"&&mode.ceh){ mode.split=false; mode.debt=false; } if((k==="split"||k==="debt")&&mode[k]) mode.ceh=false;
-    m.querySelectorAll("[data-zr]").forEach(x=>x.setAttribute("aria-pressed",String(!!mode[x.dataset.zr]))); m.querySelector(".zk-split").hidden=!mode.split; m.querySelector(".zk-cehn").hidden=!mode.ceh; m.querySelector(".zk-debt").hidden=!mode.debt; });
-  f.elements.f.addEventListener("change",()=>{ const fi=f.elements.f.files[0], b=m.querySelector(".zk-phb"); if(!fi||!b) return; const u=URL.createObjectURL(fi); b.classList.add("on"); b.style.backgroundImage=`url('${u}')`; b.querySelector("span").textContent="Фото чека ✓"; });
+    m.querySelectorAll("[data-zr]").forEach(x=>x.setAttribute("aria-pressed",String(!!mode[x.dataset.zr]))); m.querySelector(".zk-split").hidden=!mode.split; m.querySelector(".zk-cehn").hidden=!mode.ceh; m.querySelector(".zk-debt").hidden=!mode.debt;
+    m.querySelector(".zk-ri").hidden=mode.ceh; if(!mode.ceh) RI.refit(); });   // 18.11 «Для производства»: строки чека не сохраняются — прячем их (вернул «по заказу» — строки на месте), а не молча отбрасываем
+  f.elements.f.addEventListener("change",()=>{ const fi=f.elements.f.files[0], b=m.querySelector(".zk-phb"); if(!fi||!b) return; const u=URL.createObjectURL(fi); b.classList.add("on"); b.style.backgroundImage=`url('${u}')`; b.querySelector("span").textContent="Фото чека ✓"; RI.read(fi); });
   f.addEventListener("submit",async e=>{ e.preventDefault(); const num=v=>+String(v||"").replace(/\s/g,"").replace(",",".")||0, sum=num(f.elements.sum.value), text=String(f.elements.text.value||"").trim(), file=f.elements.f.files[0];
+    if(saving||asking) return;
     if(!(sum>0)){ toast("Впишите сумму чека в рублях"); f.elements.sum.focus(); return; }
+    /* 18.11 (проверяющий «удобство»): пока идёт «Читаю чек…», «Сохранить» раньше молча сохранял чек БЕЗ строк, а ответ ИИ выбрасывался — человек об этом не узнавал.
+       Теперь вопрос; главная кнопка — «Подождать». Чтение успело закончиться, пока думали, — не сохраняем: строки уже на экране, их надо проверить */
+    if(RI.busy()&&!mode.ceh){ asking=true; const n=RI.count(), a=await zkAsk(n?"Чек ещё читается. Сохранить с теми строками, что уже вписаны?":"Чек ещё читается. Сохранить без строк?","Подождать",n?"Сохранить сейчас":"Сохранить без строк"); asking=false;
+      if(a!=="other") return; if(!RI.busy()){ toast("Чек прочитан — проверьте строки и сохраните"); return; } RI.stop(); }
+    const rows=mode.ceh?[]:RI.items(); if(!rows) return;   // 18.11 строки чека: покупка «для производства» идёт в расходы месяца — без строк
     if(mode.ceh&&!tech){ toast("Покупку для производства записывает директор"); return; } if(mst){ mode.ceh=false; mode.debt=false; }
     const s2=mode.split?num(f.elements.sum2.value):0, o2=mode.split?f.elements.o2.value:""; if(mode.split&&(!(s2>0)||s2>=sum||!o2)){ toast("Разделить: сколько из суммы — в другой заказ (меньше всей суммы)"); return; }
-    const btn=f.querySelector('[type="submit"]'); btn.disabled=true; btn.textContent="Сохраняю…";
-    let photo=""; if(file){ try{ photo=await siteShrink(file); }catch(_){ toast("Не получилось открыть фото"); btn.disabled=false; btn.textContent="Сохранить чек"; return; } }
-    if(mode.ceh){ const j=await shpPost(Object.assign({action:"expAdd",name:"Для производства",sum,text:text||"Покупка для производства"})); btn.disabled=false; btn.textContent="Сохранить чек"; if(!j) return; m._close(); toast("Записано в расходы производства: "+shpMoney(sum)); return; }
+    const btn=f.querySelector('[type="submit"]'), lock=on=>{ saving=on; btn.disabled=on; btn.textContent=on?"Сохраняю…":"Сохранить чек"; }; lock(true);
+    let photo=""; if(file){ try{ photo=await RI.photo(file); }catch(_){ toast("Не получилось открыть фото"); lock(false); return; } }
+    if(mode.ceh){ const j=await shpPost(Object.assign({action:"expAdd",name:"Для производства",sum,text:text||"Покупка для производства"})); lock(false); if(!j) return; m._close(true); toast("Записано в расходы производства: "+shpMoney(sum)); return; }
     const debt=mode.debt?(String(f.elements.debtTo.value||"").trim()||"Поставщик (в долг)"):"";
-    const one=async(id,s,ph,tx)=>{ const j=await shpPost(Object.assign({action:"receiptAdd",order:id,sum:String(s),text:tx},ph?{photo:ph}:{},debt?{debt}:{})); if(!j) return null;
-      (S.shop.rc[id]=S.shop.rc[id]||[]).push({id:j.id,when:j.when,sum:+s,text:tx,photo:j.photo||"",who:shpWho()}); const o=shpById(id); if(o) o.receiptsTotal=S.shop.rc[id].reduce((x,r)=>x+(+r.sum||0),0); return j; };
-    const j1=await one(d.id,Math.round((sum-s2)*100)/100,photo,text); if(!j1){ btn.disabled=false; btn.textContent="Сохранить чек"; return; }
+    const one=async(id,s,ph,tx,it)=>{ const j=await shpPost(Object.assign({action:"receiptAdd",order:id,sum:String(s),text:tx},ph?{photo:ph}:{},debt?{debt}:{},it&&it.length?Object.assign({items:it},RI.shop()?{shop:RI.shop()}:{}):{})); if(!j) return null;   /* 18.11 items — строки чека (и shop — магазин из чека, если он прочитан); без строк запрос тот же, что раньше */
+      (S.shop.rc[id]=S.shop.rc[id]||[]).push(Object.assign({id:j.id,when:j.when,sum:+s,text:tx,photo:j.photo||"",who:shpWho()},it&&it.length&&took(j)?{items:it}:{})); const o=shpById(id); if(o) o.receiptsTotal=S.shop.rc[id].reduce((x,r)=>x+(+r.sum||0),0); return j; };
+    /* 18.11 (проверяющий «старое»): сайт уже новый, а скрипт таблицы ещё старый (минуты между выкладками) — старый сервер чек принимает, а строки молча теряет.
+       Новый сервер на чек со строками всегда отвечает полем rcp (или nomNew / rcpErr); нет ни одного — строки не записались, так и говорим.
+       Мастеру число «на проверку цен» не показываем (по нему видно, совпала ли цена с «Прайсом», а мастер цен не видит) — и по его ответу о сервере не судим: сервер может эти поля мастеру не отдавать */
+    const took=j=>mst||j.rcp!==undefined||j.nomNew!==undefined||j.rcpErr!==undefined;
+    const j1=await one(d.id,Math.round((sum-s2)*100)/100,photo,text,rows); if(!j1){ lock(false); return; }
+    const rowsOk=rows.length>0&&took(j1); if(rowsOk){ try{ if(S.rcp) S.rcp.stale=true; }catch(_){} }   // «Цены из чеков» (site_rcprice.js) перечитает очередь
     let j2=null; if(s2>0){ const d2=shpById(o2); j2=await one(o2,s2,"",(text?text+" · ":"")+"часть чека № "+d.num+(j1.photo?" 📷 "+j1.photo:"")); if(!j2) toast("Часть в № "+(d2?d2.num:"")+" не записалась — внесите её отдельно"); }
-    if(debt) S.shop.ct=null; ZK.now[g]=[]; m._close(); toast("Чек сохранён: "+shpMoney(sum)+(s2>0&&j2?" · из них "+shpMoney(s2)+" — в другой заказ":"")); zkPaint(); if(S.view==="shop"&&typeof shpRenderKeep==="function") shpRenderKeep(); }); }
+    if(debt) S.shop.ct=null; ZK.now[g]=[]; saving=false; m._close(true);
+    toast("Чек сохранён: "+shpMoney(sum)+(s2>0&&j2?" · из них "+shpMoney(s2)+" — в другой заказ":"")+(!rows.length?"":!rowsOk?" · строки не записались: таблица ещё не обновилась":" · строк: "+rows.length+(!mst&&+j1.rcp>0?" · директору на проверку цен: "+j1.rcp:""))); zkPaint(); if(S.view==="shop"&&typeof shpRenderKeep==="function") shpRenderKeep(); }); }
 /* ---- «Расход» (Кирилл 03:28): такси, переделка, мелкая покупка — сумма, на что, фото по желанию.
    Пишется ТЕМ ЖЕ действием, что «− Расход» в сделке (site_simple.js): receiptAdd в лист «Чеки» → «Куда ушли деньги» и закупка заказа.
    Новой денежной логики нет; предел и согласие директора — как у чека (r4BuyAsk). ---- */
@@ -39609,6 +39943,37 @@ html[data-vt="light"] .zk-dn .r b{color:#d70015}html[data-vt="light"] .zk-dn .o 
 .zk-deal .zk-note{color:var(--muted)}
 .zk-bz{padding-bottom:calc(var(--apbar,0px) + 40px)}.zk-bzno{padding:30px 20px 24px}.zk-bzno p{line-height:1.4}.zk-bzno .zk-give{margin-top:18px}
 .zk-bzi{display:grid;place-items:center;width:64px;height:64px;margin:0 auto 12px;border-radius:50%;background:var(--zk-l2);color:var(--zk-t2)}
+.zk-ri{--w-rcb:#0a84ff;margin:2px 0 12px}html[data-vt="light"] .zk-ri,:root[data-theme="light"] .zk-ri{--w-rcb:#007aff}
+.zk-rih{display:flex;flex-direction:column;gap:3px;margin:0 0 8px}.zk-rih b{font-size:15px}.zk-ris{font-size:13.5px;line-height:1.35;color:var(--zk-t2)}
+.zk-ris.busy{color:var(--w-rcb);animation:zkSk 1.2s ease-in-out infinite}.zk-ris.ok{color:var(--zk-g)}.zk-ris.bad{color:var(--w-ink,#fff)}
+.zk-ril{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}.zk-ril:not(:empty){margin-bottom:8px}
+.zk-rir{--zx:44px;display:grid;grid-template-columns:minmax(0,1fr) 108px minmax(0,1.3fr) var(--zx);grid-template-areas:"n n n x" "kq ku kp kp" "q u p p" "t t t t";gap:6px;padding:8px;border-radius:14px;background:var(--zk-l1)}
+.zk-rir input,.zk-rir select,.zk-rir textarea{box-sizing:border-box;width:100%;min-width:0;min-height:44px;margin:0;padding:8px 10px;border:0;border-radius:10px;background:var(--zk-l2);color:var(--w-ink,#fff);font:16px var(--f-body,system-ui)}
+.zk-rir textarea{display:block;resize:none;overflow:hidden;line-height:1.3;padding:11px 10px;overflow-wrap:anywhere}
+.zk-rir [data-k=n]{grid-area:n}.zk-rir [data-k=q]{grid-area:q}.zk-rir [data-k=u]{grid-area:u}.zk-rir [data-k=p]{grid-area:p}
+.zk-rix{grid-area:x;width:var(--zx);height:var(--zx);padding:0;border:0;border-radius:10px;background:none;color:var(--zk-t2);display:grid;place-items:center;cursor:pointer}.zk-rix:active{opacity:.6}
+.zk-rit{grid-area:t;display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--zk-t2)}.zk-rit select{flex:1}.zk-rit.hit span{color:var(--zk-g)}
+/* 18.11 по находкам проверяющих: подписи над полями и сумма строки; выбранная позиция целиком; «Похоже на…»; телефон — 44 px и 13 px НА ЭКРАНЕ
+   (страница сжата в 0,86 — «Единый вид», site_edvid.js: в стилях это 51 px и 15,2 px); окно чека сразу во всю высоту — верх не прыгает, когда пришли строки */
+.zk-rik{align-self:end;padding:2px 2px 0;font-size:12.5px;line-height:1.2;color:var(--zk-t2);white-space:nowrap}.zk-rik.q{grid-area:kq}.zk-rik.u{grid-area:ku}.zk-rik.p{grid-area:kp}
+.zk-rik.p{display:flex;justify-content:space-between;gap:8px;min-width:0}.zk-rik.p>span{min-width:0;overflow:hidden;text-overflow:ellipsis}.zk-rie{flex:none;color:var(--w-ink,#fff);font-weight:600;font-variant-numeric:tabular-nums}
+.zk-rif{grid-column:1/-1;padding:0 2px;font-size:13.5px;line-height:1.35;color:var(--zk-t2);overflow-wrap:anywhere}.zk-rif[hidden]{display:none}
+.zk-rin{grid-column:1/-1;justify-self:start;min-height:44px;padding:6px 14px;border:0;border-radius:14px;background:color-mix(in srgb,var(--w-rcb) 14%,transparent);color:var(--w-ink,#fff);font:600 14px/1.3 var(--f-body,system-ui);text-align:left;overflow-wrap:anywhere;cursor:pointer}.zk-rin:active{opacity:.7}
+.zk-rir.off textarea{color:var(--zk-t2)}
+.zk-ris{min-height:2.7em}
+.zk-sh.rc .zk-shc{height:calc(90vh / var(--v2k,1))}.zk-rcf{box-sizing:border-box;min-height:100%;display:flex;flex-direction:column}.zk-rcf>*{flex:none}.zk-rcf>.zk-fb{margin-top:auto;padding-top:8px}
+html:not(.pc) .zk-rir{--zx:calc(51px / var(--v2k,1))}html:not(.pc) .zk-rir :is(input,select,textarea),html:not(.pc) .zk-sh.rc .zk-chip,html:not(.pc) .zk-rin{min-height:calc(51px / var(--v2k,1))}   /* в виде 2.0 окно увеличено обратно (--v2k) — там 44 px и 13 px на экране получаются из 44 и 13 */
+html:not(.pc) .zk-rir textarea{padding:14px 10px}
+html:not(.pc) .zk-sh.rc :is(.zk-ris,.zk-rit,.zk-rid,.zk-rik,.zk-rie,.zk-rif,.zk-rin,.zk-fl,.zk-note,.zk-shh small){font-size:calc(15.2px / var(--v2k,1))}html:not(.pc) .zk-rih b{font-size:16px}
+html[data-vt="light"] .zk-chip[aria-pressed="true"],:root[data-theme="light"] .zk-chip[aria-pressed="true"]{background:var(--w-ink,#000)!important;color:var(--w-bg,#fff)!important}   /* светлая тема: нажатая «Разделить / Для производства / В долг» была белым по белому */
+.zk-ask{position:fixed;inset:0;z-index:9600;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;background:rgba(0,0,0,.5);animation:zkFade .16s ease-out}
+.zk-askc{--zk-l1:var(--w-l1,#1c1c1e);box-sizing:border-box;width:min(420px,100%);padding:20px 16px 16px;border-radius:22px;background:var(--w-bg,#0b0b0b);color:var(--w-ink,#fff);box-shadow:0 12px 40px rgba(0,0,0,.45)}
+.zk-askc p{margin:0 4px 16px;font-size:17px;line-height:1.4}.zk-askc .zk-fb{margin-top:0}.zk-askc .zk-fb>*{padding:6px 10px;border-radius:16px;font-size:16px;line-height:1.2;white-space:normal}
+@keyframes zkFade{from{opacity:0}to{opacity:1}}
+.zk-ria:disabled{opacity:.45}
+.zk-rid{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 0;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--w-rcb) 14%,transparent);color:var(--w-ink,#fff);font-size:13.5px;line-height:1.35}.zk-rid[hidden]{display:none}.zk-rid span{flex:1 1 180px}
+@media (min-width:760px){.zk-sh.rc .zk-shc{width:min(680px,100%)}.zk-rir{grid-template-columns:76px 108px 124px minmax(0,1fr) var(--zx);grid-template-areas:"n n n n x" "kq ku kp kp kp" "q u p t t"}}
+@media (prefers-reduced-motion:reduce){.zk-ris.busy,.zk-ask{animation:none}}
 @media (prefers-reduced-motion:reduce){.zk-row,.zk-sw i,.zk-sw i::after,.zk-shc,.zk-sh,.zk-big,.zk-menu{transition:none;animation:none}}`; document.head.appendChild(st); })();
 window.__zk={groups:()=>zkGroups(),sum:g=>{ const s=zkSum(g); return {buy:s.buy,ord:s.ord,done:s.done,n:s.n}; },cex:id=>zkCex(shpById(id))};   // для стенда (bench/kirill/2026-11-15_zakupka.js)
 })();
@@ -42500,7 +42865,7 @@ const SEC_KIND={ldsp:"ЛДСП",plit:"МДФ и фасады",edge:"Кромка
 const UB_SHORT={"лист":"л.","м²":"м²","м":"м","шт":"шт","компл.":"компл.","упак.":"упак.","кг":"кг","л":"л","услуга":""};
 const I={back:'<path d="M15 5l-7 7 7 7"/>',plus:'<path d="M12 5v14M5 12h14"/>',more:'<circle cx="6" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="18" cy="12" r="1"/>',
   search:'<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',merge:'<path d="M6 4v5a5 5 0 0 0 5 5h7M15 11l3 3-3 3M6 20v-3"/>',check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',
-  down:'<path d="M12 5v14M6 13l6 6 6-6"/>',hinge:'<circle cx="8" cy="12" r="4"/><path d="M12 12h9M17 9v6"/>',rail:'<rect x="3" y="7" width="18" height="10" rx="2"/><path d="M3 12h18"/>',
+  down:'<path d="M12 5v14M6 13l6 6 6-6"/>',lst:'<path d="M4 6h10M4 11h10M4 16h6M18 8v10M14.5 14.5L18 18l3.5-3.5"/>',hinge:'<circle cx="8" cy="12" r="4"/><path d="M12 12h9M17 9v6"/>',rail:'<rect x="3" y="7" width="18" height="10" rx="2"/><path d="M3 12h18"/>',
   screw:'<path d="M12 3v4M9 7h6l-1 13h-4zM10 11h4M10 15h4"/>',svc:'<path d="M3 17l6-6 4 4 8-8"/>',box:'<path d="M4 8h16v11H4zM3 5h18v3H3zM10 12h4"/>',edge:'<path d="M3 9h18v6H3z"/><path d="M3 12h18"/>',chev:'<path d="M9 6l6 6-6 6"/>'};
 const ic=(n,sz)=>`<svg class="nm-i" viewBox="0 0 24 24" width="${sz||20}" height="${sz||20}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${I[n]||""}</svg>`;
 /* ---- данные ---- */
@@ -42606,7 +42971,7 @@ function nmGroups(F){ const out=[], by=new Map(), push=(k,t,sm,x)=>{ if(!by.has(
 function nmListHtml(){ const D=NM.data, L=mine(); if(!D) return `<div class="nm-sec"><span>Загружаю…</span></div>`+nmSkel(6);
   if(NM.src==="lib") return nmLibHtml();
   const F=nmFilter(L,NM.q,NM.view==="kind"?NM.kind:"");
-  if(!L.length) return `<div class="nm-empty"><b>Номенклатура пустая</b><p>Возьмите позиции из «Общей библиотеки» (14 тысяч материалов и фурнитуры) или добавьте свою кнопкой «＋ Позиция».${nmCan()?" Старые названия из прайса и склада можно склеить один раз — «⋯ → Старые названия».":""}</p>${nmCan()?`<button type="button" class="nm-more" data-nm="src" data-k="lib">Открыть библиотеку</button>`:""}</div>`;
+  if(!L.length) return `<div class="nm-empty"><b>Номенклатура пустая</b><p>Возьмите позиции из «Общей библиотеки» (14 тысяч материалов и фурнитуры) или добавьте свою кнопкой «＋ Позиция».${nmCan()?" Старые названия из прайса и склада можно склеить один раз — «⋯ → Старые названия».":""}</p>${nmCan()?`<button type="button" class="nm-more" data-nm="src" data-k="lib">Открыть библиотеку</button><button type="button" class="nm-more nm-blem" data-nm="bulk">${ic("down",18)} Загрузить список из Excel</button>`:""}</div>`;   /* 18.11: пустая номенклатура — сразу «Загрузить список» */
   if(!F.length) return nmPvhEntry()+`<div class="nm-empty"><b>Ничего не нашлось</b><p>Попробуйте короче: «белый», «петля», «W1000» — или поищите в «Общей библиотеке».</p></div>`;
   return nmPvhEntry()+nmGroups(F).map(g=>{ g.L.sort((a,b)=>a.name.localeCompare(b.name,"ru")); const no=g.t==="Нет класса";
     return `<div class="nm-sec"><span${no?' class="nm-y"':""}>${e(g.t)}${g.sm?` <small class="nm-code">${e(g.sm)}</small>`:""}</span><span>${g.L.length}</span></div><div class="nm-grp">${g.L.slice(0,NM.q?200:120).map(nmRow).join("")}</div>`; }).join(""); }
@@ -42643,7 +43008,7 @@ function nmScrList(){ const D=NM.data, L=mine(), noP=nmPr()?L.filter(x=>x.kind!=
     <label class="nm-search">${ic("search",17)}<input id="nmQ" type="search" value="${e(NM.q)}" placeholder="${lib?"Цвет, название, артикул":"Название, артикул, цвет"}" autocomplete="off" enterkeyhint="search" aria-label="Поиск"></label>
     ${lib?"":`<div class="nm-vw" role="tablist" aria-label="Как показать">${[["kind","По разделам"],["cls","По классам"],["vend","По поставщикам"]].map(([k,n])=>`<button type="button" role="tab" data-nm="view" data-k="${k}" aria-selected="${NM.view===k}">${n}</button>`).join("")}</div>`}
     <div id="nmChips">${nmChips()}</div><div id="nmList">${NM.err&&!D?`<div class="nm-empty"><b>Не загрузилось</b><p>${e(NM.err)}</p><button type="button" class="nm-more" data-nm="reload">Ещё раз</button></div>`:nmListHtml()}</div></div>
-    ${nmCan()?`<div class="nm-bar"><button type="button" class="nm-pill" data-nm="new">${ic("plus",18)}<span>Позиция</span></button></div>`:""}`; }
+    ${nmCan()?`<div class="nm-bar"><button type="button" class="nm-pill" data-nm="new">${ic("plus",18)}<span>Позиция</span></button><button type="button" class="nm-pill nm-p2" data-nm="bulk" aria-label="Загрузить список" title="Загрузить список из Excel">${ic("lst",18)}<span class="nm-p2l">Загрузить список</span><span class="nm-p2s">Список</span></button></div>`:""}`; }   /* 18.11 «Загрузить список» — рядом с «＋ Позиция», только тем, кто ведёт номенклатуру (nmCan) */
 const pl=(n,a,b,c)=>{ n=Math.abs(n)%100; const m=n%10; return n>10&&n<20?c:m===1?a:m>=2&&m<=4?b:c; };
 /* ---- 2) карточка ---- */
 /* класс в карточке и «закупка → клиенту (Кромка ×1,8)» — только тем, кому видны суммы */
@@ -42875,8 +43240,9 @@ document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.targ
   if(a==="pvhmore"){ NM.plim=(NM.plim||60)+60; nmRedraw(); return; }
   if(a==="view"){ NM.view=b.dataset.k; try{ localStorage.setItem("w24-nomview",NM.view); }catch(_){} nmRedraw(); return; }
   if(a==="lcls"){ NM.lcls=NM.lcls===b.dataset.k?"":b.dataset.k; NM.lim=60; nmListPaint(); return; }
-  if(a==="lmenu"){ const m=nmSheet(`<div class="nm-grp"><button type="button" class="nm-row" data-lm="clst"><span class="nm-t"><b>Классы и наценки</b><small>как в Базис-Смете${NM.data&&NM.data.canClsT?" · меняете вы":""}</small></span><span class="nm-ch">${ic("chev",16)}</span></button>${nmCan()?`<button type="button" class="nm-row" data-lm="old"><span class="nm-t"><b>Старые названия</b><small>склеить названия из прайса, склада и сделок</small></span><span class="nm-ch">${ic("chev",16)}</span></button>`:""}</div><button type="button" class="nm-wide nm-b2" data-nmx>Отмена</button>`);
-    m.addEventListener("click",ev2=>{ const s2=ev2.target.closest("[data-lm]"); if(!s2) return; m._close(); if(s2.dataset.lm==="clst") NM.scr="clst"; else { NM.scr="old"; if(!NM.old) nmOldLoad(); } nmRedrawSoon(); top(); }); return; }
+  if(a==="lmenu"){ const m=nmSheet(`<div class="nm-grp"><button type="button" class="nm-row" data-lm="clst"><span class="nm-t"><b>Классы и наценки</b><small>как в Базис-Смете${NM.data&&NM.data.canClsT?" · меняете вы":""}</small></span><span class="nm-ch">${ic("chev",16)}</span></button>${nmCan()?`<button type="button" class="nm-row" data-lm="bulk"><span class="nm-t"><b>Загрузить список</b><small>вставить позиции из Excel — новые добавятся сами</small></span><span class="nm-ch">${ic("chev",16)}</span></button><button type="button" class="nm-row" data-lm="old"><span class="nm-t"><b>Старые названия</b><small>склеить названия из прайса, склада и сделок</small></span><span class="nm-ch">${ic("chev",16)}</span></button>`:""}</div><button type="button" class="nm-wide nm-b2" data-nmx>Отмена</button>`);
+    m.addEventListener("click",ev2=>{ const s2=ev2.target.closest("[data-lm]"); if(!s2) return; m._close(); if(s2.dataset.lm==="bulk"){ setTimeout(nmBulkOpen,220); return; }   /* 18.11: меню закрывается 200 мс — окно списка после него */
+      if(s2.dataset.lm==="clst") NM.scr="clst"; else { NM.scr="old"; if(!NM.old) nmOldLoad(); } nmRedrawSoon(); top(); }); return; }
   if(a==="clsed"){ const c=NL.cls(b.dataset.k); if(c&&NM.data&&NM.data.canClsT) nmClsEdit(c,false); return; }
   if(a==="clsadd"){ if(NM.data&&NM.data.canClsT) nmClsEdit(null,true); return; }
   if(a==="cls"){ const x=nmById(NM.open); if(x&&NM.data&&NM.data.canCls) nmClsPick(x); return; }
@@ -42896,6 +43262,7 @@ document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.targ
       <p class="nm-note">Позиция появится в «Нашей номенклатуре» и сверху в выборе сметы. Цена — как сейчас в смете.</p><div class="nm-ob"><button type="button" class="nm-b1" data-sa="add">Добавить</button><button type="button" class="nm-b2" data-sa="edit">Добавить и настроить</button></div>`);
     m.addEventListener("click",async ev2=>{ const s=ev2.target.closest("[data-sa]"); if(!s) return; m._close(); const x=nmFromCat(it); if(s.dataset.sa==="edit"){ NM.edit=x; NM.scr="edit"; nmRedraw(); return top(); } await nmSave(x,{stay:true}); nmRedraw(); });
     return; }
+  if(a==="bulk"){ nmBulkOpen(); return; }   /* 18.11 «Загрузить список» */
   if(a==="new"){ if(NM.vend===null&&nmCan()){ NM.vend={}; shpGet("action=vend",true).then(j=>{ if(j&&j.ok) NM.vend=j; }); } NM.edit=nmBlank({kind:NM.kind||"ЛДСП"}); NM.scr="edit"; nmRedraw(); setTimeout(()=>document.querySelector("#nmForm [name=name]")?.focus(),220); return top(); }
   if(a==="edit"){ const x=nmById(NM.open); if(!x) return; if(NM.vend===null){ NM.vend={}; shpGet("action=vend",true).then(j=>{ if(j&&j.ok) NM.vend=j; }); }
     NM.edit=nmBlank(JSON.parse(JSON.stringify({id:x.id,name:x.name,kind:x.kind,uBuy:x.uBuy,uSm:x.uSm,k:x.k||"",grp:x.grp,vend:x.vend||[],vdef:x.vdef,bzArt:x.bzArt,bzName:x.bzName,alt:x.alt||[],edge:x.edge,min:x.min||"",photo:x.photo,cls:x.cls||""}))); NM.scr="edit"; nmRedraw(); return top(); }
@@ -42925,6 +43292,122 @@ document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.targ
   if(a==="oldall"){ const R=nmOldRows().filter(r=>r.g&&r.g.sure); if(!R.length) return; b.disabled=true; const by=new Map(); R.forEach(r=>{ const t=r.g, k=t.our?"o:"+t.our.id:"c:"+t.cat.i; if(!by.has(k)) by.set(k,{t,n:[]}); by.get(k).n.push(r.n); });
     let n=0; for(const {t,n:names} of by.values()){ if(await nmMergeTo(names,t)) n+=names.length; } toast("Склеено: "+n); return; }
 },true);
+/* ---- 18.11 «Загрузить список» (Кирилл 18.11: «эти материалы на намиклатуре запихать… чтобы закупщику очень удобно был»; задание docs/zadaniya/2026-11-18-zakup-chek-nomenklatura.md) ----
+   Вставил строки из Excel (столбцы через табуляцию или «;»: Название · Раздел · Ед. · Цена · Поставщик; строка заголовков пропускается сама, а по заголовку столбцы узнаются в любом порядке)
+   → «Проверить»: «Новые / Уже есть / Цена отличается» — сверка здесь же по загруженной номенклатуре (название, «в Базисе», «другие названия» — как priceKey_ на сервере) и «Прайсу»
+   → «Загрузить»: POST nomBulk пачками по 200 (сервер держит общую блокировку и 6 минут Apps Script); последнее слово за сервером — его dup / noPrice идут в итог.
+   ДЕНЬГИ: цена уже заведённой позиции меняется ТОЛЬКО галочкой «обновить цену» (по умолчанию снята; есть лишь у того, кому сервер дал право цен — NM.data.prices) и только через over[].
+   Без галочки «Прайс» не трогается. Единица в списке не та, что у позиции, — галочки нет: цена за метр не должна стать ценой за лист. Старые сметы и сделки не меняются (pfz). */
+const blRub=v=>(Math.round((+v||0)*100)/100).toLocaleString("ru-RU",{maximumFractionDigits:2})+" ₽";   // цена с копейками (rub() округляет до рубля — «60 → 72,5» показало бы «73»)
+const BL_U=[[/^(лист|листа|листов|л\.)$/,"лист"],[/^(м2|м²|м\^2|кв\.? ?м\.?|м\.? ?кв\.?)$/,"м²"],[/^(м|м\.|мп|м\.? ?п\.?|п\.? ?м\.?|пог\.? ?м\.?|метр|метра|метров)$/,"м"],[/^(шт|шт\.|штук|штука|штуки)$/,"шт"],[/^(компл|компл\.|к-т|комплект|комплекта|комплектов|набор)$/,"компл."],[/^(упак|упак\.|уп|уп\.|упаковка|упаковки|упаковок|пачка|пачки|пач\.?)$/,"упак."],[/^(кг|кг\.)$/,"кг"],[/^(л|литр|литра|литров)$/,"л"],[/^(услуга|усл|усл\.)$/,"услуга"]];
+function blUnit(s){ const k=nrm(s); if(!k) return ""; const r=BL_U.find(([re])=>re.test(k)); return r?r[1]:""; }
+/* раздел по словам (если в списке не указан или написан по-своему): кромка раньше ЛДСП — «Кромка ЛДСП…» это кромка; не узнал — «Прочее» (как сервер) */
+const BL_K=[[/кромк|кромоч/,"Кромка"],[/лдсп|(^|[^а-я])дсп([^а-я]|$)|ламинир/,"ЛДСП"],[/мдф|фасад|хдф|(^|[^а-я])двп([^а-я]|$)/,"МДФ и фасады"],[/стекл|зеркал/,"Стекло и зеркало"],[/профил/,"Профиль"],[/саморез|шуруп|винт|конфирмат|шкант|эксцентр|стяжк|гвозд|дюбел|болт|гайк|шайб|крепеж|метиз/,"Крепёж"],[/распил|кромлен|доставк|монтаж|услуг|сборк|присадк|фрезеров/,"Услуги"],[/фурнитур|петл|ручк|направляющ|подъемн|доводчик|газлифт|опор|ножк|ящик|крючк|штанг|сушк|лоток|замок|магнит|толкател|ролик|колес|blum|hettich|boyard|gtv|блюм|хеттих|боярд/,"Фурнитура"]];
+function blKind(sec,name){ const s=nrm(sec); if(s){ const k=KINDS.find(x=>nrm(x)===s); if(k) return k; const r=BL_K.find(([re])=>re.test(s)); if(r) return r[1]; } const n=nrm(name), r2=BL_K.find(([re])=>re.test(n)); return r2?r2[1]:"Прочее"; }
+const BL_H=[["name",/^(название|наименование)([ ,.(].*)?$|^(позиция|материал|материалы|товар|номенклатура)$/],["kind",/^(раздел|вид|группа|категория)([ ,.(].*)?$/],["u",/^(ед|единица)([ ,.(].*)?$/],["price",/^(цена|стоимость)([ ,.(].*)?$/],["vend",/^(поставщик|магазин|продавец)([ ,.(].*)?$/],["size",/^(размер|размеры|формат)([ ,.(].*)?$/],["note",/^(примечание|комментарий|коммент|заметка)([ ,.(].*)?$/]];   // слова заголовка: «Цена, руб», «Ед. изм.», «Наименование материала»
+/* текст из Excel → строки ячеек: разделитель — табуляция (если она есть в тексте), иначе «;»; ячейка в кавычках (Excel так отдаёт текст с переносом или «;») читается целиком.
+   Кавычка открылась и не закрылась (дюймы, опечатка) — читаем заново без кавычек, иначе весь остаток списка слипся бы в одну ячейку */
+function blRows(text,noq){ text=String(text||"").replace(/^﻿/,"").replace(/\r\n?/g,"\n"); const sep=text.indexOf("\t")>=0?"\t":";", rows=[]; let row=[], cur="", q=false;
+  const cell=()=>{ row.push(cur.replace(/[ \s]+/g," ").trim()); cur=""; }, line=()=>{ cell(); if(row.some(Boolean)) rows.push(row); row=[]; };
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=c; }
+    else if(c==='"'&&!noq&&!cur.trim()) q=true; else if(c===sep) cell(); else if(c==="\n") line(); else cur+=c; }
+  if(q&&!noq) return blRows(text,true); line(); return rows; }
+function blNum(s){ s=String(s||"").replace(/[\s ]/g,"").replace(/(₽|руб\.?|р\.?)$/i,"").replace(",","."); if(!s) return 0; const n=+s; return isFinite(n)&&n>=0?Math.round(n*100)/100:NaN; }   // «4 800,50 ₽» → 4800.5; не число — NaN («цену не понял», позиция уйдёт без цены)
+function blWas(x){ if(!x) return 0; if(x.price>0) return +x.price; try{ const p=S.sup&&S.sup.price&&S.sup.price[nrm(smName(x))]; return p&&p.price>0?+p.price:0; }catch(_){ return 0; } }   // цена «Прайса»: её прислал nomList, запасной — загруженный прайс закупки
+function blParse(text){ const R=blRows(text), out=[]; if(!R.length) return out;
+  const keyOf=c=>{ const k=nrm(c).replace(/[.:,]+$/,""); if(!k||k.length>30) return ""; const h=BL_H.find(([,re])=>re.test(k)); return h?h[0]:""; }, hm=R[0].map(keyOf), hn=hm.filter(Boolean).length;
+  const head=(hm.includes("name")&&hn>=2)||hn>=3||(R[0].filter(Boolean).length===1&&hm.includes("name")), rows=head?R.slice(1):R;   // заголовок: «Название» и ещё хотя бы один столбец (или одна ячейка «Название»)
+  let col=null; if(head){ col={}; hm.forEach((k,i)=>{ if(k&&col[k]===undefined) col[k]=i; }); if(col.name===undefined) col=null; }
+  if(!col){ const sh=rows.length>1&&rows.every(r=>/^\d+[.)]?$/.test(r[0]||"")&&r[1])?1:0; col={name:sh,kind:sh+1,u:sh+2,price:sh+3,vend:sh+4,size:sh+5,note:sh+6}; }   // без заголовка — по порядку; первый столбец «1, 2, 3…» — это номера строк, пропускаем
+  const seen=new Set(), g=(r,k)=>col[k]===undefined?"":String(r[col[k]]||"");
+  rows.forEach((r,i)=>{ const name=g(r,"name").slice(0,200), k=nrm(name), ur=g(r,"u"), pr=blNum(g(r,"price")), kind=blKind(g(r,"kind"),name); let ug=blUnit(ur); if(ug==="л"&&/^(ЛДСП|МДФ)/.test(kind)) ug="лист";   // «л» у плиты — лист, не литр
+    const o={i,name,kind,uG:ug,uBuy:ug||ur.slice(0,12)||nmBlank({kind}).uBuy,price:pr>0?pr:0,pe:isNaN(pr),vend:g(r,"vend").slice(0,80),size:g(r,"size").slice(0,60),note:g(r,"note").slice(0,200),x:null,was:0,up:false,um:false,st:"new"};
+    if(!k) o.st="bad"; else if(seen.has(k)) o.st="rep"; else { seen.add(k); const x=nmByName(name);
+      if(x){ o.x=x; o.was=blWas(x); o.um=!!(ug&&x.uBuy&&ug!==x.uBuy); o.st=o.price>0&&(!(o.was>0)||Math.abs(o.was-o.price)>=0.005)?"diff":"same"; } }
+    out.push(o); });
+  return out; }
+function nmBulkOpen(){ if(!nmCan()){ toast("Номенклатуру ведут директор, закупка и главный дизайнер"); return; }
+  const B={step:"in",text:NM.blText||"",file:"",rows:[],lim:{new:40,same:40,diff:40},at:0,sum:null,err:"",errMsg:""}, prOk=()=>!!(NM.data&&NM.data.prices===true);   // право цен — как у поля цены в форме позиции
+  const m=nmSheet(`<div class="nm-blbody"></div>`,"tall nm-blk"), box=m.querySelector(".nm-blbody"), shc=m.querySelector(".nm-shc"), close0=m._close;
+  m._close=()=>{ if(B.step==="run") return;   // пока список уходит — окно не закрыть (иначе итог не увидеть)
+    close0(); if(B.sum&&(B.sum.added||B.sum.over)){ try{ if(B.sum.over&&typeof supPriceLoad==="function"&&S.sup&&S.sup.priceOk) supPriceLoad().then(()=>{ nmRedraw(); nmPickRefresh(); }); }catch(_){} setTimeout(()=>nmLoad(true).then(nmRedraw),260); } };
+  const X=`<button type="button" class="nm-btn" data-nmx aria-label="Закрыть">${ic("x",18)}</button>`, hd=(t,x)=>`<div class="nm-shh"><b>${t}</b>${x===false?"":X}</div>`, by=s=>B.rows.filter(o=>o.st===s), ups=()=>B.rows.filter(o=>o.st==="diff"&&o.up&&!o.um);
+  const inHtml=()=>`${hd("Загрузить список")}<label class="nm-fl nm-blin"><span>Вставьте список из Excel</span><textarea class="nm-blta" rows="9" spellcheck="false" autocomplete="off" placeholder="ЛДСП Egger W1000 16 мм&#9;ЛДСП&#9;лист&#9;4800&#9;ЛесСтрой&#10;Петля Blum Clip Top&#9;Фурнитура&#9;шт&#9;390&#9;МДМ"></textarea></label>
+    <p class="nm-note">Выделите строки в Excel, скопируйте и вставьте сюда. Столбцы по порядку: <b>Название · Раздел · Ед. · Цена · Поставщик</b>. Хватит и одного названия — раздел подберу по словам. Строку с заголовками пропущу сам.</p>
+    <div class="nm-blfile"><button type="button" class="nm-lnk" data-bl="file">${ic("down",16)} Взять из файла</button><small class="nm-hint">.csv или .txt (в Excel: «Сохранить как → CSV»)</small><input type="file" accept=".csv,.txt,.tsv,text/csv,text/plain" hidden></div>
+    <div class="nm-blbar"><div class="nm-ob"><button type="button" class="nm-b2" data-nmx>Отмена</button><button type="button" class="nm-b1" data-bl="check">Проверить</button></div></div>`;
+  const subOf=o=>[e(o.uBuy),o.price>0?e(blRub(o.price)):o.pe?`<span class="nm-r0">цену не понял</span>`:"без цены",e(o.vend)].filter(Boolean).join(" · ");
+  const rowNew=o=>`<div class="nm-row nm-blr"><span class="nm-t"><b>${e(o.name)}</b><small>${subOf(o)}</small></span><select class="nm-blsel" data-bk="${o.i}" aria-label="Раздел">${KINDS.map(k=>`<option${k===o.kind?" selected":""}>${e(k)}</option>`).join("")}</select></div>`;
+  const rowSame=o=>`<div class="nm-row nm-blr"><span class="nm-t"><b>${e(o.name)}</b><small>${nrm(o.x.name)!==nrm(o.name)?"в номенклатуре: "+e(o.x.name):"уже в номенклатуре — не трогаю"}</small></span></div>`;
+  const rowDiff=o=>{ const u=o.x.uBuy&&o.x.uBuy!=="услуга"?o.x.uBuy:"", can=prOk()&&!o.um, tg=can?"label":"div";
+    /* 18.11 (проверяющий): при другой единице писало «в списке 210 ₽ за лист», хотя в списке цена за м² — теперь у каждой цены своя единица; предупреждение — не <small>
+       (общий слой красит любой small в серый), а <em class="nm-blw"> красным */
+    return `<${tg} class="nm-row nm-blr"><span class="nm-t"><b>${e(o.name)}</b><small>${o.was>0?"было "+e(blRub(o.was))+(o.um&&u?" за "+e(u):""):"цены не было"} → в списке <em class="nm-blb">${e(blRub(o.price))}</em>${o.um?" за "+e(o.uG):u?" за "+e(u):""}</small>${o.um?`<em class="nm-blw">единица другая: у позиции «${e(o.x.uBuy)}», в списке «${e(o.uG)}» — цену не меняю</em>`:""}</span>${can?`<span class="nm-blc"><input type="checkbox" data-bu="${o.i}"${o.up?" checked":""}><span>обновить цену</span></span>`:""}</${tg}>`; };
+  const sec=(k,title,L,row,extra)=>!L.length?"":`<div class="nm-sec"><span>${title} · ${L.length}</span>${extra||""}</div><div class="nm-grp" data-blg="${k}">${L.slice(0,B.lim[k]).map(row).join("")}</div>${L.length>B.lim[k]?`<button type="button" class="nm-more" data-bl="more" data-k="${k}">Показать ещё ${Math.min(40,L.length-B.lim[k])}</button>`:""}`;
+  const planTxt=()=>{ const n=by("new").length, u=ups().length; return n||u?[n?`Добавлю ${n} ${pl(n,"новую","новые","новых")}`:"",u?`${n?"обновлю":"Обновлю"} цену у ${u}`:""].filter(Boolean).join(" · "):"Новых позиций нет"+(prOk()&&by("diff").some(o=>!o.um)?" — отметьте галочкой, где обновить цену":""); };
+  const allTxt=()=>{ const U=by("diff").filter(o=>!o.um); return U.length&&U.every(o=>o.up)?"Снять все":"Отметить все"; };
+  const pvHtml=()=>{ const N=by("new"), Sm=by("same"), D=by("diff"), bad=by("bad").length, rep=by("rep").length, pr=prOk();
+    return `${hd("Проверьте список")}<div class="nm-blsum"><div class="nm-bls g" data-bls="new"><b>${N.length}</b>Новые</div><div class="nm-bls" data-bls="same"><b>${Sm.length}</b>Уже есть</div><div class="nm-bls b" data-bls="diff"><b>${D.length}</b>Цена отличается</div></div>
+    ${bad||rep?`<p class="nm-blbad">Не возьму ${bad+rep} ${pl(bad+rep,"строку","строки","строк")}: ${[bad?"без названия — "+bad:"",rep?"повтор в списке — "+rep:""].filter(Boolean).join(", ")}</p>`:""}
+    ${sec("diff","Цена отличается",D,rowDiff,pr&&D.filter(o=>!o.um).length>1?`<button type="button" class="nm-pkm" data-bl="all">${allTxt()}</button>`:"")}
+    ${D.length?`<p class="nm-note">${pr?"Галочка — записать цену из списка в «Прайс»: по ней посчитаются новые сметы, старые сметы и сделки не изменятся. Без галочки цена остаётся прежней.":"Цены уже заведённых позиций не изменятся: менять цены может тот, кому директор дал это право."}</p>`:""}
+    ${sec("new","Новые",N,rowNew)}
+    ${N.length&&!pr&&N.some(o=>o.price>0)?`<p class="nm-note">Новые позиции добавятся без цены: менять цены может тот, кому директор дал это право.</p>`:""}
+    ${sec("same","Уже есть",Sm,rowSame)}
+    <div class="nm-blbar"><p class="nm-blplan" data-blplan>${e(planTxt())}</p><div class="nm-ob"><button type="button" class="nm-b2" data-bl="back">Назад</button><button type="button" class="nm-b1" data-bl="go">Загрузить</button></div></div>`; };
+  const runHtml=()=>{ const s=B.sum; return `${hd("Загружаю список",false)}<div class="nm-blres"><b>Загружаю в номенклатуру…</b><div class="nm-prog"><i style="width:${s.total?Math.round(s.sent/s.total*100):0}%"></i></div><p data-blp>${s.sent} из ${s.total}</p><p>Не закрывайте окно: большой список уходит частями по 200 строк.</p></div>`; };
+  const doneHtml=()=>{ const s=B.sum, skip=Math.max(0,s.dup-s.over), lost=by("bad").length+by("rep").length, wp=new Set(B.rows.filter(o=>o.price>0).map(o=>nrm(o.name))), np=s.noPrice.filter(n=>wp.has(nrm(n))).length;   // «без цены» — только те, у кого цена в списке была
+    return `${hd("Готово")}<div class="nm-blres"><span class="nm-okb nm-blok">${ic("check",28)}</span><b data-blres>Добавлено ${s.added}, пропущено ${skip}, цен обновлено ${s.over}</b>
+      ${skip?`<p>Пропущены позиции, которые уже были в номенклатуре: их не трогал.</p>`:""}
+      ${np?`<p data-blnp>${prOk()?`У ${np} ${pl(np,"новой позиции","новых позиций","новых позиций")} цена из списка не записана: в «Прайсе» у ${pl(np,"этого названия","этих названий","этих названий")} уже стояла своя цена — она и осталась.`:`Без цены — ${np} ${pl(np,"новая позиция","новые позиции","новых позиций")}: менять цены может тот, кому директор дал это право.`}</p>`:""}
+      ${lost?`<p>Не взял ${lost} ${pl(lost,"строку","строки","строк")}: без названия или повтор в списке.</p>`:""}</div>
+      <div class="nm-blbar"><div class="nm-ob"><button type="button" class="nm-b1" data-nmx>Готово</button></div></div>`; };
+  const errHtml=()=>{ const s=B.sum, k=B.err, part=s&&s.sent?` Уже загружено ${s.sent} из ${s.total} ${pl(s.total,"строки","строк","строк")}.`:"";
+    const T=k==="net"?["Нет связи","Список не дошёл до таблицы."+part+" Проверьте интернет и нажмите «Повторить» — продолжу с того же места."]:k==="role"?["Нет права",(B.errMsg||"Номенклатуру ведут директор, закупка и главный дизайнер. Попросите директора дать вам это право.")+part]:k==="pin"?["Вход устарел","Войдите заново и загрузите список ещё раз."+part]:k==="old"?["Таблица ещё не обновилась","Попробуйте через пару минут: список никуда не делся — нажмите «Повторить»."+part]:["Не загрузилось",(B.errMsg||"Таблица не приняла список. Попробуйте ещё раз; не выйдет — обновите скрипт таблицы.")+part];
+    return `${hd("Загрузить список")}<div class="nm-blres"><b class="nm-r0" data-blerr="${e(k)}">${e(T[0])}</b><p>${e(T[1])}</p></div><div class="nm-blbar"><div class="nm-ob"><button type="button" class="nm-b2" data-bl="back2">К списку</button>${k==="role"||k==="pin"?`<button type="button" class="nm-b1" data-nmx>Понятно</button>`:`<button type="button" class="nm-b1" data-bl="retry">Повторить</button>`}</div></div>`; };
+  const draw=keep=>{ const y=shc.scrollTop; box.innerHTML=B.step==="in"?inHtml():B.step==="pv"?pvHtml():B.step==="run"?runHtml():B.step==="done"?doneHtml():errHtml(); shc.scrollTop=keep?y:0;
+    if(B.step==="in"){ const ta=box.querySelector("textarea"); ta.value=B.text; if(!("ontouchstart" in window)) setTimeout(()=>{ try{ if(m.isConnected&&B.step==="in") ta.focus(); }catch(_){} },260); } };   // на телефоне поле само не открываем — клавиатура закрыла бы подсказку
+  const check=()=>{ if(!B.text.trim()){ toast("Вставьте список — строки из Excel"); return; } const R=blParse(B.text);
+    if(!R.some(o=>o.st!=="bad")){ toast("Не нашёл в списке ни одного названия"); return; } if(R.length>3000){ toast("В списке больше 3000 строк — загрузите его частями"); return; }
+    B.rows=R; B.lim={new:40,same:40,diff:40}; B.at=0; B.sum=null; B.step="pv"; draw(); };
+  /* отправка: по 200 строк за вызов; уходят все разобранные строки (и «уже есть») — сервер сверяет заново, вдруг номенклатура на телефоне устарела. Обрыв — «Повторить» с той же пачки:
+     повтор безопасен — добавленное сервер увидит как «уже есть» и не тронет */
+  async function run(){ const L=B.rows.filter(o=>o.st==="new"||o.st==="same"||o.st==="diff"), P=[], post=typeof shpPostRaw==="function"?shpPostRaw:shpPost; for(let i=0;i<L.length;i+=200) P.push(L.slice(i,i+200));
+    if(!B.sum) B.sum={added:0,dup:0,over:0,priced:0,noPrice:[],sent:0,total:L.length}; B.step="run"; B.err=""; B.errMsg=""; draw();
+    for(;B.at<P.length;B.at++){ const p=P[B.at];
+      const j=await post({action:"nomBulk",items:p.map(o=>({name:o.name,kind:o.kind,uBuy:o.uBuy,price:o.price,vend:o.vend,size:o.size,note:o.note})),over:prOk()?p.filter(o=>o.st==="diff"&&o.up&&!o.um).map(o=>o.name):[],btitle:(B.file?"Список «"+B.file+"»":"Загрузка списка")+(P.length>1?" · часть "+(B.at+1)+" из "+P.length:"")});
+      if(!j||!j.ok){ B.err=!j?"net":String(j.error||"err"); B.errMsg=j&&j.msg?String(j.msg):"";
+        /* 18.11 (проверяющий «старое»): сайт уже новый, а скрипт таблицы ещё старый — тот на незнакомое действие отвечает «pin», и окно писало «Вход устарел», хотя вход живой.
+           Проверяем вход тем же запросом, что открывает «Номенклатуру»: он проходит — значит дело не во входе, а таблица ещё не обновилась */
+        if(B.err==="pin"){ let v=null; try{ v=await (await fetch(shpUrl("action=nomList&who="+encodeURIComponent(typeof shpWho==="function"?shpWho():"")+"&pin="+encodeURIComponent(shpPin())),{cache:"no-cache"})).json(); }catch(_){ v=null; } if(v&&v.ok) B.err="old"; }
+        B.step="err"; draw(); return; }
+      const s=B.sum; s.added+=+j.added||0; s.dup+=(j.dup||[]).length; s.over+=+j.over||0; s.priced+=+j.priced||0; (j.noPrice||[]).forEach(n=>s.noPrice.push(String(n))); s.sent+=p.length;
+      const pg=box.querySelector(".nm-prog i"), pt=box.querySelector("[data-blp]"); if(pg) pg.style.width=Math.round(s.sent/s.total*100)+"%"; if(pt) pt.textContent=s.sent+" из "+s.total; }
+    B.step="done"; NM.blText=""; draw(); }
+  m.addEventListener("click",ev=>{ const b=ev.target.closest("[data-bl]"); if(!b) return; const a=b.dataset.bl;
+    if(a==="file"){ box.querySelector("input[type=file]").click(); return; }
+    if(a==="check"){ B.text=NM.blText=box.querySelector("textarea").value; B.file=B.fileText===B.text?B.file:""; check(); return; }
+    if(a==="back"){ B.step="in"; draw(); return; }
+    if(a==="back2"){ B.step="pv"; draw(); return; }
+    if(a==="more"){ B.lim[b.dataset.k]+=40; draw(true); return; }
+    if(a==="all"){ const U=by("diff").filter(o=>!o.um), on=!U.every(o=>o.up); U.forEach(o=>{ o.up=on; }); draw(true); return; }
+    if(a==="retry"){ run(); return; }
+    if(a==="go"){ if(!by("new").length&&!ups().length){ toast(prOk()&&by("diff").some(o=>!o.um)?"Новых позиций нет. Чтобы обновить цену — отметьте её галочкой":"Новых позиций в списке нет — загружать нечего"); return; } run(); } });
+  m.addEventListener("change",ev=>{ const t=ev.target;
+    if(t.dataset.bu!==undefined){ const o=B.rows[+t.dataset.bu]; if(o&&prOk()&&!o.um) o.up=!!t.checked; const pt=box.querySelector("[data-blplan]"), ab=box.querySelector('[data-bl="all"]'); if(pt) pt.textContent=planTxt(); if(ab) ab.textContent=allTxt(); return; }
+    if(t.dataset.bk!==undefined){ const o=B.rows[+t.dataset.bk]; if(o&&KINDS.includes(t.value)){ o.kind=t.value; if(!o.uG&&KINDS.includes(o.kind)){ const d=nmBlank({kind:o.kind}).uBuy, sm=t.closest(".nm-blr").querySelector("small"); if(U_BUY.includes(o.uBuy)){ o.uBuy=d; if(sm) sm.innerHTML=subOf(o); } } } return; }   // раздел поменяли руками — единица по умолчанию идёт за разделом (если в списке её не было)
+    if(t.type==="file"){ const f=t.files&&t.files[0]; t.value=""; if(!f) return;
+      if(/\.(xlsx?|xlsm|ods|numbers)$/i.test(f.name)){ toast("Файл Excel целиком не читаю. Откройте его, скопируйте строки и вставьте сюда"); return; } if(f.size>2e6){ toast("Файл больше 2 МБ — вставьте строки частями"); return; }
+      const r=new FileReader(); r.onerror=()=>toast("Файл не прочитался");
+      r.onload=()=>{ const u8=new Uint8Array(r.result); let tx=""; try{ tx=new TextDecoder("utf-8",{fatal:true}).decode(u8); }catch(_){ try{ tx=new TextDecoder("windows-1251").decode(u8); }catch(__){ tx=""; } }   // CSV из русского Excel — в кодировке Windows-1251
+        tx=tx.replace(/^﻿/,""); if(!tx.trim()){ toast("Файл пустой или не читается"); return; } if(B.step!=="in"||!m.isConnected) return;
+        B.text=B.fileText=NM.blText=tx; B.file=f.name.replace(/\.[^.]+$/,"").slice(0,60); const ta=box.querySelector("textarea"); if(ta) ta.value=tx; check(); };
+      r.readAsArrayBuffer(f); } });
+  m.addEventListener("input",ev=>{ if(ev.target.tagName==="TEXTAREA") B.text=NM.blText=ev.target.value; });   // случайно закрыл окно — список не пропал (до перезагрузки страницы)
+  /* вставили в пустое поле несколько строк — сразу показываем проверку (одним шагом меньше); «Назад» вернёт к тексту */
+  m.addEventListener("paste",ev=>{ const t=ev.target; if(B.step!=="in"||!t||t.tagName!=="TEXTAREA"||t.value.trim()) return; setTimeout(()=>{ if(B.step!=="in"||!m.isConnected) return; B.text=NM.blText=t.value; B.file=""; if(blRows(B.text).length>1) check(); },0); });
+  draw(); }
 window.__nm={top:nmTop,ic,sheet:nmSheet,redraw:nmRedraw,byId:nmById,pl,rub,esc:e,kinds:KINDS};   /* 16.11 для site_nomjrn.js («История номенклатуры») */
 /* ---- пункт в «Все разделы», экран, вкладка ---- */
 SHP_I.nom=SHP_I.nom||'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/>';
@@ -43109,6 +43592,49 @@ body:has(.ai-fab:not([hidden])) .nm-bar{padding-right:84px;padding-left:84px}
 .nm-miss{color:var(--w-t3,var(--ink))}.nm-addl{color:var(--w-ink,#fff);font-weight:600;text-decoration:underline;text-underline-offset:2px;cursor:pointer;display:inline-block;padding:6px 2px;margin:-6px 0}.nm-miss0{display:block;font-size:11.5px}
 .nm-ro{cursor:default}
 .nm-pkl{display:flex;flex-direction:column;gap:6px}.nm-pkl .nm-pit{width:100%}.nm-pkm{border:0;background:none;color:var(--w-ink,inherit);font:inherit;font-weight:600;font-size:14px;min-height:44px;padding:0 2px;cursor:pointer}
+/* 18.11 «Загрузить список»: зелёный (новые, готово), красный (ошибка, «не возьму») и основной цвет текста — без жёлтого; кнопки от 44 px; телефон 390 px и компьютер.
+   Синего здесь нет нарочно: сборка (build_site.py, w2recolor — правило вида «цвет только по смыслу») любой синий перекрашивает в нейтральный, получалось серое «как выключено» */
+.nm-bar{gap:10px}.nm-pill.nm-p2{background:var(--w-l2);color:var(--w-ink);padding:0 20px;font-size:15px;white-space:nowrap}
+/* 18.11 (проверяющий «удобство»): рядом с микрофоном от кнопки оставался один значок «↓» (как «установить приложение») — теперь значок «список» и короткая подпись «Список»;
+   в виде 2.0 полоса лежала под нижним меню (нажать нельзя) — поднята над ним, как .zk-bar в «Закупке» (site_v2_ch3.js) */
+.nm-p2s{display:none}
+@media (max-width:899px){body:has(.ai-fab:not([hidden])) .nm-bar .nm-p2l{display:none}body:has(.ai-fab:not([hidden])) .nm-bar .nm-p2s{display:inline}body:has(.ai-fab:not([hidden])) .nm-bar .nm-p2{padding:0 16px}
+  body:has(.ai-fab:not([hidden])) .nm-bar:has(.nm-p2){padding-left:16px}body:has(.ai-fab:not([hidden])) .nm-bar:has(.nm-p2) .nm-pill:not(.nm-p2){padding:0 20px}
+  html.v2:not(#v2a):not(#v2b):not(#v2c) body.app-bar-on #view .nm-bar{bottom:calc(98px + 8px + env(safe-area-inset-bottom,0px))!important;background:none!important;min-height:0;padding-bottom:6px}}   /* в 2.0 кнопки «плавают» над списком, как само меню: белёсая полоса под ними была бы видна поверх фона-сетки */
+@media (max-width:379px){.nm-bar .nm-p2l{display:none}.nm-bar .nm-p2s{display:inline}.nm-bar .nm-p2{padding:0 16px}}
+.nm-empty .nm-blem{margin-top:0;color:var(--w-ink)}
+.nm-blk .nm-shc{display:flex;flex-direction:column;padding-bottom:0}
+@media (min-width:900px){.nm-sheet.nm-blk .nm-shc{width:680px}}
+.nm-blbody{flex:1 0 auto;display:flex;flex-direction:column;min-width:0}.nm-blin{margin:0 16px}
+.nm-blta{box-sizing:border-box;display:block;width:100%;min-height:200px;margin:0;padding:12px;border:1px solid var(--w-line);border-radius:14px;background:var(--w-l1);color:var(--w-ink);font:inherit;font-size:16px;line-height:1.35;resize:vertical;outline:none;white-space:pre;overflow:auto;tab-size:4}
+.nm-blta:focus{border-color:var(--w-ink)}.nm-blta::placeholder{color:var(--w-t3)}
+.nm-blbody>.nm-note b{color:var(--w-ink);font-weight:600}
+.nm-blfile{display:flex;flex-wrap:wrap;align-items:center;gap:0 12px;margin:6px 20px 12px}.nm-blfile .nm-lnk{padding:0}.nm-blfile .nm-lnk{color:var(--w-ink)}
+.nm-blbar{position:sticky;bottom:0;z-index:2;margin-top:auto;padding:10px 16px calc(14px + env(safe-area-inset-bottom,0px));background:var(--w-bg);border-top:1px solid var(--w-line)}
+.nm-blbar .nm-ob{margin:0;flex-wrap:nowrap}.nm-blbar .nm-b1,.nm-blbar .nm-b2{min-height:48px;font-size:16px}.nm-blbar .nm-b2{flex:.6}
+.nm-blplan{margin:0 0 8px;font-size:13.5px;line-height:1.35;color:var(--w-t2);text-align:center}
+.nm-blsum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 16px}
+.nm-bls{min-width:0;background:var(--w-l1);border-radius:16px;padding:10px 12px;font-size:12.5px;line-height:1.25;color:var(--w-t2)}.nm-bls b{display:block;font-size:24px;font-weight:700;line-height:1.15;color:var(--w-t2)}.nm-bls.g b{color:var(--w-g)}.nm-bls.b b{color:var(--w-ink)}.nm-bls.b{color:var(--w-ink)}
+.nm-blbad{margin:10px 20px 0;font-size:13.5px;line-height:1.35;color:var(--w-r)}
+.nm-blk .nm-sec{align-items:center;min-height:24px}.nm-blk .nm-sec .nm-pkm{color:var(--w-ink);margin:-10px 0}
+.nm-blk .nm-blr{box-sizing:border-box;min-height:56px;cursor:default}.nm-blk label.nm-blr{cursor:pointer}
+.nm-blk .nm-blr:not(:last-child)::after{left:14px}
+.nm-blk .nm-blr .nm-t b,.nm-blk .nm-blr .nm-t small{white-space:normal;overflow-wrap:anywhere}
+.nm-blb{color:var(--w-ink);font-style:normal;font-weight:600}
+.nm-blc{flex:none;display:inline-flex;align-items:center;gap:8px;min-height:44px;font-size:13.5px;color:var(--w-ink)}
+.nm-blc input{width:22px;height:22px;margin:0;flex:none;accent-color:var(--w-ink)}
+.nm-blsel{flex:none;box-sizing:border-box;width:auto;max-width:44%;min-height:44px;margin:0;padding:0 8px;border:1px solid var(--w-line);border-radius:12px;background:var(--w-l2);color:var(--w-ink);font:inherit;font-size:14px}
+.nm-blk .nm-more{flex:none}
+/* 18.11 по находкам проверяющих: предупреждение «единица другая» — красным; на телефоне выбор раздела — под названием во всю ширину (был обрезан: «Стекло и зерк», а название
+   сжималось в столбик по 4 строки); 44 px и 13 px НА ЭКРАНЕ (страница сжата в 0,86: в стилях 51 px и 15,2 px) */
+.nm-blk .nm-blr .nm-t .nm-blw{display:block;margin-top:2px;font-style:normal;font-size:12.5px;line-height:1.35;color:var(--w-r);white-space:normal;overflow-wrap:anywhere}
+@media (max-width:899px){.nm-blk .nm-blr:has(.nm-blsel){flex-wrap:wrap;row-gap:8px;padding-bottom:10px}.nm-blk .nm-blr:has(.nm-blsel) .nm-t{flex:1 1 100%}.nm-blk .nm-blsel{flex:1 1 100%;width:100%;max-width:none}}
+html:not(.pc) .nm-blsel,html:not(.pc) .nm-blc,html:not(.pc) .nm-blk :is(.nm-lnk,.nm-pkm){min-height:51px}html:not(.pc) .nm-blsel{font-size:16px}
+html:not(.pc) .nm-blbar :is(.nm-b1,.nm-b2),html:not(.pc) .nm-blk .nm-more{min-height:52px}html:not(.pc) .nm-blk .nm-shh .nm-btn{min-width:51px;min-height:51px}
+html:not(.pc) .nm-blk :is(.nm-blc,.nm-blplan,.nm-bls,.nm-blbad,.nm-note,.nm-hint,.nm-blw),html:not(.pc) .nm-blres p,html:not(.pc) .nm-blk .nm-blr .nm-t .nm-blw,html:not(.pc) .nm-blk .nm-blr .nm-t small{font-size:15.2px}
+.nm-blres{margin:auto 0;padding:24px;text-align:center}.nm-blres b{display:block;font-size:19px;line-height:1.3;margin-top:14px}.nm-blres p{color:var(--w-t2);font-size:14.5px;line-height:1.45;margin:8px 0 0}
+.nm-blok{width:56px;height:56px;border-radius:28px;margin:0 auto}
+.nm-blk .nm-prog{margin:18px 0 8px}.nm-blk .nm-prog i{background:var(--w-ink)}
 `; document.head.appendChild(st);
 })();
 
@@ -43258,6 +43784,215 @@ const st=document.createElement("style"); st.id="nomJrnCss"; st.textContent=`
 .nj-kv .nm-v2{margin-left:auto;text-align:right;color:var(--w-ink)}
 .nj-wide{margin-top:12px}
 @media (min-width:900px){.nj-mg b{font-size:26px}}
+`; document.head.appendChild(st);
+})();
+
+/* ===== «Цены из чеков» (18.11, задание docs/zadaniya/2026-11-18-zakup-chek-nomenklatura.md; Кирилл: «когда снабженец чек загружает — автоматически должен заполнять
+   номенклатуру или выровняет, если там что-то неправильно»; по ценам выбран вариант А: цена сама НЕ меняется, директору «было X, в чеке Y — обновить?») =====
+   Закупщик вносит чек со строками (site_zakupka.js, окно чека) → сервер (receiptAdd) кладёт в лист «Цены из чеков» то, что отличается от «Прайса»:
+   цена другая (price), позиции ещё нет (new), цена за другую единицу (unit). Здесь директор решает одним нажатием: «Обновить» / «В прайс» / «Нет».
+   1) Вход: плашка «Цены из чеков · N» в списке «Номенклатуры» и кнопка в задаче директора «Цены из чека № …».
+      ПОЧЕМУ обёрткой над viewShop: site_nomen.js правит другой разработчик — этот модуль в него не лезет, только дописывает плашку в готовую страницу.
+   2) Видят: директор и роли с правом «Менять цены» (сервер: rcpList / rcpOk — те же права, что prPrices_); мастер — никогда. Последнее слово за сервером:
+      ответил «нет прав» — плашка убирается.
+   3) ПОЧЕМУ «единица другая» не входит в «Обновить все»: ИИ и люди путают единицы (лист / м²) — такую цену директор подтверждает только по одной.
+   4) Без дёрганья: нажатие меняет одну карточку (она сворачивается), счётчики и «Решённые» обновляются на месте — весь экран не перерисовывается.
+   5) Только зелёный, красный, синий (синий — своей переменной --w-rcb: сборка W2 перекрашивает синие цвета в серый, переменные --w-* не трогает).
+   Деньги: модуль сам ничего не считает; цену в «Прайс» пишет сервер (priceSet_) только по нажатию человека с правом цен. Старые сметы и договоры не меняются. ===== */
+(function rcpBoot(n){
+if(typeof viewShop!=="function") return;
+if(!window.__nm||!S.nom){ if((n||0)<50) setTimeout(()=>rcpBoot((n||0)+1),0); return; }   // помощники «Номенклатуры» (site_nomen.js) — ждём, если модуль в сборке оказался ниже
+const H=window.__nm, NM=S.nom, e=H.esc, pl=H.pl, ic=H.ic;
+const R=S.rcp=Object.assign({items:null,busy:false,err:"",deny:false,stale:false,from:null,hist:false,at:0,pend:{},seen:false,none:false},S.rcp||{});
+try{ const v=localStorage.getItem("w24-rcp"); R.seen=R.seen||v==="1"; R.none=!R.seen&&v==="0"; }catch(_){}   // "1" — очередь уже была непустой, "0" — в прошлый раз была пустой, нет записи — ещё не знаем
+const SV={rc:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/>',re:'<path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/>',ok:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',no:'<path d="M6 6l12 12M18 6L6 18"/>'};
+const sv=(k,sz)=>`<svg viewBox="0 0 24 24" width="${sz||18}" height="${sz||18}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SV[k]||""}</svg>`;
+const money=v=>(Math.round((+v||0)*100)/100).toLocaleString("ru-RU",{maximumFractionDigits:2})+" ₽";   // цена кромки бывает с копейками — не округляем до рубля
+const isNum=v=>v!==""&&v!==null&&v!==undefined&&isFinite(+v);
+const dm=w=>{ try{ const d=new Date(isNum(w)?+w:w); return isNaN(d)?"":d.toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"}); }catch(_){ return ""; } };
+/* ---- кто видит ---- */
+const master=()=>!!(S.shop&&S.shop.role==="master"&&!S.shop.tech);
+const boss=()=>{ try{ return (typeof dirIs==="function"&&dirIs())||(!!(S.shop&&S.shop.tech)&&!S.shop.hasDir); }catch(_){ return false; } };   // директор; фирма без директора — технолог (как dirNow_ на сервере)
+const can=()=>!master()&&!R.deny&&(boss()||!!(NM.data&&(NM.data.prices===true||NM.data.canClsT)));
+const wait=()=>(R.items||[]).filter(x=>x.st==="wait"), done=()=>(R.items||[]).filter(x=>x.st!=="wait");
+const allIds=()=>wait().filter(x=>x.kind!=="unit"&&!R.pend[x.id]).map(x=>x.id);
+const byId=id=>(R.items||[]).find(x=>x.id===id)||null;
+const here=()=>S.view==="shop"&&S.shop&&S.shop.mode==="nom";
+/* ---- данные: GET rcpList — ожидающие и последние решённые ---- */
+async function load(force){ if(R.busy||master()) return; if(!force&&R.items&&!R.stale&&Date.now()-R.at<60000) return; R.busy=true; R.stale=false;
+  let j=null; try{ const r=await fetch(shpUrl("action=rcpList&who="+encodeURIComponent(typeof shpWho==="function"?shpWho():"")+"&pin="+encodeURIComponent(shpPin())),{cache:"no-cache"}); j=await r.json(); }catch(_){ j=null; }
+  R.busy=false; R.at=Date.now();
+  if(j&&j.ok){ R.err=""; R.items=(Array.isArray(j.items)?j.items:[]).filter(x=>x&&x.id!=null).map(x=>({id:String(x.id),when:x.when,rc:x.rc,order:x.order,num:x.num,nid:x.nid||"",name:String(x.name||""),u:String(x.u||""),was:x.was,now:x.now,kind:x.kind==="new"||x.kind==="unit"?x.kind:"price",who:String(x.who||""),st:x.st==="ok"||x.st==="no"?x.st:"wait",shop:String(x.shop||"").slice(0,80)}));   // shop — магазин чека: покажем, если сервер его отдаёт (в договоре rcpList этого поля пока нет)
+    R.seen=R.items.length>0; R.none=!R.seen; try{ localStorage.setItem("w24-rcp",R.seen?"1":"0"); }catch(_){} }
+  else if(j&&/^(role|action|tech|dir)$/.test(String(j.error||""))){ R.deny=true; R.items=null; }   // сервер сказал «не вам» (или ещё не умеет) — плашку убираем
+  else R.err=j&&j.msg?String(j.msg).slice(0,160):"Нет связи с таблицей";
+  soft(); }
+/* ---- плашка в списке «Номенклатуры». ПОЧЕМУ не показываем пустую: у фирмы без чеков со строками лишняя строка только мешает; уже были — стоит сразу (без прыжка списка).
+   18.11 (проверяющий «удобство»): на новом телефоне плашка появлялась после загрузки и сдвигала список на 100 px — палец попадал в неё вместо поиска. Теперь, пока не знаем,
+   пуста ли очередь, место под плашку держим сразу («загружаю…»); оказалась пустой — плавно сворачиваем (soft), в следующий раз места не держим ---- */
+function entryHtml(){ if(!can()) return ""; const L=R.items, W=wait(); if(L?!L.length:R.none) return "";
+  const np=W.filter(x=>x.kind==="price").length, nn=W.filter(x=>x.kind==="new").length, nu=W.filter(x=>x.kind==="unit").length;
+  const sub=!L?(R.err?"не загрузилось — нажмите, чтобы повторить":"загружаю…"):!W.length?"новых нет · все решены":[np?`${np} ${pl(np,"цена отличается","цены отличаются","цен отличаются")}`:"",nn?`${nn} ${pl(nn,"новая позиция","новые позиции","новых позиций")}`:"",nu?`${nu} — единица другая`:""].filter(Boolean).join(" · ");
+  return `<div class="nm-grp rcp-entry"><button type="button" class="nm-row" data-rcp="open"><span class="rcp-ic${W.length?" on":""}">${sv("rc",18)}</span><span class="nm-t"><b>Цены из чеков${W.length?" · "+W.length:""}</b><small>${e(sub)}</small></span><span class="nm-ch">${ic("chev",16)}</span></button></div>`; }
+/* ---- экран ---- */
+/* 18.11 (проверяющий «удобство»): «чек в № 103» читалось как номер чека — пишем «заказ № 103»; рядом магазин (если сервер отдаёт); нажал на подпись — чек: фото и его строки
+   (иначе цифру ИИ нечем проверить и «Обновить» жмут не глядя) */
+function meta(x){ return [x.num?"заказ № "+x.num:"чек",x.who,dm(x.when),x.shop].filter(Boolean).join(" · "); }
+function metaBtn(x){ return x.rc&&x.order?`<button type="button" class="rcp-m rcp-mb" data-rcp="rc" data-id="${e(x.id)}" aria-label="Открыть чек: ${e(meta(x))}"><span>${e(meta(x))}</span><span class="rcp-ml">чек ${ic("chev",14)}</span></button>`:`<span class="rcp-m">${e(meta(x))}</span>`; }
+async function rcOpen(x){ const m=H.sheet(`<div class="nm-shh"><b>Чек · ${e(x.num?"заказ № "+x.num:"")}</b><button type="button" class="nm-btn" data-nmx aria-label="Закрыть">${ic("x",18)}</button></div><div class="rcp-rc"><p class="rcp-rw">Загружаю чек…</p></div>`,"rcp-rcs"), box=m.querySelector(".rcp-rc");
+  let j=null; try{ j=await (await fetch(shpUrl("action=receipts&order="+encodeURIComponent(x.order)+"&pin="+encodeURIComponent(shpPin())),{cache:"no-cache"})).json(); }catch(_){ j=null; } if(!m.isConnected) return;   // тот же запрос, что чеки в сделке (site_shop.js)
+  const r=j&&j.ok&&Array.isArray(j.receipts)?j.receipts.find(r=>String(r.id)===String(x.rc)):null;
+  if(!r){ box.innerHTML=`<p class="rcp-rw">${!j?"Нет связи — чек не открылся.":j.ok?"Чек не найден — возможно, его удалили.":e(j.msg||"Чек открыть не получилось.")}</p>`; return; }
+  const ph=typeof shpSafeLink==="function"&&shpSafeLink(r.photo)?String(r.photo):"", it=Array.isArray(r.items)?r.items.filter(y=>y&&String(y.name||"").trim()).slice(0,60):[], k=s=>String(s||"").trim().toLowerCase().replace(/ё/g,"е");
+  const mine=y=>(x.nid&&String(y.nid||"")===String(x.nid))||k(y.name)===k(x.name)||(isNum(y.price)&&isNum(x.now)&&Math.abs(+y.price-+x.now)<.005&&it.filter(z=>Math.abs(+z.price-+x.now)<.005).length===1);   // строка этой карточки: по позиции, по названию или по единственной такой цене
+  box.innerHTML=`<p class="rcp-rw">${e([r.who,dm(r.when),x.shop].filter(Boolean).join(" · "))} · сумма чека <b>${e(money(r.sum))}</b>${r.text?`<br>${e(String(r.text).slice(0,300))}`:""}</p>
+    ${ph?`<a class="rcp-rp" href="${e(ph)}" target="_blank" rel="noopener" aria-label="Открыть фото чека целиком"><img src="${e(typeof shpThumb==="function"?shpThumb(ph,900):ph)}" alt="Фото чека" loading="lazy"><span>Открыть фото целиком</span></a>`:`<p class="rcp-rw">Фото к чеку не приложено.</p>`}
+    ${it.length?`<div class="nm-sec"><span>Строки чека · ${it.length}</span></div><div class="nm-grp rcp-ri">${it.map(y=>`<div class="nm-row rcp-rr${mine(y)?" on":""}"><span class="nm-t"><b>${e(String(y.name))}</b><small>${e([isNum(y.qty)&&+y.qty>0?String(+y.qty).replace(".",",")+(y.u?" "+y.u:""):"",isNum(y.price)&&+y.price>0?"по "+money(y.price):""].filter(Boolean).join(" · "))}</small></span></div>`).join("")}</div>`:""}`; }
+function pcHtml(x){ if(!(isNum(x.was)&&+x.was>0&&isNum(x.now))) return ""; const p=(+x.now-+x.was)/+x.was*100; if(!isFinite(p)||Math.abs(p)<.05) return "";
+  return `<span class="rcp-pc ${p>0?"up":"dn"}">${p>0?"+":"−"}${String(Math.abs(Math.round(p*10)/10)).replace(".",",")} %</span>`; }
+function puOf(x){ try{ const it=x.nid&&H.byId(x.nid); return it&&it.pu?String(it.pu):""; }catch(_){ return ""; } }   // единица цены в «Прайсе» (для «единица другая»)
+const OK_U="Записать как в чеке";
+function cardHtml(x){ const busy=!!R.pend[x.id], u=x.u?" за "+e(x.u):"", dis=busy?" disabled":"";
+  let top, mid, warn="", okT="Обновить";
+  const now=`<span class="rcp-g"><b>${e(money(x.now))}</b>${u?`<span>${u}</span>`:""}${x.kind==="price"?pcHtml(x):""}</span>`;   // цена, «за что» и процент — одной группой: при переносе не разрываются
+  if(x.kind==="new"){ top=`<span class="rcp-tag b">Новая</span>${e(x.name)}`; mid=now; okT="В прайс"; if(!x.nid) warn=`<p class="rcp-m">Позиции ещё нет в номенклатуре — появится после «В прайс».</p>`; }
+  else if(x.kind==="unit"){ const pu=puOf(x); top=`<span class="rcp-tag r">единица другая</span>${e(x.name)}`;
+    mid=`<span>в прайсе ${isNum(x.was)&&+x.was>0?e(money(x.was)):"—"}${pu?" за "+e(pu):""} →</span><span>в чеке</span>${now}`;
+    okT=OK_U; warn=`<p class="rcp-w">Цена в чеке — за другую единицу${x.u?" («"+e(x.u)+"»)":""}${pu?", а в прайсе — за «"+e(pu)+"»":""}. Если это упаковка или рулон — нажмите «Нет» и впишите цену за ${pu?"«"+e(pu)+"»":"свою единицу"} в карточке позиции.</p>`; }
+  else { top=e(x.name); mid=`<span>было ${isNum(x.was)&&+x.was>0?e(money(x.was)):"—"} →</span><span>в чеке</span>${now}`; }
+  const bNo=`<button type="button" class="rcp-no" data-rcp="no" data-id="${e(x.id)}"${dis} aria-label="Нет, оставить как было: ${e(x.name)}">Нет</button>`, bOk=`<button type="button" class="rcp-ok" data-rcp="ok" data-id="${e(x.id)}"${dis} aria-label="${okT}: ${e(x.name)}">${busy?"Сохраняю…":okT}</button>`;
+  /* 18.11 (проверяющий «удобство», деньги): у «единица другая» главная (чёрная, справа) кнопка — «Нет», а запись цены — серая «Записать как в чеке»: два быстрых нажатия
+     по привычному месту «Обновить» больше не кладут в «Прайс» цену за упаковку. Сама запись и вопрос перед ней — как были (решение по одной, сервер rcpOk) */
+  return `<div class="rcp-c${busy?" busy":""}" data-id="${e(x.id)}"><div class="rcp-n">${top}</div><div class="rcp-p">${mid}</div>${metaBtn(x)}${warn}
+    <div class="rcp-b${x.kind==="unit"?" u":""}">${x.kind==="unit"?bOk+bNo:bNo+bOk}</div></div>`; }
+function headHtml(){ const W=wait(), A=allIds(), nu=W.filter(x=>x.kind==="unit").length;
+  return `<p class="nm-sub">${W.length?`${W.length} ${pl(W.length,"ждёт","ждут","ждут")} решения · цена в прайсе сама не меняется`:"Новых нет"}</p>
+    ${A.length>1?`<button type="button" class="nm-wide rcp-all" data-rcp="all">Обновить все ${A.length}</button>${nu?`<p class="rcp-an">Кроме ${nu} с другой единицей — их решите по одной.</p>`:""}`:""}`; }
+function histRow(x){ const ok=x.st==="ok";
+  return `<div class="nm-row rcp-h"><span class="rcp-ic ${ok?"g":""}">${sv(ok?"ok":"no",16)}</span><span class="nm-t"><b>${e(x.name)}</b><small>${ok?(x.kind==="new"?"в прайсе: ":isNum(x.was)&&+x.was>0?e(money(x.was))+" → ":"")+e(money(x.now))+(x.u?" за "+e(x.u):""):"оставили как было"+(isNum(x.now)?" · в чеке "+e(money(x.now)):"")} · ${e(meta(x))}</small></span></div>`; }
+function tailHtml(){ const W=wait(), D=done();
+  return (W.length?"":`<div class="nm-empty"><b>${D.length?"Всё решено":"Пока пусто"}</b><p>Когда закупщик внесёт чек со строками, здесь появятся цены, которые отличаются от прайса, и новые позиции.</p></div>`)
+    +(D.length?`<button type="button" class="nm-more rcp-hb" data-rcp="hist" aria-expanded="${!!R.hist}">${R.hist?"Скрыть решённые":"Решённые · "+D.length}</button>${R.hist?`<div class="nm-grp rcp-hl">${D.slice(0,50).map(histRow).join("")}</div>`:""}`:"")
+    +`<p class="rcp-note">Старые сметы и договоры не пересчитываются — в них свои цены.</p>`; }
+function skel(){ return `<p class="nm-sub">&nbsp;</p><div class="rcp-l" aria-busy="true">${Array.from({length:3},()=>`<div class="rcp-c"><i class="nm-skl" style="width:62%;height:14px"></i><i class="nm-skl" style="width:44%;height:18px;margin-top:10px"></i><i class="nm-skl" style="width:36%"></i><div class="rcp-b"><i class="nm-skl" style="height:48px;border-radius:24px;margin:0"></i><i class="nm-skl" style="height:48px;border-radius:24px;margin:0"></i></div></div>`).join("")}</div>`; }
+function bodyHtml(){ if(!R.items) return R.err&&!R.busy?`<p class="nm-sub">&nbsp;</p><div class="nm-empty"><b>Не загрузилось</b><p>${e(R.err)}</p><button type="button" class="nm-more" data-rcp="reload">Ещё раз</button></div>`:skel();
+  return `<div id="rcpHd">${headHtml()}</div><div id="rcpL" class="rcp-l">${wait().map(cardHtml).join("")}</div><div id="rcpTl">${tailHtml()}</div>`; }
+/* ПОЧЕМУ у «‹» подпись «Вернуться», а не «Назад»: кнопку с подписью «Назад» перехватывает site_back.js и уводит на прошлый РАЗДЕЛ («Все разделы»),
+   а отсюда нужно в список «Номенклатуры» (или в задачу, из которой пришли) — это делает back() ниже, место прокрутки возвращает сам */
+function scrHtml(){ return `<div class="nm-v rcp-v"><div class="nm-top"><button type="button" class="nm-btn" data-rcp="back" aria-label="Вернуться">${ic("back")}</button><div class="nm-tt"></div><button type="button" class="nm-btn" data-rcp="reload" aria-label="Обновить список">${sv("re",19)}</button></div><h1 class="nm-h1">Цены из чеков</h1><div id="rcpB">${bodyHtml()}</div></div>`; }
+/* ---- обновление на месте (без перерисовки всего экрана) ---- */
+const put=(id,h)=>{ const n=document.getElementById(id); if(n) n.innerHTML=h; return !!n; };
+function soft(){ if(!here()) return;
+  if(NM.scr==="rcp"){ if(!can()){ NM.scr="list"; H.redraw(); return; } if(!put("rcpB",bodyHtml())) H.redraw(); return; }
+  if((NM.scr||"list")!=="list") return; const n=document.querySelector(".rcp-entry:not(.out)"), h=entryHtml(), calm=()=>{ try{ return matchMedia("(prefers-reduced-motion:reduce)").matches; }catch(_){ return false; } };
+  const fold=(el,open)=>{ if(calm()){ if(!open) el.remove(); return; } const hh=el.offsetHeight, mb=getComputedStyle(el).marginBottom; el.style.overflow="hidden"; el.style.transition="height .22s ease,margin .22s ease,opacity .2s ease";   // плашка сворачивается / раскрывается высотой — список под ней едет плавно, а не прыгает
+    el.style.height=(open?0:hh)+"px"; if(open){ el.style.marginBottom="0px"; el.style.opacity="0"; } el.offsetHeight; el.style.height=(open?hh:0)+"px"; el.style.marginBottom=open?mb:"0px"; el.style.opacity=open?"1":"0";
+    setTimeout(()=>{ if(open){ el.style.cssText=""; } else el.remove(); },260); };
+  if(n){ if(!h){ n.classList.add("out"); fold(n,false); return; } const w=document.createElement("div"); w.innerHTML=h; n.replaceWith(w.firstElementChild); return; }
+  if(!h) return; const at=document.querySelector(".nm-list .nj-entry")||document.querySelector(".nm-list .nm-seg"); if(!at){ H.redraw(); return; }
+  const w=document.createElement("div"); w.innerHTML=h; const el=w.firstElementChild; at.parentNode.insertBefore(el,at); fold(el,true); }
+function softParts(){ if(!(here()&&NM.scr==="rcp")) return; if(!put("rcpHd",headHtml())){ soft(); return; } put("rcpTl",tailHtml()); }
+function cardOut(id){ const c=document.querySelector(`#rcpL .rcp-c[data-id="${CSS.escape(id)}"]`); if(!c) return;   // карточка плавно сворачивается — список не прыгает
+  c.style.height=c.offsetHeight+"px"; c.classList.add("out"); requestAnimationFrame(()=>{ c.style.height="0px"; c.style.paddingTop="0px"; c.style.paddingBottom="0px"; c.style.marginBottom="-10px"; }); setTimeout(()=>c.remove(),240); }
+function cardBusy(id,on,ok){ const c=document.querySelector(`#rcpL .rcp-c[data-id="${CSS.escape(id)}"]`); if(!c) return; c.classList.toggle("busy",!!on); c.querySelectorAll("button").forEach(b=>{ b.disabled=!!on; });
+  const b=c.querySelector(on&&!ok?".rcp-no":".rcp-ok"), x=byId(id); if(on){ if(b) b.textContent="Сохраняю…"; } else { const o=c.querySelector(".rcp-ok"), no=c.querySelector(".rcp-no"); if(o) o.textContent=x&&x.kind==="new"?"В прайс":x&&x.kind==="unit"?OK_U:"Обновить"; if(no) no.textContent="Нет"; } }
+/* вопрос перед записью цены «за другую единицу»: главная кнопка — «Отмена» (у общего appConfirm главная всегда «да», и Enter — тоже «да») */
+function askUnit(x){ return new Promise(res=>{ const pu=puOf(x); let v=false;
+  const m=H.sheet(`<div class="nm-shh"><b>Цена за другую единицу</b></div><p class="rcp-q">«${e(x.name)}»: в чеке <b>${e(money(x.now))}${x.u?" за "+e(x.u):""}</b>, а в прайсе ${isNum(x.was)&&+x.was>0?"<b>"+e(money(x.was))+(pu?" за "+e(pu):"")+"</b>":pu?"цена за «"+e(pu)+"»":"цена за другую единицу"}. Записать в прайс цену из чека вместе с её единицей? Новые сметы будут считаться по ней.</p>
+    <div class="nm-ob rcp-qb"><button type="button" class="nm-b2" data-rq="yes">${OK_U}</button><button type="button" class="nm-b1" data-rq="no">Отмена</button></div>`,"rcp-ask");
+  const c0=m._close; m._close=()=>{ c0(); res(v); }; m.addEventListener("click",ev=>{ const b=ev.target.closest("[data-rq]"); if(!b) return; v=b.dataset.rq==="yes"; m._close(); }); }); }
+/* ---- решение: POST rcpOk {ids, ok}. Цена в «Прайс» уходит только отсюда и только по нажатию ---- */
+async function decide(ids,ok){ ids=ids.filter(id=>byId(id)&&byId(id).st==="wait"&&!R.pend[id]); if(!ids.length) return;
+  ids.forEach(id=>{ R.pend[id]=1; cardBusy(id,true,ok); }); const allB=document.querySelector(".rcp-all"); if(allB&&ids.length>1){ allB.disabled=true; allB.textContent="Сохраняю…"; }
+  const j=typeof shpPostRaw==="function"?await shpPostRaw({action:"rcpOk",ids,ok:ok?1:0}):null;
+  ids.forEach(id=>{ delete R.pend[id]; });
+  if(j&&j.ok){ const one=ids.length===1?byId(ids[0]):null; ids.forEach(id=>{ const x=byId(id); if(x) x.st=ok?"ok":"no"; cardOut(id); }); R.items.sort((a,b)=>(a.st==="wait"?0:1)-(b.st==="wait"?0:1)); softParts();
+    toast(!ok?"Оставили как было":one?(one.kind==="new"?"В прайсе: ":"Цена обновлена: ")+one.name+" — "+money(one.now):"Цены обновлены: "+ids.length);
+    if(ok){ try{ if(window.__nom) window.__nom.load(true); }catch(_){} try{ if(S.sup&&S.sup.priceOk&&typeof supPriceLoad==="function") supPriceLoad(); }catch(_){} }   // новые цены — в список номенклатуры и в подсказки сметы этого сеанса
+    if(ids.length>1) setTimeout(()=>load(true),400);   // после «Обновить все» сверяемся с сервером
+    return; }
+  ids.forEach(id=>cardBusy(id,false)); softParts();
+  if(j&&j.error==="done"){ toast("Уже решено — обновляю список"); load(true); return; }
+  toast(j&&j.msg?j.msg:j&&j.error==="role"?"Цены меняют директор и те, кому он разрешил":j?"Не сохранилось. Попробуйте ещё раз.":"Нет связи — не сохранилось"); }
+function open(){ if(!can()) return; if(!here()||NM.scr!=="rcp") R.from={view:S.view,mode:S.shop&&S.shop.mode,y:window.scrollY||0}; NM.scr="rcp"; NM.edit=null; load(!R.items||R.stale);
+  if(here()){ if(typeof shpRenderKeep==="function") shpRenderKeep(); try{ window.scrollTo({top:0}); }catch(_){} } else if(typeof shpGo==="function") shpGo("nom"); }
+function back(){ const f=R.from||{}, y=f.y||0, sy=()=>{ try{ window.scrollTo(0,y); }catch(_){} }; R.from=null; NM.scr="list";   // «назад туда же»: откуда пришли и на то же место прокрутки
+  if(f.view&&f.view!=="shop"&&typeof setView==="function") setView(f.view);
+  else if(f.mode&&f.mode!=="nom"&&typeof shpGo==="function") shpGo(f.mode,f.mode==="order"?S.shop.cur:undefined);
+  else H.redraw();
+  requestAnimationFrame(sy); setTimeout(sy,120); }
+document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.target.closest("[data-rcp]"); if(!b) return; ev.preventDefault(); ev.stopPropagation(); const a=b.dataset.rcp;
+  if(a==="open"){ const m=b.closest(".modal"); if(m) m.remove(); open(); return; }
+  if(!here()) return;
+  if(a==="back") return back();
+  if(a==="reload"){ R.err=""; if(!R.items) put("rcpB",skel()); load(true); return; }
+  if(a==="hist"){ R.hist=!R.hist; put("rcpTl",tailHtml()); return; }
+  if(a==="no") return decide([b.dataset.id],false);
+  if(a==="rc"){ const x=byId(b.dataset.id); if(x) rcOpen(x); return; }
+  if(a==="ok"){ const x=byId(b.dataset.id); if(!x) return;
+    if(x.kind==="unit"&&!(await askUnit(x))) return;   // 18.11 вопрос своим окном: главная кнопка — «Отмена»
+    return decide([x.id],true); }
+  if(a==="all"){ const A=allIds(); if(A.length<2) return; const np=A.filter(id=>byId(id).kind==="price").length, nn=A.length-np;
+    const t=[np?`обновить ${np} ${pl(np,"цену","цены","цен")}`:"",nn?`добавить в прайс ${nn} ${pl(nn,"новую позицию","новые позиции","новых позиций")}`:""].filter(Boolean).join(" и ");
+    if(typeof appConfirm==="function"&&!(await appConfirm(t.charAt(0).toUpperCase()+t.slice(1)+" по ценам из чеков? Новые сметы будут считаться по этим ценам, старые сметы и договоры не изменятся.","Обновить все",false))) return;
+    return decide(allIds(),true); }
+},true);
+/* ---- вход: плашка в «Номенклатуре» (обёртка над отрисовкой) и свой экран NM.scr="rcp" ---- */
+{ const _rcpView=viewShop; viewShop=function(){ const h=_rcpView.apply(this,arguments);   // внутренний вызов нужен и для своего экрана: он грузит номенклатуру (права) и помнит, что мы в ней
+  try{ if(!(S.shop&&S.shop.mode==="nom")) return h;
+    if(NM.scr==="rcp"){ if(!can()&&(NM.data||master())){ NM.scr="list"; setTimeout(H.redraw,0); return h; }
+      if(!R.busy&&(R.stale||(!R.items&&!R.err))) setTimeout(()=>load(true),0);
+      return (typeof shpNavHtml==="function"?shpNavHtml():"")+scrHtml(); }
+    if((NM.scr||"list")==="list"&&typeof h==="string"&&can()){ if(!R.busy&&(R.stale||(!R.items&&!R.err)||Date.now()-R.at>60000)) setTimeout(()=>load(false),0);
+      const en=entryHtml(); if(en){ let k=h.indexOf('<div class="nm-grp nj-entry">'); if(k<0) k=h.indexOf('<div class="nm-seg"'); if(k<0) k=h.indexOf('<div id="nmChips">'); if(k>=0) return h.slice(0,k)+en+h.slice(k); } }
+  }catch(err){ console.log("LOG rcp "+err.message); }
+  return h; }; }
+/* ---- вход из задачи директора «Цены из чека № …: N позиций» (её ставит сервер): в окне задачи — кнопка на этот экран ---- */
+if(typeof shpTaskModal==="function"){ const _rcpTM=shpTaskModal; shpTaskModal=function(t){ const r=_rcpTM.apply(this,arguments);
+  try{ if(t&&/^Цены из чек/i.test(String(t.text||""))&&can()){ const mb=document.querySelector("#shpTaskModal .shp-mb"); if(mb&&!mb.querySelector("[data-rcp]")) mb.insertAdjacentHTML("afterbegin",`<button type="button" class="btn primary" data-rcp="open">Открыть «Цены из чеков»</button>`); } }catch(_){}
+  return r; }; }
+window.__rcp={can,open,load:()=>load(true),items:()=>R.items,wait:()=>wait().length,   // для стенда (bench/kirill/2026-11-18_ceny_iz_chekov.js): функции страницы снаружи не видны
+  dbg:{go:m=>shpGo(m),mode:()=>S.shop&&S.shop.mode,view:()=>S.view,scr:()=>NM.scr,force:()=>{ NM.scr="rcp"; if(typeof shpRenderKeep==="function") shpRenderKeep(); },task:t=>shpTaskModal(t)}};
+const st=document.createElement("style"); st.id="rcpCss"; st.textContent=`
+.rcp-v,.rcp-entry{--w-rcb:#0a84ff}html[data-vt="light"] .rcp-v,html[data-vt="light"] .rcp-entry,:root[data-theme="light"] .rcp-v,:root[data-theme="light"] .rcp-entry{--w-rcb:#007aff}
+.rcp-entry{margin:0 16px 12px}.rcp-entry .nm-t small{white-space:normal}
+.rcp-ic{width:36px;height:36px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--w-l2);color:var(--w-t2)}
+.rcp-ic.on{background:color-mix(in srgb,var(--w-rcb) 18%,transparent);color:var(--w-rcb)}.rcp-ic.g{color:var(--w-g)}
+.rcp-all{margin-top:0}.rcp-all:disabled{opacity:.6}.rcp-an{margin:-4px 20px 12px;color:var(--w-t2);font-size:13px;text-align:center}
+.rcp-l{display:flex;flex-direction:column;gap:10px;margin:0 16px}
+.rcp-c{box-sizing:border-box;background:var(--w-l1);border-radius:20px;padding:14px 14px 12px;overflow:hidden;transition:opacity .2s ease,height .22s ease,padding .22s ease,margin .22s ease}
+.rcp-c.out{opacity:0;pointer-events:none}.rcp-c.busy .rcp-n,.rcp-c.busy .rcp-p{opacity:.6}
+.rcp-n{font-size:16px;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
+.rcp-tag{display:inline-block;font-size:12px;font-weight:600;line-height:1.3;padding:2px 8px;border-radius:8px;margin:0 7px 0 0;vertical-align:1px;white-space:nowrap}
+.rcp-tag.b{background:color-mix(in srgb,var(--w-rcb) 18%,transparent);color:var(--w-rcb)}.rcp-tag.r{background:color-mix(in srgb,var(--w-r) 18%,transparent);color:var(--w-r)}
+.rcp-p{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 7px;margin:8px 0 0;font-size:15px;color:var(--w-t2);font-variant-numeric:tabular-nums}
+.rcp-p b{font-size:21px;font-weight:700;color:var(--w-ink);white-space:nowrap}.rcp-p span{white-space:nowrap}.rcp-g{display:inline-flex;align-items:baseline;gap:7px}
+.rcp-pc{font-weight:600;font-size:14px}.rcp-pc.up{color:var(--w-r)}.rcp-pc.dn{color:var(--w-g)}
+.rcp-m{display:block;margin:5px 0 0;color:var(--w-t2);font-size:13px;line-height:1.35}
+.rcp-w{margin:9px 0 0;padding:8px 11px;border-radius:11px;background:color-mix(in srgb,var(--w-r) 14%,transparent);color:var(--w-ink);font-size:13.5px;line-height:1.35}
+.rcp-b{display:grid;grid-template-columns:1fr 1.5fr;gap:8px;margin-top:12px}
+.rcp-b button{min-height:48px;padding:0 12px;border:0;border-radius:24px;font:inherit;font-weight:600;font-size:16px;cursor:pointer;transition:transform .16s ease,opacity .16s ease}
+.rcp-b button:active{transform:scale(.97);opacity:.85}.rcp-b button:disabled{opacity:.5;cursor:default}
+.rcp-no{background:var(--w-l2);color:var(--w-ink)}.rcp-ok{background:var(--w-ink);color:var(--w-bg)}
+/* 18.11 по находкам проверяющих: «единица другая» — главная кнопка «Нет»; подпись-кнопка «чек»; окно чека; телефон — 44 px и 13 px НА ЭКРАНЕ (страница сжата в 0,86: в стилях 51 px и 15,2 px) */
+.rcp-b.u{grid-template-columns:1.5fr 1fr}.rcp-b.u .rcp-ok{background:var(--w-l2);color:var(--w-ink)}.rcp-b.u .rcp-no{background:var(--w-ink);color:var(--w-bg)}
+.rcp-mb{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:44px;margin:3px 0 -4px;padding:0;border:0;background:none;font:inherit;font-size:13px;text-align:left;cursor:pointer}.rcp-mb:active{opacity:.6}
+.rcp-ml{flex:none;display:inline-flex;align-items:center;gap:2px;color:var(--w-ink);font-weight:600}
+.rcp-q{margin:2px 20px 0;font-size:16px;line-height:1.45;color:var(--w-t2)}.rcp-q b{color:var(--w-ink);font-weight:600;white-space:nowrap}
+.rcp-qb .nm-b1,.rcp-qb .nm-b2{min-height:52px;font-size:16px}.rcp-qb .nm-b2{flex:1.4}
+.rcp-rc{padding:0 0 8px}.rcp-rw{margin:4px 20px 10px;font-size:14.5px;line-height:1.45;color:var(--w-t2)}.rcp-rw b{color:var(--w-ink);font-weight:600}
+.rcp-rp{display:block;margin:0 16px 12px;border-radius:16px;overflow:hidden;background:var(--w-l1);color:var(--w-ink);text-decoration:none;text-align:center}.rcp-rp img{display:block;width:100%;max-height:60vh;object-fit:contain;background:var(--w-l2)}.rcp-rp span{display:block;padding:13px 10px;font-weight:600;font-size:15px}
+.rcp-rr{cursor:default}.rcp-rr .nm-t b,.rcp-rr .nm-t small{white-space:normal;overflow-wrap:anywhere}.rcp-rr.on{box-shadow:inset 3px 0 0 var(--w-rcb)}
+body:has(.nm-sheet.rcp-rcs,.nm-sheet.rcp-ask) .ai-fab:not(.rec){opacity:0!important;pointer-events:none!important;transition:opacity .18s ease!important}   /* плавающий микрофон не закрывает крестик окна чека и вопрос (как у остальных окон — «Единый вид») */
+.rcp-rcs,.rcp-ask{--w-rcb:#0a84ff}html[data-vt="light"] .rcp-rcs,:root[data-theme="light"] .rcp-rcs{--w-rcb:#007aff}
+html:not(.pc) .rcp-b button{min-height:calc(56px / var(--v2k,1))}html:not(.pc) .rcp-mb{min-height:calc(51px / var(--v2k,1))}html:not(.pc) .rcp-v .nm-top .nm-btn{width:calc(51px / var(--v2k,1));height:calc(51px / var(--v2k,1))}html:not(.pc) .rcp-v :is(.nm-more,.nm-wide){min-height:calc(52px / var(--v2k,1))}   /* в виде 2.0 экран увеличен обратно (--v2k): там 44 px на экране получаются из 44 */
+html:not(.pc) :is(.rcp-rcs,.rcp-ask) .nm-btn{width:51px;height:51px}
+html:not(.pc) :is(.rcp-tag,.rcp-m,.rcp-note,.rcp-an,.rcp-w,.rcp-pc){font-size:calc(15.2px / var(--v2k,1))}html:not(.pc) .rcp-rw,html:not(.pc) .rcp-rr .nm-t small{font-size:15.2px}html:not(.pc) .rcp-entry .nm-t small{font-size:calc(15.2px / var(--v2k,1))}
+html:not(.pc) .rcp-entry .nm-t small{display:block;min-height:2.7em;min-height:2lh}   /* место под две строки разбивки сразу: «загружаю…» → «2 цены отличаются · 1 новая позиция…» не меняет высоту плашки */
+.rcp-hb{margin-top:16px}.rcp-hl{margin-top:10px}.rcp-h{cursor:default;align-items:flex-start}.rcp-h .rcp-ic{margin-top:2px}.rcp-h .nm-t b,.rcp-h .nm-t small{white-space:normal}
+.rcp-note{margin:18px 20px 0;color:var(--w-t3);font-size:12.5px;text-align:center}
+@media (min-width:900px){.rcp-l{display:grid;grid-template-columns:1fr 1fr;align-items:start}}
+@media (prefers-reduced-motion:reduce){.rcp-c,.rcp-b button{transition:none}}
 `; document.head.appendChild(st);
 })();
 
@@ -46480,7 +47215,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="0630722088";/*cehqr-build*/
+  const BUILD="bbecd66ed8";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -46591,7 +47326,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="0630722088";/*cehqr-build*/
+  const BUILD="bbecd66ed8";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
