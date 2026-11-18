@@ -20166,12 +20166,33 @@ function qkGroups(items,q){ const G=new Map(), get=k=>{ if(!G.has(k)) G.set(k,{k
   const keys=[...G.keys()];
   items.filter(x=>x.cat==="edge").forEach(x=>{ const c=x.for?qkCls(x.for):qkCls(x.n), k=keys.includes(c)?c:keys.includes("ЛДСП (другие)")?"ЛДСП (другие)":keys[0]||"Кромка (общая)"; const g=get(k); g.rows.push(x); g.edgeM+=+x.q||0; g.mat+=x.sum; });
   return [...G.values()].map(g=>{ const P=qkClsP(g.key), cutS=Math.round(g.sheets*P.cut), edgS=Math.round(g.edgeM*P.edg); return Object.assign(g,P,{cutS,edgS,wk:cutS+edgS,sum:g.mat+cutS+edgS}); }); }
-function qkGrpOpen(k){ try{ const o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); return o[k]!==0; }catch(_){ return true; } }
-function qkRowHtml(x,k){ const h=qkRowHtml0(x,k); try{ return typeof window.__qkRowHook==='function'?window.__qkRowHook(h,x,k):h; }catch(_){ return h; } }   /* 1б: строка — названием из номенклатуры («в Базисе: …» мелко), site_nomen.js */
+/* 18.11 (смета «один экран», этап 1, п. 7): какие группы и разделы раскрыты («w24-qkgrp») — раньше память телефона читалась и разбиралась заново на КАЖДУЮ группу и раздел
+   при каждой отрисовке. Теперь один раз за отрисовку: qkHtml в начале сбрасывает запомненное (вдруг поменяли в другой вкладке), нажатие на заголовок кладёт новое сразу сюда. */
+let QK_GRPC=null;
+function qkGrpLs(){ if(!QK_GRPC){ try{ QK_GRPC=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}")||{}; }catch(_){ QK_GRPC={}; } } return QK_GRPC; }
+function qkGrpPut(o){ QK_GRPC=o; try{ localStorage.setItem("w24-qkgrp",JSON.stringify(o)); }catch(_){} }
+function qkGrpOpen(k){ return qkGrpLs()[k]!==0; }
+/* 18.11 (ошибка №3 — только показ, цена и количество НЕ меняются): откуда взялась цена фасада за м². Считаем заново теми же путями, что qkFaConv, и подписываем, только если
+   сегодняшняя цена совпала с ценой строки (цены с тех пор поменяли или вписали руками — подписи нет, чтобы не соврать). */
+function qkFaSrc(x){ try{ const p=Math.round(num(x.p)), n=x.n; if(!(p>0)||!n) return "";
+    const z=QK.set&&QK.set.mine&&QK.set.mine.pz; if(z&&Math.round(z[n+QK_PZM2])===p) return "ваша цена за м² (запомнена)";
+    if(qkPriceM2D(n)===p) return "цена за м² из прайса";
+    const ps=qkPrice(n,"л."), A=qkSheetA(n); if(ps>0&&A>0&&Math.round(ps/A)===p) return "лист "+N(ps)+" ₽ ÷ "+F(A)+" м² = "+N(p)+" ₽/м²"; }catch(_){} return ""; }
+function qkRowHtml(x,k){ let h=qkRowHtml0(x,k); try{ if(typeof window.__qkRowHook==='function') h=window.__qkRowHook(h,x,k); }catch(_){}   /* 1б: строка — названием из номенклатуры («в Базисе: …» мелко), site_nomen.js */
+  /* 18.11 (доводка, проверка на телефоне): строка фасада на телефоне была нечитаема — рядом с названием стоят «заказной?», количество, единица и сумма, колонке названия оставалось
+     1–70 px, мелкий текст шёл по букве в строке (строка высотой в полтора экрана). Метка qk-rf: на узком экране такая строка — в два этажа (название на всю ширину, ниже — кнопка, количество, сумма).
+     Метка ставится ПОСЛЕ site_nomen.js — он узнаёт строку по началу «<div class="qk-r">». Только вид: поля, цена и сумма те же. */
+  if(k==="front"&&!x.prod&&h.slice(0,18)==='<div class="qk-r">') h='<div class="qk-r qk-rf">'+h.slice(18);
+  return h; }
 function qkRowHtml0(x,k){ const it=qkCatIt(x.n), sw=it&&typeof catSw==="function"?catSw(it,"cat-sw qk-sw"):`<span class="qk-sw0"></span>`;
   if(x.prod) return `<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="prod" data-i="${x.pi}"><b>${esc(x.n)}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u)+" · ":`<span class="qk-bad">нет цены</span> · `}из шкафа${x.sub?" · "+esc(x.sub):""}</small>${x.cut?`<span class="qk-cutl" data-qk="3d" data-i="-1">▦ 3D и раскрой</span>`:""}</button><span class="qk-ro">${F(x.q)}</span><span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>`;
-  return `<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="ed" data-c="${k}" data-i="${x.i}"><b>${esc(x.n||"без названия")}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u):`<span class="qk-bad">нет цены — нажмите</span>`}${x.au?" · авто 12 м на лист":""}${qkIsFa(x)?" · "+(x.qb!=null?qkFaTxt(x.q,x.qb,x.zp):"по м² фасадов"):""}</small></button>${k==="front"?`<button type="button" class="qk-cz${x.cz?" on":""}" data-qk="cz" data-i="${x.i}" title="Заказной фасад от поставщика — своя наценка" aria-pressed="${!!x.cz}">${x.cz?"✓ заказной":"заказной?"}</button>`:""}
-    ${inp(`it.${k}.${x.i}.q`,x.au?"":x.q,"n",x.au?x.q:"0","qk-q","Количество: "+(x.n||""))}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>`; }
+  /* 18.11 (только показ): у фасада по м² — откуда цена (ошибка №3) и «впишите площадь» прямо в строке (раньше — всплывашка, а при быстром выборе не было и её);
+     x.fq — количество в момент добавления: пока его не меняли, площадь не вписана. Лист с отметкой «задняя стенка» (x.zs) без «ДВП / ХДФ» в названии — подписан, раздела такого больше нет.
+     Разметка строки прежняя (один <small>, конец «</small></button>») — на неё опирается site_nomen.js (__qkRowHook); длинная подпись — отдельной строкой ПОД строкой (.qk-rn):
+     на телефоне колонка названия у фасада узкая (рядом «заказной?»), в ней подпись растягивалась на 20 строк. */
+  const fa=qkIsFa(x), fsrc=fa?qkFaSrc(x):"", fq=fa&&x.fq!=null&&num(x.fq)===num(x.q);
+  return `<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="ed" data-c="${k}" data-i="${x.i}"><b>${esc(x.n||"без названия")}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u):`<span class="qk-bad">нет цены — нажмите</span>`}${x.au?" · авто 12 м на лист":""}${fa?" · "+(x.qb!=null?qkFaTxt(x.q,x.qb,x.zp):"по м² фасадов"):""}${x.zs&&k==="ldsp"&&!QK_BACK.test(String(x.n||""))?" · задняя стенка":""}</small></button>${k==="front"?`<button type="button" class="qk-cz${x.cz?" on":""}" data-qk="cz" data-i="${x.i}" title="Заказной фасад от поставщика — своя наценка" aria-pressed="${!!x.cz}">${x.cz?"✓ заказной":"заказной?"}</button>`:""}
+    ${inp(`it.${k}.${x.i}.q`,x.au?"":x.q,"n",x.au?x.q:"0","qk-q","Количество: "+(x.n||""))}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>${fsrc||fq?`<p class="qk-sub qk-rn">${fsrc?`<i>Откуда цена: ${esc(fsrc)}</i>`:""}${fsrc&&fq?" · ":""}${fq?`<span class="qk-nt">впишите площадь фасадов, м²</span>`:""}</p>`:""}`; }
 function qkGroupsHtml(c,q,only){ const GR=only||c.GR||[]; if(!GR.length) return "";
   return GR.map(g=>{ const op=qkGrpOpen(g.key), pin=(f,v,l)=>`<input class="qk-in qk-p qk-clsp" data-qcls="${esc(g.key)}|${f}" inputmode="decimal" value="${esc(String(v))}" aria-label="${esc(l)}">`;
     return `<section class="qk-card qk-grp${op?" on":""}"><button type="button" class="qk-h qk-gh" data-qkg="${esc(g.key)}" aria-expanded="${op}"><b>${op?"▾":"▸"} ${esc(g.key)}</b><span>${N(g.sum)} ₽</span></button>
@@ -20190,11 +20211,11 @@ function qkPartsHtml(c,q,PT,sec){ if(!PT.length) return "";
     const toneOk=g.rows.filter(x=>x.cat==="edge").length<g.rows.filter(x=>x.cat!=="edge").length;
     if(z.edg&&!z.rows.length&&!g.edgeM&&!(toneOk&&tone.length)) return "";   /* у листа нет кромки и подсказать нечего — пустую группу не показываем */
     return `<section class="qk-card qk-grp${op?" on":""}"><button type="button" class="qk-h qk-gh" data-qkg="${esc(g.key)}" aria-expanded="${op}"><b>${op?"▾":"▸"} ${esc(g.key)}</b><span>${N(qkPartSum(z))} ₽</span></button>
-      ${op?z.rows.map(x=>qkRowHtml(x,x.cat)).join("")+(z.cut&&g.sheets?`<div class="qk-r qk-r2"><span class="qk-tl">Распил<small>${F(g.sheets)} ${pl(g.sheets,"лист","листа","листов")} × цена за лист${z.with||(sec!=="m:back"&&P_hasBack(g))?" · вместе с задней стенкой":""}</small></span>${pin("cut",g.cut,"Распил, ₽ за лист")}<span class="qk-u">₽</span><b class="qk-s">${N(g.cutS)}</b></div>`:"")
+      ${op?z.rows.map(x=>qkRowHtml(x,x.cat)).join("")+(z.cut&&g.sheets?`<div class="qk-r qk-r2"><span class="qk-tl">Распил<small>${F(g.sheets)} ${pl(g.sheets,"лист","листа","листов")} × цена за лист${z.oth?" · вместе с листами раздела «"+esc(z.oth)+"»":""}</small></span>${pin("cut",g.cut,"Распил, ₽ за лист")}<span class="qk-u">₽</span><b class="qk-s">${N(g.cutS)}</b></div>`:"")
+        +(z.cutIn&&g.sheets?`<p class="qk-sub qk-cutn">Распил этих листов посчитан в разделе «${esc(z.cutIn)}»</p>`:"")
         +(z.edg&&g.edgeM?`<div class="qk-r qk-r2"><span class="qk-tl">Кромление<small>${F(g.edgeM)} м × цена за метр</small></span>${pin("edg",g.edg,"Кромление, ₽ за метр")}<span class="qk-u">₽</span><b class="qk-s">${N(g.edgS)}</b></div>`:"")
         +(toneOk?tone:[]).map(x=>`<button type="button" class="qk-add" data-qte="${esc(x.n)}">+ Кромка в тон «${esc(String(x.n).replace(/^ЛДСП,?\s*\d+\s*мм,?\s*/i,""))}»</button>`).join("")
-        +(g.key==="Кромка (общая)"?"":`<div class="qk-gadd">${z.edg?`<button type="button" class="qk-add" data-qk="add" data-c="edge" data-qfor="${esc((g.rows.find(x=>x.cat!=="edge"&&!(q.it.edge||[]).some(e=>e.for===x.n))||g.rows.find(x=>x.cat!=="edge")||{}).n||"")}">+ Кромка к «${esc(g.key)}»</button>`:`<button type="button" class="qk-add" data-qk="add" data-c="${/^МДФ/.test(g.key)?"front":"ldsp"}"${sec==="m:back"?` data-qzs="1"`:""}>${q.fm2&&/^МДФ/.test(g.key)?"+ Фасад, м²":"+ Лист"}</button>`}</div>`):""}</section>`; }).join(""); }
-function P_hasBack(g){ return g.rows.some(x=>x.cat!=="edge"&&qkIsBack(x)); }
+        +(g.key==="Кромка (общая)"?"":`<div class="qk-gadd">${z.edg?`<button type="button" class="qk-add" data-qk="add" data-c="edge" data-qfor="${esc((g.rows.find(x=>x.cat!=="edge"&&!(q.it.edge||[]).some(e=>e.for===x.n))||g.rows.find(x=>x.cat!=="edge")||{}).n||"")}">+ Кромка к «${esc(g.key)}»</button>`:`<button type="button" class="qk-add" data-qk="add" data-c="${sec==="m:mdf"?"front":"ldsp"}">${q.fm2&&sec==="m:mdf"?"+ Фасад, м²":"+ Лист"}</button>`}</div>`):""}</section>`; }).join(""); }   /* 18.11: «+ Лист» добавляет в тот раздел, где стоит (в «МДФ и фасады» — фасад), а не по имени класса; отметки «из задней стенки» (data-qzs) больше нет */
 /* ===== Кирилл 07.11 (вариант А): смета списком по разделам, как в Базисе — «нажал Столешница — там только столешницы; петли — только петли; ящики — только ящики».
    Фурнитура: тип → фирма («Накладные с доводчиком» → Hettich / Blum / DTC…). Раздел позиции — по группе базы Базиса или по названию. ===== */
 const QK_SEC=[["top","Столешница","other",/Погонные материалы\/Столешница/i,/столешн/i],["apron","Фартук и стеновые панели","other",/Фартук|Стеновая панель/i,/фартук|стенов/i],
@@ -20216,15 +20237,21 @@ function qkSecMap(c,q){ const GR=c.GR||[], inG=new Set(GR.flatMap(g=>g.rows)), i
   const by={}; c.items.filter(x=>x.cat==="furn"||x.cat==="other").forEach(x=>{ const k=qkSecOf(x); (by[k]=by[k]||[]).push(x); });
   const empty=!c.items.length&&!(q.pr||[]).length;
   const E={}, cfg=qkSecCfg();
-  /* 13.11 (Кирилл: «2 отдельно»): «Корпус», «Кромка», «Задняя стенка» — отдельные разделы (плитки). Только показ: данные сметы и расчёт (qkCalc, qkGroups) прежние.
-     Группа листов (класс: ЛДСП Egger, МДФ AGT…) делится на части: листы + распил — в «Корпус» (МДФ — в «МДФ и фасады», ДВП / ХДФ — в «Задняя стенка»), кромка + кромление — в «Кромка».
+  /* 13.11 (Кирилл: «2 отдельно»): «Корпус» и «Кромка» — отдельные разделы (плитки). Только показ: данные сметы и расчёт (qkCalc, qkGroups) прежние.
+     Группа листов (класс: ЛДСП Egger, МДФ AGT…) делится на части: листы + распил — в «Корпус» или «МДФ и фасады» (см. 18.11 ниже), кромка + кромление — в «Кромка».
      Сумма частей = сумма группы (листы + распил + кромка + кромление) — итог раздела «Материалы» прежний до рубля. */
-  const P={"m:ldsp":[],"m:back":[],"m:mdf":[],"m:edge":[]};
-  GR.forEach(g=>{ const sh=g.rows.filter(x=>x.cat!=="edge"), ed=g.rows.filter(x=>x.cat==="edge"), bk=sh.filter(qkIsBack), mn=sh.filter(x=>!qkIsBack(x)), main=isM(g.key)?"m:mdf":"m:ldsp";
+  /* 18.11 (Кирилл: «список там убрать задняя стенка причем тут это»; смета «один экран», этап 1 — отменяет «2 отдельно» от 13.11 в части задней стенки):
+     раздела «Задняя стенка» в показе больше нет — ДВП / ХДФ и листы с отметкой x.zs лежат в «Корпусе», в своей группе класса, с тем же распилом. x.zs в данных остаётся.
+     Заодно ошибка №2: строки группы делятся по x.cat, а не по имени класса: фасад (cat «front») из ЛДСП Egger, Kastamonu или пластика остаётся в «МДФ и фасады»,
+     а лист «МДФ…», добавленный в корпус (cat «ldsp»), — в «Корпусе». Распил группы — в суммах разделов РОВНО ОДИН РАЗ: там, где был раньше (класс «МДФ…» → фасады,
+     иначе → корпус), если там есть строки, иначе — в другой части; во второй части — подпись, где он посчитан. Только показ: qkCalc и qkGroups прежние, сумма частей = сумма группы до рубля. */
+  const P={"m:ldsp":[],"m:mdf":[],"m:edge":[]}, secN=k=>cfg.names[k]||(k==="m:mdf"?"МДФ и фасады":"Корпус");
+  GR.forEach(g=>{ const sh=g.rows.filter(x=>x.cat!=="edge"), ed=g.rows.filter(x=>x.cat==="edge"), fr=sh.filter(x=>x.cat==="front"), kp=sh.filter(x=>x.cat!=="front"), mn=sh.filter(x=>!qkIsBack(x));
     if(g.key==="Кромка (общая)"){ P["m:edge"].push({g,rows:ed,cut:false,edg:true}); return; }
-    if(mn.length) P[main].push({g,rows:mn,cut:true,edg:false}); if(bk.length) P["m:back"].push({g,rows:bk,cut:!mn.length,edg:false,with:mn.length>0});
-    if(ed.length||g.edgeM||mn.length) P["m:edge"].push({g,rows:ed,cut:false,edg:true}); });   /* у листа без кромки — «+ Кромка в тон» в «Кромке» */
-  const rl=rest("ldsp"), mat=[["m:ldsp","Корпус",P["m:ldsp"],rl.filter(x=>!qkIsBack(x)),"ldsp","+ ЛДСП корпуса — из базы (Egger, ExtraVert, Kastamonu…)",""],["m:back","Задняя стенка",P["m:back"],rl.filter(qkIsBack),"ldsp","+ ДВП / ХДФ — из базы",` data-qzs="1"`],
+    const home=isM(g.key)?"m:mdf":"m:ldsp", cutK=(home==="m:mdf"?fr.length:kp.length)?home:home==="m:mdf"?"m:ldsp":"m:mdf", both=kp.length>0&&fr.length>0;
+    [["m:ldsp",kp,"m:mdf"],["m:mdf",fr,"m:ldsp"]].forEach(([k,rows,ok])=>{ if(rows.length) P[k].push({g,rows,cut:cutK===k,edg:false,oth:both&&cutK===k?secN(ok):"",cutIn:both&&cutK!==k?secN(ok):""}); });
+    if(ed.length||g.edgeM||mn.length) P["m:edge"].push({g,rows:ed,cut:false,edg:true}); });   /* у листа без кромки — «+ Кромка в тон» в «Кромке» (у группы из одних ДВП / ХДФ кромку не предлагаем — как раньше) */
+  const mat=[["m:ldsp","Корпус",P["m:ldsp"],rest("ldsp"),"ldsp","+ ЛДСП, ХДФ / ДВП — из базы (Egger, ExtraVert, Kastamonu…)",""],
     ["m:mdf","МДФ и фасады",P["m:mdf"],rest("front"),"front","+ МДФ / фасад — из базы",""],["m:edge","Кромка",P["m:edge"],rest("edge"),"edge","+ Кромка — из базы",""]];
   /* 12.11 (плитки сметы): у каждого раздела — название, сумма, позиции (rows — все строки раздела, части групп рисует qkPartsHtml) и body() — тот же список, что раньше */
   /* 15.11 (Кирилл: «куда пропало заказные фасады?»): в «МДФ и фасады» всегда кнопка заказного фасада из прайса. Раздел «Фасады ПВХ (заказные)» скрыли («✏️ Порядок разделов») —
@@ -20243,20 +20270,20 @@ function qkSecMap(c,q){ const GR=c.GR||[], inG=new Set(GR.flatMap(g=>g.rows)), i
     E[k]={cnt:L.length,sum,n:nm,G:[],rows:L,def:true,extra:true,body:()=>L.map(x=>qkRowHtml(x,x.cat)).join("")}; });
   return {E,cfg}; }
 function qkMatListHtml(c,q){ const {E,cfg}=qkSecMap(c,q);
-  const row=(k,n,cnt,sum,body,def)=>{ let op=S.qkSecOpen===k; if(!op){ try{ const o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); op=o["sec:"+k]===1||(o["sec:"+k]!==0&&def); }catch(_){ op=def; } }
+  const row=(k,n,cnt,sum,body,def)=>{ let op=S.qkSecOpen===k; if(!op){ const o=qkGrpLs(); op=o["sec:"+k]===1||(o["sec:"+k]!==0&&def); }   /* 18.11: память телефона — один раз за отрисовку (qkGrpLs) */
     return `<div class="qk-sec${op?" on":""}"><button type="button" class="qk-sech" data-qsec="${esc(k)}" data-qop="${op?1:0}"><b>${op?"▾":"▸"} ${esc(n)}</b><span>${cnt?`${cnt} поз. · ${N(sum)}`:"—"}</span></button>${op?`<div class="qk-secb">${body()}</div>`:""}</div>`; };
   const order=qkSecOrder(q), hid=order.filter(k=>cfg.hide[k]&&!(E[k]&&E[k].cnt)).length;
   return `<section class="qk-card qk-secs"><div class="qk-secbar"><button type="button" class="btn sm" data-qsecedit="1">✏️ Порядок разделов</button></div>`+order.filter(k=>E[k]&&(!cfg.hide[k]||E[k].cnt)).map(k=>{ const e=E[k]; return row(k,e.n,e.cnt,e.sum,e.body,e.def); }).join("")
     +`${hid?`<p class="qk-sub" style="margin:8px 0 0">Скрыто разделов: ${hid} — «✏️ Порядок разделов»</p>`:""}<button type="button" class="qk-add qk-secadd2" data-qsecadd="1">+ Свой раздел · двери в профиле · купе · работы</button></section>`; }
 /* Кирилл 07.11 (вариант А): дизайнер сам упорядочивает разделы — ↑↓, скрыть, переименовать, свои разделы навсегда. Хранится в «Мои цены» (secCfg); главный дизайнер — «для всех». */
-const QK_MATSEC=[["m:ldsp","Корпус"],["m:back","Задняя стенка"],["m:mdf","МДФ и фасады"],["m:pvh","Фасады ПВХ (заказные)"],["m:edge","Кромка"]];   /* 13.11: «ЛДСП» → «Корпус», «Задняя стенка» — отдельно */   /* 12.11: «Фасады ПВХ (заказные)» — из прайса поставщика */
+const QK_MATSEC=[["m:ldsp","Корпус"],["m:mdf","МДФ и фасады"],["m:pvh","Фасады ПВХ (заказные)"],["m:edge","Кромка"]];   /* 13.11: «ЛДСП» → «Корпус» */   /* 18.11: раздела «Задняя стенка» (m:back) больше нет — ДВП / ХДФ в «Корпусе»; «m:back» в сохранённом порядке, скрытии и своих названиях разделов молча пропускается (qkSecOrder берёт только разделы из этого списка) */   /* 12.11: «Фасады ПВХ (заказные)» — из прайса поставщика */
 function qkSecCfg(){ const s=QK.set||{}, f=(s.firm&&s.firm.secCfg)||{}, m=(s.mine&&s.mine.secCfg)||{}, src=m.order?m:f; const hide=Object.assign({},src.hide||{}); if(s.mine&&s.mine.pvhH!==undefined){ if(s.mine.pvhH) hide["m:pvh"]=1; else delete hide["m:pvh"]; }   /* 15.11: свой флаг «Фасады ПВХ» отдельным разделом / в «МДФ и фасады» — поверх общего вида */
   return {order:src.order||[],hide,names:Object.assign({},f.names||{},m.names||{}),cus:(m.cus||f.cus||[]).slice()}; }
 function qkSecAll(q){ const cfg=qkSecCfg(), cus=cfg.cus.map(x=>[x.k,x.n,"furn"]).concat(((q&&q.secOn)||[]).filter(k=>/^c:/.test(k)&&!cfg.cus.some(x=>x.k===k)).map(k=>[k,k.slice(2),"furn"]));
   return QK_MATSEC.concat(   /* 15.11: «Фасады ПВХ (заказные)» и у сторонних дизайнеров (/smeta/) — цены у них уже клиентские (desPvh) */QK_SEC.filter(x=>x[0]!=="other").map(x=>[x[0],x[1]]),cus,[["other","Прочее"]]); }
 function qkSecOrder(q){ const all=qkSecAll(q).map(x=>x[0]), o=qkSecCfg().order.filter(k=>all.includes(k));
   if(o.length&&all.includes("m:pvh")&&!o.includes("m:pvh")){ const i=o.indexOf("m:mdf"); o.splice(i>=0?i+1:0,0,"m:pvh"); }
-  if(o.length&&!o.includes("m:back")){ const i=o.indexOf("m:ldsp"); o.splice(i>=0?i+1:0,0,"m:back"); }   /* 13.11: «Задняя стенка» — сразу после «Корпуса» */   /* у кого свой порядок разделов сохранён раньше — новый раздел сразу после «МДФ и фасады», а не в самом низу */
+  /* 18.11: вставки «Задней стенки» после «Корпуса» больше нет (раздел убран) */   /* у кого свой порядок разделов сохранён раньше — новый раздел сразу после «МДФ и фасады», а не в самом низу */
   return o.concat(all.filter(k=>!o.includes(k))); }
 function qkSecEdit(){ const q=S.shop.sm.data.qk, base=qkSecCfg(), st={order:qkSecOrder(q),hide:Object.assign({},base.hide),names:Object.assign({},base.names),cus:base.cus.slice()}, nameOf=k=>{ const x=qkSecAll(q).find(y=>y[0]===k); return st.names[k]||(st.cus.find(y=>y.k===k)||{}).n||(x?x[1]:k); };
   const m=qkModal("qkSecE","",false), canAll=!!(S.shop&&(S.shop.tech||S.shop.glav));
@@ -20396,7 +20423,7 @@ function qkStepsHtml(c,q,d,sm){ const cur=QK_STEPS.some(x=>x[0]===q.stp)?q.stp:"
   h+=`</div>`; const pv=QK_STEPS[ix-1], nx=QK_STEPS[ix+1];
   h+=`<div class="smn-stn">${pv?`<button type="button" class="btn" data-qk="stp" data-v="${pv[0]}">‹ ${pv[1]}</button>`:"<span></span>"}${nx?`<button type="button" class="btn primary" data-qk="stp" data-v="${nx[0]}">Дальше: ${nx[1].toLowerCase()} ›</button>`:""}</div>`;
   return h; }
-function qkHtml(){ const sm=S.shop.sm, d=sm.data; if(!QK.set) setTimeout(qkLoad,0);
+function qkHtml(){ const sm=S.shop.sm, d=sm.data; if(!QK.set) setTimeout(qkLoad,0); QK_GRPC=null;   /* 18.11: «что раскрыто» — заново из памяти телефона один раз на эту отрисовку */
   if(d.qk.fresh&&QK.set&&!QK.set.off&&qkEmpty(d.qk)) d.qk=qkNew();
   const q=d.qk, c=smCalc(d), cm=!!S.shop.smClient, o=shpById(sm.deal), tab=q.tab==="prof"&&!q.ward?"prof":"body";
   const back=`<button type="button" class="btn smn-back" data-act="sm-back">‹ ${S.shop.smFrom==="smetas"?"Сметы":"К заказу"}</button>`;
@@ -20404,7 +20431,11 @@ function qkHtml(){ const sm=S.shop.sm, d=sm.data; if(!QK.set) setTimeout(qkLoad,
   if(cm) return h+`<div class="qk">${qkClientHtml(c,q)}</div><div class="sm-spacer" style="height:90px"></div><div class="sm-dock${VTX?" vtx":""}"><button type="button" class="sm-unlock" data-act="sm-unlock"><span class="sm-ulbar"></span>🔒 Удержите 2 секунды — вернуть полный вид</button></div>`;
   if(typeof smTrialHtml==="function") h+=smTrialHtml(); h+=smKindBar();
   h+=typeof window.__qkStepsWrap==="function"?window.__qkStepsWrap(qkStepsHtml,c,q,d,sm):qkStepsHtml(c,q,d,sm);   /* Кирилл 07.11: быстрая смета по шагам — «Что делаем → Материалы → Цена → Отправить» */
-  h+=`<div class="sm-spacer"></div><div class="sm-dock smn-dock${VTX?" vtx":""}"><button type="button" class="smn-dk" data-qk="top" aria-label="К итогу"><span class="smn-dkl"><small>Клиенту${c.noPrice?` · <span class="badc">⚠ ${c.noPrice} без цены</span>`:""}</small>${c.total>0?`<b id="smTot">${esc(shpRub(c.total))}</b>`:`<b id="smTot" class="sm-tot0" data-empty="1">Добавьте материал</b>`}</span><span class="smn-dkr"><small class="muted">М <b>${N(c.M)}</b></small></span><i aria-hidden="true">▴</i></button></div>`;
+  /* 18.11 (ошибка №1; смета «один экран», этап 1): есть позиции без цены — сумма занижена, а внизу она выглядела готовой («262 000 ₽» и мелкое «⚠ 3 без цены»).
+     Теперь вместо суммы красное «Впишите 3 цены ›», нажатие ведёт к первой такой строке (qkNoPriceGo). Сумма остаётся в разметке скрытой (#smTot hidden): её правит ползунок
+     шага «Цена» (site_cena.js) и читают сценарии стенда; расчёт не меняется. Метки <div class="sm-spacer">, <span class="smn-dkr">, <small class="muted">М <b> — прежние (их режут обёртки). */
+  const npT=c.noPrice?`Впишите ${c.noPrice} ${pl(c.noPrice,"цену","цены","цен")}`:"";
+  h+=`<div class="sm-spacer"></div><div class="sm-dock smn-dock${VTX?" vtx":""}"><button type="button" class="smn-dk${npT?" qk-npd":""}" data-qk="${npT?"np":"top"}" aria-label="${npT?esc(npT)+" — к первой строке без цены":"К итогу"}"><span class="smn-dkl"><small>Клиенту</small>${npT?`<b class="qk-npt">${esc(npT)} ›</b>`:""}${c.total>0?`<b id="smTot"${npT?" hidden":""}>${esc(shpRub(c.total))}</b>`:`<b id="smTot" class="sm-tot0" data-empty="1"${npT?" hidden":""}>Добавьте материал</b>`}</span><span class="smn-dkr"><small class="muted">М <b>${N(c.M)}</b></small></span>${npT?`<span class="qk-npr">цена не посчитана</span>`:""}<i aria-hidden="true">▴</i></button></div>`;
   return h; }
 /* Кирилл 07.11: «быструю и подробную смету — крупно, сейчас непонятно»: новая смета начинается с выбора из двух больших карточек */
 function qkPickHtml(){ const sm=S.shop.sm, back=`<button type="button" class="btn sm smn-crumb" data-act="sm-back">‹ Сметы</button>`;
@@ -20429,7 +20460,34 @@ function qkPush(cat,x,noTone){ const q=S.shop.sm.data.qk; if(cat==="ldsp"&&S.qkZ
   if(/столешн/i.test(String(x.n||""))&&!/распил/i.test(String(x.n||""))&&!(q.it.other||[]).some(y=>/^Распил столешниц/i.test(String(y.n||"")))){ (q.it.other=q.it.other||[]).push({n:"Распил столешницы",u:"шт",p:qkPrice("Распил столешницы","шт")||0,q:1,sec:"top"}); toast("Добавлен «Распил столешницы» — впишите цену за рез"); }
   qkDirty();
   if(!noTone&&(cat==="ldsp"||cat==="front")&&/лдсп|ldsp/i.test(x.n||"")&&/^л/.test(x.u||"л")) qkToneEdge(q,x.n,false);
-  if(cat==="front"&&q.fm2&&qkFaConv(x)&&!noTone) toast("Фасады считаются по м² — впишите площадь фасадов"); }   /* 15.11: в новой смете фасад — по м² (кромка в тон уже подобрана по листу) */   /* noTone — быстрый выбор: кромку в тон подберёт после, в свободное время */
+  if(cat==="front"&&q.fm2&&qkFaConv(x)) x.fq=num(x.q); }   /* 15.11: в новой смете фасад — по м² (кромка в тон уже подобрана по листу) */   /* noTone — быстрый выбор: кромку в тон подберёт после, в свободное время */
+  /* 18.11 (ошибка №3, только показ): вместо всплывашки «впишите площадь фасадов» (при быстром выборе её не было совсем) — подпись в самой строке, пока количество не меняли:
+     x.fq — количество в момент добавления (новое необязательное поле строки, в расчёте не участвует; у старых смет его нет — подписи нет). Цена и количество считаются как раньше. */
+/* 18.11 (ошибка №4, договор с site_plitki.js): «+ Лист», «+ Кромка», «+ … — из базы» открывают РОВНО ОДНО окно. Раньше нажатие ловили два обработчика на document:
+   этот файл открывал окно «ЛДСП / Кромка» (qkAddModal), следом site_plitki.js — быстрый выбор поверх; закрыл быстрый выбор — под ним второе окно.
+   Теперь быстрый выбор зовём сами: __smt.quickAdd({c, for, btn}) → true — открыл; false (нет настроек, кнопка внутри окна) или его нет — прежнее окно. */
+function qkAddOpen(cat,forN,btn){ try{ if(window.__smt&&typeof window.__smt.quickAdd==="function"&&window.__smt.quickAdd({c:cat,for:forN||"",btn:btn||null})) return; }catch(e){ console.log("LOG qk quickAdd "+e.message); } return qkAddModal(cat); }
+/* 18.11 (ошибка №1): в смете есть позиции без цены — внизу вместо суммы красное «Впишите N цен ›». Нажатие: шаг «Материалы», раскрыть раздел и показать первую такую строку.
+   Раскрываем нажатием на те же кнопки, что и человек (плитка / группа списка / раздел / класс), — в состояние site_plitki.js не лезем. */
+function qkNoPriceFirst(c,q){ const bad=x=>(+x.q||0)>0&&!(num(x.p)>0); let E=null; try{ E=qkSecMap(c,q).E; }catch(_){ E=null; }
+  if(E){ for(const k of qkSecOrder(q).concat(Object.keys(E))){ const x=E[k]&&(E[k].rows||[]).find(bad); if(x) return {x,k}; } }
+  const x=c.items.find(bad); return x?{x,k:""}:null; }
+function qkNoPriceGo(){ const sm=S.shop&&S.shop.sm, d=sm&&sm.data, q=d&&d.qk; if(!q) return; const c=smCalc(d), f=qkNoPriceFirst(c,q);
+  if(!f){ const p=((c.P&&c.P.L)||[]).find(x=>(+x.q||0)>0&&!(num(x.p)>0)); toast(p?"Нет цены: «"+p.n+"» — цены профиля, стекла и петель в «⚙ Мои цены»":"Все цены вписаны"); return; }
+  const x=f.x, k=f.k, g=(c.GR||[]).find(z=>z.rows.includes(x)), ce=v=>window.CSS&&CSS.escape?CSS.escape(String(v)):String(v).replace(/["\\]/g,"\\$&"), vw=()=>document.getElementById("view")||document;
+  let T=""; try{ const M=k&&window.__smt&&typeof window.__smt.model==="function"?window.__smt.model(c,q):null, t=M&&M.L.find(z=>M.T[z.id].secs.includes(k)); if(t) T=t.id; }catch(_){ T=""; }
+  const find=()=>{ const V=vw(); if(x.prod){ const L=[...V.querySelectorAll(`.qk-r [data-qk="prod"][data-i="${x.pi}"]`)]; return L.find(e=>e.querySelector(".qk-bad"))||[...V.querySelectorAll('[data-pl="det"]')].find(e=>e.dataset.k==="p:"+x.cat+":"+x.n)||null; }
+    return V.querySelector(x.pvh?`[data-qk="pvh"][data-i="${x.i}"]`:`[data-qk="ed"][data-c="${x.cat}"][data-i="${x.i}"]`); };
+  const show=el=>{ const r=el.closest(".qk-r")||el; try{ r.scrollIntoView({behavior:"smooth",block:"center"}); }catch(_){ r.scrollIntoView(); } r.classList.add("qk-npf"); setTimeout(()=>r.classList.remove("qk-npf"),1800); };
+  const opener=()=>{ const V=vw(), o=s=>V.querySelector(s); return (T&&(o(`[data-pl="ltog"][data-t="${ce(T)}"][aria-expanded="false"]`)||o(`[data-pl="lmore"][data-t="${ce(T)}"]`)||o(`[data-pl="open"][data-t="${ce(T)}"]:not(.on)`)))
+      ||(k&&o(`[data-qsec="${ce(k)}"][data-qop="0"]`))||(g&&o(`[data-qkg="${ce(g.key)}"][aria-expanded="false"]`))||null; };
+  const no=()=>toast("Нет цены: «"+(x.n||"без названия")+"»");
+  /* экран перерисовывается не сразу (shpRenderKeep вне нажатия человека откладывает отрисовку) — после каждого нажатия ждём, пока кнопку заменит новая разметка, иначе раскрыли бы и тут же свернули */
+  let n=0, idle=0; const step=()=>{ const el=find(); if(el) return show(el); const b=opener();
+    if(!b){ if(++idle>12) return no(); return setTimeout(step,60); } if(++n>6) return no(); idle=0; b.click();
+    let w=0; const wait=()=>{ if(find()||!document.contains(b)||++w>14) return step(); setTimeout(wait,50); }; setTimeout(wait,50); };
+  if((q.stp||"what")!=="mat"){ const sb=vw().querySelector('[data-qk="stp"][data-v="mat"]'); if(sb) sb.click(); else { q.stp="mat"; shpRenderKeep(); window.scrollTo(0,0); } }   /* шаг меняем той же кнопкой шага — её слушают и другие модули */
+  setTimeout(step,60); }
 /* «+ Добавить» в разделе: мои позиции, библиотека, своя новая */
 function qkAddModal(cat){ const s=qkSet(), own=(s.own||[]).map((x,i)=>Object.assign({i},x)).filter(x=>x.c===cat), C=QK_CAT.find(x=>x[0]===cat);
   /* Кирилл 07.11: «вручную — не писать всё сначала: похожая позиция уже вписана, меняют конец названия; цена как у остальных» */
@@ -20463,7 +20521,7 @@ function qkEdModal(cat,i){ const q=S.shop.sm.data.qk, x=(q.it[cat]||[])[i]; if(!
   m.addEventListener("click",e=>{ const b=e.target.closest("[data-a]"); if(e.target===m){ m.remove(); return; } if(!b) return; const a=b.dataset.a; if(a==="x"){ m.remove(); return; }
     if(a==="del") q.it[cat].splice(i,1);
     else { const g=n=>m.querySelector(`[name=${n}]`).value; const p0=num(x.p); x.n=g("n").trim()||x.n; x.u=g("u"); x.p=num(g("p"));
-      if(x.p>0&&x.p!==p0&&m.querySelector("[name=pz]").checked){ QK.set=QK.set||{}; const mn=QK.set.mine=QK.set.mine||{}; mn.pz=Object.assign({},mn.pz||{},{[x.n+(qkIsFa(x)?QK_PZM2:"")]:x.p}); qkSaveMine(true).then(ok=>{ if(ok) toast("Цена запомнена: "+x.n+" — "+N(x.p)+" ₽"); }); } const qv=g("q").trim(); if(x.au&&qv==="") {} else { x.q=num(qv); delete x.au; } }
+      if(x.p>0&&x.p!==p0&&m.querySelector("[name=pz]").checked){ QK.set=QK.set||{}; const mn=QK.set.mine=QK.set.mine||{}; mn.pz=Object.assign({},mn.pz||{},{[x.n+(qkIsFa(x)?QK_PZM2:"")]:x.p}); qkSaveMine(true).then(ok=>{ if(ok) toast("Цена запомнена: "+x.n+" — "+N(x.p)+" ₽"); }); } const qv=g("q").trim(); if(x.au&&qv==="") {} else { x.q=num(qv); delete x.au; } delete x.fq; }   /* 18.11: «Готово» в окне строки — площадь фасада подтверждена, подпись «впишите площадь» больше не нужна */
     m.remove(); qkDirty(); shpRenderKeep(); }); }
 /* «+ Работа»: мои работы с ценой — выбрать; новая — сохранить в мои */
 function qkWorkModal(){ const s=qkSet(), q=S.shop.sm.data.qk, L=(s.wx||[]).map((x,i)=>Object.assign({i},x));
@@ -20657,17 +20715,18 @@ document.addEventListener("change",e=>{ const t=e.target.closest&&e.target.close
   const raw=t.value.trim();
   if((last==="qm"||a[0]==="bw")&&raw==="") delete o[last]; else if(t.dataset.t==="t") o[last]=raw; else o[last]=num(raw);
   if(a[0]==="it"&&a[1]==="edge"&&last==="q"){ if(raw==="") { o.au=1; } else delete o.au; }
+  if(a[0]==="it"&&last==="q") delete o.fq;   /* 18.11: количество вписали руками — подпись «впишите площадь фасадов» убираем (даже если число то же) */
   qkDirty(); shpRenderKeep(); },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qte]"); if(!b) return; e.preventDefault(); e.stopPropagation(); const sm=S.shop.sm; if(!sm||!sm.data||!sm.data.qk) return; if(typeof catLoad==="function") catLoad(); if(qkToneEdge(sm.data.qk,b.dataset.qte,true)){ qkDirty(); shpRenderKeep(); toast("Кромка в тон добавлена"); return; }
-  S.qkEdgeFor=b.dataset.qte; toast("В тон не нашёл — выберите кромку, она встанет к этому листу"); const t=document.createElement("button"); t.type="button"; t.dataset.qk="add"; t.dataset.c="edge"; t.dataset.qfor=b.dataset.qte; t.style.display="none"; document.body.appendChild(t); t.click(); t.remove(); },true);
-document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-qk="add"]'); if(b) S.qkZs=b.dataset.qzs==="1"?1:0; },true);
+  S.qkEdgeFor=b.dataset.qte; toast("В тон не нашёл — выберите кромку, она встанет к этому листу"); qkAddOpen("edge",b.dataset.qte,b); },true);   /* 18.11 (ошибка №4): раньше здесь нажималась скрытая кнопка data-qk="add" — её ловили и этот файл (окно «Кромка»), и site_plitki.js (быстрый выбор): открывалось два окна. Теперь одно — прямой вызов */
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-qk="add"]'); if(b) S.qkZs=b.dataset.qzs==="1"?1:0; },true);   /* 18.11: этот файл data-qzs больше не ставит (раздела «Задняя стенка» нет) — отметку x.zs ставят окно выбора (site_plitki.js) и загрузка модели; строка оставлена, чтобы S.qkZs всегда сбрасывался */
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qfor]"); if(b) S.qkEdgeFor=b.dataset.qfor||""; else if(e.target.closest&&e.target.closest('[data-qk="add"]')) S.qkEdgeFor=""; },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qsecedit]"); if(!b) return; e.preventDefault(); e.stopPropagation(); if(!QK.set) qkLoad(); qkSecEdit(); },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qsecadd]"); if(!b) return; e.preventDefault(); e.stopPropagation(); qkSecAddModal(); },true);
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qsec],[data-qsp]"); if(!b) return; e.preventDefault(); e.stopPropagation();
-  if(b.dataset.qsp) return qkSecPick(b.dataset.qsp); const k=b.dataset.qsec, has=b.dataset.qop==="1"||b.closest(".qk-sec").classList.contains("on"); let o={}; try{ o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); }catch(_){}
-  if(has){ o["sec:"+k]=0; if(S.qkSecOpen===k) S.qkSecOpen=""; } else { o["sec:"+k]=1; S.qkSecOpen=k; } try{ localStorage.setItem("w24-qkgrp",JSON.stringify(o)); }catch(_){} shpRenderKeep(); },true);
-document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qkg]"); if(!b) return; e.preventDefault(); e.stopPropagation(); let o={}; try{ o=JSON.parse(localStorage.getItem("w24-qkgrp")||"{}"); }catch(_){} const k=b.dataset.qkg; if(o[k]===0) delete o[k]; else o[k]=0; try{ localStorage.setItem("w24-qkgrp",JSON.stringify(o)); }catch(_){} shpRenderKeep(); },true);
+  if(b.dataset.qsp) return qkSecPick(b.dataset.qsp); const k=b.dataset.qsec, has=b.dataset.qop==="1"||b.closest(".qk-sec").classList.contains("on"); QK_GRPC=null; const o=Object.assign({},qkGrpLs());   /* 18.11: читаем свежее из памяти телефона и сразу кладём новое в запомненное (qkGrpPut) */
+  if(has){ o["sec:"+k]=0; if(S.qkSecOpen===k) S.qkSecOpen=""; } else { o["sec:"+k]=1; S.qkSecOpen=k; } qkGrpPut(o); shpRenderKeep(); },true);
+document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-qkg]"); if(!b) return; e.preventDefault(); e.stopPropagation(); QK_GRPC=null; const o=Object.assign({},qkGrpLs()); const k=b.dataset.qkg; if(o[k]===0) delete o[k]; else o[k]=0; qkGrpPut(o); shpRenderKeep(); },true);
 document.addEventListener("change",async e=>{ const t=e.target.closest&&e.target.closest("[data-qcls]"); if(!t) return; e.stopPropagation(); const [key,f]=t.dataset.qcls.split("|"), v=num(t.value); if(!QK.set) QK.set={firm:null,mine:null};
   const m=QK.set.mine=QK.set.mine||{}; m.cls=m.cls||{}; m.cls[key]=Object.assign({},m.cls[key]||{},{[f]:v}); qkDirty(); shpRenderKeep(); if(await qkSaveMine()) toast("Цена сохранена в «Мои цены»: "+key); },true);
 document.addEventListener("keydown",e=>{ if(e.key==="Enter"&&e.target.closest&&e.target.closest(".qk-in")){ e.preventDefault(); e.target.blur(); } });
@@ -20685,7 +20744,8 @@ document.addEventListener("click",async ev=>{ const t=ev.target.closest&&ev.targ
   if(a==="tab"){ q.tab=t.dataset.v; shpRenderKeep(); return window.scrollTo(0,0); }
   if(a==="stp"){ q.stp=t.dataset.v; shpRenderKeep(); return window.scrollTo(0,0); }
   if(a==="set"){ if(!QK.set) await qkLoad(); return qkSetModal(); }
-  if(a==="add") return qkAddModal(t.dataset.c);
+  if(a==="add") return qkAddOpen(t.dataset.c,t.dataset.qfor,t);   /* 18.11 (ошибка №4): одно окно — быстрый выбор (site_plitki.js, __smt.quickAdd) или, если он не может, прежнее окно */
+  if(a==="np") return qkNoPriceGo();   /* 18.11 (ошибка №1): «Впишите N цен ›» внизу — к первой строке без цены */
   if(a==="ed") return qkEdModal(t.dataset.c,+t.dataset.i);
   if(a==="wpick"){ if(!QK.set) await qkLoad(); return qkWorkModal(); }
   if(a==="door") return qkDoorModal(+t.dataset.i); if(a==="kupe") return qkKupeModal(+t.dataset.i);
@@ -20726,6 +20786,15 @@ const st=document.createElement("style"); st.textContent=`
 .qk-u{width:34px;font-size:13px;opacity:.7;flex:none}.qk-s{width:72px;text-align:right;flex:none;font-weight:600}.qk-x{flex:none;width:30px;height:30px;border-radius:50%;border:0;background:rgba(127,127,127,.15);color:inherit;font-size:18px;line-height:1;cursor:pointer}
 .qk-add{margin-top:6px;font:inherit;font-size:14px;padding:7px 13px;border-radius:20px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit;cursor:pointer}
 .qk-sub{font-size:13px;opacity:.65;margin:0 0 4px}.qk-hint{font-size:12.5px;opacity:.65;margin:6px 0 0}.qk-lbl{font-size:13px;opacity:.75;margin:10px 0 4px;font-weight:600}.qk-bad{color:#d93025;font-size:13px}
+/* 18.11 (смета «один экран», этап 1): подсказка в строке — синим (жёлтый в смете заменяется синим), «Впишите N цен ›» внизу — красным, строка без цены подсвечивается после перехода */
+.qk-nt{color:var(--v2bl,var(--ink));font-weight:600}.qk-cutn{margin:2px 0 6px 54px}.qk-rn{margin:-4px 0 8px 54px;opacity:1}.qk-rn>i{font-style:normal;opacity:.65}
+.sm-dock #smTot[hidden]{display:none!important}.sm-dock .smn-dkl b.qk-npt{display:block;font-size:19px;line-height:1.25;font-weight:700;color:var(--v2r,var(--bad,#d93025))!important;white-space:nowrap}
+.qk-npf{outline:2px solid var(--v2r,var(--bad,#d93025));outline-offset:2px;border-radius:10px;transition:outline-color .3s}
+/* 18.11 (доводка): пока есть позиции без цены, справа в нижней полосе не «0,38 · норма · работы внутри» (цена не посчитана, а «норма» горела; в 2.0 на айфоне правая часть ломалась в три строки), а «цена не посчитана».
+   Прежняя правая часть остаётся в разметке скрытой — её дописывают другие модули (site_smcheck.js, site_cena.js) */
+.sm-dock .qk-npd .smn-dkr{display:none!important}.sm-dock .qk-npr{margin-left:auto;font-size:13px;line-height:1.3;opacity:.7;text-align:right;white-space:nowrap}
+/* 18.11 (доводка): строка фасада на узком экране — в два этажа: название и мелкий текст на всю ширину, ниже «заказной?» (44 px), количество, единица, сумма (см. qkRowHtml) */
+@media(max-width:560px){.qk-rf{flex-wrap:wrap;row-gap:4px}.qk-rf>.qk-nm{flex:1 1 calc(100% - 36px)}.qk-rf>.qk-cz{margin:0 auto 0 36px;min-height:44px;padding:4px 12px;font-size:13px}}
 .qk-sec{border-top:1px solid rgba(127,127,127,.18)}.qk-sech{width:100%;display:flex;justify-content:space-between;gap:8px;padding:12px 2px;background:none;border:0;color:inherit;font:inherit;cursor:pointer;text-align:left}.qk-sech span{opacity:.7}
 .qk-spf{width:100%;box-sizing:border-box;margin:10px 0 6px;min-height:44px}.qk-spl{list-style:none;margin:6px 0 0;padding:0;max-height:62vh;overflow:auto}.qk-spl li button{width:100%;display:flex;justify-content:space-between;gap:10px;padding:11px 4px;border:0;border-bottom:1px solid rgba(127,127,127,.18);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.qk-spl li button b{white-space:nowrap}
 .qk-spb{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.qk-spb button{border:1px solid rgba(127,127,127,.4);border-radius:999px;padding:5px 11px;background:none;color:inherit;font:inherit;font-size:13px;cursor:pointer}.qk-spb button.on{background:var(--ink,#fff);color:var(--bg,#000)}
@@ -25171,7 +25240,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="bbecd66ed8";
+const CHK_BUILD="b898b63cdd";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -28960,7 +29029,9 @@ const PL_COL=["#4ea8ff","#a78bfa","#f2b824","#30c27b","#f472b6","#ff5a4e","#8e8e
 const PL_WK=["w:1","w:2","w:3","w:4","w:5","w:6","w:7","w:8","w:9"];
 /* стандартные плитки — по разделам быстрой сметы (site_qk.js: QK_MATSEC, QK_SEC) и блокам работ (site_works.js: W24_BLK). Коды — как на сервере (SMV_STD_). */
 /* 13.11 (Кирилл: «2 отдельно»): «Материалы» → «Корпус»; «Кромка» и «Задняя стенка» — свои плитки. Код «mat» прежний — сохранённые раскладки фирм и людей не теряются */
-const PL_STD=[{id:"mat",n:"Корпус",ic:"🪵",col:0,g:["m:ldsp"],rem:1},{id:"edge",n:"Кромка",ic:"📏",col:3,g:["m:edge"]},{id:"back",n:"Задняя стенка",ic:"☐",col:6,g:["m:back"]},{id:"furn",n:"Фурнитура",ic:"🔩",col:1,g:["hinge","drw","lift","handle","kitchen","ward","fix","plinth","c:*"],rem:1},
+/* 18.11 (Кирилл, скрин «Списка»: «а список там убрать задняя стенка причем тут это»): плитки и раздела «Задняя стенка» больше нет — ХДФ / ДВП лежат в «Корпусе».
+   Почему без потери: строки сметы не трогаем (x.zs остаётся), раздел m:back, если он ещё придёт из site_qk.js, уходит в плитку «Корпуса» (plModel); сохранённые раскладки чистит plNoBack. */
+const PL_STD=[{id:"mat",n:"Корпус",ic:"🪵",col:0,g:["m:ldsp"],rem:1},{id:"edge",n:"Кромка",ic:"📏",col:3,g:["m:edge"]},{id:"furn",n:"Фурнитура",ic:"🔩",col:1,g:["hinge","drw","lift","handle","kitchen","ward","fix","plinth","c:*"],rem:1},
   {id:"works",n:"Работы",ic:"🔨",col:2,g:PL_WK.concat(["w:mont"])},{id:"fas",n:"Фасады",ic:"🎨",col:4,g:["m:mdf","m:pvh"]},{id:"top",n:"Столешница",ic:"🍽️",col:7,g:["top","apron"]},
   {id:"glass",n:"Стекло, зеркало",ic:"🪟",col:0,g:["glass"]},{id:"led",n:"Подсветка",ic:"💡",col:3,g:["led","prof"]},{id:"doors",n:"Двери-купе и в профиле",ic:"🚪",col:6,g:["doors"]},
   {id:"dlv",n:"Доставка",ic:"🚚",col:6,g:["w:dlv"]},{id:"other",n:"Прочее",ic:"📦",col:6,g:["other"]},
@@ -28984,8 +29055,14 @@ if(typeof wrAddCan==="function"){ const _wac=wrAddCan; wrAddCan=function(){ cons
 
 function plFromSaved(x){ const s=plStd(x.id)||{}; return {id:x.id,n:(x.id==="mat"&&x.n==="Материалы"&&!(Array.isArray(x.g)&&x.g.length)?"":x.n)||s.n||"Плитка",ic:x.ic||s.ic||"📦",col:+x.col>=0&&+x.col<8?+x.col:(s.col||0),g:Array.isArray(x.g)?x.g.slice():[],gx:Array.isArray(x.g)&&x.g.length>0,hide:!!x.hide,rem:!!x.rem,wide:!!x.wide,plus:x.plus!==0&&x.plus!==false,own:!!x.own&&!s.id}; }
 function plFromStd(s){ return {id:s.id,n:s.n,ic:s.ic,col:s.col,g:[],gx:false,hide:false,rem:!!s.rem,wide:false,plus:true,own:false}; }
-function plMerge(L){ const out=(L||[]).filter(x=>x&&x.id).map(plFromSaved);
-  PL_STD.forEach((s,i)=>{ if(out.some(x=>x.id===s.id)) return; const prev=i>0&&/^(edge|back)$/.test(s.id)?out.findIndex(x=>x.id===PL_STD[i-1].id):-1; if(prev>=0) out.splice(prev+1,0,plFromStd(s)); else out.push(plFromStd(s)); });   /* 13.11: новые «Кромка» и «Задняя стенка» в сохранённой раскладке — сразу за «Корпусом» */
+/* 18.11: сохранённые раскладки фирм и людей (сервер smView / smViewSave, у дизайнера — w24-smv) чистятся при чтении, на сервер ничего не пишем:
+   плитка «back» без своих групп — отбрасывается; из своих групп любой плитки вычёркивается m:back; своя плитка, где после этого пусто, — отбрасывается
+   (иначе у людей осталась бы пустая плитка); стандартная с опустевшими своими группами возвращается к стандартным; «back» с другими своими группами остаётся своей плиткой (её можно удалить в ✏️). */
+function plNoBack(L){ return (L||[]).filter(x=>x&&x.id).map(x=>{ const g=Array.isArray(x.g)?x.g:[], bk=x.id==="back"; if(!bk&&!g.includes("m:back")) return x;
+  const g2=g.filter(k=>k!=="m:back"); if(!g2.length&&(bk||x.own||!plStd(x.id))) return null;
+  return Object.assign({},x,{g:g2},bk?{own:1,n:x.n||"Задняя стенка"}:null); }).filter(Boolean); }
+function plMerge(L){ const out=plNoBack(L).map(plFromSaved);
+  PL_STD.forEach((s,i)=>{ if(out.some(x=>x.id===s.id)) return; const prev=i>0&&s.id==="edge"?out.findIndex(x=>x.id===PL_STD[i-1].id):-1; if(prev>=0) out.splice(prev+1,0,plFromStd(s)); else out.push(plFromStd(s)); });   /* 13.11: новая «Кромка» в сохранённой раскладке — сразу за «Корпусом» */
   return out; }
 /* какие плитки показывать: свои (если можно) → фирмы → стандартные */
 function plLayout(){ const F=plFirm(), U=plMine(); if(plCanTiles(F)&&U&&U.tiles&&U.tiles.L&&U.tiles.L.length) return {L:plMerge(U.tiles.L),src:"me"}; if(F.tiles&&F.tiles.L.length) return {L:plMerge(F.tiles.L),src:"firm"}; return {L:plMerge([]),src:"std"}; }
@@ -28999,7 +29076,8 @@ function plWorkKeys(x){ const r=plDirRow(x.id), k=[]; if(x.dlvW) k.push("w:dlv")
 function plModel(c,q){ const x=X(), {E,cfg}=x.secMap(c,q), L=plLayout().L, T={};
   L.forEach(t=>{ T[t.id]={t,secs:[],works:[],doors:false,cnt:0,sum:0,br:0,warn:[],wkKeys:[]}; });
   const order=x.secAll(q).map(z=>z[0]); Object.keys(E).forEach(k=>{ if(!order.includes(k)) order.push(k); });
-  order.forEach(k=>{ if(!E[k]) return; let o=plOwner(L,[k]); if(k==="m:pvh"&&(o.id==="other"||o.hide)){ const f=plOwner(L,["m:mdf"]); if(f&&!f.hide) o=f; }   /* 15.11: заказные фасады ПВХ не уходят в «Прочее» и в скрытую плитку — тогда они в «Фасадах» */
+  order.forEach(k=>{ if(!E[k]) return; let o=plOwner(L,[k==="m:back"?"m:ldsp":k]);   /* 18.11: раздел «Задняя стенка» (пока он приходит из site_qk.js) — в той же плитке, что «Корпус»: строки не уходят в «Прочее» */
+    if(k==="m:pvh"&&(o.id==="other"||o.hide)){ const f=plOwner(L,["m:mdf"]); if(f&&!f.hide) o=f; }   /* 15.11: заказные фасады ПВХ не уходят в «Прочее» и в скрытую плитку — тогда они в «Фасадах» */
     const m=T[o.id]; m.secs.push(k); m.cnt+=E[k].cnt; m.sum+=E[k].sum; });
   ((c.BW&&c.BW.L)||[]).forEach(w=>{ const m=T[plOwner(L,plWorkKeys(w)).id]; m.works.push(w); if(w.q>0){ m.cnt++; m.br+=w.sum; } });
   PL_WK.concat(["w:mont","w:dlv"]).forEach(k=>T[plOwner(L,[k]).id].wkKeys.push(k));
@@ -29066,13 +29144,16 @@ function plDeskHtml(c,q,M){ const vis=M.L.filter(t=>M.T[t.id].show); let id=S.pl
 /* ---------- вид «Списком» ---------- */
 function plPos(m,c,q,E){ const out=[];   /* все строки плитки: {k, n, q, u, sum, a — открыть подробно, ref — «− / +»} */
   m.secs.forEach(k=>{ const e=E[k]; if(!e) return; const rows=(e.G||[]).flatMap(g=>g.rows||[]).concat(e.rows||[]);
-    rows.forEach(x=>{ const man=x.i>=0&&!x.prod, au=x.cat==="edge"&&x.au; out.push({k:(x.prod?"p:"+x.cat+":"+x.n:"i:"+x.cat+":"+x.i),n:x.n||"без названия",q:x.q,u:x.u,sum:x.sum,a:man?(x.pvh?`data-qk="pvh" data-i="${x.i}"`:`data-qk="ed" data-c="${esc(x.cat)}" data-i="${x.i}"`):"",det:man?null:()=>X().rowHtml(x,x.cat),ref:man&&!au?"it:"+x.cat+":"+x.i:"",sec:e.n}); }); });
+    rows.forEach(x=>{ const man=x.i>=0&&!x.prod, au=x.cat==="edge"&&x.au; out.push({k:(x.prod?"p:"+x.cat+":"+x.n:"i:"+x.cat+":"+x.i),n:x.n||"без названия",q:x.q,u:x.u,sum:x.sum,a:man?(x.pvh?`data-qk="pvh" data-i="${x.i}"`:`data-qk="ed" data-c="${esc(x.cat)}" data-i="${x.i}"`):"",det:man?null:()=>X().rowHtml(x,x.cat),ref:man&&!au?"it:"+x.cat+":"+x.i:"",sec:e.n,cat:x.cat,np:(+x.q||0)>0&&!((+x.p||0)>0),fq:x.fq!=null&&(+x.fq||0)===(+x.q||0)}); }); });
   m.works.forEach(w=>out.push({k:"w:"+w.id,n:w.n,q:w.q,u:w.u,sum:w.sum,a:"",det:()=>X().bwRow(w,q),ref:"bw:"+w.id,w:1,sec:"Работы"}));
   if(m.doors){ (q.kp||[]).forEach((d,i)=>out.push({k:"kp:"+i,n:"Купе "+pN(d.k&&d.k.W)+" × "+pN(d.k&&d.k.H),q:+d.n||1,u:"шт",sum:0,a:`data-qk="kupe" data-i="${i}"`,ref:"",sec:"Двери"}));
     (q.dr||[]).forEach((d,i)=>out.push({k:"dr:"+i,n:"Дверь "+pN(d.w)+" × "+pN(d.h),q:+d.n||0,u:"шт",sum:0,a:`data-qk="door" data-i="${i}"`,ref:"dr:"+i,sec:"Двери"})); }
   return out.filter(p=>p.q>0||p.ref); }
 function plCrHtml(p,st){ if(st.det[p.k]&&p.det) return `<div class="smt-det">${p.det()}<button type="button" class="linkbtn" data-pl="det" data-k="${esc(p.k)}">свернуть</button></div>`;
-  return `<button type="button" class="smt-cr" ${p.a||`data-pl="det" data-k="${esc(p.k)}"`}><span>${typeof window.__plNameHook==="function"?window.__plNameHook(p):esc(p.n)}</span><span class="smt-crq">${pF(p.q)} ${esc(p.u||"")}${p.sum?" · "+pN(p.sum):""}</span></button>`; }
+  return `<button type="button" class="smt-cr" ${p.a||`data-pl="det" data-k="${esc(p.k)}"`}><span>${typeof window.__plNameHook==="function"?window.__plNameHook(p):esc(p.n)}${plCrCls(p)}${p.fq?`<i class="smt-crf">впишите площадь фасадов, м²</i>`:""}</span><span class="smt-crq">${pF(p.q)} ${esc(p.u||"")}${p.sum?" · "+pN(p.sum):p.np?` · <b class="smt-crb">впишите цену</b>`:""}</span></button>`; }   /* 18.11 (доводка): в коротком списке строка без цены была просто «… 1 л.», а у фасада по м² не было подсказки про площадь (она была видна только в «Подробно») — теперь красное «впишите цену» и синее «впишите площадь» прямо здесь; только показ */
+/* 18.11: класс (марка / линейка), выбранный в окне, но не читающийся из названия строки («ЛДСП, 16 мм, Белый» из «Однотонных»), — мелко после названия. Только показ, в данных сметы ничего нового. */
+function plCrCls(p){ if(!p||p.w||(p.cat!=="ldsp"&&p.cat!=="front")) return ""; let c=""; try{ const it=QA()&&QA().catIt(p.n); if(!it) return ""; c=plqClsOf(it,p.n); }catch(_){ return ""; }
+  return c&&c!==PLQ_NOCLS&&!String(p.n).toLowerCase().includes(c.toLowerCase())?`<small class="smt-crc"> · ${esc(c)}</small>`:""; }
 function plListSt(){ if(!S.plL||S.plL.sm!==S.shop.sm) S.plL={sm:S.shop.sm,open:{},more:{},full:{},det:{},q:"",all:false,only:false}; return S.plL; }
 function plListHtml(c,q,M){ const st=plListSt(), vis=M.L.filter(t=>M.T[t.id].show), tot=vis.reduce((a,t)=>a+M.T[t.id].cnt,0);
   let h=plBarHtml("list")+`<div class="smt-find"><input type="search" class="smt-q" data-pl-q="1" value="${esc(st.q)}" placeholder="Найти в смете: петли, кромка…" aria-label="Найти в смете" enterkeyhint="search" autocomplete="off"></div>
@@ -29162,7 +29243,7 @@ let plW=plDesk(); window.addEventListener("resize",()=>{ const d=plDesk(); if(d=
 
 /* ---------- редактор плиток ---------- */
 function plGroupsAll(){ const q=S.shop&&S.shop.sm&&S.shop.sm.data&&S.shop.sm.data.qk||null, G=[];
-  try{ X().secAll(q).forEach(([k,n])=>G.push([k,n])); }catch(_){}
+  try{ X().secAll(q).forEach(([k,n])=>{ if(k!=="m:back") G.push([k,n]); }); }catch(_){}   /* 18.11: «Задняя стенка» — не отдельная группа, она внутри «Корпуса» */
   G.push(["c:*","Свои разделы (все)"],["doors","Двери-купе и в профиле"]);
   const B=typeof W24_BLK!=="undefined"?W24_BLK:[]; PL_WK.forEach((k,i)=>G.push([k,"Работа: "+(B[i]?B[i][2]:"блок "+(i+1))]));
   G.push(["w:mont","Работа: монтаж (без монтажа — не идёт)"],["w:dlv","Работа: доставка и подъём"]);
@@ -29235,16 +29316,46 @@ function plEditor(scope){ const F=plFirm(), tech=plTech(), firmOk=tech&&!plDes()
    Галочками сразу несколько, количество в строке, внизу одна кнопка «Добавить N». Ручки, фасады, ЛДСП — квадратиками (виден цвет), петли, ящики, крепёж — списком; вид запоминается для раздела.
    Нажатие отвечает в тот же кадр (меняется только строка и кнопка внизу), сервер не ждём; «Кромка в тон» — после, в свободное время. «Своя позиция» — строкой внизу.
    Строки сметы — те же, что добавлял человек раньше (qkPush): деньги считает site_qk.js как раньше. ===== */
-const PLQ={tok:0,pre:0,cache:new Map()};
+const PLQ={tok:0,pre:0,cache:new Map(),qaEv:null};
 const PLQ_MS={"m:ldsp":/^Листовые материалы\/ЛДСП/,"m:back":/^Листовые материалы\/(ДВП|ХДФ)/,"m:mdf":/^Листовые материалы\/(МДФ|Пластик)/,"m:edge":/^Кромочные/};
-const PLQ_GRID={handle:1,"m:mdf":1,"m:ldsp":1}, PLQ_U=["л.","м²","м","шт","компл."], PLQ_BACK=/двп|хдф|hdf|оргалит/i;
+const PLQ_GRID={handle:1,"m:mdf":1,"m:ldsp":1,"m:back":1}, PLQ_U=["л.","м²","м","шт","компл."], PLQ_BACK=/двп|хдф|hdf|оргалит/i;
+/* ===== 18.11 (Кирилл, скрин окна «+ Корпус» с чипами «16 мм / 18 мм / 10 мм»: «вот это разделит по классам по материалам»; 07.11: «материалы по классам — ЛДСП Egger, ExtraVert, МДФ Evogloss, AGT…»).
+   «Класс» = марка / линейка плиты. ТОЛЬКО ПОКАЗ: по классу ничего не считается и в смету он не пишется. Ключи цен распила и кромления (qkCls в site_qk.js) — другое: их не трогаем и чипы из них не берём
+   (там всего 5 марок, и это деньги). Правило: 1) марка по названию; 2) иначе часть пути каталога после «мм» — как catBrand (site_supply.js): «Однотонные», «Текстурные», «Эмаль RAL»…
+   (папку «Фасад» пропускаем — иначе 150 фасадов разных фабрик слились бы в один класс «Фасад»); 3) иначе «Без класса» — последним, позиции не прячутся.
+   Список марок — по выгрузке каталога стенда 18.11 (листовых 5 831, «Без класса» меньше 2 %). Порядок списка = порядок чипов и блоков. ===== */
+const PLQ_NOCLS="Без класса";
+const PLQ_CLS=[[/egger|эггер/i,"Egger"],[/extra.?vert|экстра.?верт/i,"ExtraVert"],[/увадрев|uvadrev/i,"Увадрев"],[/чфмк/i,"ЧФМК"],[/evoglo?s|эвогло?с/i,"Evogloss"],[/\bagt\b|(^|[^а-яё])агт([^а-яё]|$)/i,"AGT"],[/kastamonu|кастамону/i,"Kastamonu"],
+  [/cleaf/i,"Cleaf"],[/pfleiderer/i,"Pfleiderer"],[/swiss\s*krono/i,"Swiss Krono"],[/kronospan|кроношпан/i,"Kronospan"],[/lamarty|ламарти/i,"Lamarty"],[/nordeco/i,"Nordeco"],[/greenwood/i,"Greenwood"],[/eterno/i,"Eterno"],[/adilet/i,"Adilet"],
+  [/\barpa\b/i,"Arpa"],[/fenix/i,"Fenix"],[/(^|[^а-яё])пфф([^а-яё]|$)|первая фабрика фасадов/i,"ПФФ"]];
+const PLQ_CLSI=new Map(PLQ_CLS.map((z,i)=>[z[1],i]));
+function plqClsOf(it,n){ n=String(n||(it&&it.n)||""); for(const z of PLQ_CLS) if(z[0].test(n)) return z[1];
+  const s=((String((it&&it.g)||"").split("/").slice(2).filter(x=>x&&x!=="мм"&&!/^фасад$/i.test(x))[0])||"").replace(/\s+\d.*$/,"").replace(/\s+х\d.*$/,"").trim(); if(!s) return PLQ_NOCLS;
+  for(const z of PLQ_CLS) if(z[0].test(s)) return z[1];
+  if(/^текстур/i.test(s)) return "Текстурные";   /* 18.11 (доводка): в каталоге рядом лежат папки «Текстурные» (40) и «Текстуры» (1) — это один класс */
+  return s.charAt(0).toUpperCase()+s.slice(1); }
+/* 18.11 (доводка, проверка на телефоне): класс «из пути», в котором меньше шести позиций («Матовый 2», «Влагостойкий 1», «Полуглянец 1», «Пленка 2», «Односторонняя 1»…), — не марка,
+   а случайная папка каталога: из-за них ряд «Класс» был в 20 чипов (7–10 экранов вбок), до «Kronospan» — 4–5 смахиваний. Такие позиции идут в «Без класса» — НЕ прячутся.
+   Марки из списка PLQ_CLS остаются при любом числе позиций. Считается один раз на раздел каталога (вместе с классом каждой позиции — второй раз класс не вычисляется). Только показ. */
+function plqClsFold(key){ if(plqAll(key)===null) return null; const h=PLQ.cache.get(key); if(!h||!h.L) return null; if(!h.fold){ const C=new Map(), n=new Map(); for(const it of h.L){ const c=plqClsOf(it,it.n); C.set(it,c); n.set(c,(n.get(c)||0)+1); }
+    h.fold={C,S:new Set([...n.keys()].filter(c=>c!==PLQ_NOCLS&&!PLQ_CLSI.has(c)&&n.get(c)<6))}; } return h.fold; }
+function plqClsFor(key,it,n){ const fd=plqClsFold(key), c=(fd&&it&&fd.C.get(it))||plqClsOf(it,n); return fd&&fd.S.has(c)?PLQ_NOCLS:c; }
+/* порядок классов: марки из списка — как в списке (марка, которой меньше шести позиций, — после них: блок из двух листов не должен открывать окно), потом классы из пути — по числу позиций, «Без класса» — последним */
+function plqClsOrder(K,n){ const r=k=>k===PLQ_NOCLS?1e6:PLQ_CLSI.has(k)?PLQ_CLSI.get(k)+(n(k)<6?500:0):1e3; return K.slice().sort((a,b)=>(r(a)-r(b))||(n(b)-n(a))||(a<b?-1:1)); }
+/* материал фасада — вторая часть пути каталога («Листовые материалы/МДФ/…», «…/Пластик/…»); позиции не из каталога — по названию. Чипа «ЛДСП» в «Фасадах» нет и не будет без отдельного решения: это был бы новый путь денег */
+const plqMatOf=(it,n)=>{ const g=String((it&&it.g)||"").split("/")[1]||""; return /^(МДФ|Пластик)$/.test(g)?g:/пластик|hpl/i.test(String(n||""))?"Пластик":"МДФ"; };
+const plqM=key=>/^m:(ldsp|back|mdf)$/.test(key);   /* плиты: у них есть ряд «Класс» и блоки по классам */
+/* признаки позиции (толщина / тип, класс, материал) считаются один раз и лежат рядом с ней — чип не пересчитывает весь каталог */
+function plqFeat(sc,o){ if(o.fk===sc.key) return o; o.fk=sc.key; o.sb=plqSubOf(sc.key,o.n,o.it); if(plqM(sc.key)){ o.cl=plqClsFor(sc.key,o.it,o.n); o.mt=sc.key==="m:mdf"?plqMatOf(o.it,o.n):""; } return o; }
 const plqLs=(k,d)=>{ try{ const v=JSON.parse(localStorage.getItem(k)||"null"); return v==null?d:v; }catch(_){ return d; } }, plqSet=(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(_){} };
 function plqPre(){ if(PLQ.pre) return; PLQ.pre=1; const go=()=>{ try{ if(typeof catLoad==="function"&&!(S.cat&&S.cat.data)) catLoad(); if(typeof supPriceLoad==="function"&&S.sup&&!S.sup.priceOk) supPriceLoad(); }catch(_){} };
   if(window.requestIdleCallback) requestIdleCallback(go,{timeout:2500}); else setTimeout(go,800); }   /* база материалов и цены — заранее, пока человек смотрит плитки (раньше первое нажатие ждало ~7 с) */
 /* быстрые разделы плитки (листы, кромка, разделы фурнитуры и прочего) и остальное (ПВХ из прайса, работы, двери, свой раздел) */
 function plqSecs(m,E){ const secs=[], ex=[], SEC=(QA()&&QA().sec)||[];
   plTargets(m,E).forEach(t=>{ const e=E[t.k], S0=SEC.find(z=>z[0]===t.k);
-    if(/^m:(ldsp|back|mdf|edge)$/.test(t.k)&&e) secs.push({key:t.k,n:e.n,cat:e.cat,zs:t.k==="m:back"});
+    if(/^m:(ldsp|back|mdf|edge)$/.test(t.k)&&e){ if(t.k!=="m:back") secs.push({key:t.k,n:t.k==="m:ldsp"&&e.n==="Корпус"?"ЛДСП":e.n,cat:e.cat});
+      /* 18.11: раздела «Задняя стенка» в смете нет, а ключ m:back живёт внутри окна чипом «ХДФ, ДВП» рядом с «ЛДСП» — избранное и недавние (w24-qkfav / w24-qkrec с k:"m:back") и отметка zs целы без переноса данных */
+      if(/^m:(ldsp|back)$/.test(t.k)&&!secs.some(z=>z.key==="m:back")) secs.push({key:"m:back",n:"ХДФ, ДВП",cat:"ldsp",zs:true}); }
     else if(S0&&t.k!=="other") secs.push({key:t.k,n:e?e.n:S0[1],cat:S0[2],sec:t.k});
     else ex.push(t); });
   return {secs,ex}; }
@@ -29256,59 +29367,149 @@ function plqSubOf(key,n,it){ n=String(n||""); try{ if(key==="hinge") return X().
   if(/^m:/.test(key)){ const t=(it&&+it.T)||+(((/(\d+(?:[.,]\d+)?)\s*мм/i.exec(n)||[])[1]||"").replace(",","."))||0; return t?String(t).replace(".",",")+" мм":""; }
   if(!it) return ""; try{ return X().brand(it); }catch(_){ return ""; } }
 const plqU=(it,cat)=>it&&typeof catUnitFor==="function"?catUnitFor(it):(cat==="edge"?"м":cat==="ldsp"||cat==="front"?"л.":"шт");
-function plqSrcList(st,sc){ const qa=QA(), key=sc.key, own=[], seen=new Set(), add=(o)=>{ const k=o.n+"|"+o.u; if(seen.has(k)) return; seen.add(k); own.push(o); };
+/* 18.11 (скорость окна): список «Все» раздела строится один раз на загрузку каталога (раньше — заново на каждое нажатие чипа), «Мои» и «Недавние» — один раз на окно (st.srcC; сбрасывается при ★, своей позиции и когда догрузился каталог) */
+function plqAllO(sc){ const L=plqAll(sc.key); if(L===null) return null; const h=PLQ.cache.get(sc.key); if(!h.O) h.O=L.map(it=>plqFeat(sc,{n:it.n,u:plqU(it,sc.cat),it})); return h.O; }
+function plqSrcList(st,sc){ const C=st.srcC, ck=st.src+"|"+sc.key; if(C&&C.has(ck)) return C.get(ck); const L=plqSrcList0(st,sc); if(L!==null){ L.forEach(o=>plqFeat(sc,o)); if(C) C.set(ck,L); } return L; }
+function plqSrcList0(st,sc){ const qa=QA(), key=sc.key, own=[], seen=new Set(), add=(o)=>{ const k=o.n+"|"+o.u; if(seen.has(k)) return; seen.add(k); own.push(o); };
   if(st.src==="my"){ let O=[]; try{ O=X().own(); }catch(_){}
     O.filter(x=>x&&x.n&&x.c===sc.cat&&(!sc.sec||(qa&&qa.secOf({n:x.n})===sc.sec))&&(sc.key!=="m:back"||PLQ_BACK.test(x.n))&&(sc.key!=="m:ldsp"||!PLQ_BACK.test(x.n))).forEach(x=>add({n:x.n,u:x.u||plqU(null,sc.cat),p:+x.p||0,it:qa&&qa.catIt(x.n),own:1}));
     plqLs("w24-qkfav",[]).filter(x=>x.k===key).forEach(x=>add({n:x.n,u:x.u,it:qa&&qa.catIt(x.n)})); return own; }
   if(st.src==="rec"){ plqLs("w24-qkrec",[]).filter(x=>x.k===key).forEach(x=>add({n:x.n,u:x.u,p:+x.p||0,it:qa&&qa.catIt(x.n)})); return own; }
-  const L=plqAll(key); if(L===null) return null; return L.map(it=>({n:it.n,u:plqU(it,sc.cat),it})); }
+  return plqAllO(sc); }
 function plqPrice(st,o){ const k=o.n+"|"+o.u; if(st.pc.has(k)) return st.pc.get(k); let p=+o.p||0; if(!(p>0)){ try{ p=QA().price(o.n,o.u)||0; }catch(_){ p=0; } } st.pc.set(k,p); return p; }
 const plqKey=(sc,o)=>o.n+"|"+sc.cat+"|"+(sc.sec||sc.key);
+const plqWords=f=>String(f||"").trim().toLowerCase().split(/\s+/).filter(Boolean);
+/* 18.11: что показать в окне. Ряды: «Материал» (в «Фасадах» — МДФ / Пластик), «Класс», «Толщина»; числа на чипах каждого ряда считаются с учётом двух других рядов.
+   Список короче 8 позиций — рядов «Класс» и «Толщина» нет (нечего делить). Чип, давший ноль строк (перешли в «Мои», набрали слово, вспомнился прошлый выбор), сам сбрасывается на «Все».
+   Считается один раз на отрисовку (раньше дважды: для чипов и для списка) — ответ запоминается по «источник + раздел + поиск + чипы». У фурнитуры всё как было: один ряд «тип / марка». */
 function plqRows(st){ const sc=st.secs[st.i], L0=plqSrcList(st,sc); if(L0===null) return null;
-  const f=st.f.trim().toLowerCase().split(/\s+/).filter(Boolean), L1=f.length?L0.filter(o=>{ const s=String(o.n).toLowerCase(); return f.every(w=>s.includes(w)); }):L0;
-  const subs={}; L1.forEach(o=>{ o.sb=plqSubOf(sc.key,o.n,o.it); if(o.sb) subs[o.sb]=(subs[o.sb]||0)+1; });
-  let L2=st.sub?L1.filter(o=>o.sb===st.sub):L1;
-  if(!st.sub&&/^m:/.test(sc.key)&&st.src==="all") L2=L2.map((o,i)=>[o,i]).sort((a,b)=>((subs[b[0].sb]||0)-(subs[a[0].sb]||0))||a[1]-b[1]).map(x=>x[0]);   /* листы: самая ходовая толщина (16 мм) — первой */
-  return {sc,subs,L:L2}; }
-function plqRowHtml(st,sc,o,i,grid){ const k=plqKey(sc,o), v=st.sel.get(k), on=!!v, p=plqPrice(st,o), sw=o.it&&typeof catSw==="function"?catSw(o.it,"cat-sw plq-sw"):`<span class="plq-sw0"></span>`, fav=plqLs("w24-qkfav",[]).some(x=>x.k===sc.key&&x.n===o.n);
-  const qv=on?v.q:st.dq(sc), stp=`<span class="plq-st"><button type="button" data-plq="dn" aria-label="Меньше">−</button><input class="plq-q" data-plq-q="1" inputmode="decimal" value="${esc(String(qv).replace(".",","))}" aria-label="Сколько"><button type="button" data-plq="up" aria-label="Больше">+</button></span>`;
-  const pr=p>0?pN(p)+" ₽ за "+esc(o.u):`<span class="plq-bad">нет цены</span>`;
-  return grid?`<div class="plq-g${on?" on":""}" data-i="${i}"><button type="button" class="plq-gt" data-plq="tg" aria-pressed="${on}">${sw}<i class="plq-cb" aria-hidden="true"></i></button><b class="plq-gn">${esc(o.n)}</b><small>${pr}</small>${stp}</div>`
+  const isM=/^m:/.test(sc.key), mk=plqM(sc.key), k1=st.src+"\u0001"+sc.key+"\u0001"+st.f;
+  if(!st.r1||st.r1.k!==k1||st.r1.L0!==L0){ const f=plqWords(st.f); st.r1={k:k1,L0,L:f.length?L0.filter(o=>{ const s=String(o.n).toLowerCase(); return f.every(w=>s.includes(w)); }):L0}; st.rc=null; }
+  const L1=st.r1.L, few=isM&&L1.length<8;
+  let mat=sc.key==="m:mdf"?st.mat:"", cls=mk&&!few?st.cls:"", sub=few?"":st.sub;
+  if(st.rc&&st.rc.k===mat+"\u0001"+cls+"\u0001"+sub) return st.rc.R;
+  const pass=(m,c,s)=>m||c||s?L1.filter(o=>(!m||o.mt===m)&&(!c||o.cl===c)&&(!s||o.sb===s)):L1, cnt=(L,f)=>{ const m={}; for(const o of L){ const v=o[f]; if(v) m[v]=(m[v]||0)+1; } return m; };
+  let L2=pass(mat,cls,sub);
+  if(isM&&!L2.length&&L1.length){ if(sub&&(L2=pass(mat,cls,"")).length) sub=""; else if(cls&&(L2=pass(mat,"",sub)).length) cls=""; else if((L2=pass(mat,"","")).length) cls=sub=""; else { mat=cls=sub=""; L2=L1; }
+    if(!few){ st.sub=sub; if(mk) st.cls=cls; } if(sc.key==="m:mdf") st.mat=mat; }
+  const subs=cnt(pass(mat,cls,""),"sb"), clss=mk&&!few?cnt(pass(mat,"",sub),"cl"):{}, mats=sc.key==="m:mdf"?cnt(pass("",cls,sub),"mt"):{};
+  if(!sub&&isM&&st.src==="all") L2=L2.map((o,i)=>[o,i]).sort((a,b)=>((subs[b[0].sb]||0)-(subs[a[0].sb]||0))||a[1]-b[1]).map(x=>x[0]);   /* листы: самая ходовая толщина (16 мм) — первой */
+  /* блоки по классам: только «Все» без поиска и без выбранного класса — в «Моих», «Недавних» и в найденном человек ждёт всё подряд */
+  let blocks=null; if(mk&&!few&&!cls&&st.src==="all"&&!st.f.trim()){ const by=new Map(); for(const o of L2){ let b=by.get(o.cl); if(!b) by.set(o.cl,b=[]); b.push(o); }
+    if(by.size>1) blocks=plqClsOrder([...by.keys()],k=>by.get(k).length).map(c=>({c,L:by.get(c)})); }
+  const R={sc,subs,clss,mats,L:L2,blocks,few,mk,mat,cls,sub}; st.rc={k:mat+"\u0001"+cls+"\u0001"+sub,R}; return R; }
+/* сколько позиций в материале («ЛДСП 2 580 | ХДФ, ДВП 4») при том же поиске — только во «Все»: в «Моих» и «Недавних» окно при смене материала само выбирает источник, и число бы обманывало; база ещё грузится — без числа */
+function plqSecCnt(st,z){ if(st.src!=="all") return null; const L=plqSrcList(st,z); if(L===null) return null; const f=plqWords(st.f); return f.length?L.filter(o=>{ const s=String(o.n).toLowerCase(); return f.every(w=>s.includes(w)); }).length:L.length; }
+function plqFavSet(st,sc){ if(!st.fv||st.fv.k!==sc.key) st.fv={k:sc.key,S:new Set(plqLs("w24-qkfav",[]).filter(x=>x.k===sc.key).map(x=>x.n))}; return st.fv.S; }   /* 18.11: «Мои» читаются из памяти телефона один раз, а не на каждую строку списка */
+/* 18.11: плитка — как на макете: количество «− 6 +» лежит на образце декора, а не отдельной строкой под ценой — на телефоне 390×844 видно два ряда плиток под тремя рядами чипов; кнопки 44 px.
+   В списке «− 1 +» появляется у отмеченной строки (на месте ★) — названию остаётся место, высота строки не меняется (ничего не дёргается). */
+/* «− 1 +» рисуется только у отмеченной позиции (и дорисовывается в момент отметки, plQuick → stOf): у остальных его всё равно не видно, а каждый лишний узел — время вёрстки на телефоне */
+const plqStp=q=>`<span class="plq-st"><button type="button" data-plq="dn" aria-label="Меньше">−</button><input class="plq-q" data-plq-q="1" inputmode="decimal" value="${esc(String(q).replace(".",","))}" aria-label="Сколько"><button type="button" data-plq="up" aria-label="Больше">+</button></span>`;
+/* 18.11 (доводка, проверка на айфоне в 2.0): название на плитке шло в две строки «ЛДСП, Egger, 16 / мм, H1386 Орех…» — декор не прочитать ни на одной плитке, хотя «ЛДСП», «Egger» и «16 мм»
+   уже сказаны чипами и заголовком блока. На плитке (только вид «квадратиками», только показ) из НАЧАЛА названия убирается то, что и так выбрано: материал «ЛДСП», класс блока или нажатого чипа,
+   нажатая толщина — как на макете («Egger 16 мм, H1386 Орех Линкольн»). В смету уходит полное название (o.n), поиск ищет по полному, в списке (☰) название полное. */
+function plqTn(sc,o,cl,sub){ const n=String(o.n||""); if(!plqM(sc.key)) return n;
+  const cut=(s,w)=>{ if(!w) return s; const t=s.replace(/^[\s,;]+/,""); return t.toLowerCase().startsWith(String(w).toLowerCase())&&/^([\s,;]|$)/.test(t.slice(w.length))?t.slice(w.length):s; };
+  let s=sc.key==="m:ldsp"?cut(n,"ЛДСП"):n; if(cl&&cl!==PLQ_NOCLS) s=cut(s,cl); if(sub) s=cut(cut(s,sub),sub.replace(",",".")); s=s.replace(/^[\s,;]+/,"");
+  return s.length>=3?s:n; }
+function plqRowHtml(st,sc,o,i,grid,tn){ const k=plqKey(sc,o), v=st.sel.get(k), on=!!v, p=plqPrice(st,o), sw=o.it&&typeof catSw==="function"?catSw(o.it,"cat-sw plq-sw"):`<span class="plq-sw0"></span>`, fav=!grid&&plqFavSet(st,sc).has(o.n);
+  const stp=on?plqStp(v.q):"", pr=p>0?pN(p)+" ₽ за "+esc(o.u):`<span class="plq-bad">нет цены</span>`;
+  return grid?`<div class="plq-g${on?" on":""}" data-i="${i}"><div class="plq-gw"><button type="button" class="plq-gt" data-plq="tg" aria-pressed="${on}" aria-label="Выбрать">${sw}<i class="plq-cb" aria-hidden="true"></i></button>${stp}</div><b class="plq-gn"${tn&&tn!==o.n?` title="${esc(o.n)}"`:""}>${esc(tn||o.n)}</b><small>${pr}</small></div>`
     :`<div class="plq-r${on?" on":""}" data-i="${i}"><button type="button" class="plq-cbb" data-plq="tg" aria-pressed="${on}" aria-label="Выбрать"><i class="plq-cb" aria-hidden="true"></i></button>${sw}<button type="button" class="plq-nm" data-plq="tg"><b>${esc(o.n)}</b><small>${pr}</small></button>${stp}<button type="button" class="plq-fav${fav?" on":""}" data-plq="fav" aria-label="${fav?"Убрать из моих":"В мои"}">★</button></div>`; }
-function plqListHtml(st){ const R=plqRows(st); if(R===null) return `<div class="plq-sk">${"<i></i>".repeat(6)}</div><p class="plq-hint">Загружаю базу материалов…</p>`;
-  const {sc,L}=R, grid=st.view(sc)==="g"; st.rows=L;
-  if(!L.length) return `<p class="plq-hint">${st.src==="my"?"В «Моих» пока пусто — отметьте ★ в «Все», и позиция будет здесь.":st.src==="rec"?"Недавних пока нет — здесь будут последние, что вы добавляли.":st.f?"Ничего не нашлось — проверьте слово или добавьте «Свою позицию» ниже.":"В базе пусто"}</p>`;
-  return `<div class="${grid?"plq-grid":"plq-list"}">${L.slice(0,st.lim).map((o,i)=>plqRowHtml(st,sc,o,i,grid)).join("")}</div>${L.length>st.lim?`<button type="button" class="plq-more" data-plq="more">Показать ещё ${Math.min(80,L.length-st.lim)} из ${L.length-st.lim}</button>`:""}`; }
-function plqSubHtml(st){ const R=plqRows(st); if(!R) return ""; const E=Object.entries(R.subs).sort((a,b)=>b[1]-a[1]).slice(0,14); if(E.length<2&&!st.sub) return "";
-  return `<div class="plq-chips plq-sub"><button type="button" data-plq="sub" data-v="" aria-pressed="${!st.sub}">Все</button>${E.map(([k,n])=>`<button type="button" data-plq="sub" data-v="${esc(k)}" aria-pressed="${st.sub===k}">${esc(k)} <small>${n}</small></button>`).join("")}</div>`; }
+/* 18.11: что рисовать в списке — кусками (U: каждый кусок сам отдаёт свою вёрстку, когда до него дошла очередь), n — сколько кусков за кадр, more — кнопка «Показать ещё».
+   При «Все» — блоками по классам: «Egger · 345», первые шесть, «Все 345 ›» (включает чип этого класса). Номер строки data-i — по списку показанных (st.rows).
+   За кадр — шесть позиций (один блок): замер на стенде при процессоре ×4 — 12 плиток за кадр давали кадры по 33–50 мс */
+/* 18.11 (доводка): «+ Заказной фасад» в окне «Фасады» — первой плиткой (в списке ☰ — первой строкой). Это не позиция каталога: нажатие закрывает окно и открывает прайс заказных фасадов,
+   как прежняя кнопка под поиском (тот же data-qk="pvh"). Класса .plq-g / .plq-r у неё нет — её нельзя отметить, и счёт плиток она не сбивает. full — список пуст или база ещё грузится: обычной кнопкой */
+const plqPvh=(grid,full)=>`<button type="button" class="plq-exb plq-pvt${full?" plq-pvf":grid?"":" plq-pvr"}" data-qk="pvh" data-i="-1" aria-label="${esc(PL_PVHN)}"><i class="plq-pvi" aria-hidden="true">+</i><span><b>Заказной фасад</b><small>фрезеровка, плёнка — из прайса</small></span></button>`;
+function plqUnits(st,R){ const {sc,L}=R, grid=st.view(sc)==="g", box=grid?"plq-grid":"plq-list", U=[], pv=st.pvx?plqPvh(grid):"";
+  if(R.blocks){ const rows=[]; let nb=0; for(const b of R.blocks){ if(rows.length>=st.lim) break; nb++; const p1=nb===1?pv:"", part=b.L.slice(0,p1?5:6), i0=rows.length; for(const o of part) rows.push(o);   /* в первом блоке вместе с плиткой «Заказной фасад» — те же шесть клеток */
+      U.push(()=>`<div class="plq-clh"><b>${esc(b.c)} <span>· ${pN(b.L.length)}</span></b>${b.L.length>part.length?`<button type="button" data-plq="cls" data-v="${esc(b.c)}">Все ${pN(b.L.length)} ›</button>`:""}</div><div class="${box}">${p1}${part.map((o,j)=>plqRowHtml(st,sc,o,i0+j,grid,grid?plqTn(sc,o,b.c,R.sub):"")).join("")}</div>`); }
+    st.rows=rows; const left=R.blocks.length-nb; return {U,cls:"plq-bl",n:1,more:left>0?`<button type="button" class="plq-more" data-plq="more">Показать ещё классы: ${left}</button>`:""}; }
+  st.rows=L; const n=Math.min(L.length,st.lim); if(pv) U.push(()=>pv); for(let i=0;i<n;i++) U.push(()=>plqRowHtml(st,sc,L[i],i,grid,grid?plqTn(sc,L[i],R.cls,R.sub):""));
+  return {U,cls:box,n:6,more:L.length>st.lim?`<button type="button" class="plq-more" data-plq="more">Показать ещё ${Math.min(80,L.length-st.lim)} из ${L.length-st.lim}</button>`:""}; }
+function plqListHtml(st){ const R=plqRows(st), pvf=st.pvx?plqPvh(false,true):""; st.pend=null; if(R===null) return `${pvf}<div class="plq-sk">${"<i></i>".repeat(6)}</div><p class="plq-hint">Загружаю базу материалов…</p>`;
+  if(!R.L.length){ st.rows=R.L; return `${pvf}<p class="plq-hint">${st.src==="my"?"В «Моих» пока пусто — отметьте ★ в «Все», и позиция будет здесь.":st.src==="rec"?"Недавних пока нет — здесь будут последние, что вы добавляли.":st.f?"Ничего не нашлось — проверьте слово или добавьте «Свою позицию» ниже.":"В базе пусто"}</p>`; }
+  const X=plqUnits(st,R); if(X.U.length>X.n) st.pend={U:X.U,i:X.n,n:X.n};   /* первые куски — сразу, остальные дорисует feed() в plQuick по кадру */
+  /* 18.11 (доводка): выбран класс — над списком тот же заголовок, что у блока: «Kronospan · 188» и «Все классы ›». Почему: ряд «Класс» длинный, нажатый чип мог оказаться за краем
+     (вспомнился прошлый выбор, нажали «Все 188 ›» у далёкого блока) — человек видел 188 позиций из 2 580 и не понимал почему; сброс — здесь же, без листания ряда назад */
+  const hd=R.mk&&R.cls?`<div class="plq-clh plq-clh1"><b>${esc(R.cls)} <span>· ${pN(R.L.length)}</span></b><button type="button" data-plq="cls" data-v="">Все классы ›</button></div>`:"";
+  return `${hd}<div class="${X.cls} plq-lz">${X.U.slice(0,X.n).map(u=>u()).join("")}</div>${X.more}`; }
+/* ряды чипов внутри прокрутки (.plq-subw): «Материал» → «Класс» → «Толщина». Ряд с одним значением не показывается; чип с нулём строк прячется (кроме нажатого).
+   Ряд — данными {k, a — что делает чип (data-plq), lab — подпись, on — нажатое значение, L — [значение, текст, число]}: plQuick сравнивает ряд с тем, что уже на экране,
+   и меняет только отличия (нажали класс — в ряду «Класс» переставляется одна отметка, сам ряд не пересоздаётся и не отпрыгивает к началу). У фурнитуры ряд один, без подписи — как был. */
+function plqSubRows(st){ const R=plqRows(st), sc=st.secs[st.i], isM=/^m:/.test(sc.key), O=[], all=["","Все",null], add=(k,lab,on,L)=>{ if(on&&!L.some(x=>x[0]===on)) L.push([on,on,0]); O.push({k,a:k==="secs"?"sec":k,lab,on,L}); };
+  if(st.secIn&&st.secs.length>1) add("secs",st.secLab,String(st.i),st.secs.map((z,i)=>[String(i),z.n,plqSecCnt(st,z)]));
+  if(!R) return O;
+  /* 18.11 (доводка, «дёргается»): ряд с одним значением не показывается при открытии окна, но ряд, который УЖЕ показан в этом материале, не убирается, пока окно открыто
+     (нажал «Egger» — у него одна толщина, ряд «Толщина» исчезал, и плитки прыгали вверх на 50–60 px; нажал «Все» — прыгали обратно). kp — какие ряды уже показаны в этом материале */
+  const kp=(st.keep||(st.keep={}))[sc.key]||(st.keep[sc.key]={});
+  if(R.mk){ const Em=Object.entries(R.mats).sort((a,b)=>b[1]-a[1]); if(Em.length>1||R.mat||(kp.mat&&Em.length)){ kp.mat=1; add("mat","Материал",R.mat,[all].concat(Em.map(([k,n])=>[k,k,n]))); }
+    const Kc=plqClsOrder(Object.keys(R.clss),k=>R.clss[k]); if(Kc.length>1||R.cls||(kp.cls&&Kc.length)){ kp.cls=1; add("cls","Класс",R.cls,[all].concat(Kc.map(k=>[k,k,R.clss[k]]))); } }
+  if(R.few) return O;
+  const E=Object.entries(R.subs).sort((a,b)=>b[1]-a[1]).slice(0,14); if(E.length>1||R.sub||(isM&&kp.sub&&E.length)){ if(isM) kp.sub=1; add("sub",isM?"Толщина":"",R.sub,[all].concat(E.map(([k,n])=>[k,k,n]))); }
+  return O; }
+const plqChips=r=>r.L.map(([v,t,n])=>`<button type="button" data-plq="${r.a}" data-v="${esc(v)}" aria-pressed="${v===r.on}">${esc(t)}${n!=null?` <small>${pN(n)}</small>`:""}</button>`).join("");
+const plqSubRow=r=>r.lab?`<div class="plq-fr"><span class="plq-fl">${r.lab}</span><div class="plq-chips plq-${r.k}">${plqChips(r)}</div></div>`:`<div class="plq-chips plq-${r.k}">${plqChips(r)}</div>`;
+const plqSig=r=>r.lab+"\u0002"+r.L.map(x=>x.join("\u0001")).join("\u0002");
 function plqFoot(st){ let n=0,s=0; st.sel.forEach(v=>{ n++; s+=Math.round((+v.q||0)*(+v.p||0)); });
   return n?`Добавить ${n} ${n%10===1&&n%100!==11?"позицию":n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?"позиции":"позиций"} · ${pN(s)} ₽`:"Отметьте позиции"; }
 function plQuick(id,preKey,opt){ opt=opt||{}; const sm=S.shop&&S.shop.sm; if(!sm||!sm.data||!sm.data.qk) return; const c=smCalc(sm.data), q=sm.data.qk;
   let M=null, m=null; try{ M=plModel(c,q); m=id&&M.T[id]; }catch(_){ M=null; }
   let secs=[], ex=[], title="Добавить"; if(m){ const r=plqSecs(m,M.E); secs=r.secs; ex=r.ex; title=m.t.n; }
   if(preKey&&!secs.some(z=>z.key===preKey)){ const SEC=(QA()&&QA().sec)||[], S0=SEC.find(z=>z[0]===preKey), mc={"m:ldsp":"ldsp","m:back":"ldsp","m:mdf":"front","m:edge":"edge"}[preKey];
-    if(mc) secs.unshift({key:preKey,n:{"m:ldsp":"Корпус","m:back":"Задняя стенка","m:mdf":"МДФ и фасады","m:edge":"Кромка"}[preKey],cat:mc,zs:preKey==="m:back"}); else if(S0) secs.unshift({key:preKey,n:S0[1],cat:S0[2],sec:preKey}); }
+    if(mc) secs.unshift({key:preKey,n:{"m:ldsp":"ЛДСП","m:back":"ХДФ, ДВП","m:mdf":"МДФ и фасады","m:edge":"Кромка"}[preKey],cat:mc,zs:preKey==="m:back"}); else if(S0) secs.unshift({key:preKey,n:S0[1],cat:S0[2],sec:preKey}); }
   if(!secs.length){ if(id) return plPick(id); return; }
   plqPre(); try{ if(typeof catLoad==="function") catLoad(); }catch(_){}
-  const tok=++PLQ.tok, VW=plqLs("w24-qkv",{});
-  const st={secs,i:Math.max(0,secs.findIndex(z=>z.key===preKey)),src:"",sub:"",f:"",sel:new Map(),pc:new Map(),lim:60,rows:[],for:opt.for||"",sh:+c.sh||0,
+  /* 18.11: последний выбор (материал, класс, толщина) помнится по разделу на этом устройстве (w24-plqf) — удобство, не данные сметы; чип, который сейчас ничего не даёт, сбросит plqRows.
+     Ряд разделов окна, где одни плиты («ЛДСП | ХДФ, ДВП»), стоит рядом с «Классом» и «Толщиной» внутри прокрутки и называется «Материал»; у фурнитуры ряд разделов остаётся сверху, как был. */
+  const tok=++PLQ.tok, VW=plqLs("w24-qkv",{}), MEM=plqLs("w24-plqf",{}), secIn=secs.every(z=>/^m:/.test(z.key)), tid=m?m.t.id:"";
+  let i0=secs.findIndex(z=>z.key===preKey); if(i0<0&&secIn&&tid&&!preKey) i0=secs.findIndex(z=>z.key===MEM["t:"+tid]);
+  const st={secs,i:Math.max(0,i0),src:"",sub:"",mat:"",cls:"",f:"",sel:new Map(),pc:new Map(),srcC:new Map(),lim:60,rows:[],for:opt.for||"",sh:+c.sh||0,secIn,secLab:secs.every(z=>/^m:(ldsp|back)$/.test(z.key))?"Материал":"Раздел",
     view:sc=>VW[sc.key]||(PLQ_GRID[sc.key]?"g":"l"),
     dq:sc=>sc.cat==="edge"?(st.for?Math.ceil((q.it.ldsp||[]).concat(q.it.front||[]).filter(y=>y.n===st.for).reduce((a,y)=>a+(X()&&X().shq?X().shq(y):(+y.q||0)),0)*12)||10:Math.ceil(st.sh*12)||10):1};
+  const memLoad=()=>{ const k=st.secs[st.i].key, z=(/^m:/.test(k)&&MEM[k])||{}; st.mat=String(z.m||""); st.cls=String(z.c||""); st.sub=String(z.s||""); };
+  const memSave=()=>{ const k=st.secs[st.i].key; if(!/^m:/.test(k)) return; MEM[k]={m:st.mat,c:st.cls,s:st.sub}; if(st.secIn&&tid) MEM["t:"+tid]=k; plqSet("w24-plqf",MEM); };
   const pickSrc=()=>{ const sc=st.secs[st.i]; st.src="my"; if(!(plqSrcList(st,sc)||[]).length){ st.src="rec"; if(!(plqSrcList(st,sc)||[]).length) st.src="all"; } };
-  pickSrc();
+  memLoad(); pickSrc();
   document.getElementById("plQp")?.remove(); const w=document.createElement("div"); w.className="modal plq-mod"; w.id="plQp";
   w.innerHTML=`<div class="modal-card plq" role="dialog" aria-label="Добавить в «${esc(title)}»"></div>`; document.body.appendChild(w); const card=w.firstChild;
+  const ph=sc=>"Найти: "+(sc.cat==="furn"?"«петля Blum», «128»…":"«белый», «Egger», «16»…"), ownB=`<button type="button" class="plq-ownb" data-plq="own">+ Своя позиция — нет в базе</button>`;
   const head=()=>{ const sc=st.secs[st.i], g=st.view(sc)==="g";
-    return `<div class="plq-h"><b>+ ${esc(st.secs.length>1?title:sc.n)}</b><span class="plq-vw" role="group" aria-label="Вид"><button type="button" data-plq="vw" data-v="g" aria-pressed="${g}" aria-label="Квадратиками">▦</button><button type="button" data-plq="vw" data-v="l" aria-pressed="${!g}" aria-label="Списком">☰</button></span><button type="button" class="plq-x" data-plq="x" aria-label="Закрыть">✕</button></div>
-      <input class="plq-f" type="search" data-plq-f="1" value="${esc(st.f)}" placeholder="Найти: ${sc.cat==="furn"?"«петля Blum», «128»…":"«белый», «Egger», «16»…"}" aria-label="Найти" autocomplete="off" enterkeyhint="search">
+    return `<div class="plq-h"><b>+ ${esc(st.secs.length>1||tid?title:sc.n)}</b><span class="plq-vw" role="group" aria-label="Вид"><button type="button" data-plq="vw" data-v="g" aria-pressed="${g}" aria-label="Квадратиками">▦</button><button type="button" data-plq="vw" data-v="l" aria-pressed="${!g}" aria-label="Списком">☰</button></span><button type="button" class="plq-x" data-plq="x" aria-label="Закрыть">✕</button></div>
+      <input class="plq-f" type="search" data-plq-f="1" value="${esc(st.f)}" placeholder="${ph(sc)}" aria-label="Найти" autocomplete="off" enterkeyhint="search">
       <div class="plq-chips plq-src">${[["my","★ Мои"],["rec","Недавние"],["all","Все"]].map(([v,n])=>`<button type="button" data-plq="src" data-v="${v}" aria-pressed="${st.src===v}">${n}</button>`).join("")}</div>
-      ${st.secs.length>1?`<div class="plq-chips plq-secs">${st.secs.map((z,i)=>`<button type="button" data-plq="sec" data-v="${i}" aria-pressed="${i===st.i}">${esc(z.n)}</button>`).join("")}</div>`:""}`; };
+      ${!st.secIn&&st.secs.length>1?`<div class="plq-chips plq-secs">${st.secs.map((z,i)=>`<button type="button" data-plq="sec" data-v="${i}" aria-pressed="${i===st.i}">${esc(z.n)}</button>`).join("")}</div>`:""}`; };
   const pvx=ex.some(t=>t.k==="m:pvh"); if(pvx) ex=ex.filter(t=>t.k!=="m:pvh");   /* 15.11: «+ Заказной фасад» — сразу под поиском */
-  const tail=()=>`<div class="plq-own"><button type="button" class="plq-ownb" data-plq="own">+ Своя позиция — нет в базе</button></div>${ex.length?`<div class="plq-ex">${ex.map(t=>`<button type="button" class="plq-exb" ${t.a}>${esc(t.w?"+ Работа":"+ "+t.n)}</button>`).join("")}</div>`:""}`;
-  const draw=()=>{ card.innerHTML=head()+(pvx?`<button type="button" class="plq-exb plq-pvh" data-qk="pvh" data-i="-1">+ ${PL_PVHN}</button>`:"")+`<div class="plq-body"><div class="plq-subw">${plqSubHtml(st)}</div><div class="plq-lw">${plqListHtml(st)}</div>${tail()}</div><div class="plq-foot"><button type="button" class="btn primary plq-ok" data-plq="ok"${st.sel.size?"":" disabled"}>${plqFoot(st)}</button></div>`; };
-  const redrawList=()=>{ const a=card.querySelector(".plq-subw"), b=card.querySelector(".plq-lw"); if(a) a.innerHTML=plqSubHtml(st); if(b) b.innerHTML=plqListHtml(st); };
+  const tail=()=>`<div class="plq-own">${ownB}</div>${ex.length?`<div class="plq-ex">${ex.map(t=>`<button type="button" class="plq-exb" ${t.a}>${esc(t.w?"+ Работа":"+ "+t.n)}</button>`).join("")}</div>`:""}`;
+  const subHtml=rows=>{ rows=rows||plqSubRows(st); st.subK=rows.map(r=>r.k+(r.lab?"":"-")).join(","); st.sig={}; rows.forEach(r=>{ st.sig[r.k]=plqSig(r); }); return rows.map(plqSubRow).join(""); };
+  /* 18.11 (доводка): «+ Заказной фасад» — первой плиткой списка (plqPvh): на виду, как решили 15.11, но не занимает отдельной строки над рядами чипов.
+     Было: кнопка в две строки над прокруткой, от края до края окна — в «Фасадах» на 390×844 под тремя рядами чипов не помещалось двух рядов плиток */
+  st.pvx=pvx;
+  const draw=()=>{ card.innerHTML=head()+`<div class="plq-body"><div class="plq-subw">${subHtml()}</div><div class="plq-lw">${plqListHtml(st)}</div>${tail()}</div><div class="plq-foot"><button type="button" class="btn primary plq-ok" data-plq="ok"${st.sel.size?"":" disabled"}>${plqFoot(st)}</button></div>`; feed(); showOn(); };
+  /* 18.11 (плавно): окно рисуется целиком один раз. Чип, раздел, источник, вид — меняют только ряды чипов и список (поиск не теряет курсор, шапка и кнопка внизу стоят на месте);
+     ряды чипов не отпрыгивают к началу (прокрутка вбок возвращается), список после смены чипа — с начала */
+  /* список рисуется частями: первые шесть позиций (один блок) — сразу, остальные — по шесть за кадр (plqListHtml → st.pend). Почему: вёрстка 60 плиток за один кадр на телефоне — около 80 мс, нажатие «залипало» */
+  const feed=()=>{ const tk=st.pend; if(!tk) return; const run=()=>{ if(st.pend!==tk||!document.body.contains(w)) return; const z=card.querySelector(".plq-lz"); if(!z){ st.pend=null; return; }
+      z.insertAdjacentHTML("beforeend",tk.U.slice(tk.i,tk.i+tk.n).map(u=>u()).join("")); tk.i+=tk.n; if(tk.i<tk.U.length) requestAnimationFrame(run); else st.pend=null; }; requestAnimationFrame(run); };
+  const redrawList=top=>{ const a=card.querySelector(".plq-subw"), b=card.querySelector(".plq-lw"), bd=card.querySelector(".plq-body"), sT=top&&bd?bd.scrollTop:0, sl={};   /* прокрутку читаем до правки — после неё чтение заставило бы браузер верстать дважды */
+    if(a){ const rows=plqSubRows(st), boxes=[...a.querySelectorAll(".plq-chips")]; boxes.forEach(x=>{ sl[x.className]=x.scrollLeft; });
+      if(st.subK===rows.map(r=>r.k+(r.lab?"":"-")).join(",")&&boxes.length===rows.length) rows.forEach((r,i)=>{ const box=boxes[i], sg=plqSig(r);   /* те же ряды: меняем только изменившееся */
+        if(st.sig[r.k]!==sg){ box.innerHTML=plqChips(r); st.sig[r.k]=sg; if(sl[box.className]) box.scrollLeft=sl[box.className]; }
+        else for(const x of box.children){ const p=String(x.dataset.v===r.on); if(x.getAttribute("aria-pressed")!==p) x.setAttribute("aria-pressed",p); } });
+      else { a.innerHTML=subHtml(rows); a.querySelectorAll(".plq-chips").forEach(x=>{ if(sl[x.className]) x.scrollLeft=sl[x.className]; }); } }
+    if(b) b.innerHTML=plqListHtml(st); if(sT) bd.scrollTop=0; feed(); showOn(); };
+  /* 18.11 (доводка): нажатый чип ряда всегда на виду. Ряд «Класс» длинный (16 чипов, на телефоне видно 2–3): после «Все 188 ›» у далёкого блока или вспомнившегося прошлого выбора
+     нажатый чип оставался за краем — список отфильтрован, а чем — не видно. Ряд сам доезжает до нажатого чипа (уже видимый чип не двигается — под пальцем ничего не едет).
+     В следующем кадре: вёрстка к этому моменту уже посчитана, чтение положения не заставляет браузер верстать второй раз */
+  function showOn(){ requestAnimationFrame(()=>{ if(!document.body.contains(w)) return; card.querySelectorAll(".plq-subw .plq-chips").forEach(box=>{ const p=box.querySelector('button[aria-pressed="true"]'); if(!p||!p.dataset.v||box.scrollWidth<=box.clientWidth+1) return;
+      const br=box.getBoundingClientRect(), pr=p.getBoundingClientRect(), z=(box.clientWidth&&br.width/box.clientWidth)||1, R=Math.min(br.right,window.innerWidth);
+      if(pr.left<br.left) box.scrollLeft+=(pr.left-br.left)/z-12; else if(pr.right>R) box.scrollLeft+=(pr.right-R)/z+12; }); }); }
+  const sync=()=>{ const sc=st.secs[st.i], g=st.view(sc)==="g", pr=(s,f)=>card.querySelectorAll(s).forEach(x=>x.setAttribute("aria-pressed",String(!!f(x))));
+    pr('[data-plq="vw"]',x=>(x.dataset.v==="g")===g); pr('[data-plq="src"]',x=>x.dataset.v===st.src); pr(':scope>.plq-secs [data-plq="sec"]',x=>+x.dataset.v===st.i);
+    const f=card.querySelector("[data-plq-f]"); if(f) f.placeholder=ph(sc); const ow=card.querySelector(".plq-own"); if(ow&&ow.querySelector(".plq-of")) ow.innerHTML=ownB; };
   const foot=()=>{ const b=card.querySelector(".plq-ok"); if(b){ b.textContent=plqFoot(st); b.disabled=!st.sel.size; } };
-  draw(); if(plqRows(st)===null){ const poll=()=>{ if(!document.body.contains(w)||PLQ.tok!==tok) return; if(plqRows(st)===null) return setTimeout(poll,300); if(st.src!=="all"&&!(plqSrcList(st,st.secs[st.i])||[]).length) pickSrc(); draw(); }; setTimeout(poll,300); }
+  draw(); if(!(S.cat&&S.cat.data)){ const poll=()=>{ if(!document.body.contains(w)||PLQ.tok!==tok) return; if(!(S.cat&&S.cat.data)) return setTimeout(poll,300); st.srcC.clear(); st.r1=st.rc=null; if(st.src!=="all"&&!(plqSrcList(st,st.secs[st.i])||[]).length) pickSrc(); sync(); redrawList(); }; setTimeout(poll,300); }   /* база догрузилась — у «Моих» и «Недавних» появляются образцы и классы */
   setTimeout(()=>{ if(!plDesk()) return; card.querySelector("[data-plq-f]")?.focus(); },60);
   const close=()=>{ w.remove(); };
   const rowOf=el=>{ const r=el.closest("[data-i]"); return r?{r,o:st.rows[+r.dataset.i]}:null; };
@@ -29321,19 +29522,21 @@ function plQuick(id,preKey,opt){ opt=opt||{}; const sm=S.shop&&S.shop.sm; if(!sm
     if(a==="x") return close();
     if(a==="tg"){ const R=rowOf(b); if(!R||!R.o) return; const k=plqKey(sc,R.o);
       if(st.sel.has(k)){ st.sel.delete(k); R.r.classList.remove("on"); b.setAttribute("aria-pressed","false"); }
-      else { const inp=R.r.querySelector("[data-plq-q]"), v=pNum(inp&&inp.value)||st.dq(sc); st.sel.set(k,plqSelOf(st,sc,R.o,v)); R.r.classList.add("on"); b.setAttribute("aria-pressed","true"); }
+      else { const inp=R.r.querySelector("[data-plq-q]"), v=pNum(inp&&inp.value)||st.dq(sc); st.sel.set(k,plqSelOf(st,sc,R.o,v)); R.r.classList.add("on"); b.setAttribute("aria-pressed","true");
+        if(!inp){ const fv=R.r.querySelector(".plq-fav"); if(fv) fv.insertAdjacentHTML("beforebegin",plqStp(v)); else (R.r.querySelector(".plq-gw")||R.r).insertAdjacentHTML("beforeend",plqStp(v)); } }   /* 18.11: «− 1 +» появляется вместе с отметкой */
       return foot(); }   /* галочка и сумма — в тот же кадр, без перерисовки списка */
     if(a==="up"||a==="dn"){ const R=rowOf(b); if(!R||!R.o) return; const inp=R.r.querySelector("[data-plq-q]"), cur=pNum(inp&&inp.value)||0, on=st.sel.has(plqKey(sc,R.o)), stepv=R.o.u==="м"&&cur>=20?5:1;
       return setQ(R.r,R.o,a==="up"?(on?cur+stepv:cur||st.dq(sc)):cur-stepv); }
-    if(a==="fav"){ const R=rowOf(b); if(!R||!R.o) return; let F=plqLs("w24-qkfav",[]); const i=F.findIndex(x=>x.k===sc.key&&x.n===R.o.n); if(i>=0) F.splice(i,1); else F.unshift({k:sc.key,n:R.o.n,u:R.o.u}); plqSet("w24-qkfav",F.slice(0,200)); b.classList.toggle("on",i<0); toast(i<0?"★ В «Моих» — будет первой":"Убрано из «Моих»"); return; }
-    if(a==="src"){ st.src=b.dataset.v; st.sub=""; st.lim=60; card.querySelectorAll('[data-plq="src"]').forEach(x=>x.setAttribute("aria-pressed",String(x===b))); return redrawList(); }
-    if(a==="sec"){ st.i=+b.dataset.v; st.sub=""; st.lim=60; pickSrc(); return draw(); }
-    if(a==="sub"){ st.sub=b.dataset.v; st.lim=60; return redrawList(); }
-    if(a==="vw"){ VW[sc.key]=b.dataset.v; plqSet("w24-qkv",VW); return draw(); }
-    if(a==="more"){ st.lim+=80; return redrawList(); }
+    if(a==="fav"){ const R=rowOf(b); if(!R||!R.o) return; let F=plqLs("w24-qkfav",[]); const i=F.findIndex(x=>x.k===sc.key&&x.n===R.o.n); if(i>=0) F.splice(i,1); else F.unshift({k:sc.key,n:R.o.n,u:R.o.u}); plqSet("w24-qkfav",F.slice(0,200)); st.fv=null; st.srcC.delete("my|"+sc.key); b.classList.toggle("on",i<0); toast(i<0?"★ В «Моих» — будет первой":"Убрано из «Моих»"); return; }
+    if(a==="src"){ st.src=b.dataset.v; if(!/^m:/.test(sc.key)) st.sub=""; st.lim=60; sync(); return redrawList(1); }   /* 18.11: у плит чип остаётся, пока даёт строки; пустой сам сбросится на «Все» (plqRows) */
+    if(a==="sec"){ if(+b.dataset.v===st.i) return; st.i=+b.dataset.v; st.lim=60; memLoad(); pickSrc(); if(st.secIn&&tid){ MEM["t:"+tid]=st.secs[st.i].key; plqSet("w24-plqf",MEM); } sync(); return redrawList(1); }
+    if(a==="sub"||a==="mat"||a==="cls"){ st[a]=b.dataset.v; st.lim=60; memSave(); return redrawList(1); }
+    if(a==="vw"){ VW[sc.key]=b.dataset.v; plqSet("w24-qkv",VW); sync(); return redrawList(); }
+    if(a==="more"){ const R=plqRows(st), z=card.querySelector(".plq-lz"); if(!R||!z) return redrawList(); const done=R.blocks?z.querySelectorAll(".plq-clh").length:z.children.length; st.lim+=80;   /* 18.11: «Показать ещё» дописывает список снизу, а не рисует его заново, — место на экране не прыгает */
+      const X=plqUnits(st,R); b.remove(); if(X.more) z.insertAdjacentHTML("afterend",X.more); st.pend=done<X.U.length?{U:X.U,i:done,n:X.n}:null; return feed(); }
     if(a==="own") return plqOwnForm(st,card,foot);
     if(a==="ok") return plqAdd(st,close); });
-  w.addEventListener("input",e=>{ const t=e.target; if(t.matches("[data-plq-f]")){ st.f=t.value; st.lim=60; if(st.f&&st.src!=="all"){ st.src="all"; card.querySelectorAll('[data-plq="src"]').forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v==="all"))); } clearTimeout(st.tm); st.tm=setTimeout(redrawList,120); return; }
+  w.addEventListener("input",e=>{ const t=e.target; if(t.matches("[data-plq-f]")){ st.f=t.value; st.lim=60; if(st.f&&st.src!=="all"){ st.src="all"; sync(); } clearTimeout(st.tm); st.tm=setTimeout(()=>redrawList(1),120); return; }
     if(t.matches("[data-plq-q]")){ const R=rowOf(t); if(!R||!R.o) return; const sc=st.secs[st.i], k=plqKey(sc,R.o), v=pNum(t.value); if(v>0){ const cur=st.sel.get(k); if(cur) cur.q=v; else { st.sel.set(k,plqSelOf(st,sc,R.o,v)); R.r.classList.add("on"); } } else if(st.sel.has(k)&&String(t.value).trim()!==""){ st.sel.delete(k); R.r.classList.remove("on"); } foot(); } });
   w.addEventListener("keydown",e=>{ if(e.key==="Escape") close(); }); }
 function plqSelOf(st,sc,o,v){ return {n:o.n,u:o.u,p:plqPrice(st,o),q:v,cat:sc.cat,sec:sc.sec||"",zs:!!sc.zs,key:sc.key}; }
@@ -29342,7 +29545,7 @@ function plqOwnForm(st,card,foot){ const sc=st.secs[st.i], box=card.querySelecto
   box.querySelector("[name=n]").focus();
   box.querySelector("[data-plqo]").addEventListener("click",()=>{ const g=n=>box.querySelector(`[name=${n}]`), n=g("n").value.trim(); if(!n){ toast("Впишите название"); g("n").focus(); return; }
     const o={n,u:g("u").value,p:pNum(g("p").value)}, v=pNum(g("q").value)||1; st.pc.set(o.n+"|"+o.u,o.p); st.sel.set(plqKey(sc,o),plqSelOf(st,sc,o,v));
-    if(g("sv").checked){ try{ const own=X().own().filter(y=>!(y.c===sc.cat&&y.n===n)).concat([{c:sc.cat,n,u:o.u,p:o.p}]); X().setMine({own}); X().saveMine(); }catch(_){} }   /* «Мои позиции» — в фоне, выбор не ждёт сервер */
+    if(g("sv").checked){ try{ const own=X().own().filter(y=>!(y.c===sc.cat&&y.n===n)).concat([{c:sc.cat,n,u:o.u,p:o.p}]); X().setMine({own}); X().saveMine(); st.srcC.delete("my|"+sc.key); }catch(_){} }   /* «Мои позиции» — в фоне, выбор не ждёт сервер */
     box.innerHTML=`<p class="plq-hint">✓ «${esc(n)}» отмечена — нажмите «Добавить» внизу</p><button type="button" class="plq-ownb" data-plq="own">+ Ещё своя позиция</button>`; foot(); }); }
 function plqAdd(st,close){ const sm=S.shop&&S.shop.sm; if(!sm||!st.sel.size) return; const q=sm.data.qk, snap=JSON.stringify(q.it), tok=++PLQ.tok; let n=0, s=0; const sheets=[];
   let R=plqLs("w24-qkrec",[]);
@@ -29359,41 +29562,78 @@ function plqAdd(st,close){ const sm=S.shop&&S.shop.sm; if(!sm||!st.sel.size) ret
   if(sheets.length){ const run=()=>{ if(PLQ.tok!==tok||!S.shop.sm||S.shop.sm.data.qk!==q) return; let ch=0; sheets.forEach(nm=>{ const had=(q.it.edge||[]).some(e=>e.for===nm); try{ if(X().tone(q,nm)&&!had) ch++; }catch(_){} }); if(ch){ try{ X().dirty(); }catch(_){} plRender(); } };
     if(window.requestIdleCallback) requestIdleCallback(run,{timeout:1200}); else setTimeout(run,200); } }   /* кромка в тон — после, в свободное время */
 /* «+ Петли — из раздела», «+ ЛДСП — из базы», «+ Лист», «+ Кромка» внутри плиток и в списке — тоже быстрый выбор (вместо окон-уровней) */
-function plqTileOf(key){ try{ const sm=S.shop.sm, c=smCalc(sm.data), M=plModel(c,sm.data.qk); const t=M.L.find(z=>M.T[z.id].secs.includes(key)); return t?t.id:""; }catch(_){ return ""; } }
+function plqTileOf(key){ try{ const sm=S.shop.sm, c=smCalc(sm.data), M=plModel(c,sm.data.qk), of=k=>M.L.find(z=>M.T[z.id].secs.includes(k)); const t=of(key)||(key==="m:back"?of("m:ldsp"):null); return t?t.id:""; }catch(_){ return ""; } }   /* 18.11: «ХДФ, ДВП» — чип в окне «Корпуса» */
+const plqAddKey=(c,zs)=>c==="ldsp"?(zs?"m:back":"m:ldsp"):c==="front"?"m:mdf":c==="edge"?"m:edge":"";
+/* 18.11 (ошибка №4 «два окна сразу»), договор с site_qk.js: кнопка «+ Лист / + Кромка / + Фасад» (data-qk="add") сама зовёт window.__smt.quickAdd({c:"ldsp"|"front"|"edge", for?, btn?}).
+   Открыли быстрый выбор — true (второе окно site_qk.js уже не откроет); не можем (настройки цен не загружены, нажали внутри окна) — false, тогда site_qk.js откроет своё окно, как раньше. */
+window.__smt.quickAdd=function(o){ o=o||{}; try{ const sm=S.shop&&S.shop.sm; if(!sm||!sm.data||!sm.data.qk||!X()) return false; if(o.btn&&o.btn.closest&&o.btn.closest("#plQp,.modal")) return false;
+    const key=plqAddKey(o.c,o.zs||(o.btn&&o.btn.dataset&&o.btn.dataset.qzs==="1")); if(!key) return false; PLQ.qaEv=window.event||null;
+    plQuick(plqTileOf(key),key,{for:o.for||""}); return !!document.getElementById("plQp"); }catch(e){ console.log("LOG plq quickAdd "+e.message); return false; } };
+window.__smt.clsOf=(n,it)=>plqClsOf(it||(QA()&&QA().catIt(n))||null,n);   /* класс позиции по названию — для подписи под строкой сметы (site_qk.js); только показ */
+/* перехват: «+ Петли — из раздела» (data-qsp) — быстрый выбор. Для data-qk="add" перехват остаётся только страховкой: если site_qk.js уже позвал quickAdd на этом же нажатии — ничего не делаем */
 document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest('[data-qsp],[data-qk="add"]'); if(!b||b.closest("#plQp,.modal")) return; const sm=S.shop&&S.shop.sm; if(!sm||!sm.data||!sm.data.qk||!X()) return;
   let key=""; if(b.dataset.qsp){ key=b.dataset.qsp; if(/^c:/.test(key)||key==="other"||!((QA()&&QA().sec)||[]).some(z=>z[0]===key)) return; }
-  else { const c=b.dataset.c; key=c==="ldsp"?(b.dataset.qzs==="1"?"m:back":"m:ldsp"):c==="front"?"m:mdf":c==="edge"?"m:edge":""; if(!key) return; }
+  else { if(PLQ.qaEv===e){ PLQ.qaEv=null; e.preventDefault(); e.stopImmediatePropagation(); return; } key=plqAddKey(b.dataset.c,b.dataset.qzs==="1"); if(!key) return; }
   e.preventDefault(); e.stopImmediatePropagation(); plQuick(plqTileOf(key),key,{for:b.dataset.qfor||""}); },true);
 
 { const st2=document.createElement("style"); st2.textContent=`
 .plq-mod{align-items:flex-end}.plq{width:min(640px,100%);max-height:94vh;height:94vh;display:flex;flex-direction:column;padding:0!important;border-radius:22px 22px 0 0;overflow:hidden;animation:plqIn .2s ease-out}
 @keyframes plqIn{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
-@media(min-width:900px){.plq-mod{align-items:center}.plq{height:86vh;border-radius:22px}}
+@media(min-width:900px){.plq-mod{align-items:center}.plq{width:min(800px,100%);height:90vh;border-radius:22px}}   /* 18.11 (доводка): на компьютере окно шире и выше (было 640 × 86vh — под тремя рядами чипов целиком был один ряд из трёх плиток, до правок этапа 1 — два); теперь четыре плитки в ряд */
+/* 18.11: в виде 2.0 общее правило листов (site_v2_ch3.js, SHEET: max-height 90vh / k) оставляло окну 77 % экрана — на телефоне 390×844 под тремя рядами чипов помещался один ряд плиток.
+   Окно выбора — как на макете (stend/tmp/smeta_A, экран 2): почти во весь экран. Почему здесь, а не в site_v2_ch3.js: высота окна — его собственная (.plq выше), а не оформление 2.0 */
+html.v2:not(#v2a):not(#v2b):not(#v2c) #plQp>.plq{max-height:94vh!important}
+/* 18.11 (доводка, НАХОДКА «кнопку „Добавить“ на айфоне не нажать»): на айфоне страница сжата не zoom тела, а шириной страницы (ios-nz, site_skin.js), и окно в 2.0 разжато zoom = --v2k (1,16):
+   94vh × 1,16 = 109 % экрана — низ окна с кнопкой «Добавить N позиций» уходил за край, окно не прокручивается. Делим на тот же --v2k, как общее правило листов (site_v2_ch3.js).
+   Не на айфоне делить нельзя: там zoom тела 0,86 уже гасит разжатие (делёное дало бы 81 % экрана) */
+html.v2.ios-nz:not(#v2a):not(#v2b):not(#v2c)[data-v2p3] #plQp>.plq{height:calc(94vh / var(--v2k,1));max-height:calc(94vh / var(--v2k,1))!important}
+/* прежний вид не на айфоне (так видят работники на Android и на компьютере): страница сжата zoom тела 0,86 — «94vh» давали окну 81 % экрана, в «Фасадах» целиком помещался один ряд плиток.
+   Окно — той же высоты, что на айфоне; min(100 %, …) — страховка: выше экрана окно не станет, даже если сжатия вдруг нет */
+html.vt.sk:not(.ios-nz):not(.v2) #plQp>.plq{height:calc(94vh / .86);max-height:min(100%,calc(94vh / .86))}
+@media(min-width:900px){html.vt.sk:not(.ios-nz):not(.v2) #plQp>.plq{height:calc(90vh / .86);max-height:min(100%,calc(90vh / .86))}}
 .plq-h{display:flex;align-items:center;gap:8px;padding:14px 14px 6px}.plq-h>b{flex:1;font-size:21px;font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .plq-x{width:44px;height:44px;border-radius:22px;border:0;background:rgba(127,127,127,.16);color:inherit;font-size:17px;cursor:pointer}
-.plq-vw{display:flex;background:rgba(127,127,127,.14);border-radius:12px;padding:3px;gap:2px}.plq-vw button{width:40px;height:38px;border:0;border-radius:9px;background:none;color:inherit;font-size:17px;opacity:.6;cursor:pointer}.plq-vw button[aria-pressed="true"]{background:rgba(255,255,255,.16);opacity:1}
+.plq-vw{display:flex;background:rgba(127,127,127,.14);border-radius:14px;padding:0;gap:0}.plq-vw button{width:44px;height:44px;border:0;border-radius:14px;background:none;color:inherit;font-size:17px;opacity:.6;cursor:pointer}.plq-vw button[aria-pressed="true"]{background:rgba(127,127,127,.3);opacity:1}
 .plq-f{margin:4px 14px 8px;min-height:46px;box-sizing:border-box;width:calc(100% - 28px);font:inherit;font-size:16px;padding:10px 14px;border-radius:12px;border:1px solid rgba(127,127,127,.3);background:rgba(127,127,127,.1);color:inherit}
 .plq-chips{display:flex;gap:6px;overflow-x:auto;padding:0 14px 8px;scrollbar-width:none}.plq-chips::-webkit-scrollbar{display:none}
-.plq-chips button{flex:none;min-height:40px;font:inherit;font-size:14.5px;font-weight:600;padding:8px 14px;border-radius:20px;border:1px solid rgba(127,127,127,.28);background:transparent;color:inherit;cursor:pointer;white-space:nowrap}
+.plq-chips button{flex:none;min-height:44px;font:inherit;font-size:14.5px;font-weight:600;padding:8px 14px;border-radius:22px;border:1px solid rgba(127,127,127,.28);background:transparent;color:inherit;cursor:pointer;white-space:nowrap}
 .plq-chips button small{opacity:.55;font-weight:500}.plq-chips button[aria-pressed="true"]{background:#fff;color:#000;border-color:#fff}
-.plq-sub button{min-height:36px;font-size:13.5px;padding:6px 12px}.plq-sub button[aria-pressed="true"]{background:rgba(127,127,127,.3);color:inherit;border-color:transparent}
-.plq-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 14px 10px}
+.plq-sub button{font-size:13.5px;padding:6px 12px}.plq-sub button[aria-pressed="true"]{background:rgba(127,127,127,.3);color:inherit;border-color:transparent}
+.plq-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 14px 10px;overflow-anchor:none}
+/* 18.11: ряды «Материал / Класс / Толщина» — подпись слева, чипы 44 px едут вбок до края окна; ряды лежат в прокрутке вместе со списком */
+.plq-fr{display:flex;align-items:center;margin:0 -14px 6px 0}.plq-fl{flex:none;width:80px;font-size:12px;font-weight:600;opacity:.62;white-space:nowrap;overflow:hidden}.plq-fr .plq-chips{flex:1;min-width:0;padding:0 14px 0 0}
+.plq-fr .plq-chips button{font-size:14px;padding:6px 12px}.plq-fr .plq-chips button[aria-pressed="true"]{background:#fff;color:#000;border-color:#fff}.plq-fr .plq-chips button[aria-pressed="true"] small{opacity:.62;color:inherit!important}   /* 18.11 (доводка): нажатый чип рядов «Материал / Класс / Толщина» — та же капсула, что у «Мои / Недавние / Все» (была серая заливка с бледным числом — три серых «Все» подряд читались как выключенные); в светлой теме капсула чёрная — site_v2_ch3.js, слой v2p3Blue */
+.plq-clh1{margin:0 0 2px}
+/* «+ Заказной фасад» плиткой (plqPvh): пунктирная рамка и круглый «+» — видно, что это не декор из каталога */
+#plQp .plq-pvt{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:6px;width:auto;min-width:0;min-height:0;margin:0;padding:8px 10px;border:1px dashed rgba(127,127,127,.55);border-radius:16px;background:transparent;color:inherit;font:inherit;text-align:left;white-space:normal;cursor:pointer}
+#plQp .plq-pvt .plq-pvi{flex:none;width:44px;height:44px;border-radius:22px;background:rgba(127,127,127,.18);font-style:normal;font-size:24px;line-height:44px;text-align:center}
+#plQp .plq-pvt>span{min-width:0;display:block}#plQp .plq-pvt b{display:block;font-size:14px;font-weight:600;line-height:1.25}#plQp .plq-pvt small{display:block;font-size:12.5px;line-height:1.25;opacity:.62;margin-top:2px}
+#plQp .plq-pvr,#plQp .plq-pvf{flex-direction:row;align-items:center;gap:10px;width:100%;min-height:58px;margin:0 0 6px;padding:6px 8px;border-radius:14px}
+.plq-clh{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;margin:2px 0 0;font-size:16px}.plq-clh b{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.plq-clh b span{font-weight:500;opacity:.62}
+.plq-clh button{flex:none;min-height:44px;padding:0 0 0 12px;border:0;background:none;font:inherit;font-size:15px;font-weight:600;color:var(--v2bl);cursor:pointer;white-space:nowrap}
+.plq-grid+.plq-clh{margin-top:8px}.smt-crc{opacity:.6;font-size:12.5px}
+.smt-crf{display:block;font-style:normal;font-size:12.5px;font-weight:600;color:var(--v2bl)!important;opacity:1!important}.smt-crb{font-weight:700;color:var(--v2r,var(--bad,#d93025))!important}
 .plq-r{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 0;border-radius:14px;border:1px solid rgba(127,127,127,.18);margin:0 0 6px;transition:border-color .15s,background-color .15s}
 .plq-r.on,.plq-g.on{border-color:#30a46c;background:rgba(48,164,108,.1)}
 .plq-cbb{flex:none;width:44px;height:44px;border:0;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .plq-cb{display:block;width:24px;height:24px;border-radius:7px;border:2px solid rgba(127,127,127,.55);box-sizing:border-box;position:relative}
 .on .plq-cb{background:#30a46c;border-color:#30a46c}.on .plq-cb::after{content:"";position:absolute;left:7px;top:3px;width:6px;height:11px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
 .plq-sw{width:36px!important;height:36px!important;border-radius:9px!important;flex:none}.plq-sw0{width:36px;height:36px;border-radius:9px;flex:none;background:rgba(127,127,127,.18)}
-.plq-nm{flex:1;min-width:0;min-height:44px;text-align:left;border:0;background:none;color:inherit;font:inherit;cursor:pointer;padding:2px 0;display:flex;flex-direction:column;justify-content:center}
+.plq-nm{flex:1;min-width:0;min-height:56px;text-align:left;border:0;background:none;color:inherit;font:inherit;cursor:pointer;padding:2px 0;display:flex;flex-direction:column;justify-content:center}
 .plq-nm b{font-weight:500;font-size:15px;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.plq-nm small,.plq-g small{font-size:12.5px;opacity:.62;margin-top:2px}.plq-bad{color:inherit}
-.plq-st{flex:none;display:flex;align-items:center;gap:2px}.plq-r:not(.on) .plq-st,.plq-g:not(.on) .plq-st{visibility:hidden}
-.plq-st button{width:36px;height:40px;border-radius:10px;border:0;background:rgba(127,127,127,.18);color:inherit;font-size:18px;font-weight:700;cursor:pointer}
-.plq-q{width:46px;height:40px;box-sizing:border-box;text-align:center;font:inherit;font-size:16px;font-weight:700;border:0;background:transparent;color:inherit}
-.plq-fav{flex:none;width:40px;height:44px;border:0;background:none;color:rgba(127,127,127,.5);font-size:19px;cursor:pointer}.plq-fav.on{color:#f2b824}
+/* 18.11: кнопки 44 px. В списке «− 1 +» есть только у отмеченной строки: названию хватает места, высота строки та же — список не прыгает.
+   Доводка: ★ «Мои» у отмеченной строки остаётся (её прятали под «− 1 +» — чтобы добавить отмеченную петлю в «Мои», приходилось сначала снять отметку; у фурнитуры по заданию ничего не меняется) */
+.plq-st{flex:none;display:flex;align-items:center;gap:0}.plq-r:not(.on) .plq-st{display:none}.plq-g:not(.on) .plq-st{visibility:hidden}
+.plq-st button{width:44px;height:44px;border-radius:22px;border:0;background:rgba(127,127,127,.18);color:inherit;font-size:20px;font-weight:700;cursor:pointer;padding:0}
+.plq-q{width:40px;height:44px;box-sizing:border-box;text-align:center;font:inherit;font-size:16px;font-weight:700;border:0;background:transparent;color:inherit;padding:0}
+.plq-fav{flex:none;width:44px;height:44px;border:0;background:none;color:rgba(127,127,127,.5);font-size:19px;cursor:pointer}.plq-fav.on{color:var(--v2bl)}
 .plq-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
-.plq-g{display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:14px;border:1px solid rgba(127,127,127,.18);transition:border-color .15s,background-color .15s}
-.plq-gt{position:relative;border:0;padding:0;background:none;cursor:pointer;display:block;width:100%}.plq-gt .plq-sw,.plq-gt .plq-sw0{width:100%!important;height:84px!important;border-radius:10px!important;display:block}.plq-gt .plq-cb{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.35)}
-.plq-gn{font-size:14px;font-weight:600;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-top:4px}.plq-g .plq-st{justify-content:space-between;margin-top:4px}
+.plq-g{display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:16px;border:1px solid rgba(127,127,127,.18);transition:border-color .15s,background-color .15s;min-width:0;content-visibility:auto;contain-intrinsic-size:auto 142px}
+/* 18.11: плитка — образец декора 64 px (как на макете; было 72 — в виде 2.0 второй ряд плиток не помещался целиком), на нём слева галочка, справа круглый «+» (не отмечена) или «− 6 +» (отмечена); ниже название в две строки и цена */
+.plq-gw{position:relative}.plq-gt{position:relative;border:0;padding:0;background:none;cursor:pointer;display:block;width:100%}.plq-gt .plq-sw,.plq-gt .plq-sw0{width:100%!important;height:64px!important;border-radius:11px!important;display:block}.plq-gt .plq-cb{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.35)}.plq-g:not(.on) .plq-gt .plq-cb{display:none}
+.plq-g:not(.on) .plq-gt::after{content:"+";position:absolute;right:6px;top:10px;width:44px;height:44px;border-radius:22px;background:rgba(20,22,30,.62);color:#fff;font-size:24px;font-weight:500;line-height:44px;text-align:center}
+.plq-g .plq-st{position:absolute;right:4px;top:10px;border-radius:22px;background:rgba(20,22,30,.78);color:#fff}.plq-g .plq-st button{background:none;color:#fff}.plq-g .plq-q{width:34px;color:#fff}   /* число на плитке — белым по тёмной капсуле, без белого поля (в прежнем виде общий стиль полей красил его белым — правило внизу) */
+.plq-gn{font-size:14px;font-weight:600;line-height:1.25;height:2.5em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-top:4px}
 .plq-more,.plq-ownb,.plq-exb{width:100%;min-height:46px;font:inherit;font-size:15px;border-radius:12px;border:1px dashed rgba(127,127,127,.4);background:transparent;color:inherit;cursor:pointer;margin:6px 0 0}
 .plq-ex{display:flex;flex-wrap:wrap;gap:6px}.plq-exb{flex:1 1 45%;border-style:solid}
 .plq-of{display:flex;flex-direction:column;gap:8px;margin-top:8px}.plq-of3{display:grid;grid-template-columns:1fr 90px 80px;gap:6px}.plq-oi{min-height:44px;box-sizing:border-box;font:inherit;font-size:16px;padding:8px 10px;border-radius:10px;border:1px solid rgba(127,127,127,.3);background:transparent;color:inherit}.plq-chk{font-size:14px;display:flex;gap:8px;align-items:center}
@@ -29401,6 +29641,7 @@ document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closes
 .plq-sk i{display:block;height:56px;border-radius:14px;margin:0 0 6px;background:linear-gradient(90deg,rgba(127,127,127,.1),rgba(127,127,127,.2),rgba(127,127,127,.1));background-size:200% 100%;animation:plqSk 1.2s linear infinite}@keyframes plqSk{to{background-position:-200% 0}}
 .plq-foot{padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid rgba(127,127,127,.18)}.plq-ok{width:100%;min-height:52px;font-size:17px!important;font-weight:700}.plq-ok:disabled{opacity:.45}
 html.vt.sk[data-vt="dark"] .plq{background:#111}html.vt.sk[data-vt="dark"] .plq-r,html.vt.sk[data-vt="dark"] .plq-g{border-color:rgba(255,255,255,.12)}html.vt.sk[data-vt="dark"] .plq-f{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14)}
+html #plQp .plq-g .plq-q,html.vt.sk.sk.sk[data-vt] #plQp .plq-g .plq-q{background:transparent!important;color:#fff!important;border:0!important;box-shadow:none!important}
 html #plQp .plq-cb{border:2px solid rgba(127,127,127,.6)!important}html.vt.sk.sk.sk[data-vt="dark"] #plQp .plq-cb{border-color:rgba(255,255,255,.4)!important}html.vt.sk.sk.sk[data-vt] #plQp .on .plq-cb,html #plQp .on .plq-cb{background:#30a46c!important;border-color:#30a46c!important}`; document.head.appendChild(st2); }
 /* ===== 13.11 (Кирилл 08:20, видео: «очень большой косяк») — «Назад» в смете всегда на шаг назад внутри сметы, смета никогда не теряется.
    Было: верхняя «‹» из раздела выкидывала в «Сметы» без вопроса (общий «Назад» site_back.js проходил мимо вопроса «не сохранена»), несохранённой сметы в списке не было;
@@ -29451,8 +29692,10 @@ document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.
   try{ if(typeof catLoad==="function") catLoad(); if(S.sup&&!S.sup.priceOk&&typeof supPriceLoad==="function") supPriceLoad().then(()=>shpRenderKeep()); }catch(_){} shpRenderKeep(); toast("Черновик открыт — не забудьте «Сохранить»"); },true);
 { const st3=document.createElement("style"); st3.textContent=`.pld{margin:10px 0 12px}.pld-h{font-size:13px;opacity:.7;margin:0 2px 6px}.pld-r{display:flex;align-items:center;gap:6px;border-radius:14px;background:rgba(127,127,127,.08);margin:0 0 6px}
 .pld-o{flex:1;min-width:0;min-height:56px;text-align:left;border:0;background:none;color:inherit;font:inherit;padding:8px 12px;cursor:pointer;display:flex;flex-direction:column;gap:2px}.pld-o b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pld-o small{font-size:13px;opacity:.75}
-.pld-tag{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 7px;border-radius:8px;color:#000;background:#f2b824;margin-right:4px}.pld-x{flex:none;width:44px;height:44px;border:0;border-radius:22px;background:none;color:inherit;opacity:.6;font-size:16px;cursor:pointer;margin-right:6px}`; document.head.appendChild(st3); }
+.pld-tag{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 7px;border-radius:8px;color:#fff;background:var(--v2blz);margin-right:4px}.pld-x{flex:none;width:44px;height:44px;border:0;border-radius:22px;background:none;color:inherit;opacity:.6;font-size:16px;cursor:pointer;margin-right:6px}`; document.head.appendChild(st3); }
 
+/* 18.11 (решение по заданию «смета один экран», п. 4): жёлтого в смете нет — замечание (точка у названия, слово, рамка подсказки, метка «черновик», ★ «Мои») синим; цвета смысла — зелёный, красный, синий.
+   Синий — токены --v2bl (текст), --v2blz (заливка, рамка), --v2blb (подложка) из site_v2.js: они заданы для обоих видов и обеих тем. Почему не цифрами: сборка (build_site.py, W2) перекрашивает синие цвета модулей в серые. */
 /* 13.11 (Кирилл 08:27: «пускай останется, просто сделай удобно, и разноцвет убрать — у нас минимализм»): плитки — ровный слой без цветных полосок и рамок;
    пусто — просто «пусто»; замечание (запас ЛДСП, без цены) — маленькая жёлтая точка у названия и слово. Выбор цвета в редакторе ✏️ убран (сохранённый цвет больше не рисуется). */
 { const st4=document.createElement("style"); st4.textContent=`
@@ -29462,10 +29705,10 @@ document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.
 .smt-share i{background:rgba(127,127,127,.6)!important}.smt-ic{color:inherit!important;opacity:.85}
 .smt-ts2,.smt-tsr,.smt-gs.bad,.smt-t .smt-ts2{color:inherit!important;opacity:.6!important}
 .smt-tabs button.on{box-shadow:none!important;background:rgba(127,127,127,.28)!important}.smt-tabs button.smt-s-red:not(.on),.smt-tabs button.smt-s-warn:not(.on){color:inherit!important}
-.smt-s-warn .smt-tb>b::after,.smt-s-warn.smt-ts>b::after,.smt-tabs button.smt-s-warn::after,.smt-g.smt-s-warn .smt-gn b::after{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:#f2b824;margin-left:6px;vertical-align:middle}
-.smt-wch{background:none!important;padding:0!important;color:#f2b824!important;font-weight:600!important}
+.smt-s-warn .smt-tb>b::after,.smt-s-warn.smt-ts>b::after,.smt-tabs button.smt-s-warn::after,.smt-g.smt-s-warn .smt-gn b::after{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--v2blz);margin-left:6px;vertical-align:middle}
+.smt-wch{background:none!important;padding:0!important;color:var(--v2bl)!important;font-weight:600!important}
 .smt-dot{background:rgba(127,127,127,.6)!important}
-.smt-chips button[aria-pressed="true"]{background:#fff!important;color:#000!important}.smt-more{color:inherit!important;opacity:.75}.smt-gw{color:#f2b824!important}
+.smt-chips button[aria-pressed="true"]{background:#fff!important;color:#000!important}.smt-more{color:inherit!important;opacity:.75}.smt-gw{color:var(--v2bl)!important}
 .smt-ics button[aria-pressed="true"],.smt-vw button[aria-pressed="true"]{box-shadow:inset 0 0 0 2px currentColor!important}.smt-rad button[aria-checked="true"] i{box-shadow:inset 0 0 0 5px #30a46c!important}
 html.vt.sk.sk.sk[data-vt] .smt-gs.bad,html.vt.sk.sk.sk[data-vt] .smt-ts2.bad,html.vt.sk.sk.sk[data-vt] .smt-gs.smt-gs.bad{color:inherit!important;opacity:.6!important}`; document.head.appendChild(st4); }
 /* 13.11: «Добавить работу» при 0 — теперь в самом окне (site_works.js wrPickModal: при 0 строка снимается, без отмеченных кнопка выключена) */
@@ -29510,25 +29753,25 @@ const st=document.createElement("style"); st.textContent=`
 .smt-top{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;padding:12px 16px;border-radius:16px;background:rgba(127,127,127,.08);box-shadow:inset 0 0 0 1px rgba(127,127,127,.18);margin:0 0 12px}.smt-top small{display:block;font-size:13px;opacity:.7}.smt-top b{font-size:26px;letter-spacing:-.3px}.smt-tr{text-align:right}.smt-k{color:#30a46c;font-weight:800}.smt-tr .smt-k{font-size:24px}
 .smt-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .smt-t{position:relative;border-radius:16px;background:rgba(127,127,127,.08);box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 1px rgba(127,127,127,.18);min-height:118px;display:flex}.smt-t.wide{grid-column:1/-1;min-height:96px}
-.smt-t.smt-s-red{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px #e5484d}.smt-t.smt-s-warn{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px rgba(0,0,0,0.35)}.smt-t.smt-s-dim{opacity:.62}.smt-t.hid{opacity:.7}
+.smt-t.smt-s-red{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px #e5484d}.smt-t.smt-s-warn{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px var(--v2blz)}.smt-t.smt-s-dim{opacity:.62}.smt-t.hid{opacity:.7}
 .smt-tb{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;font:inherit;color:inherit;background:none;border:0;padding:12px 44px 12px 16px;cursor:pointer;min-width:0}.smt-tb b{font-size:16px;line-height:1.2}.smt-tb b small{font-weight:400;opacity:.7}.smt-ic{font-size:24px;line-height:1}.smt-ts2{font-size:13px;opacity:.75}.smt-s-red .smt-ts2{color:#e5484d;opacity:1}
 .smt-share{display:block;width:100%;height:4px;border-radius:2px;background:rgba(127,127,127,.2);margin-top:6px;overflow:hidden}.smt-share i{display:block;height:100%;background:var(--plc);border-radius:2px}
-.smt-wch{margin-top:6px;font-size:12px;font-weight:700;padding:2px 8px;border-radius:8px;background:var(--warn-soft);color:var(--w2-yt)}
+.smt-wch{margin-top:6px;font-size:12px;font-weight:700;padding:2px 8px;border-radius:8px;background:var(--v2blb);color:var(--v2bl)}
 .smt-plus{position:absolute;right:8px;top:8px;width:32px;height:32px;border-radius:50%;border:0;background:rgba(127,127,127,.16);color:inherit;font-size:21px;line-height:1;cursor:pointer;display:grid;place-items:center}
 .smt-fin{display:block;width:100%;margin:12px 0 4px;padding:14px;border-radius:14px;border:0;background:rgba(127,127,127,.14);color:inherit;font:inherit;font-size:16px;font-weight:700;cursor:pointer}
 .smt-hd{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 8px}.smt-back{font:inherit;font-size:19px;font-weight:700;background:none;border:0;color:inherit;padding:4px 0;cursor:pointer;text-align:left}.smt-back::before{content:"← "}.smt-hd>span{font-size:13px;opacity:.7;text-align:right}
-.smt-tabs{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;margin:0 0 6px;scrollbar-width:none}.smt-tabs::-webkit-scrollbar{display:none}.smt-tabs button{flex:none;height:36px;box-sizing:border-box;display:inline-flex;flex-direction:row;align-items:center;gap:5px;min-height:0;height:auto;line-height:1.2;font:inherit;font-size:13.5px;font-weight:600;padding:6px 12px;border-radius:18px;border:0;background:rgba(127,127,127,.12);color:inherit;cursor:pointer;white-space:nowrap}.smt-tabs button.on{box-shadow:inset 0 0 0 2px var(--plc)}.smt-tabs button.smt-s-red:not(.on){color:#e5484d}.smt-tabs button.smt-s-warn:not(.on){color:var(--w2-yt)}
-.smt-warn{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:12px;background:var(--warn-soft);box-shadow:inset 0 0 0 1px rgba(0,0,0,0.35);margin:0 0 8px;font-size:14px}.smt-wb{display:flex;gap:6px;flex-wrap:wrap}
+.smt-tabs{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;margin:0 0 6px;scrollbar-width:none}.smt-tabs::-webkit-scrollbar{display:none}.smt-tabs button{flex:none;height:36px;box-sizing:border-box;display:inline-flex;flex-direction:row;align-items:center;gap:5px;min-height:0;height:auto;line-height:1.2;font:inherit;font-size:13.5px;font-weight:600;padding:6px 12px;border-radius:18px;border:0;background:rgba(127,127,127,.12);color:inherit;cursor:pointer;white-space:nowrap}.smt-tabs button.on{box-shadow:inset 0 0 0 2px var(--plc)}.smt-tabs button.smt-s-red:not(.on){color:#e5484d}.smt-tabs button.smt-s-warn:not(.on){color:var(--v2bl)}
+.smt-warn{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:12px;background:var(--v2blb);box-shadow:inset 0 0 0 1px var(--v2blz);margin:0 0 8px;font-size:14px}.smt-wb{display:flex;gap:6px;flex-wrap:wrap}
 .smt-add1{display:block;width:100%;margin:0 0 10px;padding:12px;border-radius:14px;border-style:dashed;font-size:16px;font-weight:700}
 .smt-sh{display:flex;justify-content:space-between;gap:8px;font-size:15px;margin:14px 0 4px}.smt-sh span{font-weight:400;font-size:13px;opacity:.7}.smt-sb{margin:0 0 6px}.smt-empty{opacity:.7;font-size:14px;margin:8px 0}
 .smt-desk{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;align-items:start}.smt-side{display:flex;flex-direction:column;gap:8px;position:sticky;top:70px}.smt-main{min-width:0;padding:4px 0 0}
-.smt-ts{display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;border-radius:12px;border:0;background:rgba(127,127,127,.08);box-shadow:inset 4px 0 0 var(--plc,transparent),inset 0 0 0 1px rgba(127,127,127,.16);color:inherit;font:inherit;font-size:15px;cursor:pointer;text-align:left;margin:0}.smt-ts b{flex:1}.smt-ts .smt-ic{font-size:19px}.smt-tsr{font-size:13px;opacity:.7;font-weight:400}.smt-ts.on{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px rgba(0,0,0,0.35)}.smt-ts.smt-s-red{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px #e5484d}.smt-ts.smt-s-red .smt-tsr{color:#e5484d;opacity:1}.smt-ts.smt-s-warn{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px rgba(0,0,0,0.35)}.smt-ts.smt-s-dim{opacity:.6}.smt-ts.on.smt-s-red,.smt-ts.on.smt-s-warn{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px rgba(0,0,0,0.35)}
+.smt-ts{display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;border-radius:12px;border:0;background:rgba(127,127,127,.08);box-shadow:inset 4px 0 0 var(--plc,transparent),inset 0 0 0 1px rgba(127,127,127,.16);color:inherit;font:inherit;font-size:15px;cursor:pointer;text-align:left;margin:0}.smt-ts b{flex:1}.smt-ts .smt-ic{font-size:19px}.smt-tsr{font-size:13px;opacity:.7;font-weight:400}.smt-ts.on{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px rgba(0,0,0,0.35)}.smt-ts.smt-s-red{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px #e5484d}.smt-ts.smt-s-red .smt-tsr{color:#e5484d;opacity:1}.smt-ts.smt-s-warn{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px var(--v2blz)}.smt-ts.smt-s-dim{opacity:.6}.smt-ts.on.smt-s-red,.smt-ts.on.smt-s-warn{box-shadow:inset 4px 0 0 var(--plc),inset 0 0 0 2px rgba(0,0,0,0.35)}
 .smt-dh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:0 0 10px}.smt-dh h2{margin:0;font-size:22px}.smt-dt b{font-size:22px}.smt-dt small{opacity:.7}
 .smt-find{margin:0 0 8px}.smt-q{width:100%;box-sizing:border-box;font:inherit;font-size:15px;padding:10px 12px;border-radius:12px;border:0;background:rgba(127,127,127,.12);color:inherit}
 .smt-chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.smt-chips button{font:inherit;font-size:13.5px;font-weight:600;padding:6px 12px;border-radius:16px;border:0;background:rgba(127,127,127,.12);color:inherit;cursor:pointer}.smt-chips button[aria-pressed="true"]{background:var(--w2-solid);color:#fff}
-.smt-g{border-radius:14px;background:rgba(127,127,127,.08);box-shadow:inset 0 0 0 1px rgba(127,127,127,.18);margin:0 0 8px}.smt-g.smt-s-red{box-shadow:inset 0 0 0 2px #e5484d}.smt-g.smt-s-warn{box-shadow:inset 0 0 0 2px rgba(0,0,0,0.35)}.smt-g.smt-s-dim{opacity:.7}
+.smt-g{border-radius:14px;background:rgba(127,127,127,.08);box-shadow:inset 0 0 0 1px rgba(127,127,127,.18);margin:0 0 8px}.smt-g.smt-s-red{box-shadow:inset 0 0 0 2px #e5484d}.smt-g.smt-s-warn{box-shadow:inset 0 0 0 2px var(--v2blz)}.smt-g.smt-s-dim{opacity:.7}
 .smt-gh{display:flex;align-items:center;gap:6px;position:relative}.smt-g.on .smt-gh{position:sticky;top:56px;z-index:3;background:var(--bg,#f6f6f7);border-radius:14px 14px 0 0;box-shadow:inset 4px 0 0 var(--plc)}
-.smt-gt{flex:1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center;text-align:left;font:inherit;color:inherit;background:none;border:0;padding:11px 6px 11px 14px;cursor:pointer;min-width:0}.smt-gn{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.smt-gs{font-size:15px;opacity:.8}.smt-gs.bad{color:#e5484d;opacity:1}.smt-gt small{grid-column:1/-1;font-size:13px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.smt-gt small.smt-gw{color:var(--w2-yt);opacity:1}
+.smt-gt{flex:1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center;text-align:left;font:inherit;color:inherit;background:none;border:0;padding:11px 6px 11px 14px;cursor:pointer;min-width:0}.smt-gn{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.smt-gs{font-size:15px;opacity:.8}.smt-gs.bad{color:#e5484d;opacity:1}.smt-gt small{grid-column:1/-1;font-size:13px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.smt-gt small.smt-gw{color:var(--v2bl);opacity:1}
 .smt-gh .smt-plus{position:static;flex:none;margin-right:8px}
 .smt-gb{padding:2px 12px 10px}.smt-cr{display:flex;justify-content:space-between;gap:10px;width:100%;font:inherit;font-size:14.5px;color:inherit;background:none;border:0;border-top:1px solid rgba(127,127,127,.16);padding:9px 2px;cursor:pointer;text-align:left}.smt-cr>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smt-crq{flex:none;opacity:.8}
 .smt-det{border-top:1px solid rgba(127,127,127,.16);padding:2px 0 6px}.smt-more{display:block;margin:8px auto 0;color:var(--ink)}.smt-gf{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
@@ -29549,8 +29792,8 @@ const st=document.createElement("style"); st.textContent=`
 .smt-cfg{max-width:560px}.smt-ch{font-size:13.5px;font-weight:700;opacity:.7;margin:14px 0 6px}.smt-vw{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px}.smt-vw button{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px;border-radius:14px;border:0;background:rgba(127,127,127,.08);color:inherit;font:inherit;font-size:15px;cursor:pointer}.smt-vw button[aria-pressed="true"]{box-shadow:inset 0 0 0 2px rgba(0,0,0,0.35)}.smt-vw button:disabled{cursor:default}
 .smt-vi{display:grid;gap:4px;width:100%;max-width:150px;height:56px;padding:6px;box-sizing:border-box;border-radius:10px;background:rgba(127,127,127,.12)}.smt-vi i{border-radius:4px;background:rgba(127,127,127,.3)}.smt-vi.tiles{grid-template-columns:1fr 1fr}.smt-vi.list{grid-template-rows:repeat(4,1fr)}
 .smt-rad{display:flex;flex-direction:column;gap:6px}.smt-rad button{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;border:0;background:rgba(127,127,127,.08);color:inherit;font:inherit;font-size:15px;cursor:pointer;text-align:left}.smt-rad i{flex:none;width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(127,127,127,.6)}.smt-rad button[aria-checked="true"] i{box-shadow:inset 0 0 0 5px rgba(0,0,0,0.35)}.smt-rad button:disabled{cursor:default}
-.smt-wait{padding:10px 12px;border-radius:12px;background:var(--warn-soft);font-size:14px}
-html.vt[data-vt="dark"] .smt-seg button[aria-pressed="true"]{background:#3a3a3c}html.vt[data-vt="dark"] .smt-g.on .smt-gh{background:#1c1c1e}html.vt[data-vt="dark"] .smt-wch{color:var(--w2-yt)}html.vt[data-vt="dark"] .smt-gch button[aria-pressed="true"]{color:#7ee2a8}
+.smt-wait{padding:10px 12px;border-radius:12px;background:var(--v2blb);font-size:14px}
+html.vt[data-vt="dark"] .smt-seg button[aria-pressed="true"]{background:#3a3a3c}html.vt[data-vt="dark"] .smt-g.on .smt-gh{background:#1c1c1e}html.vt[data-vt="dark"] .smt-wch{color:var(--v2bl)}html.vt[data-vt="dark"] .smt-gch button[aria-pressed="true"]{color:#7ee2a8}
 html.vt.sk.sk.sk.sk[data-vt="dark"] .smt-add1{border:1.5px dashed rgba(255,255,255,.28)!important}
 @media (max-width:380px){.smt-tb{padding:10px 40px 10px 13px}.smt-top b{font-size:23px}}
 .smt-pvh{font-weight:600}.smt-gf .smt-pvh{flex:1 1 100%}.smt-pvhr>span{display:flex;flex-direction:column;gap:2px;min-width:0}.smt-pvhr small{font-size:12.5px;opacity:.65}.smt-pvhr{margin-top:10px}
@@ -30458,7 +30701,9 @@ function svTech(){ return !!(S.shop&&S.shop.tech)&&!svDes(); }
 
 /* ---------- раскладка по группам Базиса ---------- */
 /* группа: ldsp (корпус), back (задняя стенка), front (фасады), edge, top, apron, glass, prof, led, furn-разделы (hinge, drw…), other, nr (не разобрано) */
-const SV_TGT=[["ldsp","Корпус (ЛДСП)"],["back","Задняя стенка (ДВП)"],["front","Фасады"],["edge","Кромка"],["top","Столешница"],["apron","Фартук"],["hinge","Петли"],["drw","Ящики и направляющие"],["lift","Подъёмники"],["handle","Ручки и Push"],["led","Подсветка"],["kitchen","Для кухни"],["ward","Для гардероба"],["fix","Крепёж"],["glass","Стекло и зеркало"],["prof","Алюминиевый профиль"],["plinth","Цоколь и ножки"],["other","Прочее"]];
+/* 18.11 (смета «один экран», этап 1): раздела «Задняя стенка» в смете больше нет — ХДФ / ДВП лежат в «Корпусе» (плиты). Поменяна ТОЛЬКО подпись;
+   код "back" прежний: по нему svPlace ставит x.zs, а правила вариантов (SV_KG, svKlGrp) меняют состав — это деньги, их не трогаем. */
+const SV_TGT=[["ldsp","Корпус (ЛДСП)"],["back","Плиты: ХДФ / ДВП (задняя стенка)"],["front","Фасады"],["edge","Кромка"],["top","Столешница"],["apron","Фартук"],["hinge","Петли"],["drw","Ящики и направляющие"],["lift","Подъёмники"],["handle","Ручки и Push"],["led","Подсветка"],["kitchen","Для кухни"],["ward","Для гардероба"],["fix","Крепёж"],["glass","Стекло и зеркало"],["prof","Алюминиевый профиль"],["plinth","Цоколь и ножки"],["other","Прочее"]];
 const SV_OTHERSEC={top:1,apron:1,led:1,glass:1,prof:1,other:1};
 function svNrMap(){ const m=svMineGet("nrM"); return m&&typeof m==="object"?m:{}; }
 function svGroupL(n){ const s=norm(n), it=QA()&&QA().catIt(n), g=String((it&&it.g)||"");
@@ -30724,19 +30969,22 @@ async function svNrTo(cat,i,to){ const sm=svSm(); if(!sm) return; const q=sm.dat
 function svTileInfo(c,q){ const S0=window.__smt; if(!S0||!S0.model) return null; const M=S0.model(c,q), out={};
   M.L.forEach(t=>{ const m=M.T[t.id]; let rows=[]; m.secs.forEach(k=>{ const e=M.E[k]; if(!e) return; rows=rows.concat((e.G||[]).flatMap(g=>g.rows||[]),e.rows||[]); });
     out[t.id]={mdl:rows.some(x=>x.mdl),np:rows.filter(x=>(+x.q||0)>0&&!(num(x.p)>0)).length,cnt:m.cnt}; }); return out; }
-const svRe=s=>String(s).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+/* 18.11 (плавность, пакет 1Г): метки на плитках — ОДИН проход по строке одним готовым шаблоном. Было: new RegExp на каждую плитку внутри цикла
+   (11 плиток — 11 сборок шаблона и 11 проходов по всему HTML шага на каждую отрисовку). Результат тот же: плитка находится по data-t, правится первая с таким id. */
+const SV_TILE_RE=/<div class="smt-t([^"]*)"( style="[^"]*")><button type="button" class="smt-tb" data-pl="open" data-t="([^"]*)">([\s\S]*?)<\/button>/g;
 function svMatPost(h,c,q,d,sm){ try{ S.svShownT={sm,t:c.total}; }catch(_){}   /* 13.11 (п. 7): сумма, которую человек видит на экране, — «было» в подсказке класса */
   const i=h.indexOf('<div class="qk qk-smt">'); if(i<0) return h;
   const hasAny=(c.items||[]).length>0||(q.pr||[]).length>0;
   let top=svSrcBanner(q,false)+(hasAny?svKlBar(q):"");
   h=h.slice(0,i+23)+top+h.slice(i+23);
-  const T=svTileInfo(c,q); if(T){ const kitchen=/кухн/i.test(String(sm.kind||"")), model=q.src&&/^(b3d|sk|csv)$/.test(q.src.k);
+  const T=svTileInfo(c,q); if(T){ const kitchen=/кухн/i.test(String(sm.kind||"")), model=q.src&&/^(b3d|sk|csv)$/.test(q.src.k), B=new Map();
     Object.keys(T).forEach(id=>{ const t=T[id]; let bd=""; if(t.mdl) bd+=`<span class="sv-bd g">из модели</span>`; if(t.np) bd+=`<span class="sv-bd y">впишите цену${t.np>1?" · "+t.np:""}</span>`;
       if(!t.cnt&&model&&kitchen&&id==="top") bd+=`<span class="sv-bd y">нет в модели</span>`;
       const yel=t.np>0||(!t.cnt&&model&&kitchen&&id==="top")||(id==="nr"&&t.cnt>0);
       if(!bd&&!yel) return;
-      const re=new RegExp(`<div class="smt-t([^"]*)"( style="[^"]*")><button type="button" class="smt-tb" data-pl="open" data-t="${svRe(id)}">([\\s\\S]*?)</button>`);
-      h=h.replace(re,(all,cls,sty,inner)=>`<div class="smt-t${cls}${yel?" sv-y":""}"${sty}><button type="button" class="smt-tb" data-pl="open" data-t="${esc(id)}">${inner}${bd?`<span class="sv-bds">${bd}</span>`:""}</button>`); }); }
+      B.set(id,{bd,yel}); });
+    if(B.size) h=h.replace(SV_TILE_RE,(all,cls,sty,id,inner)=>{ const b=B.get(id); if(!b) return all; B.delete(id);   /* как раньше — только первая плитка с таким id */
+      return `<div class="smt-t${cls}${b.yel?" sv-y":""}"${sty}><button type="button" class="smt-tb" data-pl="open" data-t="${esc(id)}">${inner}${b.bd?`<span class="sv-bds">${b.bd}</span>`:""}</button>`; }); }
   if(S.plOpen&&S.plOpen.id==="nr"&&S.plOpen.sm===sm) h=h.replace(/<p class="smt-empty">В плитке пока ничего нет[^<]*<\/p>/,svNrHtml(q));
   return h; }
 
@@ -30790,18 +31038,21 @@ function svSnack(txt,undo){ document.getElementById("svSnack")?.remove(); const 
 window.__smetav={msg:()=>S.svKlMsg&&S.svKlMsg.t,cat:()=>{ if(typeof catLoad==="function") catLoad(); return !!(S.cat&&S.cat.data); },apply:svApply,base:svBaseFromOrder,group:svGroupOf,kl:svKlAll,klApply:svKlApply,match:svMatch,cand:svCand,file:svFile,xlsx:svXlsxRows,matList:svMatList};   /* для проверки на стенде */
 
 /* ---------- вид (минимализм: слои, без цветных рамок; цвет — только смысл) ---------- */
+/* 18.11 (смета «один экран»): жёлтый в смете заменён синим — «впишите цену», «нет в модели», подсказка варианта, «скоро», значок недавнего шаблона.
+   Цвет — переменными --v2bl (текст) и --v2blb (подложка) из site_v2.js: они есть в обоих видах и обеих темах. Писать здесь синий числом нельзя —
+   сборка (build_site.py, W2) перекрасит его в нейтральный. Классы .y / .sv-y в разметке прежние. */
 const st=document.createElement("style"); st.textContent=`
 .qk.qk-sv{max-width:760px}
 .sv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 6px}
 .sv-t{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:118px;padding:14px 14px 16px;border:0;border-radius:18px;background:var(--w-l1,var(--w2-soft));color:var(--w-ink,inherit);font:inherit;text-align:left;cursor:pointer;transition:transform 160ms cubic-bezier(.2,.8,.2,1),opacity 160ms ease;-webkit-tap-highlight-color:transparent}
 .sv-t:active{transform:scale(.97)}.sv-t b{font-size:16px;font-weight:600;line-height:1.2;margin-top:6px}.sv-t small{font-size:13px;line-height:1.3;color:var(--w-t2,rgba(60,60,67,.6))}
 .sv-ti{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--w-l2,#e5e5ea);color:var(--w-ink,inherit)}
-.sv-t.soon{opacity:.5}.sv-t.soon small{color:var(--w-y,#d4a000)}
+.sv-t.soon{opacity:.5}.sv-t.soon small{color:var(--v2bl)}
 .sv-cap{margin:18px 4px 8px;font-size:14px;font-weight:600;color:var(--w-t2,rgba(60,60,67,.6))}
 .sv-rec{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .sv-r{display:flex;align-items:center;gap:10px;min-height:60px;padding:10px 12px;border:0;border-radius:16px;background:var(--w-l1,var(--w2-soft));color:var(--w-ink,inherit);font:inherit;text-align:left;cursor:pointer;transition:transform 160ms ease}.sv-r:active{transform:scale(.97)}
 .sv-r b{display:block;font-size:14.5px;font-weight:600;line-height:1.25;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.sv-r small{display:block;font-size:12.5px;color:var(--w-t2,rgba(60,60,67,.6));margin-top:2px}
-.sv-ri{flex:none;color:var(--w-y,#d4a000)}
+.sv-ri{flex:none;color:var(--v2bl)}
 .sv-r.sk,.sv-o.sk{display:block;min-height:60px;background:var(--w-l1,var(--w2-soft));opacity:.6;animation:svPulse 1.2s ease-in-out infinite alternate}@keyframes svPulse{from{opacity:.35}to{opacity:.7}}
 .sv-have{margin-top:16px}
 .sv-ban{display:flex;align-items:center;gap:10px;padding:10px 12px 10px 14px;margin:0 0 10px;border-radius:16px;background:var(--w-l1,var(--w2-soft));font-size:14.5px}.sv-ban.sm{padding:8px 12px}
@@ -30814,10 +31065,10 @@ const st=document.createElement("style"); st.textContent=`
 html[data-vt="dark"] .sv-seg button[aria-pressed="true"]{background:#3a3a3c}
 html[data-vt="dark"] .sv-m .sv-kc,html[data-vt="dark"] .sv-m .sv-ol,html[data-vt="dark"] .sv-m .sv-pick,html[data-vt="dark"] .sv-m .sv-q,html[data-vt="dark"] .sv-m .sv-seg{background:#2a2a2c}html[data-vt="dark"] .sv-m .sv-fi{background:#3a3a3c}html[data-vt="dark"] .sv-m .sv-seg button[aria-pressed="true"]{background:#48484a}
 .sv-gear{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;border:0;background:var(--w-l1,var(--w2-soft));color:var(--w-ink,inherit);cursor:pointer}
-.sv-msg{margin:-2px 2px 10px;font-size:13.5px;line-height:1.35;color:var(--w-y,#d4a000)}
+.sv-msg{margin:-2px 2px 10px;font-size:13.5px;line-height:1.35;color:var(--v2bl)}
 .sv-bds{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
-.sv-bd{font-size:12px;font-weight:600;line-height:1;padding:5px 8px;border-radius:8px}.sv-bd.g{background:rgba(127,127,127,.16);color:inherit;opacity:.8}.sv-bd.y{background:rgba(255,214,10,.18);color:var(--w-y,#a07800)}
-.smt-t.sv-y{background:rgba(255,214,10,.10)}
+.sv-bd{font-size:12px;font-weight:600;line-height:1;padding:5px 8px;border-radius:8px}.sv-bd.g{background:rgba(127,127,127,.16);color:inherit;opacity:.8}.sv-bd.y{background:var(--v2blb);color:var(--v2bl)}
+.smt-t.sv-y{background:var(--v2blb)}
 .sv-m{max-height:88vh;overflow:auto}.sv-h{margin:0 0 10px;font-size:20px}.sv-note{font-size:13.5px;line-height:1.4;color:var(--w-t2,rgba(60,60,67,.6));margin:0 0 12px}
 .sv-pick{display:flex;align-items:center;gap:12px;min-height:64px;padding:12px 14px;margin:0 0 12px;border-radius:16px;background:var(--w-l1,var(--w2-soft));cursor:pointer}.sv-pick b{display:block;font-size:16px}.sv-pick small{display:block;font-size:13px;color:var(--w-t2,rgba(60,60,67,.6));margin-top:2px}
 .sv-ol{display:flex;flex-direction:column;border-radius:16px;background:var(--w-l1,var(--w2-soft));overflow:hidden;margin:0 0 10px}
@@ -32680,7 +32931,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="bbecd66ed8"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="b898b63cdd"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -44898,8 +45149,13 @@ window.V2={apTabs:apTabs2,apRole:apRole2,on:()=>de.classList.contains("v2"),role
 
 /* ---- вид (числа — docs/maket-2-0/final_b/fb.css; вес трёх id — сильнее прежних слоёв skin/skin2/edvid) ---- */
 (function(){ const P='html.v2:not(#v2a):not(#v2b):not(#v2c)', D=P+'[data-vt="dark"]', L=P+':not([data-vt="dark"])', st=document.createElement("style"); st.id="v2Css"; st.textContent=`
-html.v2{--v2fg:#fff;--v2t2:rgba(225,232,255,.68);--v2t3:rgba(225,232,255,.56);--v2line:rgba(255,255,255,.10);--v2well:rgba(255,255,255,.07);--v2g:#30d158;--v2r:#ff6961;--v2rr:#ff453a;--v2y:#ffd60a;--v2trk:rgba(255,255,255,.18);--v2bgr:0,0,0;--v2ease:cubic-bezier(.2,.8,.2,1)}
-html.v2:not([data-vt="dark"]){--v2fg:#000;--v2t2:rgba(28,32,48,.75);--v2t3:rgba(28,32,48,.66);--v2line:rgba(0,0,0,.10);--v2well:rgba(0,30,90,.08);--v2g:#1f7a35;--v2r:#d70015;--v2rr:#d70015;--v2y:#7a5a00;--v2trk:rgba(0,0,0,.14);--v2bgr:242,243,247}
+html.v2{--v2fg:#fff;--v2t2:rgba(225,232,255,.68);--v2t3:rgba(225,232,255,.56);--v2line:rgba(255,255,255,.10);--v2well:rgba(255,255,255,.07);--v2g:#30d158;--v2r:#ff6961;--v2rr:#ff453a;--v2y:#ffd60a;--v2bl:#4da3ff;--v2blz:#0a84ff;--v2blb:rgba(10,132,255,.18);--v2trk:rgba(255,255,255,.18);--v2bgr:0,0,0;--v2ease:cubic-bezier(.2,.8,.2,1)}
+html.v2:not([data-vt="dark"]){--v2fg:#000;--v2t2:rgba(28,32,48,.75);--v2t3:rgba(28,32,48,.66);--v2line:rgba(0,0,0,.10);--v2well:rgba(0,30,90,.08);--v2g:#1f7a35;--v2r:#d70015;--v2rr:#d70015;--v2y:#7a5a00;--v2bl:#0066d6;--v2blz:#2f7fe0;--v2blb:rgba(0,102,214,.10);--v2trk:rgba(0,0,0,.14);--v2bgr:242,243,247}
+/* 18.11 (смета «один экран», макет stend/tmp/smeta_A): синий смысла — «внимание / дешевле нормы / впишите»; в смете он вместо жёлтого (цвета смысла: зелёный, красный, синий).
+   --v2bl — текст и значки (на светлом ≥ 4,5 : 1), --v2blz — заливка (точка, полоса шкалы, рамка выбора), --v2blb — мягкая подложка метки. Имя v2b не брать: занято в селекторе веса (:not(#v2b)).
+   Синий нужен смете и в ПРЕЖНЕМ виде (2.0 на живом сайте видит только директор), поэтому эти три переменные заведены и без html.v2 — строкой ниже. Сама переменная на экране ничего не меняет.
+   Почему здесь, а не в модулях сметы: сборка (build_site.py, W2) перекрашивает синие цвета модулей в нейтральные, а файлы site_v2*.js не трогает; модули сметы пишут var(--v2bl). Тот же набор — в site_v2_ch2.js */
+html{--v2bl:#0066d6;--v2blz:#2f7fe0;--v2blb:rgba(0,102,214,.10)}html[data-vt="dark"]{--v2bl:#4da3ff;--v2blz:#0a84ff;--v2blb:rgba(10,132,255,.18)}
 ${P} .v2z{zoom:var(--v2k,1)}
 /* фон: неподвижный, под всем; сетка-синька 24/120, гаснет к середине */
 ${P}{background:#000!important}${L}{background:#f2f3f7!important}
@@ -46073,7 +46329,12 @@ ${P}.v2-rm #v2Set .v4-sw i{transition:none}
       «стоит / минус» — красным, выбор в переключателях — белая капсула, главная кнопка — белая таблетка, нажатия ≥ 44, шторки — стекло (радиус 30).
       Масштаб: страница сжата в 0,86 (site_skin.js) — содержимое этих экранов разжато обратно (zoom = 1/0,86, как .v2z в Части 1): размеры книги = пиксели экрана.
    3) Уборка дублей (раздел 5): в «⋯» старого снабжения нет «Старого вида». «Подарки» в «Все разделы» — не здесь (раздел «Все разделы» ведёт другая копия).
-      Код не удаляем — только прячем стилем при html.v2. */
+      Код не удаляем — только прячем стилем при html.v2.
+   4) 18.11 (задание docs/zadaniya/2026-11-18-smeta-odin-ekran.md, пакет 1Г; макет stend/tmp/smeta_A/maket.html) — ТОЖЕ ТОЛЬКО ВИД:
+      а) окно выбора материала (#plQp, разметку даёт site_plitki.js): ряды «Материал / Класс / Толщина» и заголовки классов — в 2.0 как на макете;
+      б) ЕДИНСТВЕННОЕ исключение из «только при html.v2» — слой «синий вместо жёлтого в смете» в конце файла (стиль v2p3Blue): он действует в обоих видах,
+         потому что смету в прежнем виде видят все, кроме директора. Почему слой живёт здесь: сборка перекрашивает синие цвета модулей в нейтральные
+         (build_site.py, W2), а файлы site_v2*.js не трогает. Формулы, суммы и разметку слой не трогает — только цвет. */
 (function(){
 if(!window.APP_ONE||typeof render!=="function") return;
 const de=document.documentElement;
@@ -46140,7 +46401,7 @@ ${V} :is(.head,.ks-head,.of-head){margin:8px 0 16px!important;padding:0!importan
 ${V} .head p.muted{font-size:15px!important;color:var(--v2t2)!important;line-height:1.35!important}
 ${V} :is(.muted,small.muted,span.muted,p.muted){color:var(--v2t2)!important}
 /* второй текст: прежние «.55 + прозрачность .6–.7» давали контраст 2–3 : 1 — в 2.0 второй цвет книги (.68) без прозрачности (≥ 4,5 : 1) */
-${X} #view{--muted:var(--v2t2);--w-t2:var(--v2t2);--dk-mut:var(--v2t2);--cn-g:var(--v2g);--cn-r:var(--v2r);--cn-y:var(--v2y);--pg-g:var(--v2g);--pg-r:var(--v2r);--pg-y:var(--v2y);--zk-g:var(--v2g);--zk-r:var(--v2r)}   /* цвета смысла модулей сметы, порога, закупки — цветами книги (тёмная и светлая пара) */
+${X} #view{--muted:var(--v2t2);--w-t2:var(--v2t2);--dk-mut:var(--v2t2);--cn-g:var(--v2g);--cn-r:var(--v2r);--cn-y:var(--v2y);--pg-g:var(--v2g);--pg-r:var(--v2r);--pg-y:var(--v2y);--zk-g:var(--v2g);--zk-r:var(--v2r)}   /* цвета смысла модулей сметы, порога, закупки — цветами книги (тёмная и светлая пара); 18.11: в БЫСТРОЙ смете «середина» (--cn-y, --pg-y) — синяя, это делает слой v2p3Blue ниже (метка html[data-smq]); в обычной смете по модулям — как было */
 ${V} :is(small,.muted,.dp-cl,.zt-tot span,.r3-zp.zero,.smt-tb small,.smt-tr small){opacity:1!important}
 ${V} small:not([class]),${V} small:is(.smt-ts2){color:var(--v2t2)!important}
 ${V} .r3-zp.zero :is(b,.r3-zpn>b){color:var(--v2t2)!important}
@@ -46261,7 +46522,9 @@ ${P} #ksM .modal-card,${P} #kzM .modal-card{overflow-y:auto!important;-webkit-ov
 ${V} :is(.shp-gdebt.ok b,.exp-tot b){color:var(--v2g)!important}
 ${V} .ct-sum:not(.ct-ok):not(.ct-bad){color:var(--v2t2)!important}
 ${V} .btn:disabled{opacity:1!important;color:var(--v2t3)!important}
-${VL} :is(.cn-y,.smt-wch,.zt-ck.half,.pg-hint,.pg-f){color:var(--v2y)!important;opacity:1!important}
+${VL} .zt-ck.half{color:var(--v2y)!important;opacity:1!important}
+${VL} :is(.cn-y,.smt-wch,.pg-hint,.pg-f){opacity:1!important}   /* 18.11: цвет этих надписей в быстрой смете — синий, его даёт слой v2p3Blue ниже (было: тёмно-жёлтый --v2y); подсказка порога — цветом своей зоны */
+${L}:not([data-smq]) #view :is(.pg-hint,.pg-f){color:var(--v2y)!important}   /* 18.11 (доводка): обычная смета по модулям не меняется — подсказка порога в ней, как была, тёмно-жёлтая */
 ${VL} .zt-ck.on{background:var(--v2g)!important;border-color:var(--v2g)!important;color:#fff!important}
 ${V} .pg-hint>b:first-child{display:block}
 ${V} .st-q{padding-left:40px!important}
@@ -46270,6 +46533,35 @@ ${V} :is(.smt-s-dim,.smt-s-dim *){opacity:1!important}${V} .smt-s-dim :is(span,b
 ${V} :is(.r3-m1,.r3-mc){padding-left:16px!important;padding-right:16px!important}${V} :is(.r3-m4,.r3-ml){gap:12px!important}
 /* мелкие значки — по сетке 4 (левый край текста после значка кратен 4) */
 ${V} .ks-pf svg{width:16px!important;height:16px!important}${V} .of-lk svg{width:12px!important;height:12px!important}${V} .zt-ck{width:28px!important;height:28px!important}
+/* 18.11 — окно выбора материала (#plQp; разметка — site_plitki.js, макет stend/tmp/smeta_A, экран 2). Договор классов с пакетом 1Б:
+   ряд = .plq-fr > .plq-fl (подпись «Материал / Класс / Толщина») + .plq-chips.plq-secs|.plq-mat|.plq-cls|.plq-sub > button[data-plq][aria-pressed] (число — в <small>);
+   заголовок класса = .plq-clh > b (имя, число — в <span>) + button[data-plq="cls"] «Все N ›». Здесь только вид 2.0: чип — «колодец» 44 px, выбранный — белая (в светлой теме чёрная) капсула,
+   «Мои / Недавние / Все» — одним переключателем, «Все N ›» и рамка отмеченной плитки — синие. Размеры кратны 4, текст не мельче 13 — сетке 4 (gSnap) править нечего. */
+${P} #plQp .plq-src{gap:0!important;margin:0 16px 12px!important;padding:0!important;border-radius:22px!important;background:var(--v2well)!important;overflow:hidden!important}
+${P} #plQp .plq-chips.plq-src>button:not([aria-pressed="true"]){background:none!important}
+${P} #plQp .plq-src>button{flex:1 1 0!important;min-width:0!important}
+${P} #plQp .plq-chips>button{min-height:44px!important;padding:0 16px!important;border:0!important;border-radius:22px!important;background:var(--v2well)!important;color:var(--v2fg)!important;font-size:15px!important;font-weight:600!important;line-height:20px!important;box-shadow:none!important;transition:background-color 100ms,color 100ms}
+${P} #plQp .plq-chips>button small{margin-left:4px!important;font-size:13px!important;font-weight:500!important;color:var(--v2t3)!important;opacity:1!important}
+${PD} #plQp .plq-chips>button[aria-pressed="true"]{background:#fff!important;color:#000!important}
+${PL} #plQp .plq-chips>button[aria-pressed="true"]{background:#000!important;color:#fff!important}
+${P} #plQp .plq-chips>button[aria-pressed="true"] small{color:inherit!important;opacity:.62!important}
+${P} #plQp .plq-chips>button:active{transform:scale(.97);opacity:.85}
+${P} #plQp .plq-fr{min-height:44px!important;margin:0 -14px 8px 0!important}
+${P} #plQp .plq-fr .plq-chips{gap:8px!important;padding:0 16px 0 0!important}
+${P} #plQp .plq-fl{flex:none!important;width:84px!important;font-size:13px!important;font-weight:600!important;line-height:16px!important;color:var(--v2t3)!important;opacity:1!important}
+${P} #plQp .plq-clh{min-height:44px!important;margin:4px 0 0!important;font-size:17px!important}
+${P} #plQp .plq-clh b{font-weight:700!important;color:var(--v2fg)!important}
+${P} #plQp .plq-clh b span{font-weight:500!important;color:var(--v2t3)!important;opacity:1!important}
+${P} #plQp .plq-clh button{min-height:44px!important;padding:0 0 0 12px!important;border:0!important;background:none!important;box-shadow:none!important;color:var(--v2bl)!important;font-size:15px!important;font-weight:600!important}
+${P} #plQp .plq-clh button:active{opacity:.6}
+${P} #plQp :is(.plq-grid,.plq-list)+.plq-clh{margin-top:12px!important}
+${P} #plQp :is(.plq-g,.plq-r).on{border-color:var(--v2blz)!important;background:var(--v2blb)!important;box-shadow:inset 0 0 0 1px var(--v2blz)!important}
+${P} #plQp .on .plq-cb{background:var(--v2blz)!important;border-color:var(--v2blz)!important}
+${P} #plQp .plq-pvt{border:1px dashed var(--v2t3)!important;border-radius:20px!important;background:none!important;box-shadow:none!important;color:var(--v2fg)!important}   /* 18.11 (доводка): плитка «+ Заказной фасад» — пунктиром, чтобы не путать с декором из каталога */
+${P} #plQp .plq-pvt small{color:var(--v2t2)!important;opacity:1!important}
+${P}.v2-rm #plQp .plq-chips>button{transition:none!important}
+@media(max-width:560px){${P} #plQp .plq-r.on .plq-fav{display:none!important}}   /* 18.11 (доводка): в 2.0 на телефоне строка списка у́же (окно разжато): рядом с «− 1 +» и ★ названию отмеченной строки оставалось 60 px («ЛДСП, Egger,…») — ★ у отмеченной строки здесь прячется; в прежнем виде и на компьютере ★ на месте */
+@media(min-width:900px){${P} #plQp>.plq{border-radius:30px!important}}   /* 18.11 (доводка): на компьютере окно выбора стоит посреди экрана — нижние углы тоже круглые (общее правило листов скругляет только верх) */
 /* уборка дублей (раздел 5): «Старый вид» снабжения (⋯ → прежние вкладки) — в 2.0 нет. «Подарки» в «Все разделы» — не здесь: «Все разделы» чинит merge125 (прораб 17.11) */
 ${P} .sn-menu [data-act="sup-tab"]{display:none!important}
 /* верхняя полоса («‹», «🔍») — как Часть 2 на своих экранах (site_v2_ch2.js, data-v2c2 … .top): прозрачная, кнопки — круглое стекло, «⬇ Установить» спрятана
@@ -46287,6 +46579,55 @@ ${X} .top .install-btn{display:none!important}
 ${X} .top .brand{gap:8px!important}
 /* «меньше движения» */
 ${P}.v2-rm #view :is(.zk-card,.r3-mc,.r3-zp,.of-tile,.sv-t,.sv-r){transition:none!important}
+`; document.head.appendChild(st); })();
+
+/* ---- 18.11: смета — синий вместо жёлтого (решение по заданию «смета один экран»: цвета смысла — зелёный, красный, синий; макет: «синяя точка — есть замечание»,
+   шкала цены «красное — в убыток, синее — дешевле нормы, зелёное — в норме»). ОБА ВИДА (2.0 и прежний), обе темы — цвета берутся из --v2bl / --v2blz / --v2blb (site_v2.js).
+   Только цвет: ни разметка, ни расчёт не трогаются. Быстрая смета и её окна: шаги, плитки и список разделов, «Цена» (шкала, подсказка порога), «Отправить», «Не забыли?»,
+   «цены не загрузились», черновик. НЕ трогаем: обычную смету по модулям (site_smeta.js), кассу и ЗП («жёлтый — скоро» там остаётся), чертёж шкафа (размерные линии), палитру цветов плиток.
+   Вес трёх id — чтобы пересилить прежние слои (site_skin.js красит любой .warn жёлтым, site_smeta.js — .smt-wch и «скоро» через --w-y с !important). ---- */
+/* 18.11 (доводка, НАХОДКА «перекрасилась и обычная смета по модулям»): часть классов у двух смет общая — «Не забыли?» (.sk-*), подсказка порога (.pg-*), точка «не сохранена» (.sm-dirty),
+   а полоса шагов (.smn-stp), кнопка «⚠ Без цены» (.smn-npb), «Что дальше» (.smn-what) — только обычной сметы. По заданию экран обычной сметы по модулям НЕ меняется, поэтому:
+   её собственные классы из слоя убраны, а общие перекрашиваются только при метке html[data-smq] — «на экране быстрая смета» (в #view есть корень быстрой сметы <div class="qk">).
+   Метку ставим после каждой отрисовки, как data-v2p3 выше; ни расчёт, ни разметку она не трогает. */
+function smqMark(){ let q=false; try{ q=!!document.querySelector("#view .qk"); }catch(_){} if(q===de.hasAttribute("data-smq")) return; if(q) de.setAttribute("data-smq","1"); else de.removeAttribute("data-smq"); }
+{ const _r3=render; render=function(){ const r=_r3.apply(this,arguments); try{ smqMark(); }catch(e){ console.error("смета: синий слой",e); } return r; }; }
+try{ const v0=document.getElementById("view"); if(v0) new MutationObserver(smqMark).observe(v0,{childList:true}); }catch(_){}   /* экран сменили в обход render() — метка всё равно верная */
+try{ smqMark(); }catch(_){}
+(function(){ if(document.getElementById("v2p3Blue")) return;
+const B='html:not(#v2a):not(#v2b):not(#v2c)', O='html:not(.v2):not(#v2a):not(#v2b):not(#v2c)';
+const Q='html[data-smq]:not(#v2a):not(#v2b):not(#v2c):not(#v2d)';   /* только быстрая смета; четыре id — сильнее правил 2.0 для #view (там три id и #view) */
+const st=document.createElement("style"); st.id="v2p3Blue"; st.textContent=`
+/* шаги быстрой сметы: «!» у шага с замечанием (у полосы быстрой сметы класс qk-stp; полосу обычной сметы — smn-stp без qk-stp — не трогаем) */
+${B} .qk-stp button.warn i{background:var(--v2blz)!important;color:#fff!important}
+${B} .qk-stp button.warn{border-top-color:var(--v2blz)!important}
+${O}[data-vt="dark"] .qk-stp button.warn,${O}[data-vt="dark"] .qk-stp button.warn span{color:var(--v2bl)!important}   /* прежний вид, тёмная тема: подпись шага красил жёлтым общий .warn из site_skin.js */
+${Q} #view{--cn-y:var(--v2bl);--pg-y:var(--v2bl)}
+${Q} .sm-dirty::before{background:var(--v2blz)!important}   /* точка перед «не сохранена» в шапке быстрой сметы — оставалась жёлтой на всех шагах */
+/* плитки и список разделов: точка «есть замечание», «⚠ запас ЛДСП?», метки «впишите цену» */
+${B} :is(.smt-wch,.smt-gw,.smt-gt small.smt-gw){color:var(--v2bl)!important}
+${B} :is(.smt-s-warn .smt-tb>b,.smt-s-warn.smt-ts>b,.smt-tabs button.smt-s-warn,.smt-g.smt-s-warn .smt-gn b)::after{background:var(--v2blz)!important}
+${B} .sv-bd.y{background:var(--v2blb)!important;color:var(--v2bl)!important}
+${B} :is(.sv-t.soon small,.sv-msg,.sv-ri,.qk-rmk){color:var(--v2bl)!important}
+${B} .pld-tag{background:var(--v2blz)!important;color:#fff!important}
+${B} .smd-ban{background:var(--v2blb)!important;border-color:var(--v2blz)!important}${B} .smd-ban b{color:var(--v2bl)!important}
+${B} .qkw-err{background:var(--v2blb)!important;border-color:var(--v2blz)!important}
+/* «Цена»: шкала (середина — «дешевле нормы»), подсказка порога, предупреждения */
+${B} :is(.qk.cn,.cn-mod,.cn-cfg,.cn-wkt){--cn-y:var(--v2bl)}
+${Q} :is(.pg-on,.pg-sc,.pg-mod){--pg-y:var(--v2blz);--pg-yb:var(--v2blb);--pg-yt:var(--v2bl)}
+${B} .cn-y,${B} .cn-pv-y b{color:var(--v2bl)!important}
+${B} :is(.cn-warn:not(.r),.cn-pv-y){background:var(--v2blb)!important;box-shadow:inset 0 0 0 1px var(--v2blz)!important}
+/* «Отправить» и «Не забыли?» */
+${B} .smg-warn{background:var(--v2blb)!important}
+${B} .smg-lock{background:var(--v2blb)!important;border-color:var(--v2blz)!important}
+${B} :is(.smg-lock svg,.smg-ti,.smg-st.warn b){color:var(--v2bl)!important}
+${Q} :is(.sk-y,.sk-okbar>b){color:var(--v2bl)!important}
+${Q} .sk-need .sk-t b::before,${Q} .sk-bar .y{background:var(--v2blz)!important}
+/* окно выбора материала в прежнем виде (в 2.0 — правила #plQp выше; ряды «Материал / Класс / Толщина» и заголовки классов в прежнем виде рисует сам site_plitki.js).
+   Здесь одно: в светлой теме выбранный чип («Мои / Недавние / Все», разделы фурнитуры, а с доводки 18.11 — и ряды «Материал / Класс / Толщина»)
+   был бы белой капсулой на светлом окне — не видно, что выбрано; теперь чёрная капсула, как выбранный вид «квадратиками / списком» рядом. Тип / марка фурнитуры (ряд без подписи) — серый, как был */
+${O}:not([data-vt="dark"]) #plQp :is(.plq>.plq-chips,.plq-fr>.plq-chips)>button[aria-pressed="true"]{background:#000!important;color:#fff!important;border-color:#000!important}
+${O} #plQp :is(.plq>.plq-chips,.plq-fr>.plq-chips)>button[aria-pressed="true"] small{color:inherit!important;opacity:.62!important}   /* число на нажатом чипе — цветом чипа (серое число на чёрной капсуле не читалось) */
 `; document.head.appendChild(st); })();
 })();
 
@@ -46451,8 +46792,10 @@ const FONT='font-family:-apple-system,"SF Pro Text",system-ui,Roboto,"Segoe UI",
 const MONO='font:600 13px/1.3 -apple-system,"SF Pro Text",system-ui,Roboto,"Segoe UI",sans-serif!important;font-variant-numeric:tabular-nums';   /* бирка №: тем же шрифтом, цифры одной ширины (мелочь 3 штаба; fb.css u.tag) */
 const st=document.createElement("style"); st.id="v2c2Css"; st.textContent=`
 /* токены: те же имена и значения, что у Части 1 (site_v2.js), — на случай, если её стиль ещё не подключён */
-html.v2{--v2fg:#fff;--v2t2:rgba(225,232,255,.68);--v2t3:rgba(225,232,255,.56);--v2line:rgba(255,255,255,.10);--v2well:rgba(255,255,255,.07);--v2g:#30d158;--v2r:#ff6961;--v2rr:#ff453a;--v2y:#ffd60a;--v2trk:rgba(255,255,255,.18);--v2ease:cubic-bezier(.2,.8,.2,1)}
-html.v2:not([data-vt="dark"]){--v2fg:#000;--v2t2:rgba(28,32,48,.75);--v2t3:rgba(28,32,48,.66);--v2line:rgba(0,0,0,.10);--v2well:rgba(0,30,90,.08);--v2g:#1f7a35;--v2r:#d70015;--v2rr:#d70015;--v2y:#7a5a00;--v2trk:rgba(0,0,0,.14)}
+html.v2{--v2fg:#fff;--v2t2:rgba(225,232,255,.68);--v2t3:rgba(225,232,255,.56);--v2line:rgba(255,255,255,.10);--v2well:rgba(255,255,255,.07);--v2g:#30d158;--v2r:#ff6961;--v2rr:#ff453a;--v2y:#ffd60a;--v2bl:#4da3ff;--v2blz:#0a84ff;--v2blb:rgba(10,132,255,.18);--v2trk:rgba(255,255,255,.18);--v2ease:cubic-bezier(.2,.8,.2,1)}
+html.v2:not([data-vt="dark"]){--v2fg:#000;--v2t2:rgba(28,32,48,.75);--v2t3:rgba(28,32,48,.66);--v2line:rgba(0,0,0,.10);--v2well:rgba(0,30,90,.08);--v2g:#1f7a35;--v2r:#d70015;--v2rr:#d70015;--v2y:#7a5a00;--v2bl:#0066d6;--v2blz:#2f7fe0;--v2blb:rgba(0,102,214,.10);--v2trk:rgba(0,0,0,.14)}
+/* 18.11: --v2bl / --v2blz / --v2blb — синий смысла (в смете вместо жёлтого), значения — как в site_v2.js; вторая строка — для прежнего вида (без html.v2) */
+html{--v2bl:#0066d6;--v2blz:#2f7fe0;--v2blb:rgba(0,102,214,.10)}html[data-vt="dark"]{--v2bl:#4da3ff;--v2blz:#0a84ff;--v2blb:rgba(10,132,255,.18)}
 /* запасной запуск (стенд без Части 1): фон-чертёж и разжатие */
 ${P}.v2c2fb .v2z{zoom:var(--v2k,1)}
 ${P}.v2c2fb{background:#000!important}${P}.v2c2fb:not([data-vt="dark"]){background:#f2f3f7!important}${P}.v2c2fb body{background:transparent!important}
@@ -47215,7 +47558,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="bbecd66ed8";/*cehqr-build*/
+  const BUILD="b898b63cdd";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -47326,7 +47669,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="bbecd66ed8";/*cehqr-build*/
+  const BUILD="b898b63cdd";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
