@@ -3640,11 +3640,17 @@ function fvOrient(ps, all){
   const back=ps.filter(p=>{ const d=[0,1,2].map(i=>p.box[i+3]-p.box[i]); const t=Math.min(...d); return (t<=8||(t<=20&&BACK.test(p.name||"")))&&t!==d[1]&&d[1]>=200&&Math.max(d[0],d[2])>=100; })
     .sort((a,b)=>{ const A=(a.box[3]-a.box[0])*(a.box[4]-a.box[1])*(a.box[5]-a.box[2]), B=(b.box[3]-b.box[0])*(b.box[4]-b.box[1])*(b.box[5]-b.box[2]); return B-A; })[0];
   let ax, sg;
-  if(back){ const d=[back.box[3]-back.box[0],back.box[5]-back.box[2]]; ax=d[0]<d[1]?0:2; const bc=(back.box[ax]+back.box[ax+3])/2; sg=bc<m.c[ax]?1:-1; }
+  if(back){ const d=[back.box[3]-back.box[0],back.box[5]-back.box[2]]; ax=d[0]<d[1]?0:2; const bc=(back.box[ax]+back.box[ax+3])/2; sg=bc<m.c[ax]?1:-1;
+    /* 18.11: «задняя стенка» найдена с ТОЙ ЖЕ стороны, что и настоящие фасады, но ближе к середине (тонкая вставка, дно ящика, фальшпанель) — это не задняя стенка; лицо там, где фасады */
+    const fT=ps.filter(p=>FAC.test(p.name||"")&&p.box[4]-p.box[1]>=(m.hi[1]-m.lo[1])*0.4); if(fT.length){ const cF=fT.reduce((a,p)=>a+(p.box[ax]+p.box[ax+3])/2,0)/fT.length, dF=cF-m.c[ax], dB=bc-m.c[ax]; if(dF*dB>0&&Math.abs(dF)>Math.abs(dB)+20) sg=dF>0?1:-1; } }
   else { const H=m.hi[1]-m.lo[1], sides=ps.filter(p=>p.box[4]-p.box[1]>=H*0.5&&!isF(p)&&!BACK.test(p.name||""));
     const thinX=sides.filter(p=>p.box[3]-p.box[0]<=40&&p.box[5]-p.box[2]>40).length, thinZ=sides.filter(p=>p.box[5]-p.box[2]<=40&&p.box[3]-p.box[0]>40).length;
     ax=thinX>thinZ?2:thinZ>thinX?0:((m.hi[0]-m.lo[0])<(m.hi[2]-m.lo[2])?0:2);
-    const fc1=ps.filter(p=>FAC.test(p.name||"")), fc0=fc1.length?fc1:ps.filter(p=>FR.test(p.name||"")), fcT=fc0.filter(p=>p.box[4]-p.box[1]>=H*0.4), fc=fcT.length?fcT:fc0; if(fc.length){ const c=fc.reduce((a,p)=>a+(p.box[ax]+p.box[ax+3])/2,0)/fc.length; sg=!fc1.length&&Math.abs(c-m.c[ax])<20?1:c>m.c[ax]?1:-1; }   /* «фронтальные» с двух сторон (наличники) — смотрим как обычно, спереди */ else sg=m.c[ax]<all.c[ax]?1:-1; }
+    const fc1=ps.filter(p=>FAC.test(p.name||"")), fc0=fc1.length?fc1:ps.filter(p=>FR.test(p.name||"")), fcT=fc0.filter(p=>p.box[4]-p.box[1]>=H*0.4), fc=fcT.length?fcT:fc0; if(fc.length){ const c=fc.reduce((a,p)=>a+(p.box[ax]+p.box[ax+3])/2,0)/fc.length; sg=!fc1.length&&(Math.abs(c-m.c[ax])<20||ax===2)?1:c>m.c[ax]?1:-1; }   /* «фронтальные» с двух сторон (наличники) — смотрим как обычно, спереди */
+    /* 18.11 (Кирилл, скрин с телефона: «Чертеж обратно показывает в зади мастер вообще не понимает»): открытый стеллаж без фасадов и задней стенки — его «Фронтальные» планки стоят СЗАДИ (рёбра жёсткости),
+       и вид строился со спины; у модуля-одиночки без фасадов середина совпадала с серединой всей модели — тоже выходило «сзади». Теперь без настоящих фасадов и задней стенки смотрим как в Базисе — спереди (на +Z);
+       назад разворачиваем только модуль, который явно стоит в дальней половине модели. */
+    else sg=m.c[ax]>all.c[ax]+20?-1:1; }
   return ax+","+sg; }
 function moduleViews(parts, fasteners, mode, wire, hinges, pos, gaps){
   parts=parts.filter(p=>!/^\s*стена/i.test(String(p.material||""))&&!/^\s*(сталь|металл)/i.test(String(p.material||""))&&!isTech(p));   // встроенная техника (сталь) — не мебель fasteners=(fasteners||[]).filter(f=>!isTechF(f));   // стены комнаты в чертёж не берём
@@ -25241,7 +25247,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="b898b63cdd";
+const CHK_BUILD="47f5fdd0e6";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -32932,7 +32938,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="b898b63cdd"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="47f5fdd0e6"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -47559,7 +47565,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="b898b63cdd";/*cehqr-build*/
+  const BUILD="47f5fdd0e6";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -47670,7 +47676,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="b898b63cdd";/*cehqr-build*/
+  const BUILD="47f5fdd0e6";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
