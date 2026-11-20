@@ -8375,7 +8375,8 @@ const CCH=(function(){
     try{ L.forEach(m=>{ const f=R[m.act]; if(!f) return; once[m.k]=Date.now(); try{ const r=f(m.p,m); if(r&&r.catch){ r.catch(e=>console.warn("cache refresh",m.act,e)); P.push(r.catch(()=>{})); } }catch(e){ console.warn("cache refresh",m.act,e); } }); }
     finally{ let done=false; const fin=()=>{ if(!done){ done=true; bgN--; setTimeout(()=>{ flN--; },150); } };   /* flN — на 0,15 с дольше: перерисовка после загрузчика бывает в следующем кадре (site_fast.js) */ setTimeout(fin,8000);
       // загрузчик сначала показал «Загружаю…», потом экран — страница могла укоротиться и съехать вверх: возвращаем, если человек сам не крутил
-      Promise.all(P).then(()=>{ fin(); requestAnimationFrame(()=>{ try{ if(scr()===k0&&gestAt<t0&&Date.now()-t0<1500&&Math.abs(window.scrollY-y0)>2) window.scrollTo(0,y0); }catch(_){} }); },fin); } }
+      /* 20.11: только что нажали вкладку внизу (site_v2.js V2.top0) — экран должен стоять в самом верху; место, снятое во время докатывающейся инерции iPhone, не возвращаем */
+      Promise.all(P).then(()=>{ fin(); requestAnimationFrame(()=>{ try{ const tab0=window.V2&&V2.top0&&Date.now()-V2.top0<2500&&V2.top0>=t0-2500; if(!tab0&&scr()===k0&&gestAt<t0&&Date.now()-t0<1500&&Math.abs(window.scrollY-y0)>2) window.scrollTo(0,y0); }catch(_){} }); },fin); } }
   function refresh(m){ if(!R[m.act]) return; queue.set(m.k,m); if(!qT) qT=setTimeout(flush,0); }
   document.addEventListener("focusout",()=>{ if(queue.size){ clearTimeout(qT); qT=setTimeout(flush,350); } },true);
   /* ---- сеть ---- */
@@ -15940,15 +15941,37 @@ if(typeof shpMoreHtml==="function"){ const _sbMore=shpMoreHtml; shpMoreHtml=func
   else if(admOn()) it=row('data-act="shp-tab" data-v="subadm"',"Подписки клиентов","Фирмы и дизайнеры: цены, QR, «Продлить на месяц»");
   return it?(h.indexOf('<ul class="shp-list">')>=0?h.replace('<ul class="shp-list">','<ul class="shp-list">'+it):h+`<ul class="shp-list">${it}</ul>`):h; }; }
 if(typeof shpTab==="function"){ const _sbTab=shpTab; shpTab=function(){ return S.shop&&S.shop.mode==="subadm"?"more":_sbTab.apply(this,arguments); }; }
-async function admLoad(){ if(SB.busy) return; SB.busy=true; const j=await shpGet("action=subList",!!SB.adm); SB.busy=false; if(j) SB.adm=j; else if(!SB.adm) SB.adm={err:1};
-  if(S.view==="shop"&&S.shop.mode==="subadm"&&!document.querySelector(".modal")) shpRenderKeep(); }
+/* 20.11 (видео Кирилла 21:02, iPhone, LTE: «Деньги → Подписки» висит на «Загружаю…»). Причины: 1) запрос subList ждал ответа сколько угодно
+   (без предела; на LTE ответ таблицы бывает не приходит) и не запоминается в памяти телефона — экрану нечего показать, пока нет ответа;
+   2) пришедший ответ рисовался, только если на странице нет НИ ОДНОГО .modal (и тихая перерисовка shpRenderKeep тоже ждёт, пока «открыт диалог»):
+   любое оставшееся в странице окно (даже невидимое) — и экран навсегда «Загружаю…»; 3) SB.busy висел вместе с запросом — «↻» ничего не делал.
+   Теперь: предел 20 с, каждая загрузка со своим номером (новая отменяет старую), экран «Загружаю…» перерисовывается сразу (там нечего беречь),
+   а при ошибке — понятный текст и «Повторить». Сервер, права и данные — те же. */
+const SB_TO=20000;
+function sbVisModal(){ try{ return [...document.querySelectorAll(".modal")].some(m=>m.getClientRects().length&&getComputedStyle(m).display!=="none"&&getComputedStyle(m).visibility!=="hidden"); }catch(_){ return false; } }
+function sbPaint(){ if(!(S.view==="shop"&&S.shop&&S.shop.mode==="subadm")) return;
+  const wait=!!document.querySelector("#view [data-sbwait]");   /* на экране «Загружаю…» / ошибка — беречь нечего: рисуем сразу, мимо «занят ли человек» */
+  if(wait){ const y=window.scrollY; render(); window.scrollTo(0,y); return; }
+  if(sbVisModal()){ clearTimeout(SB.pt); SB.pt=setTimeout(sbPaint,600); return; }   /* видимое окно поверх (например «Удалить фирму») — дорисуем, когда закроют */
+  shpRenderKeep(); }
+async function admLoad(){ const my=(SB.seq=(SB.seq||0)+1); SB.busy=true; SB.t0=Date.now(); let j=null, why="";
+  try{ j=await Promise.race([shpGetSub(),new Promise(r=>setTimeout(()=>r({__to:1}),SB_TO))]); }catch(_){ j=null; }
+  if(my!==SB.seq) return;   /* пока ждали, нажали «↻» — эта загрузка уже не нужна */
+  SB.busy=false; if(j&&j.__to){ j=null; why="to"; }
+  if(j&&j.ok) SB.adm=j; else if(!SB.adm||SB.adm.err) SB.adm={err:1,why:why||(j&&j.error)||"net"}; else toast("Нет связи с таблицей — на экране прежний список");
+  sbPaint(); }
+/* свой запрос: ответ сервера целиком (ошибку «только директор» / «нет прав» показываем словами, а не общим «Не получилось») */
+async function shpGetSub(){ try{ const r=await fetch(shpUrl("action=subList&pin="+encodeURIComponent(shpPin())),{cache:"no-cache"}); const j=await r.json();
+    if(j&&j.error==="pin"){ shpBadPin(); return null; } return j||null; }catch(_){ return null; } }
 function chip(x,now,gr){ const left=Math.ceil((x.until-now)/864e5);
   if(!x.until) return String(x.status||"").trim()==="бесплатно"?`<span class="sb-chip">бесплатно · 3 сметы/мес</span>`:`<span class="sb-chip">без срока</span>`;   /* 16.11: дизайнер без подписки (desReg пишет «бесплатно») — 3 сметы в месяц */
   if(left<-gr) return `<span class="sb-chip bad">только просмотр · ${dd(-left)} назад</span>`;
   if(left<0) return `<span class="sb-chip warn">просрочено · ${dd(-left)}</span>`;
   return `<span class="sb-chip ${left<=3?"warn":"ok"}">${/оплач/.test(x.status)?"оплачено":"пробно"} · ещё ${dd(left)}</span>`; }
 function admHtml(){ const A=SB.adm; let h=`<div class="sb-wrap"><div class="sb-hd"><h2>Подписки клиентов</h2><button type="button" class="btn sm" data-sba="reload" aria-label="Обновить">↻</button></div>`;
-  if(!A) return h+`<p class="muted">Загружаю…</p></div>`; if(A.err) return h+`<p class="note">Не получилось загрузить. Обновите скрипт таблицы.</p></div>`;
+  if(!A) return h+`<p class="muted" data-sbwait="1" role="status">Загружаю…</p></div>`;
+  if(A.err){ const msg=A.why==="to"?"Таблица долго не отвечает. Проверьте интернет и нажмите «Повторить».":A.why==="dir"||A.why==="role"?"Подписки клиентов видит только директор главной фирмы.":A.why==="net"?"Нет связи с таблицей. Проверьте интернет и нажмите «Повторить».":"Не получилось загрузить подписки. Нажмите «Повторить».";
+    return h+`<div class="sb-err" data-sbwait="1" role="alert"><p class="note">${se(msg)}</p><button type="button" class="btn primary" data-sba="reload">Повторить</button></div></div>`; }
   const c=A.cfg, now=A.now||Date.now(), gr=A.grace||3, nF=A.firms.filter(x=>x.founder).length, nD=A.des.filter(x=>x.founder).length;
   /* Р3 (12.11, Кирилл: «не понятно, исправить надо», вариант А): каждый тариф — карточка, подпись над каждым полем, «цена для первых клиентов» вместо «основатель» */
   const nf=v=>v===""||v==null||!(+v>0)?"":(+v).toLocaleString("ru-RU"), fl=(lb,f,v,cls,ph)=>`<label class="sb-f${cls?" "+cls:""}"><small>${lb}</small><input data-f="${f}" value="${se(v)}" inputmode="numeric" autocomplete="off"${ph?` placeholder="${ph}"`:""}></label>`;
@@ -16023,10 +16046,11 @@ function firmDelAsk(code){ const x=((SB.adm&&SB.adm.firms)||[]).find(f=>f.code==
     draw(); });
   document.addEventListener("keydown",onKey,true); document.body.appendChild(m); load(); }
 if(typeof viewShop==="function"){ const _sbView=viewShop; viewShop=function(){
-  if(S.shop.mode==="subadm"){ if(!admOn()){ S.shop.mode="more"; return _sbView.apply(this,arguments); } if(!SB.adm&&!SB.busy) setTimeout(admLoad,0); return shpNavHtml()+admHtml(); }
+  if(S.shop.mode==="subadm"){ if(!admOn()){ S.shop.mode="more"; return _sbView.apply(this,arguments); }
+    if(!SB.adm&&(!SB.busy||Date.now()-(SB.t0||0)>SB_TO+2000)){ SB.busy=true; SB.t0=Date.now(); setTimeout(admLoad,0); } return shpNavHtml()+admHtml(); }   /* загрузка «застряла» дольше предела — новая */
   return _sbView.apply(this,arguments); }; }
 document.addEventListener("click",async e=>{ const b=e.target.closest&&e.target.closest("[data-sba]"); if(!b||!(S.shop&&S.shop.mode==="subadm")) return; e.preventDefault();
-  if(b.dataset.sba==="reload"){ SB.adm=null; shpRenderKeep(); return admLoad(); }
+  if(b.dataset.sba==="reload"){ SB.adm=null; SB.busy=true; SB.t0=Date.now(); const y=window.scrollY; render(); window.scrollTo(0,y); return admLoad(); }   /* сразу «Загружаю…»; admLoad сам отменит прежнюю загрузку */
   if(b.dataset.sba==="tadd"){ const box=document.querySelector(".sb-tcs"); if(!box||!SB.tcard) return; const n=box.querySelectorAll("[data-sbtc]").length; if(n>=8) return; const i=Date.now()%1e6+n;
     box.insertAdjacentHTML("beforeend",SB.tcard(i,{n:"",p:"",y:"",f:"",max:"",note:""})); if(n+1>=8) b.hidden=true; const el=box.lastElementChild; el.scrollIntoView({block:"center",behavior:"smooth"}); const inp=el.querySelector('[data-f="n"]'); inp&&inp.focus({preventScroll:true}); return; }
   if(b.dataset.sba==="tdel"){ const cd=b.closest("[data-sbtc]"), box=cd&&cd.parentNode; if(!cd) return; const nm=(cd.querySelector('[data-f="n"]').value||"").trim();
@@ -25669,7 +25693,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="214e7cb547";
+const CHK_BUILD="8d38b032ad";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -26514,7 +26538,9 @@ function bkTopSync(){ try{
   const v2=bkV2()&&!document.documentElement.classList.contains("v2own"), own=v2&&(bkOwnBack()||!!document.querySelector("#view>.k2-smnav"));   /* 19.11 кусок 8: у сметы шапка 2.0 со своей «‹», прилипающей сверху (site_v2_kit.js) — полосу «‹ Название» не ставим вовсе */
   /* открыто окно-лист — нижнее меню прячем (как листы iPhone закрывают таб-бар): кнопки окна не под меню («Профиль компании» — «Изменить ›») */
   /* своей «‹» нет, а вернуться есть куда (смета, закупка из сделки…): полосу всё равно прячем, «‹» — своя круглая слева сверху (та же, что у экранов 2.0) */
-  const fl=v2&&!own&&BK.st.length>0&&!(BK.st.length===1&&BK.st[0]&&BK.st[0]._rt)&&/^(shop|supply)$/.test(S.view)&&!document.body.classList.contains("has-full")&&!document.querySelector("#v2All");
+  /* 20.11: нажатие вкладки внизу — корень вкладки; отрисовка идёт раньше, чем site_v2.js снимает прежние шаги (hsRoot), и на кадр появлялась полоса «‹» */
+  let capTap=false; try{ const e=window.event; capTap=!!(e&&e.type==="click"&&e.target&&e.target.closest&&e.target.closest("#v2Cap")); }catch(_){}
+  const fl=v2&&!own&&!capTap&&BK.st.length>0&&!(BK.st.length===1&&BK.st[0]&&BK.st[0]._rt)&&/^(shop|supply)$/.test(S.view)&&!document.body.classList.contains("has-full")&&!document.querySelector("#v2All");
   if(document.body.classList.contains("v2notop")!==(own||fl)) document.body.classList.toggle("v2notop",own||fl); const b=document.getElementById("v2TBk"); if((own||fl)&&b&&!b.hidden) b.hidden=true;
   /* шапка 2.0 вместо прежней полосы: плотная (сквозь неё текст страницы не читается — сценарий 2026-11-13_verh_skvoz), слева «‹», рядом заголовок экрана */
   let bar=document.getElementById("v2FBar"); if(fl){ if(!bar){ bar=document.createElement("div"); bar.id="v2FBar"; bar.innerHTML=`<button type="button" class="v2-hb v2glc" id="v2FBk" aria-label="Назад">${bkIcBack()}</button><b class="v2fbt"></b>`; document.body.appendChild(bar); }
@@ -33460,7 +33486,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="214e7cb547"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="8d38b032ad"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -46956,7 +46982,23 @@ function v2CapPaint(){ let n=document.getElementById("v2Cap"); if(!v2On()||!v2Ca
   const h=v2CapHtml(); if(n&&n.dataset.h===h) return; const w=document.createElement("div"); w.innerHTML=h; const nn=w.firstElementChild; nn.dataset.h=h; if(n) n.replaceWith(nn); else document.body.appendChild(nn); }
 function v2Go(k){ ss("v2-bv",k); try{ ss("zj-bv",k==="ceh"?"ceh":k==="board"?"board":"today"); }catch(_){}
   if(S.view==="shop"&&S.shop.mode==="board"&&S.shop.bview===k){ V2.capT=0; window.scrollTo({top:0,behavior:de.classList.contains("v2-rm")?"auto":"smooth"}); return; }
-  S.shop.bview=k; if(typeof shpGo==="function") shpGo("board"); else { S.view="shop"; S.shop.mode="board"; render(); window.scrollTo(0,0); } }
+  v2Top0(); S.shop.bview=k; if(typeof shpGo==="function") shpGo("board"); else { S.view="shop"; S.shop.mode="board"; render(); } v2Top0(1); }
+/* 20.11 (видео Кирилла 21:02, iPhone: «Производство» → «Деньги» — заголовок на ~2 с уезжает под строку часов и потом встаёт). Причина: на iPhone
+   страница ещё катилась по инерции после пролистывания «Производства»; scrollTo(0,0) при смене вкладки инерция перебивала и докатывала новый,
+   короткий экран до его низа (~50 px — ровно высота строки часов), а системное восстановление прокрутки браузера при шаге истории («Сегодня»:
+   history.go) ставило старое место. Теперь: вкладка открывается с верха сразу — инерцию гасим (overflow:hidden на один кадр, так iOS её
+   останавливает), верх ставим до и после отрисовки и ещё раз через 120/350/700 мс, если человек сам за это время не трогал экран;
+   прокрутку при шагах истории ведёт только приложение (history.scrollRestoration = manual; место при «Назад» ставит site_back.js) */
+function v2ScrMan(){ try{ if(de.classList.contains("v2")&&"scrollRestoration" in history&&history.scrollRestoration!=="manual") history.scrollRestoration="manual"; }catch(_){} }   /* только в 2.0 (зовём из hsSync — до любого шага истории) */
+["touchstart","pointerdown","wheel","keydown"].forEach(t=>addEventListener(t,ev=>{ try{ if(ev.isTrusted) V2.touchAt=Date.now(); }catch(_){} },{capture:true,passive:true}));
+{ const st=document.createElement("style"); st.id="v2StopCss"; st.textContent="html.v2-stop,html.v2-stop body{overflow:hidden!important}"; document.head.appendChild(st); }
+const v2Touch=()=>{ try{ return matchMedia("(pointer:coarse)").matches; }catch(_){ return false; } };   /* на компьютере не гасим: пропавшая на кадр полоса прокрутки сдвинула бы страницу вбок */
+function v2Top0(after){ const t0=after?(V2.top0||Date.now()):Date.now(); if(!after){ V2.top0=t0; if(v2Touch()) de.classList.add("v2-stop"); }
+  window.scrollTo(0,0);
+  if(!after) return; const mine=()=>V2.top0===t0&&!((V2.touchAt||0)>t0);   /* вкладку не сменили и человек сам не крутил — тогда дотягиваем до верха */
+  /* гасим инерцию на два кадра (за это время iOS её снимает), потом прокрутка снова своя; позже верх НЕ дёргаем — экран мог прокрутить сам раздел */
+  requestAnimationFrame(()=>{ if(mine()&&window.scrollY!==0) window.scrollTo(0,0); requestAnimationFrame(()=>{ if(V2.top0===t0) de.classList.remove("v2-stop"); if(mine()&&window.scrollY!==0) window.scrollTo(0,0); }); });
+  setTimeout(()=>{ if(V2.top0===t0) de.classList.remove("v2-stop"); },400); }   /* страховка: класс не остаётся (вкладка в фоне — кадров нет) */
 
 /* ---- шапка экрана: заголовок 34, подзаголовок 15, справа микрофон (директору — как сейчас) и кружок с буквами ---- */
 function v2Ini(){ const n=v2Name().split(/\s+/).filter(Boolean); if(!n.length) return "•"; return (n.length>1?n[0][0]+n[1][0]:n[0][0]).toUpperCase(); }
@@ -47208,7 +47250,7 @@ try{ HS.n=+(history.state&&history.state.w24n)||0; }catch(_){}
   /* заказ из Базиса и ссылки чистят адрес replaceState(null, …#заказ) — номер нашей записи при этом сохраняем (иначе «Назад» терял место и уводил на «Сегодня») */
   const hr=history.replaceState; try{ history.replaceState=function(st){ try{ if(hsOn()){ const c=history.state; if(c&&c.w24n!=null&&(st==null||typeof st==="object")&&!(st&&st.w24n!=null)){ const a=[...arguments]; a[0]=Object.assign({},st||{},{w24n:c.w24n},c.v2all?{v2all:1}:{}); return hr.apply(history,a); } } }catch(_){} return hr.apply(history,arguments); }; }catch(_){} }
 function hsSoon(){ if(HS.q) return; HS.q=setTimeout(()=>{ HS.q=0; hsSync(); },0); }
-function hsSync(){ if(!hsOn()||HS.pend>0||HS.busy) return; let st=null; try{ st=history.state; }catch(_){} if(!hsOwn(st)) return;
+function hsSync(){ if(!hsOn()||HS.pend>0||HS.busy) return; v2ScrMan(); let st=null; try{ st=history.state; }catch(_){} if(!hsOwn(st)) return;
   if(st==null){ try{ history.replaceState({w24n:HS.n},""); }catch(_){} }   /* первая запись приложения — тоже наша (иначе её «пустое» состояние не отличить от перехода по ссылке) */
   if(document.getElementById("v2All")||document.getElementById("v2Set")) return;
   const want=window.__bkV2.n(), have=HS.n;
@@ -47932,7 +47974,7 @@ function lnCard(o){ const g=crmTag(o), L=lnStations(o), n=L.S.length, cur=L.S[L.
   return `<div class="v2tw v2lnw"><article class="v2ln ${grp}${n>=7?" many":""}" style="--n:${n};--p:${n>1?(L.i/(n-1)).toFixed(4):0}">`
     +`<div class="v2lnh" style="--tw:${tw}px">${lnPic(o)}<button type="button" class="v2tl v2lnb" data-act="shp-open" data-id="${E(o.id)}" aria-label="${E(crmName(o)+". "+(cur.n||"")+": "+g.t+(o.deadline?". Сдача клиенту "+shpDM(o.deadline):""))}"><span class="v2lnt"><b>${E(crmName(o))}</b>${sub}</span></button>${tag}</div>${ch||nb?`<div class="v2lnrw">${ch||"<span class=\"v2lnsp\"></span>"}${nb}</div>`:""}`
     +`<div class="v2lnl" role="group" aria-label="${E("Этапы: "+crmName(o))}"><i class="v2lnr" aria-hidden="true"></i><i class="v2lnf" aria-hidden="true"></i>`
-    +L.S.map((s,k)=>`<button type="button" class="v2lns ${s.s}${s.late?" late":""}" data-act="v2-lnst" data-id="${E(o.id)}" data-k="${k}" aria-label="${E(s.n+(s.sub?": "+s.sub:""))}"><i aria-hidden="true"></i><b>${E(s.sn)}</b><small>${E(s.sub||"")}</small></button>`).join("")
+    +L.S.map((s,k)=>`<button type="button" class="v2lns ${s.s}${s.late?" late":""}${k===L.i||k===n-1?" key":k===L.i-1&&s.s==="done"?" key kd":""}" data-act="v2-lnst" data-id="${E(o.id)}" data-k="${k}" aria-label="${E(s.n+(s.sub?": "+s.sub:""))}"><i aria-hidden="true"></i><b>${E(s.sn)}</b><small>${E(s.sub||"")}</small></button>`).join("")
     +`</div></article></div>`; }
 function crmLines(L){ const O=L.filter(o=>!shpClosed(o)), C=L.filter(o=>shpClosed(o));
   const G=[["r","Горят"],["o","Скоро"],["g","Успеваем"]];
@@ -48077,7 +48119,19 @@ function lnFit(){ document.querySelectorAll("#view .v2lines .v2ln .v2lnwc").forE
   if(S2.length>1){ const mo=w.querySelector(".v2lnmo"), n=(mo?+mo.textContent.replace("+",""):0)+S2.length-1; S2.slice(1).forEach(s=>s.remove()); if(mo) mo.textContent="+"+n; else w.insertAdjacentHTML("beforeend",`<span class="v2lnch v2lnmo">+${n}</span>`); }
   if(over()) w.classList.add("noi");   /* всё ещё не влезло — плашки без значков */
   if(over()) w.querySelector(".v2lnmo")?.remove();
-  if(over()) w.classList.add("wrap"); }); }   /* крайний случай (очень узкий экран) — перенос, но без обрезки «…» */
+  if(over()) w.classList.add("wrap"); }); lnStFit(); }   /* крайний случай (очень узкий экран) — перенос, но без обрезки «…» */
+/* 20.11 (видео Кирилла 21:02: у сделок с 6–7 этапами подписи под станциями мелкие и слипаются). Подписи не меньше 11 px; не влезли без наложения —
+   подписи только у трёх главных станций (key): последняя пройденная, текущая и «сдача»; остальные — точкой (полное название и дата — в листе станции
+   по нажатию и в aria-label). Всё ещё налезают (узкий телефон) — без подписи и последняя пройденная (kd). Меряем один раз после отрисовки. */
+function lnStFit(){ const L=document.querySelectorAll("#view .v2lines .v2lnl"); if(!L.length) return;
+  const shown=e=>e.textContent&&e.getClientRects().length&&getComputedStyle(e).visibility!=="hidden";
+  const bad=l=>{ const box=l.getBoundingClientRect(); let prev=null;
+    for(const b of l.querySelectorAll(".v2lns")){ const X=[...b.querySelectorAll(":scope>b,:scope>small")].filter(shown); if(!X.length) continue; let a=1e9,z=-1e9;
+      X.forEach(e=>{ const r=e.getBoundingClientRect(); a=Math.min(a,r.left); z=Math.max(z,r.right); });
+      if(a<box.left-8||z>box.right+8) return true; if(prev!=null&&a<prev+3) return true; prev=z; }
+    return false; };
+  L.forEach(l=>{ l.classList.remove("v2lnk","v2lnk2","v2lnk3"); if(!bad(l)) return; l.classList.add("v2lnk"); if(!bad(l)) return; l.classList.add("v2lnk2"); if(bad(l)) l.classList.add("v2lnk3"); }); }   /* v2lnk3: подписи крайних станций — к краю ветки (место из пустой половины клетки) */
+addEventListener("resize",()=>{ clearTimeout(lnStFit.t); lnStFit.t=setTimeout(()=>{ try{ lnStFit(); }catch(_){} },200); });
 /* горизонтальная прокрутка доски: помним и возвращаем (назад из сделки — тот же столбец) */
 function crmKeepX(){ const b=document.querySelector("#view .v2brd"); if(b) CRM.sx.stages=b.scrollLeft; }
 function crmRestoreX(){ const b=document.querySelector("#view .v2brd"); if(b&&CRM.sx.stages) b.scrollLeft=CRM.sx.stages; }
@@ -48666,6 +48720,7 @@ ${P} .v2ln .v2lns{min-height:50px!important}
 ${P} .v2lnr,${P} .v2lnf{top:15px}
 ${P} .v2ln .v2lns>i{width:14px;height:14px;border-radius:7px;margin-top:8px}${P} .v2ln .v2lns.now>i{width:22px;height:22px;border-radius:11px;margin-top:4px;border-width:2.5px;box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 30%,transparent)}
 ${P} .v2ln .v2lns b{margin-top:3px;font-size:11.5px;line-height:1.15}${P} .v2ln .v2lns.now b{margin-top:2px}${P} .v2ln .v2lns small{font-size:11.5px!important;line-height:1.15}${P} .v2ln.many .v2lns small{font-size:11px!important}
+${P} .v2lnl.v2lnk .v2lns:not(.key)>:is(b,small),${P} .v2lnl.v2lnk2 .v2lns.kd>:is(b,small){visibility:hidden}${P} .v2lnl.v2lnk3 .v2lns:last-child>:is(b,small){align-self:flex-end;text-align:right;padding-right:2px}${P} .v2lnl.v2lnk3 .v2lnf+.v2lns>:is(b,small){align-self:flex-start;text-align:left;padding-left:2px}
 ${P} .v2lnti{min-height:56px!important;padding:6px 12px!important}${P} .v2lnti b{font-size:22px}
 ${P} .v2lnsh>.v2ovx{zoom:var(--v2k,1)}${P} .v2lnshc{zoom:var(--v2k,1)!important;max-height:calc(88vh / var(--v2k,1));overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 /* 19.11 «Сделка до конца»: один экран сделки (режим карточки в 2.0) */
@@ -51554,7 +51609,7 @@ render();
    • компьютер, который не сворачивают: через 30 мин — полоска «Пришло обновление · Обновить / Позже» (обновляет только по кнопке).
    Перезагрузок на глазах нет. */
 (function(){
-  const BUILD="214e7cb547";/*cehqr-build*/
+  const BUILD="8d38b032ad";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   window.__w24VerWait=0;   // 20.11: заставка больше не ждёт ответа о версии
@@ -51651,7 +51706,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="214e7cb547";/*cehqr-build*/
+  const BUILD="8d38b032ad";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
