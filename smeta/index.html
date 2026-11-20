@@ -22797,9 +22797,9 @@ if(typeof shpMoreHtml==="function"){ const _glM=shpMoreHtml; shpMoreHtml=functio
 (function(){ const st=document.createElement("style"); st.textContent=`.gl-mm{width:min(560px,100%);max-height:90vh;overflow:auto}.gl-mon{display:flex;align-items:center;gap:10px;margin:10px 0}.gl-l{list-style:none;margin:0;padding:0}.gl-l li{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;padding:10px 0;border-bottom:1px solid rgba(127,127,127,.2)}.gl-l li>div{display:grid}.gl-k{font-weight:700}.gl-k.r{color:#e5484d}.gl-k.g{color:#30a46c}.gl-k.y{color:#e0b000}.gl-low{width:100%;color:#e5484d}`; document.head.appendChild(st); })();
 
 /* ===== «Смета для дизайнера» по подписке (Кирилл 07.11, вариант А): страница …/smeta/ — та же сборка, флаг APP_DES.
-   Дизайнер любой фирмы: имя + телефон + свой PIN → быстрая смета с базой цен; свои цены меняет только где нужно.
+   Дизайнер любой фирмы: имя + телефон + свой PIN → быстрая смета; цены — свои (20.11: цен ТиМебель и базы Базиса дизайнер не получает), вписал один раз — запомнились.
    16.11 (Кирилл 03:57): без подписки — 3 сметы в месяц (счёт на сервере), КП с меткой «Сделано в Work24link» и без своего логотипа; подписка 990 ₽/мес — без ограничений.
-   Запросы к таблице подменяются: smeta/smetaList/smetaSave → desSm*, qkSet → desSet, цены → desPrice (только база Базиса). Сделок, цеха, чатов нет. ===== */
+   Запросы к таблице подменяются: smeta/smetaList/smetaSave → desSm*, qkSet → desSet, цены → desPrice (с 20.11 пусто: ни «Прайса» цеха, ни ключа к базе Базиса). Сделок, цеха, чатов нет. ===== */
 if(window.APP_DES){
   const DK="w24-des"; let DES={tok:"",me:null};
   try{ DES.tok=localStorage.getItem(DK)||""; DES.me=JSON.parse(localStorage.getItem(DK+"-me")||"null"); }catch(_){}
@@ -22812,16 +22812,35 @@ if(window.APP_DES){
   try{ DES.kp=JSON.parse(localStorage.getItem(DK+"-kp")||"null"); }catch(_){} 
   const kpKeep=()=>{ try{ localStorage.setItem(DK+"-kp",JSON.stringify(DES.kp||{})); }catch(_){} };
   async function kpGrab(r){ try{ const j=await r.clone().json(); if(j&&j.ok&&j.kp){ DES.kp=j.kp; kpKeep(); if(S.shop){ const c=kpOf(); S.shop.cfgAll=Object.assign(S.shop.cfgAll||{},c); } } }catch(_){} return kickChk(r); }
+  /* 20.11 шаг 0 (Кирилл: цены ТиМебель — «Закрыть сейчас»): старая смета была посчитана по ценам базы Базиса, а их у дизайнера больше нет.
+     Сервер отдаёт смету с сохранённой суммой (desSmGet total/mats). Пока у строк без цены нет своей цены, смета «заморожена»: «Сохранить» ничего не пишет (сумма на сервере та же до рубля),
+     КП не собирается, сверху — объяснение. Вписал свои цены во все строки — сохраняется как обычно (по его ценам). Каждое сохранение новой сборки ставит в данные метку dz:
+     такая смета уже по ценам дизайнера и не замораживается. Деньги смет не трогаем — только не даём им уплыть. */
+  DES.old={};
+  /* 20.11 (проверяющий): ответ «price» с ключом мог остаться в памяти телефона (site_cache) с прошлых заходов — базу Базиса у дизайнера не расшифровываем вовсе,
+     запомненные ответы сайта у дизайнера стираем один раз (это только память ускорения, данные на сервере). */
+  if(typeof supBaseLoad==="function"){ supBaseLoad=async function(){ try{ if(S.sup){ S.sup.base=null; S.sup.baseBusy=false; } }catch(_){} }; }
+  try{ if(S.sup) S.sup.base=null; }catch(_){}
+  try{ const LS=window.localStorage; if(LS.getItem("w24-des-cc20")!=="1"){ for(let i=LS.length-1;i>=0;i--){ const k=LS.key(i); if(k&&/^des\/cehqr-c[:-]/.test(k)) LS.removeItem(k); } LS.setItem("w24-des-cc20","1"); } }catch(_){}
+  async function oldGrab(r){ try{ const j=await r.clone().json(); if(j&&j.ok&&j.id&&j.smeta) DES.old[j.id]={total:Math.round(+j.total||0),mats:Math.round(+j.mats||0),dz:!!j.smeta.dz}; }catch(_){} return kickChk(r); }
+  function oldFz(id,data,total){ const o=id&&DES.old[id]; if(!o||o.dz||!(o.total>0)) return null; let c=null; try{ c=smCalc(data); }catch(_){ return null; } const t=total!=null?Math.round(+total||0):Math.round(+(c&&c.total)||0);
+    if(Math.abs(t-o.total)<=1) return null; const np=c&&c.noPrice; if(np===0) return null; return {o,np:+np||0}; }
+  function oldKeep(b){ const z=oldFz(b.id,b.data,b.total);
+    if(z){ b.total=z.o.total; b.mats=z.o.mats; if(b.data&&typeof b.data==="object") delete b.data.dz;   /* правки (клиент, строки) сохраняются, сумма и материал — прежние до рубля */
+      setTimeout(()=>toast("Сохранено. Сумма "+Math.round(z.o.total).toLocaleString("ru-RU")+" ₽ — прежняя (смета по прежней базе цен). Впишите свои цены в строки без цены — пересчитается по вашим"),400); return null; }
+    if(b.data&&typeof b.data==="object") b.data.dz=1; if(b.id&&DES.old[b.id]) DES.old[b.id].dz=true; return null; }
+  function desFzHtml(){ try{ const sm=S.shop.sm; if(!sm||S.shop.smClient) return ""; const z=oldFz(sm.id,sm.data); if(!z) return "";
+    return `<div class="dfr-say des-fz" role="status"><span class="dfr-av" aria-hidden="true"></span><div class="dfr-tx"><b>Смета по прежней базе цен</b><p>Сумма клиенту была ${Math.round(z.o.total).toLocaleString("ru-RU")} ₽ — она сохранена и не меняется. Цен базы больше нет${z.np?": у "+z.np+" "+(z.np===1?"строки":"строк")+" нет цены":""}. Впишите свои цены — тогда смета пересчитается по вашим ценам и сохранится.</p></div></div>`; }catch(_){ return ""; } }
   let kicked=0; async function kickChk(r){ try{ const j=await r.clone().json(); if(j&&j.error==="pin"&&j.kicked) kickOut(); }catch(_){} return r; }
   function kickOut(){ if(kicked) return; kicked=1; try{ [DK,DK+"-me",DK+"-kp","cehqr-officepin","cehqr-who"].forEach(k=>localStorage.removeItem(k)); }catch(_){}
     const d=document.createElement("div"); d.className="modal"; d.innerHTML=`<div class="modal-card"><h2 style="margin-top:0">Вход с другого устройства</h2><p>С вашим аккаунтом вошли на другом телефоне или компьютере. Одна подписка — не больше двух устройств, поэтому здесь вход закрыт.</p><p class="muted">Если это были не вы — войдите здесь снова: выйдет то, другое устройство.</p><button type="button" class="btn primary" style="width:100%" onclick="location.reload()">Понятно</button></div>`; document.body.appendChild(d); }
   window.__fetchHook=async function(u,o){ try{ const su=S.site&&S.site.stagesUrl, us=typeof u==="string"?u:(u&&u.url)||""; if(!su||us.indexOf(su)!==0) return _f(u,o);
-      if(o&&o.method==="POST"){ let b={}; try{ b=JSON.parse(o.body||"{}"); }catch(_){} const a=String(b.action||""); if(/^des[A-Z]/.test(a)||MAPP[a]){ b.action=MAPP[a]||a; if(DES.tok) b.pin=DES.tok; const rr=await _f(su,Object.assign({},o,{body:JSON.stringify(b)})); if(b.action==="desSmSave") await frGrab(rr); return kickChk(rr); }
+      if(o&&o.method==="POST"){ let b={}; try{ b=JSON.parse(o.body||"{}"); }catch(_){} const a=String(b.action||""); if(/^des[A-Z]/.test(a)||MAPP[a]){ b.action=MAPP[a]||a; if(DES.tok) b.pin=DES.tok; if(b.action==="desSmSave"){ const kp=oldKeep(b); if(kp) return kp; } const rr=await _f(su,Object.assign({},o,{body:JSON.stringify(b)})); if(b.action==="desSmSave") await frGrab(rr); return kickChk(rr); }
         if(a==="cfgSave"&&(b.key==="kp"||b.key==="logo")){ const K=Object.assign({},DES.kp||{}); if(b.key==="logo") K.logo=b.value||""; else Object.assign(K,b.value||{},{logo:K.logo||""});
           const j=await post({action:"desSetSave",kpOnly:true,kp:K,pin:DES.tok}); if(j&&j.ok){ DES.kp=K; kpKeep(); setTimeout(desKpPaint,60); } else if(j&&j.error==="big") toast("Логотип слишком большой — выберите попроще"); else if(j&&j.error==="lic") toast("Срок закончился — продлите подписку");
           return new Response(JSON.stringify(j&&j.ok?{ok:true}:{ok:false,error:(j&&j.error)||"net"}),{headers:{"Content-Type":"application/json"}}); }
         return new Response(JSON.stringify(fake(a)),{headers:{"Content-Type":"application/json"}}); }
-      const U=new URL(us), a=U.searchParams.get("action")||""; if(/^des[A-Z]/.test(a)||MAPG[a]){ U.searchParams.set("action",MAPG[a]||a); if(DES.tok) U.searchParams.set("pin",DES.tok); if(a==="qkSet") return kpGrab(await _f(U.href,o)); return kickChk(await _f(U.href,o)); }
+      const U=new URL(us), a=U.searchParams.get("action")||""; if(/^des[A-Z]/.test(a)||MAPG[a]){ U.searchParams.set("action",MAPG[a]||a); if(DES.tok) U.searchParams.set("pin",DES.tok); if(a==="qkSet") return kpGrab(await _f(U.href,o)); if(a==="smeta") return oldGrab(await _f(U.href,o)); return kickChk(await _f(U.href,o)); }
       return new Response(JSON.stringify(fake(a)),{headers:{"Content-Type":"application/json"}}); }catch(e){ return _f(u,o); } };
   if(window.firmBar!==undefined||true){ const _fb=window.firmBar; window.firmBar=r=>["smetas"]; }
   const save=(tok,me)=>{ DES.tok=tok; DES.me=me; try{ localStorage.setItem(DK,tok); localStorage.setItem(DK+"-me",JSON.stringify(me)); localStorage.setItem("cehqr-officepin",tok); localStorage.setItem("cehqr-who",String(me.name||"").slice(0,40)); }catch(_){} };
@@ -22834,7 +22853,7 @@ if(window.APP_DES){
   window.__w24Ready=window.__w24Ready||0;
   function desLoginHtml(){ const st=S.desSt=S.desSt||{mode:"reg"};
     return `<div class="des-wrap"><div class="des-hero"><h1>Смета за 5 минут</h1><p>Для дизайнеров мебели. ЛДСП, МДФ, кромка, фурнитура — списком, с ценами. Коэффициент и цена клиенту сразу, КП в PDF клиенту.</p>
-      <ul><li><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Вся база материалов с ценами уже есть</span></li><li><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Меняете цену только там, где у вас другая — она запоминается</span></li><li><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Петли, ящики, столешницы — по разделам и фирмам</span></li><li><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>3 сметы в месяц — бесплатно. Без ограничений и с вашим логотипом в КП — 990 ₽ в месяц</span></li></ul></div>
+      <ul><li><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Все материалы списком — цену вписываете свою, один раз</span></li><li><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Ваши цены запоминаются и сами подставляются в следующие сметы</span></li><li><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Петли, ящики, столешницы — по разделам и фирмам</span></li><li><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>3 сметы в месяц — бесплатно. Без ограничений и с вашим логотипом в КП — 990 ₽ в месяц</span></li></ul></div>
       <form class="des-f" id="desF" autocomplete="on"><div class="des-seg"><button type="button" data-ds="reg" aria-pressed="${st.mode==="reg"}">Я новый</button><button type="button" data-ds="login" aria-pressed="${st.mode==="login"}">Уже есть аккаунт</button></div>
         ${st.mode==="reg"?`<label>Имя<input name="name" maxlength="40" autocomplete="name" required></label><label>Фирма / город (по желанию)<input name="firm" maxlength="80"></label>`:""}
         <label>Телефон<input name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="+7 914 …"></label>
@@ -22861,8 +22880,12 @@ if(window.APP_DES){
     m.innerHTML=`<div class="modal-card des-kpm"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">Моё КП</h2><button type="button" class="btn sm" data-deskpx="1">Закрыть</button></div><p class="muted" style="margin:6px 0 10px">Ваше название, телефон и логотип — в шапке КП и спецификации. Видите только вы.</p>${frOn()?`<p class="dfr-kpn">Без подписки КП уходит без логотипа и с меткой «Сделано в Work24link». Логотип сохранится — появится в КП, когда откроете подписку. <button type="button" class="linkbtn" data-subpay="des">Подписка</button></p>`:""}<div class="des-kpb"></div></div>`;
     document.body.appendChild(m); desKpPaint(); m.addEventListener("click",e=>{ if(e.target===m||e.target.closest("[data-deskpx]")) m.remove(); }); }
   document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-deskp]"); if(!b) return; e.stopPropagation(); desKpOpen(); },true);
-  if(typeof viewShop==="function"){ const _dv=viewShop; viewShop=function(){ const h=_dv.apply(this,arguments); try{ if(DES.tok&&S.shop&&S.shop.mode==="smetas"){ if(S.shop.desLim&&frFull()) return (typeof shpNavHtml==="function"?shpNavHtml():"")+desBar()+frLimHtml(); return desBar()+h; } if(DES.tok&&S.shop&&S.shop.mode==="smeta"){ const n=frSayHtml(); if(n) return frPut(h,n); } }catch(_){} return h; }; }
+  if(typeof viewShop==="function"){ const _dv=viewShop; viewShop=function(){ const h=_dv.apply(this,arguments); try{ if(DES.tok&&S.shop&&S.shop.mode==="smetas"){ if(S.shop.desLim&&frFull()) return (typeof shpNavHtml==="function"?shpNavHtml():"")+desBar()+frLimHtml(); return desBar()+h; } if(DES.tok&&S.shop&&S.shop.mode==="smeta"){ const n=frSayHtml()||desFzHtml()||desPrHtml(); if(n) return frPut(h,n); } }catch(_){} return h; }; }
   document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-desout]"); if(!b) return; e.stopPropagation(); out(); },true);
+  /* 20.11 шаг 0 (Кирилл «Закрыть сейчас»): цен ТиМебель у дизайнера больше нет — один раз объяснить, откуда цены (смета без цены и так показывает «Впишите N цен»). */
+  function desPrHtml(){ try{ if(localStorage.getItem(DK+"-prx")||S.shop.smClient) return ""; }catch(_){ return ""; }
+    return `<div class="dfr-say des-pr" role="status"><span class="dfr-av" aria-hidden="true"></span><div class="dfr-tx"><b>Цены — ваши</b><p>Нажмите на позицию без цены и впишите свою — с галочкой «Запомнить» она сама подставится в следующие сметы.</p><div class="dfr-b"><button type="button" class="dfr-x" data-desprx="1">Понятно</button></div></div></div>`; }
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-desprx]"); if(!b) return; e.preventDefault(); e.stopPropagation(); try{ localStorage.setItem(DK+"-prx","1"); }catch(_){} shpRenderKeep(); },true);
   /* ===== 16.11 БЕСПЛАТНЫЙ РЕЖИМ (Кирилл 03:52–03:57) =====
      plan с сервера (desMe): free — 3 сметы в месяц, firm — компания на «Студии»/«Производстве», paid — подписка. Нет plan (старый сервер, демо) — без ограничений.
      Счёт — только на сервере (desSmSave отвечает fr {used, lim} или error free3); здесь — показать: точки «2 из 3», подсказка помощника в окне сметы после 3-й,
@@ -22914,6 +22937,8 @@ if(window.APP_DES){
     g.save(); g.textBaseline="middle"; g.font="700 22px "+F; const w1=g.measureText(t1).width; g.font="400 20px "+F; const w2=g.measureText(t2).width, tw=bs+12+w1+w2, x0=(W-tw)/2;
     g.fillStyle="#111"; g.beginPath(); (g.roundRect?g.roundRect(x0,y-bs/2,bs,bs,9):g.rect(x0,y-bs/2,bs,bs)); g.fill(); g.fillStyle="#fff"; g.font="800 14px "+F; g.textAlign="center"; g.fillText("W24",x0+bs/2,y+1);
     g.textAlign="left"; g.fillStyle="#1d1f22"; g.font="700 22px "+F; g.fillText(t1,x0+bs+12,y+1); g.fillStyle="#5d6168"; g.font="400 20px "+F; g.fillText(t2,x0+bs+12+w1,y+1); g.restore(); }
+  /* 20.11: КП из «замороженной» старой сметы — после своих цен; проверяется раньше бесплатного тарифа (эта обёртка — внешняя) */
+  if(typeof kpOpen==="function"){ const _fzKo=kpOpen; kpOpen=async function(sm){ try{ if(sm&&sm.data&&oldFz(sm.id,sm.data)){ toast("КП — после того, как впишете свои цены в строки без цены (смета по прежней базе цен)"); return; } }catch(_){} return _fzKo.apply(this,arguments); }; }
   window.__desFree={on:frOn,full:frFull,me:()=>DES.me};   /* для стенда */
   (function(){ const st=document.createElement("style"); st.textContent=`#desKpM .kpc-sw,#desKpM .kpc-sw+p,#desKpM label:has(.r),#desKpM #kpcEx{display:none!important}#desKpM .modal-card{max-width:560px}.des-brand{font-weight:800;font-size:15px;opacity:.7;margin:0 0 6px}`+`html.des .sm-trial,html.des [data-act="sm-deal"],html.des [data-act="sm-sum"],html.des [data-act="sm-xsend"],html.des [data-act="sm-unlock"],html.des #appBar,html.des .pc-sw,html.des #role{display:none!important}
 html.des .wrap{padding-bottom:40px}html.des.pc .wrap,html.des.pc .top-in{margin-left:auto!important;margin-right:auto!important;max-width:1100px}
@@ -25490,7 +25515,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="71a9236389";
+const CHK_BUILD="e6fd60d900";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -26202,6 +26227,7 @@ function bkBack(){ try{ if(S.view==="shop"&&S.shop&&S.shop.mode==="form") S.shop
   while(BK.st.length){ const s=BK.st.pop(); if(bkKey(s)!==BK.key){ bkRestore(s); return true; } } return false; }
 function bkIsBack(t){ if(!t||t.closest(".modal,.csf,.smn-stp,.smn-stn,.pnav,.qk-fbar,.dq-menu,[data-stp],[data-x],#qkInM,.cut-sheet")) return false;
   /* окна поверх экрана (вид спереди, раскрой, полный экран, лист уведомлений) закрывает их собственная «‹» — экран под ними тот же (15.11: из 3D → «Вид спереди» → «‹» уводила на страницу заказа, мимо 3D) */
+  if(t.closest('.nm-top [data-nm="list"],.nm-top [data-nm="back"],.nm-top [data-nm="card"],.nm-top [data-nm="rzback"]')) return false;   /* 20.11: «‹» внутри «Номенклатуры» (раздел → разделы, карточка → список, правка → карточка) — свой шаг экрана, не общий «Назад» (иначе из раздела уводило во «Все разделы») */
   if(t.closest(".fv-win,.sg-bw,.vt-fsback,[data-rk],.rk-win,.zk-sh,.pq-full")||(t.closest('[role="dialog"],[aria-modal="true"]')&&!t.closest("#view"))||/^(fv-close|sheet-close)$/.test(t.getAttribute("data-act")||"")) return false;
   const a=t.getAttribute("data-act")||"", op=t.getAttribute("data-op")||"";
   if(/^(sm-back|shp-back|inb-back|dq-close|shp-cancel)$/.test(a)||op==="back") return true;
@@ -33272,7 +33298,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="71a9236389"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="e6fd60d900"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -44266,7 +44292,7 @@ function nmFilter(L,q,kind){ const W=nrm(q).split(" ").filter(Boolean); return L
 function nmTop(title,right,back){ return `<div class="nm-top"><button type="button" class="nm-btn" data-nm="${back||"back"}" aria-label="Назад">${ic("back")}</button><div class="nm-tt">${title||""}</div>${right||""}</div>`; }
 /* шаг 1б: класс позиции — людским названием, код Базиса мелко; нет класса — красным (18.11: без жёлтого) */
 const nmCl=x=>typeof NL!=="undefined"&&x&&x.cls?NL.cls(x.cls):null;
-function nmClsTag(x){ if(NM.view==="cls") return ""; const c=nmCl(x); return c?` · ${e(c.n)}`:` · <span class="nm-y">нет класса</span>`; }
+function nmClsTag(x){ return ""; }   /* 20.11: класс на экране не показываем — вместо «вида» и «класса» один раздел */
 function nmPrTxt(p){ return p.src==="рынок"?`<b class="nm-yb" title="${e(p.mk&&p.mk.note||"примерная цена")}">≈ ${e(rub(p.p))}</b>`:`<b>${e(rub(p.p))}</b>`; }
 function nmRow(x){ const p=nmPr()?nmPrice(x):null, s=nmStock(x), dims=nmDims(x), sub=[x.uBuy&&x.uBuy!=="услуга"?x.uBuy+(dims?" "+dims.split(" · ")[0]:""):x.uBuy==="услуга"?"услуга":dims.split(" · ")[0]||"",NM.view==="vend"?"":x.vdef||"",x.bzArt?"арт. "+x.bzArt:""].filter(Boolean).join(" · ");
   const pr=!nmPr()?"":p?nmPrTxt(p):`<b class="nm-y">нет цены</b>`;
@@ -44282,10 +44308,11 @@ function nmGroups(F){ const out=[], by=new Map(), push=(k,t,sm,x)=>{ if(!by.has(
   KINDS.forEach(k=>by.set(k,{t:k,sm:"",L:[]})); F.forEach(x=>by.get(KINDS.includes(x.kind)?x.kind:"Прочее").L.push(x)); return KINDS.map(k=>by.get(k)).filter(g=>g.L.length); }
 function nmListHtml(){ const D=NM.data, L=mine(); if(!D) return `<div class="nm-sec"><span>Загружаю…</span></div>`+nmSkel(6);
   if(NM.src==="lib") return nmLibHtml();
-  const F=nmFilter(L,NM.q,NM.view==="kind"?NM.kind:"");
-  if(!L.length) return `<div class="nm-empty"><b>Номенклатура пустая</b><p>Возьмите позиции из «Общей библиотеки» (14 тысяч материалов и фурнитуры) или добавьте свою кнопкой «＋ Позиция».${nmCan()?" Старые названия из прайса и склада можно склеить один раз — «⋯ → Старые названия».":""}</p>${nmCan()?`<button type="button" class="nm-more" data-nm="src" data-k="lib">Открыть библиотеку</button><button type="button" class="nm-more nm-blem" data-nm="bulk">${ic("down",18)} Загрузить список из Excel</button>`:""}</div>`;   /* 18.11: пустая номенклатура — сразу «Загрузить список» */
-  if(!F.length) return nmPvhEntry()+`<div class="nm-empty"><b>Ничего не нашлось</b><p>Попробуйте короче: «белый», «петля», «W1000» — или поищите в «Общей библиотеке».</p></div>`;
-  return nmPvhEntry()+nmGroups(F).map(g=>{ g.L.sort((a,b)=>a.name.localeCompare(b.name,"ru")); const no=g.t==="Нет класса";
+  const F=nmFilter(L,NM.q,"");   /* 20.11: вида-фильтра нет — разделы плитками */
+  if(!L.length) return `<div class="nm-empty"><b>Номенклатура пустая</b><p>Возьмите позиции из «Каталога России» (14 тысяч материалов и фурнитуры) или добавьте свою кнопкой «＋ Позиция».${nmCan()?" Старые названия из прайса и склада можно склеить один раз — «⋯ → Старые названия».":""}</p>${nmCan()?`<button type="button" class="nm-more" data-nm="src" data-k="lib">Открыть библиотеку</button><button type="button" class="nm-more nm-blem" data-nm="bulk">${ic("down",18)} Загрузить список из Excel</button>`:""}</div>`+(NM.q?"":rzTilesHtml());   /* 20.11: и у пустой — разделы по умолчанию; 18.11: пустая номенклатура — сразу «Загрузить список» */
+  if(!F.length) return nmPvhEntry()+`<div class="nm-empty"><b>Ничего не нашлось</b><p>Попробуйте короче: «белый», «петля», «W1000» — или поищите в «Каталоге России».</p></div>`;
+  if(!NM.q) return rzTilesHtml();   /* 20.11 экран 1: разделы плитками; «Фасады в плёнке ПВХ» — внутри «Фасадов плёночных» */
+  return nmPvhEntry()+rzGroups(F).map(g=>{ g.L.sort((a,b)=>a.name.localeCompare(b.name,"ru")); const no=g.t==="Нет класса";
     return `<div class="nm-sec"><span${no?' class="nm-y"':""}>${e(g.t)}${g.sm?` <small class="nm-code">${e(g.sm)}</small>`:""}</span><span>${g.L.length}</span></div><div class="nm-grp">${g.L.slice(0,NM.q?200:120).map(nmRow).join("")}</div>`; }).join(""); }
 /* ---- «Общая библиотека» (одна на все фирмы, без цен фирм): поиск по 14 тысячам, в DOM — частями по 60 ---- */
 function nmLibList(){ const LB=typeof NL!=="undefined"?NL.lib():null; if(!LB) return null; const W=nrm(NM.q).replace(/[^a-zа-я0-9 ]+/g," ").split(" ").filter(Boolean), c=NM.lcls;
@@ -44297,28 +44324,27 @@ function nmLibRow(x,our){ const it=x.it, inn=our.has(nrm(it.n)), m=nmPr()&&typeo
 function nmLibHtml(){ if(typeof catLoad==="function") catLoad(); if(typeof NL!=="undefined"&&!NM._mpAsk){ NM._mpAsk=1; NL.mpLoad().then(()=>{ if(NM.src==="lib") nmListPaint(); }); }
   const R=nmLibList(); if(!R) return `<div class="nm-sec"><span>Загружаю библиотеку…</span></div>`+nmSkel(8);
   const our=new Set(mine().map(x=>nrm(smName(x)))), st=NL.stats();
-  let h=`<div class="nm-sec"><span>${NM.q||NM.lcls?"Найдено":"Общая библиотека"}</span><span>${R.length.toLocaleString("ru-RU")}</span></div>`;
+  let h=`<div class="nm-sec"><span>${NM.q||NM.lcls?"Найдено":"Каталог России"}</span><span>${R.length.toLocaleString("ru-RU")}</span></div>`;
   if(!R.length) return h+`<div class="nm-empty"><b>Ничего не нашлось</b><p>Попробуйте короче или другой класс. Нет в библиотеке — «＋ Позиция» и впишите сами.</p></div>`;
   h+=`<div class="nm-grp" id="nmLibG">${R.slice(0,NM.lim).map(x=>nmLibRow(x,our)).join("")}</div>`;
   if(R.length>NM.lim) h+=`<div class="nm-sent" id="nmSent" aria-hidden="true">${nmSkel(2)}</div>`;
-  h+=`<p class="nm-note nm-libn">Библиотека общая для всех фирм: ${st.lib.toLocaleString("ru-RU")} позиций из базы Базиса, без цен фирм. ${NL.hasCity()?`Цены «≈» — ${e(NL.note())}; своя цена фирмы — главнее.`:`Рыночных цен для ${NL.city()?"города «"+e(NL.city())+"»":"вашего города"} пока нет${NL.city()?"":" — укажите город: «Настройки компании → Общие»"}; свою цену впишите у позиции.`}</p>`;
+  h+=`<p class="nm-note nm-libn">Каталог общий для всех фирм: ${st.lib.toLocaleString("ru-RU")} позиций из базы Базиса, без цен фирм. ${NL.hasCity()?`Цены «≈» — ${e(NL.note())}; своя цена фирмы — главнее.`:`Рыночных цен для ${NL.city()?"города «"+e(NL.city())+"»":"вашего города"} пока нет${NL.city()?"":" — укажите город: «Настройки компании → Общие»"}; свою цену впишите у позиции.`}</p>`;
   return h; }
 function nmLibMore(){ const R=nmLibList(), G=document.getElementById("nmLibG"), s=document.getElementById("nmSent"); if(!R||!G) return; const from=NM.lim; NM.lim=Math.min(R.length,NM.lim+60);
   const our=new Set(mine().map(x=>nrm(smName(x)))); G.insertAdjacentHTML("beforeend",R.slice(from,NM.lim).map(x=>nmLibRow(x,our)).join("")); if(NM.lim>=R.length&&s) s.remove(); }
 let nmIO=null; function nmLibWatch(){ const s=document.getElementById("nmSent"); if(!s||typeof IntersectionObserver!=="function") return; if(!nmIO) nmIO=new IntersectionObserver(es=>{ if(es.some(x=>x.isIntersecting)) nmLibMore(); },{rootMargin:"600px 0px"}); nmIO.disconnect(); nmIO.observe(s); }
 function nmChips(){ if(NM.src==="lib"){ const T=typeof NL!=="undefined"?NL.T():[];
     return `<div class="nm-chips">${[["","Все"]].concat(T.filter(c=>c.k!=="SRV").map(c=>[c.k,c.n])).concat([["-","Без класса"]]).map(([k,n])=>`<button type="button" class="nm-chip${NM.lcls===k?" on":""}" data-nm="lcls" data-k="${e(k)}">${e(n)}</button>`).join("")}</div>`; }
-  if(NM.view!=="kind") return "";
+  return "";   /* 20.11: чипы «вида» больше не нужны — разделы плитками, марки — внутри раздела */
   const L=nmFilter(mine(),NM.q,""), c=k=>L.filter(x=>x.kind===k).length;
   return `<div class="nm-chips"><button type="button" class="nm-chip${!NM.kind?" on":""}" data-nm="kind" data-k="">Все<small>${L.length}</small></button>${KINDS.filter(k=>c(k)).map(k=>`<button type="button" class="nm-chip${NM.kind===k?" on":""}" data-nm="kind" data-k="${e(k)}">${e(k==="МДФ и фасады"?"МДФ, фасады":k)}<small>${c(k)}</small></button>`).join("")}</div>`; }
 function nmScrList(){ const D=NM.data, L=mine(), noP=nmPr()?L.filter(x=>x.kind!=="Услуги"&&!nmPrice(x)).length:0, low=L.filter(x=>{ const s=nmStock(x); return s&&(s.st==="low"||s.st==="none"); }).length, noC=L.filter(x=>!nmCl(x)).length;
   const right=`<button type="button" class="nm-btn" data-nm="lmenu" aria-label="Ещё">${ic("more")}</button>`+(nmCan()?`<button type="button" class="nm-btn" data-nm="new" aria-label="Новая позиция">${ic("plus")}</button>`:"");
   const lib=NM.src==="lib";
   return `<div class="nm-v nm-list">${nmTop("",right,"home")}<h1 class="nm-h1">Номенклатура</h1>
-    <p class="nm-sub">${D?`${L.length} ${pl(L.length,"позиция","позиции","позиций")}${noP?` · <span class="nm-y">${noP} без цены</span>`:""}${noC&&L.length?` · <span class="nm-y">${noC} без класса</span>`:""}${low?` · <span class="nm-y">${low} ${pl(low,"кончается","кончаются","кончаются")}</span>`:""}`:"&nbsp;"}</p>
-    ${!lib&&window.__nmJrn?window.__nmJrn.entry():""}<div class="nm-seg" role="tablist"><button type="button" role="tab" data-nm="src" data-k="our" aria-selected="${!lib}">Наша номенклатура${D?` · ${L.length}`:""}</button><button type="button" role="tab" data-nm="src" data-k="lib" aria-selected="${lib}">Общая библиотека</button></div>
+    <p class="nm-sub">${D?`${rzCity()?e(rzCity())+" · ":""}${L.length} ${pl(L.length,"позиция","позиции","позиций")}${noP?` · <span class="nm-y">${noP} без цены</span>`:""}${low?` · <span class="nm-y">${low} ${pl(low,"кончается","кончаются","кончаются")}</span>`:""}`:"&nbsp;"}</p>
+    ${!lib&&window.__nmJrn?window.__nmJrn.entry():""}<div class="nm-seg" role="tablist"><button type="button" role="tab" data-nm="src" data-k="our" aria-selected="${!lib}">Мои разделы${D?` · ${L.length}`:""}</button><button type="button" role="tab" data-nm="src" data-k="lib" aria-selected="${lib}">Каталог России</button></div>
     <label class="nm-search">${ic("search",17)}<input id="nmQ" type="search" value="${e(NM.q)}" placeholder="${lib?"Цвет, название, артикул":"Название, артикул, цвет"}" autocomplete="off" enterkeyhint="search" aria-label="Поиск"></label>
-    ${lib?"":`<div class="nm-vw" role="tablist" aria-label="Как показать">${[["kind","По разделам"],["cls","По классам"],["vend","По поставщикам"]].map(([k,n])=>`<button type="button" role="tab" data-nm="view" data-k="${k}" aria-selected="${NM.view===k}">${n}</button>`).join("")}</div>`}
     <div id="nmChips">${nmChips()}</div><div id="nmList">${NM.err&&!D?`<div class="nm-empty"><b>Не загрузилось</b><p>${e(NM.err)}</p><button type="button" class="nm-more" data-nm="reload">Ещё раз</button></div>`:nmListHtml()}</div></div>
     ${nmCan()?`<div class="nm-bar"><button type="button" class="nm-pill" data-nm="new">${ic("plus",18)}<span>Позиция</span></button><button type="button" class="nm-pill nm-p2" data-nm="bulk" aria-label="Загрузить список" title="Загрузить список из Excel">${ic("lst",18)}<span class="nm-p2l">Загрузить список</span><span class="nm-p2s">Список</span></button></div>`:""}`; }   /* 18.11 «Загрузить список» — рядом с «＋ Позиция», только тем, кто ведёт номенклатуру (nmCan) */
 const pl=(n,a,b,c)=>{ n=Math.abs(n)%100; const m=n%10; return n>10&&n<20?c:m===1?a:m>=2&&m<=4?b:c; };
@@ -44331,15 +44357,15 @@ function nmClsKv(x){ const c=nmCl(x), can=!!(NM.data&&NM.data.canCls);
 function nmScrCard(){ const x=nmById(NM.open); if(!x) { NM.scr="list"; return nmScrList(); }
   const p=nmPr()?nmPrice(x):null, s=nmStock(x), it=catIt(x), dims=nmDims(x), H=NM.hist[x.id];
   if(nmPr()&&H===undefined){ NM.hist[x.id]=null; shpGet("action=nomHist&id="+encodeURIComponent(x.id)+"&name="+encodeURIComponent(smName(x)),true).then(j=>{ NM.hist[x.id]=j&&j.ok?j.items:[]; nmRedraw(); }); }
-  const tags=[x.kind].concat(dims?dims.split(" · ").reverse():[]).filter(Boolean);
+  const tags=[(rzOf(x)||{}).n||x.kind].concat(dims?dims.split(" · ").reverse():[]).filter(Boolean);
   const right=nmCan()?`<button type="button" class="nm-btn" data-nm="menu" aria-label="Ещё">${ic("more")}</button>`:"";
   const kv=(t,v,act)=>`<div class="nm-kv${act?" nm-tap":""}"${act?` data-nm="${act}"`:""}><span>${e(t)}</span><span class="nm-v2">${v}</span>${act?`<span class="nm-ch">${ic("chev",16)}</span>`:""}</div>`;
   const V=(x.vend||[]).slice().sort((a,b)=>(b.v===x.vdef)-(a.v===x.vdef));
-  let h=`<div class="nm-v nm-card">${nmTop("",right,"list")}<div class="nm-hero">${nmSw(x,"nm-sw nm-big")}<div><h2>${e(x.name)}</h2><p>${tags.map(t=>`<span class="nm-tag">${e(t)}</span>`).join("")}</p>${!nmBoard(x)&&x.kind!=="Услуги"&&S.sup&&S.sup.priceOk?`<button type="button" class="nm-lnk nm-phb" data-nm="photo">${nmPhoto(x)?"Заменить фото":"＋ Добавить фото"}</button>`:""}${nmCan()&&x.kind!=="Услуги"&&!nmOwnPic(x)&&!x.pic?`<button type="button" class="nm-lnk nm-phb" data-nm="picfind">${ic("search",15)} Найти картинку</button>`:""}</div></div>
+  let h=`<div class="nm-v nm-card">${nmTop("",right,NM.back==="rz"&&rzById(NM.rz)?"rzback":"list")}<div class="nm-hero">${nmSw(x,"nm-sw nm-big")}<div><h2>${e(x.name)}</h2><p>${tags.map(t=>`<span class="nm-tag">${e(t)}</span>`).join("")}</p>${!nmBoard(x)&&x.kind!=="Услуги"&&S.sup&&S.sup.priceOk?`<button type="button" class="nm-lnk nm-phb" data-nm="photo">${nmPhoto(x)?"Заменить фото":"＋ Добавить фото"}</button>`:""}${nmCan()&&x.kind!=="Услуги"&&!nmOwnPic(x)&&!x.pic?`<button type="button" class="nm-lnk nm-phb" data-nm="picfind">${ic("search",15)} Найти картинку</button>`:""}</div></div>
     ${x.pic&&!nmOwnPic(x)?`<div class="nm-chkb${x.pic.ok?" ok":""}"><span>${x.pic.ok?"Картинка":"Проверьте картинку"} · взята с ${x.pic.page?`<a href="${e(x.pic.page)}" target="_blank" rel="noopener">${e(x.pic.src||nmHost(x.pic.page))}</a>`:e(x.pic.src||"интернета")}</span>${nmCan()?`<span class="nm-chka">${x.pic.ok?"":`<button type="button" class="nm-b1" data-nm="picok">Верно</button>`}<button type="button" class="nm-b2" data-nm="picother">Другая</button></span>`:""}</div>`:""}
     <div class="nm-tiles">${nmPr()?`<div class="nm-tile"><span>Закупка</span><b${p&&p.src==="рынок"?' class="nm-yb"':""}>${p?(p.src==="рынок"?"≈ ":"")+e(rub(p.p)):`<em class="nm-y">нет цены</em>`}</b><small>${p?`за ${e(uWord(p.u))}${p.at?" · "+e(new Date(p.at).toLocaleDateString("ru-RU",{day:"numeric",month:"short"})):p.src==="база Базиса"?" · из базы Базиса":p.src==="рынок"?` · <span class="nm-yb">примерная</span>`:""}`:"впишите у поставщика"}</small></div>`:""}
       <div class="nm-tile"><span>На складе</span>${s?`<b class="${s.st==="ok"?"nm-g":s.st==="zero"?"":"nm-y"}">${e(fmtQ(s.q))} ${e(s.u)}</b><small>${[nmBoard(x)?(s.cut?`+ ${e(fmtQ(s.cut))} ${pl(s.cut,"остаток","остатка","остатков")}`:"остатков нет"):"",x.min?`мин. ${e(fmtQ(x.min))}`:""].filter(Boolean).join(" · ")||"&nbsp;"}</small>`:`<b>—</b><small>склад вам закрыт</small>`}</div></div>
-    ${nmMkLine(x,p)}<div class="nm-sec"><span>Учёт</span></div><div class="nm-grp">${nmClsKv(x)}${kv("Покупаем",e(x.uBuy==="лист"?"листами":x.uBuy||"—"))}${kv("В смете считаем",e(x.uSm||x.uBuy||"—")+(x.k&&x.uSm&&x.uBuy&&x.uSm!==x.uBuy?` · 1 ${e(UB_SHORT[x.uBuy]||x.uBuy)} = ${e(fmtQ(x.k))} ${e(x.uSm)}`:""))}${kv("Группа сметы",e(x.grp||KIND_GRP[x.kind]||"—"))}${kv("Поставщик",e(x.vdef||"—"))}</div>
+    ${rzMkLine(x,p)}<div class="nm-sec"><span>Учёт</span></div><div class="nm-grp">${rzKv(x)}${NM.data&&NM.data.canCls?nmClsKv(x).replace("<span>Класс</span>","<span>Класс Базиса</span>")+kv("Вид в смете",e(x.kind||"—")):""}${kv("Покупаем",e(x.uBuy==="лист"?"листами":x.uBuy||"—"))}${kv("В смете считаем",e(x.uSm||x.uBuy||"—")+(x.k&&x.uSm&&x.uBuy&&x.uSm!==x.uBuy?` · 1 ${e(UB_SHORT[x.uBuy]||x.uBuy)} = ${e(fmtQ(x.k))} ${e(x.uSm)}`:""))}${kv("Группа сметы",e(x.grp||KIND_GRP[x.kind]||"—"))}${kv("Поставщик",e(x.vdef||"—"))}</div>
     <div class="nm-sec"><span>Поставщики и артикулы</span><span>${V.length||""}</span></div><div class="nm-grp">${V.length?V.map(v=>`<div class="nm-kv nm-vd"><span><b>${e(v.v)}</b><small>${v.art?"арт. "+e(v.art):"без артикула"}${v.v===x.vdef?" · по умолчанию":""}</small></span><span class="nm-v2">${nmPr()?(v.price!==""&&v.price!=null?`<b>${e(rub(v.price))}</b>${v.at?`<small>${e(new Date(v.at).toLocaleDateString("ru-RU",{day:"numeric",month:"short"}))}</small>`:""}`:`<small class="nm-y">нет цены</small>`):""}</span></div>`).join(""):`<div class="nm-kv"><span class="nm-t3">Поставщики не указаны</span></div>`}</div>
     <div class="nm-sec"><span>Связи</span></div><div class="nm-grp"><div class="nm-kv"><span><b>В базе Базиса</b><small>${it?e(it.g.split("/").slice(0,3).join(", ")+(it.a?" · арт. "+it.a:"")):x.bzArt?"артикул "+e(x.bzArt)+" — свяжется, когда появится в базе":"не связана — свяжется по артикулу"}</small></span>${it?`<span class="nm-okb">${ic("check",15)}</span>`:""}</div>
       <div class="nm-kv"><span><b>Другие названия</b><small>${(x.alt||[]).length?(x.alt||[]).slice(0,3).map(a=>"«"+e(a)+"»").join(", "):"нет"}</small></span><span class="nm-v2">${(x.alt||[]).length||""}</span></div>${kv("Кромка в тон",e(x.edge||"—"))}</div>`;
@@ -44358,10 +44384,9 @@ function nmScrEdit(){ const x=NM.edit; if(!x){ NM.scr="list"; return nmScrList()
   const vn=nmVendNames();
   return `<div class="nm-v nm-edit">${nmTop(x.id?"Изменить":"Новая позиция","",x.id?"card":"list")}<form class="nm-form" autocomplete="off" id="nmForm">
     <label class="nm-fl"><span>Название</span><input name="name" class="nm-in" maxlength="200" required value="${e(x.name)}" placeholder="Например: Egger W1000 Белый премиум 16"></label>
-    <div class="nm-fl"><span>Вид</span><div class="nm-chips nm-wrap">${KINDS.map(k=>`<button type="button" class="nm-chip${x.kind===k?" on":""}" data-nm="ekind" data-k="${e(k)}">${e(k)}</button>`).join("")}</div></div>
+    ${rzField(x)}${!x.id||(NM.data&&NM.data.canCls)?rzKindField(x)+nmClsField(x).replace("<span>Класс","<span>Класс Базиса"):""}
     <div class="nm-f2"><label class="nm-fl"><span>Покупаем</span>${sel("uBuy",U_BUY,x.uBuy)}</label><label class="nm-fl"><span>В смете считаем</span>${sel("uSm",U_SM,x.uSm)}</label></div>
     <div class="nm-f2"><label class="nm-fl"><span>1 ед. закупки = … ед. сметы</span><input name="k" class="nm-in" inputmode="decimal" value="${e(x.k)}" placeholder="лист = 5,8 м²"></label><label class="nm-fl"><span>Группа сметы</span>${sel("grp",GRPS,x.grp||KIND_GRP[x.kind])}</label></div>
-    ${nmClsField(x)}
     <div class="nm-fl"><span>Поставщики, артикулы и цены закупки</span><div class="nm-vl">${(x.vend.length?x.vend:[{v:"",art:"",price:""}]).map((v,j)=>`<div class="nm-vr" data-j="${j}"><label class="nm-def" title="По умолчанию — эта цена идёт в смету и закупку"><input type="radio" name="vdef" value="${j}"${(x.vdef?v.v===x.vdef:j===0)?" checked":""}><span></span></label><input class="nm-in" name="vv" list="nmVendL" maxlength="80" value="${e(v.v)}" placeholder="Поставщик"><input class="nm-in" name="va" maxlength="60" value="${e(v.art||"")}" placeholder="Артикул"><input class="nm-in nm-pr" name="vp" inputmode="decimal" value="${e(v.price==null?"":v.price)}" placeholder="₽"${NM.data&&NM.data.prices===false?" disabled title=\"Цены меняет тот, кому директор дал право\"":""}><button type="button" class="nm-x" data-nm="vdel" data-j="${j}" aria-label="Убрать поставщика">${ic("x",16)}</button></div>`).join("")}</div>
       <button type="button" class="nm-lnk" data-nm="vadd">${ic("plus",16)} Поставщик</button><small class="nm-hint">Кружок — поставщик по умолчанию: его цена идёт в смету и закупку (в «Прайс»). Старые сметы не пересчитываются.</small><datalist id="nmVendL">${vn.map(n=>`<option value="${e(n)}">`).join("")}</datalist></div>
     <div class="nm-f2"><label class="nm-fl"><span>Артикул Базиса</span><input name="bzArt" class="nm-in" maxlength="60" value="${e(x.bzArt)}" placeholder="свяжется по артикулу"></label><label class="nm-fl"><span>Минимум на складе</span><input name="min" class="nm-in" inputmode="decimal" value="${e(x.min||"")}" placeholder="0"></label></div>
@@ -44379,7 +44404,8 @@ function nmFormRead(){ const f=document.getElementById("nmForm"), x=NM.edit; if(
   const an=g("anew"); if(an&&!x.alt.some(a=>nrm(a)===nrm(an))) x.alt.push(an); return x; }
 async function nmSave(x,opts){ opts=opts||{}; const L=mine(), prev=x.id?JSON.parse(JSON.stringify(nmById(x.id)||null)):null;
   const it={id:x.id,name:x.name,kind:x.kind,uBuy:x.uBuy,uSm:x.uSm,k:x.k,grp:x.grp,vend:x.vend.map(v=>({v:v.v,art:v.art,price:v.price===""?"":+v.price})),vdef:x.vdef,bzArt:x.bzArt,bzName:x.bzName,alt:x.alt,edge:x.edge,min:x.min,photo:x.photo||""};
-  if(!x.id||(NM.data&&NM.data.canCls)) it.cls=x.cls||"";   // класс: новая позиция — из библиотеки/раздела; менять — директор и главный дизайнер (сервер проверяет)
+  if(!x.id||(NM.data&&NM.data.canCls)) it.cls=x.cls||"";
+  if(x.raz!==undefined) it.raz=x.raz||"";   /* 20.11 раздел позиции (деньги не меняет) */   // класс: новая позиция — из библиотеки/раздела; менять — директор и главный дизайнер (сервер проверяет)
   if(!it.name){ toast("Впишите название"); return false; }
   if(it.vend.some(v=>v.price!==""&&!(v.price>=0))){ toast("Цена — числом"); return false; }
   /* сразу на экране, сохранение — в фоне; ошибка — откат и понятное сообщение */
@@ -44476,7 +44502,7 @@ async function nmMergeTo(names,t){ if(!t) return false; names=[].concat(names); 
 function nmCatWait(){ if(S.cat&&S.cat.data){ return; } if(typeof catLoad==="function") catLoad(); if(nmCatWait.t) return; nmCatWait.t=setInterval(()=>{ if(S.cat&&(S.cat.data||S.cat.err)){ clearInterval(nmCatWait.t); nmCatWait.t=0; nmRedraw(); } },400); }   // картинки ЛДСП и связи с Базисом — из catalog.json (грузится один раз)
 function nmHtml(){ if(!NM.data&&!NM.loading) nmLoad(); nmPriceLoad(); nmCatWait();
   const s=NM.scr; if(s==="jrn"&&window.__nmJrn) return window.__nmJrn.html();   /* 16.11 «История номенклатуры» (site_nomjrn.js) */
-  return s==="card"?nmScrCard():s==="edit"?nmScrEdit():s==="old"?nmScrOld():s==="clst"?nmScrClsT():s==="pvh"?nmScrPvh():nmScrList(); }
+  return s==="card"?nmScrCard():s==="edit"?nmScrEdit():s==="old"?nmScrOld():s==="clst"?nmScrClsT():s==="pvh"?nmScrPvh():s==="rz"?rzScr():nmScrList(); }
 /* ---- шаг 1в: «Фасады заказные» (Кирилл 15.11 19:21) — позиции из прайса фасадов ПВХ (сервер pvhPrice), в номенклатуре только показываем и связываем:
    хранится прайс там же, смета («Фасад ПВХ из прайса», qkPvhModal) берёт цену оттуда же — деньги не меняются. Позиция = вид фрезеровки × 16/19 мм × категория плёнки.
    Другим фирмам сервер отдаёт среднюю цену их города (сейчас есть только Якутск) и «Коллекция 1/2» вместо названий; дизайнеру /smeta/ — цена клиенту (÷ коэффициент фасадов). ---- */
@@ -44533,7 +44559,7 @@ function nmClsPick(x){ const T=NL.T(), cur=nmCl(x), pr=nmPr();
   m.addEventListener("click",async ev=>{ const b=ev.target.closest("[data-ck]"); if(!b) return; const k=b.dataset.ck; if((cur?cur.k:"")===k){ m._close(); return; } m._close();
     const nc=NL.cls(k), a=cur&&cur.p!=null?+cur.p:null, z=nc&&nc.p!=null?+nc.p:null;
     if(pr&&a!==z&&typeof appConfirm==="function"&&!(await appConfirm(`«${x.name}»: наценка была ${a==null?"по группе":a+" %"}, станет ${z==null?"по группе":z+" %"}. Новые сметы с этой позицией станут ${a!=null&&z!=null&&z<a?"дешевле":"дороже"}, договоры и старые сметы не изменятся.`,"Поменять"))) return;
-    const y=nmBlank(JSON.parse(JSON.stringify({id:x.id,name:x.name,kind:x.kind,uBuy:x.uBuy,uSm:x.uSm,k:x.k||"",grp:x.grp,vend:x.vend||[],vdef:x.vdef,bzArt:x.bzArt,bzName:x.bzName,alt:x.alt||[],edge:x.edge,min:x.min||"",photo:x.photo,cls:k})));
+    const y=nmBlank(JSON.parse(JSON.stringify({id:x.id,name:x.name,kind:x.kind,uBuy:x.uBuy,uSm:x.uSm,k:x.k||"",grp:x.grp,vend:x.vend||[],vdef:x.vdef,bzArt:x.bzArt,bzName:x.bzName,alt:x.alt||[],edge:x.edge,min:x.min||"",photo:x.photo,cls:k,raz:x.raz||""})));
     const id=await nmSave(y,{stay:true,quiet:true}); if(id){ toast(k?"Класс: "+nc.n+" · записано в журнал":"Класс снят"); } nmRedrawSoon(); }); }
 function nmListPaint(){ const L=document.getElementById("nmList"), C=document.getElementById("nmChips"); if(L) L.innerHTML=nmListHtml(); if(C) C.innerHTML=nmChips(); nmLibWatch(); }
 document.addEventListener("input",ev=>{ const t=ev.target; if(!(S.shop&&S.shop.mode==="nom")) return;
@@ -44552,7 +44578,7 @@ document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.targ
   if(a==="pvhmore"){ NM.plim=(NM.plim||60)+60; nmRedraw(); return; }
   if(a==="view"){ NM.view=b.dataset.k; try{ localStorage.setItem("w24-nomview",NM.view); }catch(_){} nmRedraw(); return; }
   if(a==="lcls"){ NM.lcls=NM.lcls===b.dataset.k?"":b.dataset.k; NM.lim=60; nmListPaint(); return; }
-  if(a==="lmenu"){ const m=nmSheet(`<div class="nm-grp"><button type="button" class="nm-row" data-lm="clst"><span class="nm-t"><b>Классы и наценки</b><small>как в Базис-Смете${NM.data&&NM.data.canClsT?" · меняете вы":""}</small></span><span class="nm-ch">${ic("chev",16)}</span></button>${nmCan()?`<button type="button" class="nm-row" data-lm="bulk"><span class="nm-t"><b>Загрузить список</b><small>вставить позиции из Excel — новые добавятся сами</small></span><span class="nm-ch">${ic("chev",16)}</span></button><button type="button" class="nm-row" data-lm="old"><span class="nm-t"><b>Старые названия</b><small>склеить названия из прайса, склада и сделок</small></span><span class="nm-ch">${ic("chev",16)}</span></button>`:""}</div><button type="button" class="nm-wide nm-b2" data-nmx>Отмена</button>`);
+  if(a==="lmenu"){ const m=nmSheet(`<div class="nm-grp"><button type="button" class="nm-row" data-lm="clst"><span class="nm-t"><b>Классы Базиса</b><small>для выгрузок Базиса и цены «по наценкам»${NM.data&&NM.data.canClsT?" · меняете вы":""}</small></span><span class="nm-ch">${ic("chev",16)}</span></button>${nmCan()?`<button type="button" class="nm-row" data-lm="bulk"><span class="nm-t"><b>Загрузить список</b><small>вставить позиции из Excel — новые добавятся сами</small></span><span class="nm-ch">${ic("chev",16)}</span></button><button type="button" class="nm-row" data-lm="old"><span class="nm-t"><b>Старые названия</b><small>склеить названия из прайса, склада и сделок</small></span><span class="nm-ch">${ic("chev",16)}</span></button>`:""}</div><button type="button" class="nm-wide nm-b2" data-nmx>Отмена</button>`);
     m.addEventListener("click",ev2=>{ const s2=ev2.target.closest("[data-lm]"); if(!s2) return; m._close(); if(s2.dataset.lm==="bulk"){ setTimeout(nmBulkOpen,220); return; }   /* 18.11: меню закрывается 200 мс — окно списка после него */
       if(s2.dataset.lm==="clst") NM.scr="clst"; else { NM.scr="old"; if(!NM.old) nmOldLoad(); } nmRedrawSoon(); top(); }); return; }
   if(a==="clsed"){ const c=NL.cls(b.dataset.k); if(c&&NM.data&&NM.data.canClsT) nmClsEdit(c,false); return; }
@@ -44560,9 +44586,19 @@ document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.targ
   if(a==="cls"){ const x=nmById(NM.open); if(x&&NM.data&&NM.data.canCls) nmClsPick(x); return; }
   if(a==="ecls"){ if(b.disabled) return; nmFormRead(); NM.edit.cls=NM.edit.cls===b.dataset.k?"":b.dataset.k; nmRedraw(); return; }
   if(a==="kind"){ NM.kind=NM.kind===b.dataset.k?"":b.dataset.k; nmListPaint(); return; }
+  /* 20.11 «Разделы» */
+  if(a==="rz"){ NM.rz=b.dataset.k; NM.rzb=""; NM.scr="rz"; nmRedraw(); return top(); }
+  if(a==="rzback"){ NM.scr="rz"; nmRedraw(); return top(); }
+  if(a==="rzb"){ NM.rzb=NM.rzb===b.dataset.k?"":b.dataset.k; nmRedraw(); return; }
+  if(a==="rzadd"){ if(rzCan()) rzEdit(null); return; }
+  if(a==="rzpc"){ const r=rzById(NM.rz); if(r) rzPcSet(r,(rzPc(r)||0)+(+b.dataset.d||0)); return; }
+  if(a==="rzpcv"){ const r=rzById(NM.rz); if(r&&rzCan()) rzPcAsk(r); return; }
+  if(a==="rzpick"){ const x=nmById(NM.open); if(x&&nmCan()) rzPick(x); return; }
+  if(a==="rzmenu"){ const r=rzById(NM.rz); if(!r||!rzCan()) return; const m=nmSheet(`<div class="nm-grp"><button type="button" class="nm-row" data-rm="edit"><span class="nm-t"><b>Название, процент и марки</b><small>марки — подразделы раздела</small></span><span class="nm-ch">${ic("chev",16)}</span></button>${r.id==="other"?"":`<button type="button" class="nm-row" data-rm="del"><span class="nm-t"><b class="nm-r0">Удалить раздел</b><small>позиции перейдут в подходящий раздел сами</small></span></button>`}</div><button type="button" class="nm-wide nm-b2" data-nmx>Отмена</button>`);
+    m.addEventListener("click",ev2=>{ const s2=ev2.target.closest("[data-rm]"); if(!s2) return; m._close(); setTimeout(()=>{ if(s2.dataset.rm==="edit") rzEdit(r); else rzDel(r); },220); }); return; }
   if(a==="bsec"){ NM.bsec=b.dataset.k; NM.lim=60; nmListPaint(); return; }
   if(a==="more"){ NM.lim+=60; nmListPaint(); return; }
-  if(a==="open"){ NM.open=b.dataset.id; NM.scr="card"; NM.histAll=false; nmRedraw(); return top(); }
+  if(a==="open"){ NM.back=NM.scr==="rz"?"rz":""; NM.open=b.dataset.id; NM.scr="card"; NM.histAll=false; nmRedraw(); return top(); }
   if(a==="photo"){ const x=nmById(NM.open); if(x&&typeof supPhotoPick==="function") supPhotoPick(smName(x)); return; }   // снять или загрузить — тот же «Фото позиций» (savePhoto_), одно фото на название/артикул, видно во всех заказах
   if(a==="picfind"||a==="picother"||a==="picok"){ const x=nmById(NM.open); if(!x) return; if(a==="picok") return nmPicSet(x,x.pic,true).then(ok=>{ if(ok) toast("Отмечено: картинка верная"); });
     if(a==="picother"&&NM.picC&&NM.picC[x.id]) return nmPicChoose(x,NM.picC[x.id]); return nmPicFind(x,a==="picfind"); }
@@ -44571,13 +44607,13 @@ document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.targ
     if(ex){ NM.open=ex.id; NM.scr="card"; nmRedraw(); return top(); }
     if(!nmCan()){ if(typeof catModal==="function") catModal(it.i); return; }
     const m=nmSheet(`<div class="nm-shh"><b>В номенклатуру?</b><button type="button" class="nm-btn sm" data-nmx aria-label="Закрыть">${ic("x",16)}</button></div><div class="nm-new">${catSw(it,"nm-sw")}<span class="nm-t"><b>${e(it.n)}</b><small>${e([it.a?"арт. "+it.a:"",typeof catPriceTxt==="function"?catPriceTxt(it):""].filter(Boolean).join(" · "))}</small></span></div>
-      <p class="nm-note">Позиция появится в «Нашей номенклатуре» и сверху в выборе сметы. Цена — как сейчас в смете.</p><div class="nm-ob"><button type="button" class="nm-b1" data-sa="add">Добавить</button><button type="button" class="nm-b2" data-sa="edit">Добавить и настроить</button></div>`);
+      <p class="nm-note">Позиция появится в «Моих разделах» и сверху в выборе сметы. Цена — как сейчас в смете.</p><div class="nm-ob"><button type="button" class="nm-b1" data-sa="add">Добавить</button><button type="button" class="nm-b2" data-sa="edit">Добавить и настроить</button></div>`);
     m.addEventListener("click",async ev2=>{ const s=ev2.target.closest("[data-sa]"); if(!s) return; m._close(); const x=nmFromCat(it); if(s.dataset.sa==="edit"){ NM.edit=x; NM.scr="edit"; nmRedraw(); return top(); } await nmSave(x,{stay:true}); nmRedraw(); });
     return; }
   if(a==="bulk"){ nmBulkOpen(); return; }   /* 18.11 «Загрузить список» */
-  if(a==="new"){ if(NM.vend===null&&nmCan()){ NM.vend={}; shpGet("action=vend",true).then(j=>{ if(j&&j.ok) NM.vend=j; }); } NM.edit=nmBlank({kind:NM.kind||"ЛДСП"}); NM.scr="edit"; nmRedraw(); setTimeout(()=>document.querySelector("#nmForm [name=name]")?.focus(),220); return top(); }
+  if(a==="new"){ if(NM.vend===null&&nmCan()){ NM.vend={}; shpGet("action=vend",true).then(j=>{ if(j&&j.ok) NM.vend=j; }); } NM.edit=rzNewBlank(); NM.scr="edit"; nmRedraw(); setTimeout(()=>document.querySelector("#nmForm [name=name]")?.focus(),220); return top(); }
   if(a==="edit"){ const x=nmById(NM.open); if(!x) return; if(NM.vend===null){ NM.vend={}; shpGet("action=vend",true).then(j=>{ if(j&&j.ok) NM.vend=j; }); }
-    NM.edit=nmBlank(JSON.parse(JSON.stringify({id:x.id,name:x.name,kind:x.kind,uBuy:x.uBuy,uSm:x.uSm,k:x.k||"",grp:x.grp,vend:x.vend||[],vdef:x.vdef,bzArt:x.bzArt,bzName:x.bzName,alt:x.alt||[],edge:x.edge,min:x.min||"",photo:x.photo,cls:x.cls||""}))); NM.scr="edit"; nmRedraw(); return top(); }
+    NM.edit=nmBlank(JSON.parse(JSON.stringify({id:x.id,name:x.name,kind:x.kind,uBuy:x.uBuy,uSm:x.uSm,k:x.k||"",grp:x.grp,vend:x.vend||[],vdef:x.vdef,bzArt:x.bzArt,bzName:x.bzName,alt:x.alt||[],edge:x.edge,min:x.min||"",photo:x.photo,cls:x.cls||"",raz:x.raz||""}))); NM.scr="edit"; nmRedraw(); return top(); }
   if(a==="menu"){ const x=nmById(NM.open); if(!x) return; const m=nmSheet(`<div class="nm-grp"><button type="button" class="nm-row" data-mm="edit"><span class="nm-t"><b>Изменить</b></span></button><button type="button" class="nm-row" data-mm="del"><span class="nm-t"><b class="nm-r0">Убрать из номенклатуры</b><small>Старые сделки и сметы не меняются</small></span></button></div><button type="button" class="nm-wide nm-b2" data-nmx>Отмена</button>`);
     m.addEventListener("click",async ev2=>{ const s=ev2.target.closest("[data-mm]"); if(!s) return; m._close(); if(s.dataset.mm==="edit"){ document.querySelector('[data-nm="edit"]')?.click(); return; }
       if(typeof appConfirm==="function"&&!(await appConfirm("Убрать «"+x.name+"» из номенклатуры? Старые сделки и сметы не изменятся.","Убрать",true))) return;
@@ -44585,6 +44621,7 @@ document.addEventListener("click",async ev=>{ const b=ev.target.closest&&ev.targ
       const j=typeof shpPostRaw==="function"?await shpPostRaw({action:"nomDel",id:x.id}):null; if(!j||!j.ok){ L.splice(Math.max(0,i),0,x); toast(!j?"Нет связи — не убралось":j.msg||"Не убралось"); nmRedraw(); } else toast("Убрано"); });
     return; }
   /* форма */
+  if(a==="eraz"){ nmFormRead(); const r=rzById(b.dataset.k); if(r&&NM.edit) rzApply(NM.edit,r); nmRedraw(); return; }   /* 20.11 */
   if(a==="ekind"){ nmFormRead(); const x=NM.edit, was=x.kind; x.kind=b.dataset.k; if(!x.id&&(x.cls||"")===(NM_KCLS[was]||"")) x.cls=NM_KCLS[x.kind]||""; if(!x.grp||x.grp===KIND_GRP[was]) x.grp=KIND_GRP[x.kind]; if(!x.id&&!x.bzName){ const d=nmBlank({kind:x.kind}); x.uBuy=d.uBuy; x.uSm=d.uSm; } nmRedraw(); return; }
   if(a==="vadd"){ nmFormRead(); NM.edit.vend.push({v:"",art:"",price:""}); if(NM.edit.vend.length===1) NM.edit.vend.push({v:"",art:"",price:""}); nmRedraw(); return; }
   if(a==="vdel"){ nmFormRead(); const f=document.getElementById("nmForm"), rows=f?[...f.querySelectorAll(".nm-vr")]:[], j=+b.dataset.j, r=rows[j]; const v={v:r?r.querySelector("[name=vv]").value.trim():"",art:r?r.querySelector("[name=va]").value.trim():""};
@@ -44720,6 +44757,161 @@ function nmBulkOpen(){ if(!nmCan()){ toast("Номенклатуру ведут 
   /* вставили в пустое поле несколько строк — сразу показываем проверку (одним шагом меньше); «Назад» вернёт к тексту */
   m.addEventListener("paste",ev=>{ const t=ev.target; if(B.step!=="in"||!t||t.tagName!=="TEXTAREA"||t.value.trim()) return; setTimeout(()=>{ if(B.step!=="in"||!m.isConnected) return; B.text=NM.blText=t.value; B.file=""; if(blRows(B.text).length>1) check(); },0); });
   draw(); }
+/* ===== 20.11 «РАЗДЕЛЫ» (задание docs/zadaniya/2026-11-20-nomenklatura-katalog-rossii.md, шаг 1; Кирилл 19.11: «у них все свои разделы и по своим процентам — у всех разные… сами могут это всё настраивать»).
+   Один список «Разделы» (свой процент + подразделы-марки) вместо двух — «вид» (9 постоянных) и «класс» с наценкой. Список фирмы — сервер (nomList.raz; nomRazSave — только директор).
+   Не сохранён — разделы по умолчанию с процентами нынешних классов фирмы (у главной фирмы ничего не теряется). Позиция в разделе: своя отметка (x.raz) или сама — по виду и названию.
+   ДЕНЬГИ НЕ МЕНЯЮТСЯ: процент раздела — только показ «клиенту ≈» и подсказка «Поставить эту цену» (меняет коэффициент только по нажатию; решение Кирилла 20.11).
+   Вид и класс позиции остаются внутри (раздел сметы, выгрузки Базиса, схема «по наценкам») — перенос позиции в другой раздел их не трогает. Экран — макет stend/tmp/nomen_vid (экраны 1 и 2), без цены «Россия» (шаг 2). ===== */
+const RZ_DEF=[["ldsp","ЛДСП","Плиты и кромка","M1","ЛДСП",["Egger","ExtraVert","Lamarty","Kastamonu","Kronospan","Увадрев"]],["edge","Кромка","Плиты и кромка","M2","Кромка",["Rehau","Egger","ExtraVert","Galoplast"]],["dvp","ДВП и ХДФ","Плиты и кромка","M1","ЛДСП",[]],
+  ["fpl","Фасады плёночные","Фасады","FSD","МДФ и фасады",[]],["fkr","Фасады крашеные","Фасады","FSD","МДФ и фасады",[]],
+  ["hinge","Петли","Фурнитура","FRN2","Фурнитура",["Blum","Hettich","Boyard","GTV"]],["drw","Ящики и направляющие","Фурнитура","FRN2","Фурнитура",["Blum","Hettich","Boyard","GTV"]],["fix","Саморезы и крепёж","Фурнитура","FRN1","Крепёж",[]],
+  ["prof","Профиль","Прочее","M3","Профиль",[]],["glass","Стекло и зеркало","Прочее","M6","Стекло и зеркало",[]],["top","Столешницы","Прочее","M4","Прочее",[]],["srv","Услуги","Прочее","SRV","Услуги",[]],["other","Прочее","Прочее","M6","Прочее",[]]]
+  .map(([id,n,g,cls,kind,br])=>({id,n,g,cls,kind,br,def:1,p:null}));   /* как NOM_RAZ_DEF_ на сервере; проценты — только с сервера */
+const RZ_G=["Плиты и кромка","Фасады","Фурнитура","Прочее"];
+const RZ_IC={ldsp:"sheet",edge:"edge",dvp:"sheet",fpl:"front",fkr:"front",hinge:"hinge",drw:"rail",fix:"screw",prof:"prof",glass:"glass",top:"top",srv:"svc",other:"box"};
+Object.assign(I,{sheet:'<rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 9h16"/>',front:'<rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M15 11v2"/>',glass:'<rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M8.5 10l3-3M8.5 15l7-7"/>',
+  top:'<path d="M3 8h18v3H3zM6 11v9M18 11v9"/>',prof:'<path d="M6 4v16M10 4v16M6 8h4M6 16h4M14 4h4v16h-4z"/>',minus:'<path d="M5 12h14"/>'});
+const rzCan=()=>!!(NM.data&&NM.data.canRaz);
+function rzT(){ const L=NM.data&&NM.data.raz; return Array.isArray(L)&&L.length?L:RZ_DEF; }
+function rzById(id){ return id?rzT().find(r=>r.id===id)||null:null; }
+function rzAuto(x){ const n=nrm(smName(x)+" "+(x.name||"")), k=x.kind||"", L=rzT(), has=id=>L.some(r=>r.id===id)?id:""; let id="other";
+  if(k==="Кромка") id="edge";
+  else if(/(^|[^а-яa-z])(двп|двпо|хдф|hdf)([^а-яa-z]|$)/.test(n)) id="dvp";
+  else if(k==="ЛДСП") id="ldsp";
+  else if(k==="МДФ и фасады") id=/столешн/.test(n)?"top":/эмал|краш|покраск|окраш/.test(n)?"fkr":"fpl";
+  else if(k==="Фурнитура") id=/направл|ящик|тандем|tandem|legrabox|леграбокс|метабокс|metabox|movento|мовенто|бокс|box/.test(n)?"drw":/петл|hinge|clip top|blumotion/.test(n)?"hinge":"other";
+  else if(k==="Крепёж") id="fix"; else if(k==="Профиль") id="prof"; else if(k==="Стекло и зеркало") id="glass"; else if(k==="Услуги") id="srv";
+  else id=/столешн|стеновая панел|фартук/.test(n)?"top":"other";
+  if(has(id)) return id;
+  const c=L.find(r=>r.cls&&r.cls===x.cls); return c?c.id:has("other"); }   /* своего такого раздела у фирмы нет — первый раздел с тем же классом, иначе «Прочее» */
+function rzOf(x){ return rzById(x&&x.raz)||rzById(rzAuto(x||{})); }
+function rzBrand(x,r){ const n=nrm(smName(x)+" "+(x.name||"")+" "+(x.vdef||"")); return ((r&&r.br)||[]).find(b=>b&&n.includes(nrm(b)))||""; }
+const rzPc=r=>r&&r.p!=null&&r.p!==""&&isFinite(+r.p)?+r.p:null;
+const rzPcTxt=v=>"+"+String(Math.round(v*100)/100).replace(".",",")+" %";
+const rzKx=v=>(Math.round((1+v/100)*100)/100).toLocaleString("ru-RU");
+function rzItems(r){ return mine().filter(x=>{ const o=rzOf(x); return r?!!o&&o.id===r.id:!o; }); }
+function rzCity(){ const c=NM.data&&NM.data.city; return c?String(c):""; }
+/* экран 1: разделы плитками по группам */
+function rzTilesHtml(){ const L=rzT(), cnt=new Map(), pr=nmPr(); mine().forEach(x=>{ const r=rzOf(x), k=r?r.id:""; cnt.set(k,(cnt.get(k)||0)+1); });
+  const G=[...new Set(RZ_G.concat(L.map(r=>r.g||"Прочее")))]; let h="";
+  G.forEach(g=>{ const R=L.filter(r=>(r.g||"Прочее")===g); if(!R.length) return;
+    h+=`<div class="nm-sec rz-gh"><span>${e(g)}</span></div><div class="nm-grp">${R.map(r=>{ const n=cnt.get(r.id)||0, p=rzPc(r), br=(r.br||[]).filter(Boolean), pvh=r.id==="fpl"&&nmPvhOk(), sub=br.length?br.slice(0,4).join(" · ")+(n?" — "+n:""):n?n+" "+pl(n,"позиция","позиции","позиций")+(pvh?" · ПВХ из прайса фасадов":""):pvh?"фасады в плёнке ПВХ из прайса":"пока пусто";
+      return `<button type="button" class="nm-row rz-row" data-nm="rz" data-k="${e(r.id)}"><span class="nm-sw nm-fi rz-ic">${ic(RZ_IC[r.id]||"box",20)}</span><span class="nm-t"><b>${e(r.n)}</b><small>${e(sub)}</small></span>${pr&&p!=null?`<span class="rz-pc">${e(rzPcTxt(p))}</span>`:""}<span class="nm-ch">${ic("chev",16)}</span></button>`; }).join("")}</div>`; });
+  const none=cnt.get("")||0; if(none) h+=`<div class="nm-sec rz-gh"><span>Без раздела</span></div><div class="nm-grp"><button type="button" class="nm-row rz-row" data-nm="rz" data-k=""><span class="nm-sw nm-fi rz-ic">${ic("box",20)}</span><span class="nm-t"><b>Без раздела</b><small>${none} ${pl(none,"позиция","позиции","позиций")}</small></span><span class="nm-ch">${ic("chev",16)}</span></button></div>`;
+  if(rzCan()) h+=`<button type="button" class="rz-add" data-nm="rzadd">${ic("plus",18)} Свой раздел</button>`;
+  return h; }
+/* поиск: найденное — по разделам */
+function rzGroups(F){ const by=new Map(); F.forEach(x=>{ const r=rzOf(x), k=r?r.id:""; if(!by.has(k)) by.set(k,{t:r?r.n:"Без раздела",sm:"",L:[]}); by.get(k).L.push(x); });
+  return rzT().map(r=>by.get(r.id)).concat([by.get("")]).filter(g=>g&&g.L.length); }
+/* экран 2: раздел — процент, марки, позиции с «ваша цена» и «клиенту (подсказка)» */
+function rzScr(){ const none=NM.rz==="", r=none?null:rzById(NM.rz), pr=nmPr(); if(!r&&!none){ NM.scr="list"; return nmScrList(); }
+  const L=rzItems(r).sort((a,b)=>a.name.localeCompare(b.name,"ru")), p=rzPc(r), can=rzCan()&&!!r, city=rzCity();
+  const br=((r&&r.br)||[]).filter(Boolean), bc=b=>L.filter(x=>rzBrand(x,r)===b).length, other=br.length?L.filter(x=>!rzBrand(x,r)).length:0;
+  if(NM.rzb&&NM.rzb!=="-"&&!br.includes(NM.rzb)) NM.rzb="";
+  const F=NM.rzb?L.filter(x=>NM.rzb==="-"?!rzBrand(x,r):rzBrand(x,r)===NM.rzb):L, withP=pr?L.filter(x=>nmPrice(x)).length:0;
+  const right=can?`<button type="button" class="nm-btn" data-nm="rzmenu" aria-label="Ещё">${ic("more")}</button>`:"";
+  let h=`<div class="nm-v rz-v">${nmTop("",right,"list")}<h1 class="nm-h1">${e(r?r.n:"Без раздела")}</h1><p class="nm-sub">${L.length} ${pl(L.length,"позиция","позиции","позиций")}${pr&&L.length?` · ${withP} с вашей ценой${L.length-withP?` · <span class="nm-y">${L.length-withP} без цены</span>`:""}`:""}</p>`;
+  if(r&&pr&&p!=null) h+=`<section class="rz-mk"><div class="rz-mkh"><b>Процент раздела</b><small>${can?"меняете вы":"меняет директор"}</small></div>
+    <div class="rz-mkc">${can?`<button type="button" class="rz-pm" data-nm="rzpc" data-d="-5" aria-label="Меньше на 5 %">${ic("minus",22)}</button>`:""}<button type="button" class="rz-pv" data-nm="rzpcv"${can?"":" disabled"} aria-label="Процент раздела">${e(String(Math.round(p*100)/100).replace(".",","))} %</button>${can?`<button type="button" class="rz-pm" data-nm="rzpc" data-d="5" aria-label="Больше на 5 %">${ic("plus",22)}</button>`:""}</div>
+    <p class="rz-mkn">Подсказка: клиенту ≈ ваша цена × ${e(rzKx(p))}. Цену клиенту в смете решает коэффициент — процент раздела её не меняет; подписанные договоры и сохранённые сметы тоже не меняются.</p></section>`;
+  if(r&&r.id==="fpl"&&nmPvhOk()) h+=`<div class="rz-pvh">${nmPvhEntry().replace(/^<div class="nm-sec">[\s\S]*?<\/div>/,"")}</div>`;   /* заказные фасады ПВХ (прайс фасадов) — здесь, без кода Базиса */
+  if(br.length) h+=`<div class="nm-chips rz-br"><button type="button" class="nm-chip${!NM.rzb?" on":""}" data-nm="rzb" data-k="">Все</button>${br.map(b=>`<button type="button" class="nm-chip${NM.rzb===b?" on":""}" data-nm="rzb" data-k="${e(b)}">${e(b)}${bc(b)?`<small>${bc(b)}</small>`:""}</button>`).join("")}${other?`<button type="button" class="nm-chip${NM.rzb==="-"?" on":""}" data-nm="rzb" data-k="-">Другие<small>${other}</small></button>`:""}</div>`;
+  if(!F.length&&!(r&&r.id==="fpl"&&nmPvhOk()&&!L.length)) h+=`<div class="nm-empty"><b>${L.length?"Нет позиций этой марки":"В разделе пока пусто"}</b><p>${nmCan()?"Добавьте позицию кнопкой «＋ Позиция» или перенесите сюда из другого раздела: карточка позиции → «Раздел».":"Позиции добавляют директор, закупка и главный дизайнер."}</p></div>`;
+  else h+=`<div class="rz-list">${F.slice(0,200).map(x=>rzItemHtml(x,p,city)).join("")}</div>${F.length>200?`<p class="nm-note">Показаны первые 200 — уточните поиском на экране «Номенклатура».</p>`:""}`;
+  if(pr&&L.length-withP>0) h+=`<p class="rz-note">Нет вашей цены — впишите её у поставщика в карточке позиции. В смете такая позиция будет «нет цены».</p>`;
+  return h+`</div>`+(nmCan()?`<div class="nm-bar"><button type="button" class="nm-pill" data-nm="new">${ic("plus",18)}<span>Позиция</span></button></div>`:""); }
+function rzItemHtml(x,p,city){ const pr=nmPr(), P=pr?nmPrice(x):null, sub=[x.bzArt||"",x.uBuy||""].filter(Boolean).join(" · ");
+  if(!pr) return `<button type="button" class="rz-it" data-nm="open" data-id="${e(x.id)}"><b>${e(x.name)}</b>${sub?`<small>${e(sub)}</small>`:""}</button>`;
+  const cl=P&&p!=null?Math.round(P.p*(1+p/100)):null;
+  return `<button type="button" class="rz-it" data-nm="open" data-id="${e(x.id)}"><b>${e(x.name)}${P?"":` <span class="rz-np">цены нет</span>`}</b>${sub?`<small>${e(sub)}</small>`:""}
+    <span class="rz-pr"><span class="rz-b rz-our"><small>${e(city?city+", ваша":"ваша цена")}</small><b>${P?(P.src==="рынок"?"≈ ":"")+e(rub(P.p)):"—"}</b></span><span class="rz-b rz-cl"><small>клиенту${p!=null?" · подсказка":""}</small><b>${cl!=null?e(rub(cl)):"—"}</b></span></span></button>`; }
+/* карточка позиции: раздел и «клиенту ≈» */
+function rzKv(x){ const r=rzOf(x), can=nmCan(), pc=rzPc(r);
+  return `<div class="nm-kv${can?" nm-tap":""}"${can?' data-nm="rzpick"':""}><span>Раздел</span><span class="nm-v2">${r?e(r.n)+(nmPr()&&pc!=null?` · ${e(rzPcTxt(pc))}`:""):`<span class="nm-y">без раздела</span>`}</span>${can?`<span class="nm-ch">${ic("chev",16)}</span>`:""}</div>`; }
+function rzMkLine(x,p){ const r=rzOf(x), pc=rzPc(r); if(!p||!r||pc==null||!(NM.data&&NM.data.sums)) return "";
+  return `<div class="nm-mkl"><span>ваша цена ${e(rub(p.p))} → клиенту <b>${e(rub(Math.round(p.p*(1+pc/100))))}</b></span><small>подсказка по проценту раздела «${e(r.n)}» ${e(rzPcTxt(pc))}${p.src==="рынок"?" · по примерной цене":""} · в смете цену решает коэффициент</small></div>`; }
+/* правка позиции: раздел вместо «вида» и «класса» */
+function rzField(x){ const cur=rzOf(x); return `<div class="nm-fl"><span>Раздел</span><div class="nm-chips nm-wrap">${rzT().map(r=>`<button type="button" class="nm-chip${cur&&cur.id===r.id?" on":""}" data-nm="eraz" data-k="${e(r.id)}">${e(r.n)}</button>`).join("")}</div></div>`; }
+function rzKindField(x){ return `<div class="nm-fl"><span>Вид в смете · раздел сметы и единицы</span><div class="nm-chips nm-wrap">${KINDS.map(k=>`<button type="button" class="nm-chip${x.kind===k?" on":""}" data-nm="ekind" data-k="${e(k)}">${e(k)}</button>`).join("")}</div></div>`; }   /* 20.11 (проверяющий): вид и класс Базиса влияют на смету «по наценкам» и выгрузку Базиса — директору и главному дизайнеру видны и меняются */
+function rzApply(x,r){ x.raz=r.id; if(x.id) return;   /* у новой позиции раздел задаёт и вид (раздел сметы, единицы) и класс Базиса; у заведённой — только раздел, деньги не трогаем */
+  const was=x.kind, kind=KINDS.includes(r.kind)?r.kind:"Прочее"; x.kind=kind; if(r.cls&&typeof NL!=="undefined"&&NL.cls(r.cls)) x.cls=r.cls; else if((x.cls||"")===(NM_KCLS[was]||"")) x.cls=NM_KCLS[kind]||"";
+  if(!x.grp||x.grp===KIND_GRP[was]) x.grp=KIND_GRP[kind]; if(!x.bzName){ const d=nmBlank({kind}); x.uBuy=d.uBuy; x.uSm=d.uSm; } }
+function rzNewBlank(){ const r=NM.scr==="rz"?rzById(NM.rz):null, y=nmBlank({kind:"ЛДСП",raz:""}); if(r) rzApply(y,r); return y; }
+function rzCopy(x,extra){ return nmBlank(JSON.parse(JSON.stringify(Object.assign({id:x.id,name:x.name,kind:x.kind,uBuy:x.uBuy,uSm:x.uSm,k:x.k||"",grp:x.grp,vend:x.vend||[],vdef:x.vdef,bzArt:x.bzArt,bzName:x.bzName,alt:x.alt||[],edge:x.edge,min:x.min||"",photo:x.photo,cls:x.cls||"",raz:x.raz||""},extra||{})))); }
+function rzPick(x){ const cur=rzOf(x), pr=nmPr();
+  const m=nmSheet(`<div class="nm-shh"><b>Раздел позиции</b><button type="button" class="nm-btn sm" data-nmx aria-label="Закрыть">${ic("x",16)}</button></div><div class="nm-grp">${rzT().map(r=>`<button type="button" class="nm-row" data-rk="${e(r.id)}"><span class="nm-sw nm-fi rz-ic">${ic(RZ_IC[r.id]||"box",18)}</span><span class="nm-t"><b>${e(r.n)}</b><small>${e(r.g||"")}</small></span><span class="nm-r">${pr&&rzPc(r)!=null?`<b>${e(rzPcTxt(rzPc(r)))}</b>`:""}${cur&&cur.id===r.id?`<small class="nm-g">сейчас</small>`:""}</span></button>`).join("")}</div>
+    <p class="nm-note">Деньги не меняются: раздел — для порядка и подсказки цены. Раздел сметы и класс Базиса у позиции остаются прежними.</p>`,"tall");
+  m.addEventListener("click",async ev=>{ const b=ev.target.closest("[data-rk]"); if(!b) return; const k=b.dataset.rk; m._close(); if(cur&&cur.id===k) return;
+    const id=await nmSave(rzCopy(x,{raz:k}),{stay:true,quiet:true}); if(id) toast("Раздел: "+((rzById(k)||{}).n||"")); nmRedrawSoon(); }); }
+/* разделы фирмы: свой, переименовать, марки, процент, удалить — директор (сервер nomRazSave, журнал) */
+async function rzSave(list,msg){ const prev=NM.data.raz, prevS=NM.data.razSaved; NM.data.raz=list; nmRedrawSoon();
+  const j=typeof shpPostRaw==="function"?await shpPostRaw({action:"nomRazSave",list:list.map(r=>({id:r.id,n:r.n,g:r.g||"Прочее",p:r.p,br:r.br||[],cls:r.cls||"",kind:r.kind||""}))}):null;
+  if(!j||!j.ok){ NM.data.raz=prev; NM.data.razSaved=prevS; toast(!j?"Нет связи — не сохранилось":j.msg||"Не сохранилось"); nmLoad(true).then(nmRedraw); return false; }
+  if(Array.isArray(j.list)) NM.data.raz=j.list; NM.data.razSaved=true; nmRedrawSoon(); if(msg) toast(msg); return true; }
+function rzEdit(r){ const isNew=!r, oth=rzPc(rzById("other")); r=r||{id:"",n:"",g:"Прочее",p:oth!=null?oth:0,br:[],cls:"",kind:"Прочее"};
+  const gs=[...new Set(RZ_G.concat(rzT().map(x=>x.g||"Прочее")))];
+  const m=nmSheet(`<div class="nm-shh"><b>${isNew?"Свой раздел":e(r.n)}</b><button type="button" class="nm-btn sm" data-nmx aria-label="Закрыть">${ic("x",16)}</button></div>
+    <form class="nm-form" id="rzF" autocomplete="off"><label class="nm-fl"><span>Название</span><input class="nm-in" name="n" maxlength="40" required value="${e(r.n)}" placeholder="Например: Ручки"></label>
+    <div class="nm-f2"><label class="nm-fl"><span>Процент, %</span><input class="nm-in" name="p" inputmode="decimal" value="${e(String(rzPc(r)==null?"":rzPc(r)).replace(".",","))}"></label><label class="nm-fl"><span>Где в списке</span><select class="nm-in" name="g">${gs.map(g=>`<option${g===(r.g||"Прочее")?" selected":""}>${e(g)}</option>`).join("")}</select></label></div>
+    <label class="nm-fl"><span>Марки (подразделы), через запятую</span><input class="nm-in" name="br" maxlength="400" value="${e((r.br||[]).join(", "))}" placeholder="Blum, Hettich, Boyard"></label>
+    ${isNew?`<label class="nm-fl"><span>Новые позиции в смете считать как</span><select class="nm-in" name="kind">${KINDS.map(k=>`<option${k===r.kind?" selected":""}>${e(k)}</option>`).join("")}</select></label>`:""}
+    <p class="nm-note">Процент — подсказка «клиенту ≈» рядом с ценой. Цену клиенту в смете решает коэффициент: сметы и договоры от процента не меняются.</p><button type="submit" class="nm-wide">Сохранить</button></form>`);
+  const f=m.querySelector("form"), num=v=>+String(v).replace(/\s/g,"").replace(",",".");
+  f.addEventListener("submit",async ev=>{ ev.preventDefault(); ev.stopPropagation(); const n=f.elements.n.value.trim().replace(/\s+/g," "), pv=f.elements.p.value.trim(), p=pv===""?0:num(pv);
+    if(!n){ toast("Впишите название"); return; } if(!isFinite(p)||p<0||p>1000){ toast("Процент — числом от 0 до 1000"); return; }
+    const L=rzT(); if(L.some(x=>x.id!==r.id&&nrm(x.n)===nrm(n))){ toast("Такой раздел уже есть"); return; }
+    const br=[...new Set(f.elements.br.value.split(/[,;]/).map(s=>s.trim().replace(/\s+/g," ")).filter(Boolean))].slice(0,30);
+    const nr=Object.assign({},r,{n,p,g:f.elements.g.value,br},isNew?{id:"r"+Date.now().toString(36),kind:f.elements.kind.value,cls:"",def:0}:{});
+    m._close(); const ok=await rzSave(isNew?L.filter(x=>x.id!=="other").concat([nr],L.filter(x=>x.id==="other")):L.map(x=>x.id===r.id?nr:x),isNew?"Раздел «"+n+"» добавлен":"Сохранено · записано в журнал");
+    if(ok&&isNew){ NM.rz=nr.id; NM.rzb=""; NM.scr="rz"; nmRedrawSoon(); } });
+  setTimeout(()=>f.elements[isNew?"n":"p"].focus(),250); }
+async function rzDel(r){ if(!r||r.id==="other") return; const n=rzItems(r).length;
+  if(typeof appConfirm==="function"&&!(await appConfirm(`Удалить раздел «${r.n}»?${n?` ${n} ${pl(n,"позиция перейдёт","позиции перейдут","позиций перейдут")} в подходящий раздел сами (по виду и названию).`:""} Деньги и сметы не меняются.`,"Удалить",true))) return;
+  if(await rzSave(rzT().filter(x=>x.id!==r.id),"Раздел «"+r.n+"» удалён")){ NM.scr="list"; nmRedrawSoon(); } }
+let rzTm=0; function rzPcSet(r,p,now){ if(!r||!rzCan()) return; p=Math.max(0,Math.min(1000,Math.round(p*100)/100)); NM.data.raz=rzT().map(x=>x.id===r.id?Object.assign({},x,{p}):x); nmRedraw();
+  clearTimeout(rzTm); rzTm=setTimeout(()=>rzSave(rzT(),"Процент «"+r.n+"»: "+rzPcTxt(p)+" · записано в журнал"),now?0:900); }
+function rzPcAsk(r){ const m=nmSheet(`<div class="nm-shh"><b>Процент «${e(r.n)}»</b><button type="button" class="nm-btn sm" data-nmx aria-label="Закрыть">${ic("x",16)}</button></div><form class="nm-form" id="rzPF" autocomplete="off"><label class="nm-fl"><span>Процент, %</span><input class="nm-in" name="p" inputmode="decimal" value="${e(String(rzPc(r)==null?"":rzPc(r)).replace(".",","))}"></label><p class="nm-note">Подсказка «клиенту ≈» — деньги смет не меняются.</p><button type="submit" class="nm-wide">Поставить</button></form>`);
+  const f=m.querySelector("form"); f.addEventListener("submit",ev=>{ ev.preventDefault(); ev.stopPropagation(); const p=+String(f.elements.p.value).replace(/\s/g,"").replace(",","."); if(!isFinite(p)||p<0||p>1000||String(f.elements.p.value).trim()===""){ toast("Процент — числом от 0 до 1000"); return; } m._close(); setTimeout(()=>rzPcSet(r,p,true),220); });
+  setTimeout(()=>{ const i=f.elements.p; i.focus(); i.select(); },250); }
+/* смета, «Цена»: подсказка «По процентам разделов» рядом с «По наценкам и прайсу работ» — коэффициент меняется только кнопкой «Поставить эту цену» (тот же обработчик data-mkref="set") */
+function rzRef(c){ try{ if(!c||!c.qk||window.APP_DES||!NM.data||!Array.isArray(NM.data.raz)||!nmPr()) return null; const L=NM.data.raz; if(!L.some(r=>rzPc(r)!=null)) return null;
+    const G=new Map(); let mats=0,sum=0;
+    const rzFor=(n,cat)=>{ const x=nmByName(n); if(x) return rzOf(x); const lb=typeof NL!=="undefined"?NL.byName(n):null; return rzById(rzAuto(lb?{name:n,kind:lb.kind,cls:lb.cls}:{name:n,kind:cat==="ldsp"?"ЛДСП":cat==="edge"?"Кромка":cat==="front"?"МДФ и фасады":"Фурнитура"})); };
+    const add=(n,cat,v)=>{ if(!(v>0)) return; const r=rzFor(n,cat), k=r?r.id:"-", o=G.get(k)||{n:r?r.n:"Без раздела",p:rzPc(r)||0,m:0}; o.m+=v; G.set(k,o); };
+    (c.items||[]).forEach(x=>{ if(x.cat==="front"&&x.cz) return; add(x.n,x.cat,x.sum); }); ((c.P&&c.P.L)||[]).forEach(x=>add(x.n,"furn",x.sum));
+    const rows=[...G.values()].map(o=>{ const s=Math.round(o.m*(1+o.p/100)); mats+=o.m; sum+=s; return Object.assign(o,{s}); }); if(!(mats>0)) return null;
+    const wk=(c.BW&&c.BW.cl)||0, ex=(c.exS||0)+(c.gW||0), tot=Math.round(sum+wk+ex+(c.fzP||0)); return {rows,total:tot,k:tot-(c.fzP||0)>0?c.M/(tot-(c.fzP||0)):0,wk,ex,fzP:c.fzP||0}; }catch(_){ return null; } }
+if(typeof mkRefHtml==="function"){ const _rzMk=mkRefHtml; mkRefHtml=function(c){ const h=_rzMk.apply(this,arguments); try{ const R=rzRef(c); if(!R) return h; const R0=typeof mkRef==="function"?mkRef(c):null; if(R0&&Math.abs(R0.total-R.total)<1) return h;
+    const kk=Math.round(R.k*100)/100, op=!!S.rzRefOpen, F2=v=>String(v).replace(".",",");
+    return h+`<section class="qk-card mk-ref rz-ref"><button type="button" class="qk-h qk-gh" data-rzref="t" aria-expanded="${op}"><b>${op?"▾":"▸"} По процентам разделов</b><span><b>${e(rub(R.total))}</b></span></button>${op?`<p class="qk-sub">Подсказка: материалы с процентами разделов номенклатуры + работы, расходы и заказные фасады как есть. Это коэффициент ${e(F2(kk))}. Цена меняется только кнопкой.</p>${R.rows.map(o=>`<div class="qk-tot"><span>${e(o.n)} · ${e(rub(o.m))} + ${e(F2(o.p))} %</span><span>${e(rub(o.s))}</span></div>`).join("")}${R.wk?`<div class="qk-tot"><span>Работы по цене «клиенту»</span><span>${e(rub(R.wk))}</span></div>`:""}${R.ex?`<div class="qk-tot"><span>Расходы, распил и кромление (как есть)</span><span>${e(rub(R.ex))}</span></div>`:""}${R.fzP?`<div class="qk-tot"><span>Заказные фасады</span><span>${e(rub(R.fzP))}</span></div>`:""}${kk>=0.2&&kk<=0.6?`<button type="button" class="qk-add" data-mkref="set" data-k="${kk}">Поставить эту цену (коэффициент ${e(F2(kk))})</button>`:""}`:""}</section>`; }catch(_){ return h; } }; }
+document.addEventListener("click",ev=>{ const b=ev.target.closest&&ev.target.closest("[data-rzref]"); if(!b) return; ev.preventDefault(); ev.stopPropagation(); S.rzRefOpen=!S.rzRefOpen; if(typeof shpRenderKeep==="function") shpRenderKeep(); },true);
+{ const st2=document.createElement("style"); st2.id="nomRazCss"; st2.textContent=`
+#view .nm-v>.nm-h1{margin:2px 20px 4px!important}#view .nm-v>.nm-sub{margin-left:20px!important;margin-right:20px!important}
+.rz-row .nm-t b,.rz-row .nm-t small,.rz-pvh .nm-t b,.rz-pvh .nm-t small{white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+.rz-pvh{margin-top:12px}.rz-pvh .nm-grp{margin:0 16px}
+#view .nm-v.nm-list,#view .nm-v.rz-v,#view .nm-v.nm-card{padding-bottom:calc(230px + env(safe-area-inset-bottom,0px))!important}   /* «＋ Позиция / Список» и меню внизу не закрывают последнюю строку */
+.rz-gh{text-transform:uppercase;letter-spacing:.02em;font-size:13px}
+.rz-row{min-height:64px}.rz-ic{color:var(--w-ink)}
+.rz-pc{flex:none;padding:5px 10px;border-radius:12px;background:rgba(48,209,88,.16);color:var(--w-g,#30d158);font-weight:600;font-size:14.5px;white-space:nowrap}
+.rz-add{display:flex;align-items:center;justify-content:center;gap:8px;width:calc(100% - 32px);min-height:52px;margin:16px 16px 0;border-radius:18px;border:1.5px dashed var(--w-line);background:none;color:var(--w-nmb,var(--ink));font:inherit;font-size:16px;font-weight:600;cursor:pointer}
+.rz-add:active,.rz-pm:active,.rz-it:active{transform:scale(.98);opacity:.85}
+.rz-mk{margin:6px 16px 4px;padding:14px 16px;border-radius:20px;background:var(--w-l1)}
+.rz-mkh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.rz-mkh b{font-size:16px;font-weight:600}.rz-mkh small{color:var(--w-t2);font-size:13px}
+.rz-mkc{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 8px}
+.rz-pm{width:52px;height:52px;flex:none;border-radius:16px;border:0;background:var(--w-l2);color:var(--w-nmb,var(--ink));display:grid;place-items:center;cursor:pointer;transition:transform .16s ease}
+.rz-pv{flex:1;min-height:52px;border:0;background:none;color:var(--w-ink);font:inherit;font-size:34px;font-weight:700;letter-spacing:-.4px;cursor:pointer}.rz-pv[disabled]{cursor:default;opacity:1}
+.rz-mkn{margin:0;color:var(--w-t2);font-size:13.5px;line-height:1.4}
+.rz-br{padding-top:14px}
+.rz-list{margin:12px 16px 0;border-radius:20px;background:var(--w-l1);overflow:hidden}
+.rz-it{position:relative;display:block;width:100%;padding:12px 14px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:transform .16s ease}
+.rz-it:not(:last-child)::after{content:"";position:absolute;left:14px;right:0;bottom:0;height:1px;background:var(--w-line)}
+.rz-it>b{display:block;font-weight:600;font-size:15.5px;line-height:1.3}.rz-it>small{display:block;color:var(--w-t2);font-size:13px;margin-top:2px}
+.rz-np{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:9px;background:rgba(255,69,58,.16);color:var(--w-r,#ff453a);font-size:12.5px;font-weight:600;vertical-align:1px}
+.rz-pr{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+.rz-b{display:block;padding:7px 10px;border-radius:12px;background:var(--w-l2);min-width:0}.rz-b small{display:block;color:var(--w-t2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rz-b b{display:block;font-size:17px;font-weight:600;margin-top:1px;white-space:nowrap}
+.rz-our{background:var(--w2-soft)}.rz-our b{color:var(--w-nmb,var(--ink))}.rz-cl b{color:var(--w-g,#30d158)}
+.rz-note{margin:14px 16px 0;padding:12px 14px;border-radius:16px;background:var(--w2-soft);color:var(--w-ink);font-size:14px;line-height:1.4}
+`; document.head.appendChild(st2); }
 window.__nm={top:nmTop,ic,sheet:nmSheet,redraw:nmRedraw,byId:nmById,pl,rub,esc:e,kinds:KINDS};   /* 16.11 для site_nomjrn.js («История номенклатуры») */
 /* ---- пункт в «Все разделы», экран, вкладка ---- */
 SHP_I.nom=SHP_I.nom||'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/>';
@@ -51101,7 +51293,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="71a9236389";/*cehqr-build*/
+  const BUILD="e6fd60d900";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -51213,7 +51405,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="71a9236389";/*cehqr-build*/
+  const BUILD="e6fd60d900";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
