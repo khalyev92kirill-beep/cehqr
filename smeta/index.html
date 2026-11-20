@@ -4091,7 +4091,9 @@ function parseJSON(text){
   const colors={}; if(j.colors&&typeof j.colors==="object") Object.keys(j.colors).forEach(k=>{ const c=j.colors[k]; if(typeof c==="string"&&/^#[0-9a-f]{6}$/i.test(c)) colors[k]=c; });
   const anims=Array.isArray(j.anims)?j.anims.filter(a=>a&&Array.isArray(a.a)&&Array.isArray(a.b)&&(a.t==="rot"||a.t==="move")):[];   // двери и ящики, как в Базисе
   const walls=parseWalls(j.walls);   // 16.11: стены комнаты (выгрузка v13) — отдельно от деталей: только для 3D, не в раскрой, закупку, смету, QR и этапы
-  return {parts, order:j.order||"", source:j.source||"json", textures, fasteners, furnMesh, colors, anims, walls};
+  /* 20.11: фурнитура из файла .b3d (site_b3d.js, список bfurn) — только для закупки и сметы (supBase, svBaseFromOrder); 3D и чертежи её не видят */
+  const bfurn=Array.isArray(j.bfurn)?j.bfurn.filter(f=>f&&Array.isArray(f.b)&&f.b.length===6&&f.b.every(v=>isFinite(+v))).slice(0,4000).map(f=>{ const o={n:String(f.n||""),b:f.b.map(Number)}; if(f.g){ o.g=String(f.g); o.gi=f.gi; } if(Array.isArray(f.o)&&f.o.length===3&&f.o.every(v=>isFinite(+v))) o.o=f.o.map(Number); return o; }):[];
+  return {parts, order:j.order||"", source:j.source||"json", textures, fasteners, furnMesh, colors, anims, walls, bfurn};
 }
 /* 16.11: стены комнаты из Базиса (скрипт выгрузки v13 кладёт их списком walls). Берём только элементы с габаритом из 6 чисел.
    kind: stena | pol | potolok | okno | proem; c — цвет, tex — картинка (textures/…), mat0 — настоящий материал. Старые заказы (стены среди деталей) — как раньше. */
@@ -5011,7 +5013,9 @@ try{ S.sup.pin=localStorage.getItem("cehqr-suppin")||""; }catch(_){ S.sup.pin=""
 function supUrl(q){ return S.site.stagesUrl+(S.site.stagesUrl.includes("?")?"&":"?")+q; }
 function supCanSee(){ return siteIsAdmin()||siteIsSupply()||(typeof siteIsDesigners==="function"&&siteIsDesigners()); }
 /* что нужно купить по заказу — из данных Базиса */
-function supBase(oid,res){ return supBaseP(expandParts(oid,res.parts||[]),(res.fasteners||[]).filter(f=>f.g||!NOT_FURN.test(String(f.n).trim()))); }
+function supBase(oid,res){ return supBaseP(expandParts(oid,res.parts||[]),supFsOf(res)); }
+/* 20.11: фурнитура заказа = выгрузка Базиса (fasteners) + фурнитура из файла .b3d (bfurn, site_b3d.js); служебные тела — мимо */
+function supFsOf(res){ return (res.fasteners||[]).concat(res.bfurn||[]).filter(f=>f.g||!NOT_FURN.test(String(f.n).trim())); }
 function supBaseP(parts,fs){
   const out=[], onSheet=new Set();
   cutMaps(parts).forEach(m=>{ onSheet.add(m.mat); out.push({key:"L:"+m.mat,type:"L",name:m.mat,qty:m.sheets.length,unit:"л."}); });
@@ -20366,7 +20370,7 @@ const QK_SEC=[["top","Столешница","other",/Погонные матер
   ["hinge","Петли","furn",/Петли(?!.*Подъ)/i,/петл/i],["drw","Ящики и направляющие","furn",/Выдвижн|направляющ|ТандемБокс|TANDEMBOX|METABOX|Magic Box/i,/ящик|направл|тандем|метабокс|tandem|legrabox/i],
   ["lift","Подъёмники","furn",/Подъ[её]мн/i,/подъ[её]мн|aventos|газлифт/i],["handle","Ручки и Push","furn",/Ручк|Push|Tip-On/i,/ручк|push|пуш|gola|tip.?on/i],
   ["led","Подсветка","other",/Электрика|подсветк/i,/подсвет|лента|блок пит|профиль для ленты|светильн/i],["kitchen","Для кухни","furn",/Для кухни|DUSLAR|Сушк|Мойк/i,/сушк|бутылочн|карго|мусор|мойк|смесит/i],
-  ["ward","Для гардероба","furn",/гардероб/i,/штанг|гардероб|пантограф|брючн/i],["fix","Крепёж","furn",/Крепеж|Крепёж/i,/конфирмат|саморез|шкант|эксцентрик|стяжк|заглушк|уголок/i],
+  ["ward","Для гардероба","furn",/гардероб/i,/штанг|гардероб|пантограф|брючн/i],["fix","Крепёж","furn",/Крепеж|Крепёж/i,/конфирмат|саморез|шкант|эксцентрик|стяжк|заглушк|уголок|полкодерж/i],   /* 20.11 (скрин Кирилла «Фурнитура · 0»): «Полкодержатель» из модели уходил в «Не разобрано» */
   ["glass","Стекло и зеркало","other",/Стекло/i,/стекл|зеркал/i],["prof","Алюминиевый профиль","other",/Алюминиевый профиль/i,/профил/i],["plinth","Цоколь и ножки","furn",/Цоколь|Опор|Ножк/i,/цокол|ножк|опор/i],
   ["other","Прочее","other",null,null]];
 function qkSecOf(x){ if(x.sec) return x.sec; const it=qkCatIt(x.n), g=(it&&it.g)||"", n=String(x.n||""); for(const S0 of QK_SEC){ if(S0[3]&&g&&S0[3].test(g)) return S0[0]; } for(const S0 of QK_SEC){ if(S0[4]&&S0[4].test(n)) return S0[0]; } return "other"; }
@@ -23572,12 +23576,13 @@ async function b3dBln(u8){
 /* несколько моделей пакета — в один заказ: ставим в ряд по X с зазором 500 мм (чтобы присадка «по стыкам» не связала соседние изделия), по Z — на одну линию;
    изделие становится модулем (mod), а его блоки идут дальше в пути (blk); gi — номер модели в пакете: присадка считается по каждой модели отдельно (b3dAutoHoles) */
 function b3dJoin(Ms){
-  const panels=[], skipped=[]; let fast=0, bent=0, thin=0, x=0, z0=null;
+  const panels=[], skipped=[], furn=[]; let fast=0, bent=0, thin=0, x=0, z0=null;
   Ms.forEach((M,i)=>{ const nm=M.file||M.name||("Модель "+(i+1)), dx=x-M.box[0], dz=(z0===null?(z0=M.box[2]):z0)-M.box[2];
+    (M.furn||[]).forEach(f=>{ const b=[f.b[0]+dx,f.b[1],f.b[2]+dz,f.b[3]+dx,f.b[4],f.b[5]+dz].map(v=>Math.round(v*10)/10), g=Object.assign({},f,{b}); if(f.o) g.o=[b[0],b[1],b[2]]; if(f.gi!=null) g.gi=(i+1)*100000+f.gi; furn.push(g); });   /* 20.11: фурнитура модели пакета — туда же, куда сдвинули её детали; номера наборов не пересекаются */
     M.panels.forEach(pn=>{ pn.pos=[pn.pos[0]+dx,pn.pos[1],pn.pos[2]+dz]; pn.blk=[nm].concat(pn.blk||[]); pn.mod=nm; pn.gi=i; panels.push(pn); });
     x+=M.box[3]-M.box[0]+500; M.skipped.forEach(s=>skipped.push(s)); fast+=M.fast; bent+=M.bent||0; thin+=M.thin||0; });
   const box=b3dGab(panels).map(v=>Math.round(v*10)/10);
-  return {panels,skipped,fast,bent,thin,cut:false,name:"",box,size:[box[3]-box[0],box[4]-box[1],box[5]-box[2]].map(v=>Math.round(v)),frame:null,version:Ms[0].version,models:Ms.map(M=>({name:M.file||M.name||"",n:M.panels.length}))}; }
+  return {panels,skipped,fast,bent,thin,cut:false,name:"",box,size:[box[3]-box[0],box[4]-box[1],box[5]-box[2]].map(v=>Math.round(v)),frame:null,version:Ms[0].version,models:Ms.map(M=>({name:M.file||M.name||"",n:M.panels.length})),furn:furn.slice(0,4000)}; }
 function b3dModel(root){
   const F=b3dRoot(root), panels=[], skipped=[]; let fast=0, frame=null;
   const qmul=(a,c)=>[a[3]*c[0]+a[0]*c[3]+a[1]*c[2]-a[2]*c[1], a[3]*c[1]-a[0]*c[2]+a[1]*c[3]+a[2]*c[0], a[3]*c[2]+a[0]*c[1]-a[1]*c[0]+a[2]*c[3], a[3]*c[3]-a[0]*c[0]-a[1]*c[1]-a[2]*c[2]];
@@ -23596,6 +23601,26 @@ function b3dModel(root){
     if(o.FastID!=null){ fast++; return; }
     if(d<30&&b3dCount(o)>0){ const nm=b3dTxt(o.Name), lay=o.Type===1002; if(top&&!lay) blocks.push(nm); walk(b3dKids(o),WP,WQ,nm&&!lay?path.concat(nm):path,d+1,top&&lay); } }); };
   walk(b3dKids(F),[0,0,0],[0,0,0,1],[],0,true);
+  /* 20.11 (Кирилл, скрин «Фурнитура · 0»: «Когда выгружал модель там вообще без фурнитуры почему так?»): фурнитура из самой модели — по образцу скрипта Базиса
+     «0 В смету или в цех» (walkFurn): крепёж (3001, FastID), сетки (10000/10001) и тела не из плит — строкой «имя + место»; блок без панелей внутри модуля
+     и сборка фурнитуры (4001/4004) — один набор с общим именем g и номером gi (как петля или ручка из библиотеки). Внутри оказались панели — это часть корпуса, набор снимаем.
+     Отдельный проход: панели, раскрой, присадка, 3D — прежние. В заказ идёт отдельным списком bfurn (не в fasteners: 3D, чертежи и присадку он не меняет). */
+  const furn=[]; let fgi=0;
+  const NOTF=/^(габарит[а-я]*|профиль\d*|вращение\d*|вычитание.*|сложение.*|пересечение.*|тело.*|выдавливани[ея]\d*|\d+|линия стыка)$/i, ROOM=/(^|[^а-я])(стен[аы]?|комнат[аы]?|помещени[ея]|пол|потол[оа]к)([^а-я]|$)/i, NOTT={1001:1,3000:1,6000:1,8001:1,8002:1,8100:1,9000:1};
+  const fw=(L,P0,Q0,d,grp)=>{ let has=false;
+    (L||[]).forEach(o=>{ if(!o||typeof o!=="object"||b3dIsHist(o)||furn.length>=4000) return;
+      if(b3dIsPanel(o)||o.Type===999){ has=true; return; } if(typeof o.Type!=="number"||NOTT[o.Type]) return;
+      const [P,Q]=trOf(o), WP=add(P0,qrot(Q0,P)), WQ=qmul(Q0,Q), nm=b3dTxt(o.Name), leaf=o.Type===3001||o.Type===10000||o.Type===10001||o.Type===1004;
+      const kids=leaf?[]:b3dKids(o).filter(x=>typeof x.Type==="number");
+      if(kids.length){ const lay=o.Type===1002; if(ROOM.test(nm)) return;   /* стены комнаты — не фурнитура */
+        const k0=furn.length, g=++fgi, asmb=o.Type===4001||o.Type===4004;
+        const inner=fw(kids,WP,WQ,lay?d:d+1,grp||(!lay&&nm&&(d>=1||asmb)?{g:nm,gi:g}:null));
+        if(inner){ has=true; if(!grp) for(let i=k0;i<furn.length;i++) if(furn[i].gi===g){ delete furn[i].g; delete furn[i].gi; } }
+        return; }
+      if(!grp&&(!nm||NOTF.test(nm))) return; if(ROOM.test(b3dTxt(o.Mat))) return;
+      const p=WP.map(v=>Math.round(v*10)/10), f={n:nm,b:p.concat(p)}; if(grp){ f.g=grp.g; f.gi=grp.gi; } if(/петл/i.test(nm)) f.o=p.slice(); furn.push(f); });
+    return has; };
+  try{ fw(b3dKids(F),[0,0,0],[0,0,0,1],0,null); }catch(e){ console.error("b3d: фурнитура не прочиталась",e&&e.message); furn.length=0; }
   panels.forEach(pn=>{ const xs=[], ys=[]; pn.cont.forEach(e=>b3dElBox(e,xs,ys));
     pn.x0=Math.min(...xs); pn.y0=Math.min(...ys); pn.w=Math.max(...xs)-pn.x0; pn.h=Math.max(...ys)-pn.y0; pn._qrot=qrot; });
   const G=b3dGab(panels), T=b3dTypes(F);
@@ -23604,7 +23629,7 @@ function b3dModel(root){
   try{ if(root.Estimate instanceof Uint8Array){ const x=new TextDecoder("utf-8").decode(root.Estimate), m=/<OrderName>([^<]{1,120})<\/OrderName>/.exec(x); if(m) name=m[1].replace(/&quot;/g,'"').replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&").trim(); } }catch(_){}
   if(!name&&blocks.length===1&&blocks[0]&&!/^(модель|model|новая модель|блок|слой)\s*\d*$/i.test(blocks[0])) name=blocks[0];   // 18.11: «Слой1» — не название изделия
   const box=panels.length?G.map(v=>Math.round(v*10)/10):null;
-  const M={panels,skipped,fast,name,box,size:box?[box[3]-box[0],box[4]-box[1],box[5]-box[2]].map(v=>Math.round(v)):frame,frame,version:[root.VersionMajor,root.VersionMinor],bent:T[999]||0,thin,cut:!!root._cut};
+  const M={panels,skipped,fast,name,box,size:box?[box[3]-box[0],box[4]-box[1],box[5]-box[2]].map(v=>Math.round(v)):frame,frame,version:[root.VersionMajor,root.VersionMinor],bent:T[999]||0,thin,cut:!!root._cut,furn:furn.filter(f=>f.n||f.g)};
   if(!panels.length) M.why=skipped.length?"Не прочитал контур ни у одной детали ("+skipped.length+") — пришлите этот файл, добавим поддержку":root._cut?B3D_CUT:b3dWhy(T,root,thin);   // 18.11: человеку — что именно в модели
   return M; }
 /* панели → заказ, как выгрузка Базиса (поля как у parseJSON: name, art, L, W, T, material, rect, edges[{elem,side,material,t}], box, grain, frame, shape, mod, blk) */
@@ -23628,6 +23653,7 @@ function b3dToOrder(M,name){
     if(pn.mod) p.mod=pn.mod; if(pn.blk&&pn.blk.length) p.blk=pn.blk; if(pn.cuts.length) p.cuts0=pn.cuts;   // пазы — пока только названия (контур паза не переносим)
     parts.push(p); });
   const o={format:"cehqr",version:2,source:"b3d",order:String(M.name||name||"Модель из файла"),exportedAt:new Date().toISOString(),parts,fasteners:[]};
+  if(M.furn&&M.furn.length) o.bfurn=M.furn;   // 20.11: настоящая фурнитура из файла — для закупки и сметы (parseJSON → bfurn)
   if(M.panels.some(pn=>pn.gi!=null)) Object.defineProperty(o,"_grp",{value:M.panels.map(pn=>pn.gi||0),enumerable:false});   // пакет .bln: номер модели у каждой детали — для присадки (в заказ и на сервер не уходит)
   return o; }
 if(typeof module!=="undefined") module.exports={b3dParse,b3dToOrder,b3dModel,b3dTree,b3dInflate,b3dRead,b3dOle,b3dAutoHoles,b3dFileOrder};
@@ -23652,7 +23678,7 @@ function b3dAutoHoles(o){
   sets.forEach(P=>{ P.forEach(p=>{ const f=p.frame; p._O=f.slice(0,3); p._X=f.slice(3,6); p._Y=f.slice(6,9); p._N=cr(p._X,p._Y); });
     try{ skAutoHoles(P,fas); }catch(e){ console.error(e); }
     P.forEach(p=>{ delete p._O; delete p._X; delete p._Y; delete p._N; }); });
-  o.fasteners=fas.concat(o.fasteners||[]); o.auto=true; }
+  if(!(o.bfurn&&o.bfurn.length)) o.fasteners=fas.concat(o.fasteners||[]); o.auto=true; }   // 20.11: догадка (конфирматы, полкодержатели, петли) — только когда настоящей фурнитуры в файле нет; отверстия в деталях — как раньше
 async function b3dFileOrder(f){
   const mb=Math.round((+f.size||0)/1048576), dev=b3dDev();
   if(f.size===0) throw new Error(b3dNoFile());   // доводка 18.11: телефон отдал пустышку (0 байт) — файл ещё в облаке или не докачан мессенджером
@@ -23693,7 +23719,7 @@ async function b3dUpload(f){
   const o=await b3dFileOrder(f), firm=window.APP_FIRM&&S.site&&S.site.stagesUrl;
   if(firm){
     if(!o._raw&&o.parts.length>3000) throw new Error(`В модели ${o.parts.length} деталей — приложение принимает до 3000. Разделите модель в Базисе на части и загрузите их по отдельности`);   // то же правило, что на сервере, — но до отправки и понятнее
-    const raw=o._raw||{name:o.order,src:"b3d",su:"b3d",panels:o.parts,fasteners:o.fasteners};
+    const raw=o._raw||{name:o.order,src:"b3d",su:"b3d",panels:o.parts,fasteners:o.fasteners}; if(!o._raw&&o.bfurn) raw.bfurn=o.bfurn;   // 20.11: фурнитура из файла — и в заказ фирмы
     /* доводка 18.11: названия у моделей часто одинаковые (номер из сметы, «Шкаф») — на корпусе заказчика вторая загрузка стёрла бы первую у 62 групп разных моделей */
     const nm=String(raw.name||raw.model||"Заказ").slice(0,80).trim()||"Заказ", have=new Set(); Object.keys(S.orders||{}).forEach(id=>{ if(/^SK\d/i.test(id)&&S.orders[id]) have.add(String(S.orders[id].name||"").trim()); });
     if(have.has(nm)){ let nm2=""; for(let k=2;k<500&&!nm2;k++){ const c=nm.slice(0,74).trim()+" ("+k+")"; if(!have.has(c)) nm2=c; }
@@ -23737,7 +23763,7 @@ async function b3dPick(f){
   finally{ b3dPickAt=0; } }
 if(typeof window!=="undefined"&&typeof document!=="undefined"){
   /* фирма: заказ с сервера (SK…) с пометкой src:"b3d" — уже готовые детали, переводить из SketchUp не надо */
-  if(typeof skToOrder==="function"){ const _b3dSk=skToOrder; skToOrder=function(raw){ if(raw&&raw.src==="b3d"&&Array.isArray(raw.panels)) return {format:"cehqr",version:2,source:"b3d",order:String(raw.name||"Модель Базиса"),parts:raw.panels,fasteners:raw.fasteners||[],auto:true}; return _b3dSk.apply(this,arguments); }; }
+  if(typeof skToOrder==="function"){ const _b3dSk=skToOrder; skToOrder=function(raw){ if(raw&&raw.src==="b3d"&&Array.isArray(raw.panels)) return {format:"cehqr",version:2,source:"b3d",order:String(raw.name||"Модель Базиса"),parts:raw.panels,fasteners:raw.fasteners||[],bfurn:Array.isArray(raw.bfurn)?raw.bfurn:undefined,auto:true}; return _b3dSk.apply(this,arguments); }; }
   /* без фирмы: заказы с этого устройства — в список и в «orders/B3D….json» (из памяти устройства, не с сайта) */
   if(!window.APP_FIRM&&typeof indexedDB!=="undefined"){
     /* заказы с этого устройства: файл заказа, этапы и удаление — только здесь, на сервер не уходят */
@@ -25533,7 +25559,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="b7ac7fdeaa";
+const CHK_BUILD="6c4453f88b";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -31100,7 +31126,7 @@ function svPlace(x,grp){ delete x.sec; delete x.zs;
   x.sec=grp; return SV_OTHERSEC[grp]?"other":"furn"; }
 
 /* модель → список «что нужно» (как у снабжения): листы по раскрою, кромка в метрах, фурнитура */
-function svBaseFromOrder(o){ const P=parseJSON(JSON.stringify(o)), fs=(P.fasteners||[]).filter(f=>f.g||!NOT_FURN.test(String(f.n).trim())), parts=expandParts("SMV",P.parts), base=supBaseP(parts,fs);
+function svBaseFromOrder(o){ const P=parseJSON(JSON.stringify(o)), fs=(P.fasteners||[]).concat(P.bfurn||[]).filter(f=>f.g||!NOT_FURN.test(String(f.n).trim())), parts=expandParts("SMV",P.parts), base=supBaseP(parts,fs);
   /* 13.11: площадь деталей каждого листового материала (м²) — для класса «Премиум»: фасады эмаль / ПВХ ставятся заказными по площади фасадов модели */
   const A={}; parts.forEach(p=>{ const k=String(p.material||"").split(/[\r\n]/)[0]; if(k&&p.L&&p.W) A[k]=(A[k]||0)+p.L*p.W/1e6; }); base.forEach(b=>{ if(b.type==="L"&&A[b.name]>0) b.ar=Math.round(A[b.name]*100)/100; });
   return {base,det:P.parts.reduce((a,p)=>a+(+p.qty||1),0),name:P.order||o.order||""}; }
@@ -31354,8 +31380,12 @@ function svMatPost(h,c,q,d,sm){ try{ S.svShownT={sm,t:c.total}; }catch(_){}   /*
   const i=h.indexOf('<div class="qk qk-smt">'); if(i<0) return h;
   const hasAny=(c.items||[]).length>0||(q.pr||[]).length>0;
   let top=svSrcBanner(q,false)+(hasAny?svKlBar(q):"");
+  const T=svTileInfo(c,q);
+  /* 20.11 (Кирилл, скрин «Фурнитура · 0»: «Когда выгружал модель там вообще без фурнитуры почему так?»): модель загружена, а в «Фурнитуре» пусто —
+     заметная строка сверху с «＋» (то же быстрое добавление, что у плитки). Только показ: строки сметы и деньги не трогаем. */
+  if(T&&T.furn&&!T.furn.cnt&&q.src&&/^(b3d|sk)$/.test(q.src.k)) top+=`<div class="sv-ban sv-nf" role="note"><span class="sv-nfi" aria-hidden="true">!</span><span class="sv-bt">В модели нет фурнитуры — поставьте петли, ручки, направляющие в Базисе или добавьте здесь</span><button type="button" class="sv-nfa" data-pl="qp" data-t="furn" aria-label="Добавить фурнитуру">＋</button></div>`;
   h=h.slice(0,i+23)+top+h.slice(i+23);
-  const T=svTileInfo(c,q); if(T){ const kitchen=/кухн/i.test(String(sm.kind||"")), model=q.src&&/^(b3d|sk|csv)$/.test(q.src.k), B=new Map();
+  if(T){ const kitchen=/кухн/i.test(String(sm.kind||"")), model=q.src&&/^(b3d|sk|csv)$/.test(q.src.k), B=new Map();
     Object.keys(T).forEach(id=>{ const t=T[id]; let bd=""; if(t.mdl) bd+=`<span class="sv-bd g">из модели</span>`; if(t.np) bd+=`<span class="sv-bd y">впишите цену${t.np>1?" · "+t.np:""}</span>`;
       if(!t.cnt&&model&&kitchen&&id==="top") bd+=`<span class="sv-bd y">нет в модели</span>`;
       const yel=t.np>0||(!t.cnt&&model&&kitchen&&id==="top")||(id==="nr"&&t.cnt>0);
@@ -31434,6 +31464,8 @@ const st=document.createElement("style"); st.textContent=`
 .sv-r.sk,.sv-o.sk{display:block;min-height:60px;background:var(--w-l1,var(--w2-soft));opacity:.6;animation:svPulse 1.2s ease-in-out infinite alternate}@keyframes svPulse{from{opacity:.35}to{opacity:.7}}
 .sv-have{margin-top:16px}
 .sv-ban{display:flex;align-items:center;gap:10px;padding:10px 12px 10px 14px;margin:0 0 10px;border-radius:16px;background:var(--w-l1,var(--w2-soft));font-size:14.5px}.sv-ban.sm{padding:8px 12px}
+.sv-ban.sv-nf{background:var(--v2blb);color:var(--v2bl);font-weight:500}.sv-nfi{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--v2bl);color:var(--w-bg,#fff);font-weight:800}
+.sv-nfa{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;border:0;background:var(--v2bl);color:var(--w-bg,#fff);font:inherit;font-size:22px;font-weight:700;cursor:pointer}
 .sv-ok{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:rgba(48,209,88,.16);color:var(--w-g,#248a3d)}.sv-bt{flex:1;min-width:0;line-height:1.3}
 .sv-lnk{flex:none;font:inherit;font-size:14.5px;font-weight:600;color:var(--w-ink,inherit);opacity:.75;background:none;border:0;padding:10px 6px;min-height:44px;cursor:pointer}
 .sv-kl{display:flex;align-items:center;gap:8px;margin:0 0 10px}
@@ -33318,7 +33350,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="b7ac7fdeaa"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="6c4453f88b"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -51355,7 +51387,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="b7ac7fdeaa";/*cehqr-build*/
+  const BUILD="6c4453f88b";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -51467,7 +51499,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="b7ac7fdeaa";/*cehqr-build*/
+  const BUILD="6c4453f88b";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
