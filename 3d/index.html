@@ -5004,6 +5004,97 @@ function roleLinkModal(role){
     catch(_){ toast("Ссылка не подошла. Попросите у технолога свежую."); return; }
     _ks[role]=mm[1]; keySave(); m.remove(); toast("Готово: видны все заказы"); await siteLoadIndex(); setView("orders"); });
 }
+/* ===== 20.11 «Отправить 3D» (Кирилл: ссылка клиенту открывала «Введите PIN» — заказ B3D… из файла .b3d есть только на телефоне, SK… — у фирмы на сервере) =====
+   Заказ из Базиса на сайте (зашифрован) — ссылка с ключом этого заказа, как раньше: 3d/?c=1#ID~ключ.
+   Модель с телефона (B3D…) или SketchUp/.b3d фирмы (SK…) — сотрудник по своему PIN кладёт на сервер копию ТОЛЬКО для показа (v3dPut):
+   только поля, нужные 3D (список разрешённых — V3D_PART; тот же список чистит и сервер). Одна копия на номер заказа фирмы, ссылка у всех сотрудников одна:
+   3d/?c=1#ID~v~токен (токен — подпись сервера для этого номера). Клиент без PIN читает по номеру и токену только эту копию (v3d).
+   Обновил страницу: «c=1» убирает site_license.js (это его параметр кода компании), токен из адреса убран — поэтому токен и название лежат на телефоне
+   клиента (w24-v3d) и снова включают вид клиента, если на телефоне нет входа сотрудника.
+   Название для клиента (необязательно) — в ссылке n=…; без него клиент видит «Ваш проект». */
+const V3D_LS="w24-v3d";   // у клиента: {ID:{t,n}} — открытые ссылки
+function v3dLs(){ try{ return JSON.parse(localStorage.getItem(V3D_LS)||"{}")||{}; }catch(_){ return {}; } }
+function v3dLsSet(o){ try{ localStorage.setItem(V3D_LS,JSON.stringify(o)); }catch(_){} }
+function v3dRec(oid){ return v3dLs()[String(oid||"").toUpperCase()]||null; }
+function v3dTok(oid){ const x=v3dRec(oid); return x&&x.t||""; }
+function v3dStaff(){ try{ return ["cehqr-pin","cehqr-techpin","cehqr-officepin","cehqr-suppin"].some(k=>localStorage.getItem(k)); }catch(_){ return false; } }
+const CLI_N=(()=>{ try{ const m=/[?&]n=([^&#]*)/.exec(location.search); return m?decodeURIComponent(m[1].replace(/\+/g," ")):""; }catch(_){ return ""; } })();
+function cliTitle(){ let t=CLI_N; if(!t){ try{ const x=v3dRec(S.current&&S.current.orderId); t=x&&x.n||""; }catch(_){} }
+  t=String(t||"").replace(/[\u0000-\u001f<>"]/g,"").replace(/\s+/g," ").trim().slice(0,60); return t||"Ваш проект"; }
+let _v3dHooked=false;
+function v3dHook(){ if(_v3dHooked) return; _v3dHooked=true; const prev=window.__fetchHook;   /* ставим поверх всех (в т.ч. «модели с этого устройства» и фирмы) — при открытии ссылки, когда модули уже загружены */
+  window.__fetchHook=async function(u,o){ const us=typeof u==="string"?u:(u&&u.url)||"", nx=()=>(prev||window.__fetch0)(u,o);
+    const m=/(?:^|\/)orders\/([A-Za-z0-9]{2,12})\.json(?:[?#].*)?$/.exec(us); if(!m||/script\.google/.test(us)||!window.__cli1) return nx();
+    const oid=m[1].toUpperCase(), t=v3dTok(oid), su=S.site&&S.site.stagesUrl; if(!t||!su) return nx();
+    let j=null; try{ const r=await fetch(su+(su.indexOf("?")<0?"?":"&")+"action=v3d&o="+encodeURIComponent(oid)+"&t="+encodeURIComponent(t),{cache:"no-cache"}); j=await r.json(); }catch(_){ j=null; }
+    if(j&&j.ok&&j.order&&String(j.oid||"").toUpperCase()===oid) return new Response(JSON.stringify(j.order),{headers:{"Content-Type":"application/json"}});
+    if(j&&j.error==="link"){ const L=v3dLs(); if(L[oid]&&L[oid].t===t){ delete L[oid]; v3dLsSet(L); } }   // стираем только когда сервер сказал «ссылки нет»; «часто» и сбой — нет
+    /* «Проект закрыт · Ссылка устарела» (siteOrderText → locked), а не «не найден» → экран PIN */
+    return new Response(JSON.stringify({deny:1}),{headers:{"Content-Type":"application/json"}}); }; }
+{ const _v3H=hashHook; hashHook=function(h){ h=String(h||""); const m=/^([A-Za-z0-9]{2,12})~v~([A-Za-z0-9_-]{40,80})$/.exec(h);
+  if(!m){ const mk=/^([A-Za-z0-9]{2,12})~[A-Za-z0-9_-]{20,}$/.exec(h); if(mk){ const L=v3dLs(), id=mk[1].toUpperCase(); if(L[id]){ delete L[id]; v3dLsSet(L); } }   /* пришла ссылка с ключом — старый токен этого номера не нужен */
+    const r=_v3H.apply(this,arguments);
+    try{ const id=String(r||"").toUpperCase(); if(id&&v3dTok(id)&&(window.__cli1||!v3dStaff())){ window.__cli1=true; v3dHook(); } }catch(_){}   /* обновил страницу: токен этого номера на телефоне клиента — снова вид клиента */
+    return r; }
+  const oid=m[1].toUpperCase(), L=v3dLs(); L[oid]={t:m[2],n:CLI_N||(L[oid]&&L[oid].n)||"",at:Date.now()}; v3dLsSet(L); window.__cli1=true; v3dHook();
+  try{ history.replaceState(null,"","#"+oid); }catch(_){} return oid; }; }
+/* копия для показа клиенту: СПИСОК РАЗРЕШЁННЫХ полей (без позиций, модулей/блоков с именами файлов, отверстий, присадки, цен, клиента, заметок) */
+const V3D_PART=["name","L","W","T","qty","material","rect","shape","cuts","frame","box","grain","an"];
+function v3dEdge(e){ if(!e||typeof e!=="object") return null; const o={}; ["elem","side","material","m","t"].forEach(k=>{ if(e[k]!=null&&typeof e[k]!=="object") o[k]=e[k]; }); return o; }
+function v3dClean(src){ const out={format:"cehqr",version:+src.version||2,source:String(src.source||"json").slice(0,20),order:"Проект",parts:[]};
+  (src.parts||[]).slice(0,3000).forEach(p=>{ if(!p||typeof p!=="object") return; const q={}; V3D_PART.forEach(k=>{ if(p[k]!=null) q[k]=p[k]; }); q.name=String(q.name||"").slice(0,80); q.material=String(q.material||"");
+    if(Array.isArray(p.edges)) q.edges=p.edges.map(v3dEdge).filter(Boolean); else if(p.edges&&typeof p.edges==="object"){ q.edges={}; ["L1","L2","W1","W2"].forEach(k=>{ const e=p.edges[k]; if(e&&typeof e==="object") q.edges[k]=v3dEdge(e); else if(typeof e==="string") q.edges[k]=e; }); }
+    out.parts.push(q); });
+  if(Array.isArray(src.fasteners)) out.fasteners=src.fasteners.filter(f=>f&&Array.isArray(f.b)&&f.b.length===6).slice(0,5000).map(f=>{ const o={n:String(f.n||"").slice(0,80),b:f.b.map(Number)}; if(Array.isArray(f.o)&&f.o.length===3) o.o=f.o.map(Number); return o; });
+  if(src.furnMesh&&typeof src.furnMesh==="object") out.furnMesh=src.furnMesh;
+  if(Array.isArray(src.anims)) out.anims=src.anims; if(Array.isArray(src.walls)) out.walls=src.walls;
+  if(src.colors&&typeof src.colors==="object"){ out.colors={}; Object.keys(src.colors).forEach(k=>{ const c=src.colors[k]; if(typeof c==="string"&&/^#[0-9a-f]{6}$/i.test(c)) out.colors[k]=c; }); }
+  if(src.textures&&typeof src.textures==="object"){ out.textures={}; Object.keys(src.textures).forEach(k=>{ const t=src.textures[k]; if(t&&typeof t.data==="string"&&/^data:image\//.test(t.data)) out.textures[k]={data:t.data}; }); }
+  return out; }
+async function v3dPayload(oid){ const r=await fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"}); if(!r.ok) return null;
+  let o=null; try{ o=JSON.parse(await siteOrderText(oid,await r.text())); }catch(_){ return null; } if(!o||typeof o!=="object") return null;
+  if(!Array.isArray(o.parts)&&Array.isArray(o.panels)&&typeof skToOrder==="function"){ try{ o=skToOrder(o); }catch(_){ return null; } }   // SketchUp / .b3d фирмы: сначала в обычный вид заказа
+  if(!o||!Array.isArray(o.parts)||!o.parts.length) return null;
+  o=v3dClean(o); if(JSON.stringify(o).length>8.5e6) delete o.textures;
+  return JSON.stringify(o).length>8.5e6?false:o; }
+function v3dPin(){ try{ return (typeof shpPin==="function"&&S.shop?shpPin():"")||srvPin(); }catch(_){ return ""; } }
+send3dModal=async function(){ const oid=S.current&&S.current.orderId; if(!oid) return; const OID=String(oid).toUpperCase();
+  if(/^QK/i.test(OID)){ toast("Это черновик — его нет на сайте. Отправить можно заказ, выгруженный из Базиса."); return; }
+  const u0=partUrl(oid); if(!/^https?:\/\//.test(u0)){ toast("Нет адреса сайта — ссылку не сделать"); return; }
+  const base=u0.split("#")[0].split("?")[0], F=window.APP_FIRM?String(window.APP_FIRM):"", o=(S.orders&&S.orders[oid])||{};
+  const viaSrv=!!o.local||/^(B3D|SK)\d/.test(OID);   // модель с телефона или SketchUp/.b3d фирмы — файла на сайте нет
+  let tail="";
+  if(viaSrv){ const su=S.site&&S.site.stagesUrl, pin=v3dPin();
+    if(!su){ toast("Нет связи с сервером компании — ссылку не сделать"); return; }
+    if(!pin){ toast("Войдите своим PIN — без входа ссылку на эту модель не сделать"); return; }
+    toast("Готовлю ссылку…"); const ord=await v3dPayload(oid);
+    if(ord===false){ toast("Модель слишком большая для ссылки — разделите её в Базисе на части"); return; }
+    if(!ord){ toast("Модель не открылась на этом телефоне — откройте заказ ещё раз и повторите"); return; }
+    let j=null; try{ const r=await fetch(su,{method:"POST",body:JSON.stringify({action:"v3dPut",pin,oid:OID,order:ord})}); j=await r.json(); }catch(_){ j=null; }
+    if(!j){ toast("Нет связи — проверьте интернет и нажмите ещё раз"); return; }
+    if(!j.ok||!/^[A-Za-z0-9_-]{40,80}$/.test(String(j.t||""))){ const w=+j.wait||0;
+      toast(j.error==="pin"?"PIN не подошёл — войдите заново":j.error==="role"?"Нет права «Заказы из Базиса» — попросите директора":j.error==="big"?"Модель слишком большая для ссылки":j.error==="often"?"Много новых ссылок за час — подождите "+(w>1?w+" мин":"минуту"):j.msg?String(j.msg):"Ссылку сделать не получилось ("+(j.error||"ошибка")+")"); return; }
+    tail="#"+OID+"~v~"+j.t; }
+  else { let k=keyFor(oid); const enc=!!(window.__w24enc&&window.__w24enc[OID]);
+    if(S.site&&enc&&!k&&typeof srvSync==="function"){ try{ await Promise.race([srvSync(true),new Promise(r=>setTimeout(r,4000))]); }catch(_){} k=keyFor(oid); }
+    if(S.site&&enc&&!k){ toast("Ключа заказа на телефоне нет — войдите по PIN заново"); return; }
+    tail="#"+oid+(k?"~"+k:""); }
+  const mk=n=>{ n=String(n||"").replace(/[\u0000-\u001f<>"]/g,"").replace(/\s+/g," ").trim().slice(0,60); return base+"?c=1"+(F?"&f="+encodeURIComponent(F):"")+(n?"&n="+encodeURIComponent(n):"")+tail; };
+  const txt=n=>{ n=String(n||"").trim(); return "Здравствуйте! Ваш 3D-проект"+(n?" «"+n+"»":"")+": "+mk(n); };
+  document.getElementById("send3dM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="send3dM";
+  m.innerHTML=`<form class="modal-card" style="width:min(420px,100%)" autocomplete="off"><h2 style="margin:0 0 6px">Отправить 3D</h2>
+    <p class="note" style="margin:0 0 10px">По ссылке клиент увидит только 3D и цвета — без номера заказа, деталей, чертежей и цен. PIN не нужен.</p>
+    <label style="display:block;margin:0 0 10px">Название для клиента<input name="nm" maxlength="60" placeholder="Ваш проект" style="width:100%"></label>
+    <label style="display:block;margin:0 0 10px">Номер WhatsApp<input name="tel" type="tel" inputmode="tel" maxlength="20" placeholder="+7 914 … (можно пусто — выберете контакт)" style="width:100%"></label>
+    <div class="shp-kbtns" style="display:flex;flex-wrap:wrap;gap:8px"><button type="submit" class="btn primary">WhatsApp</button>
+    <button type="button" class="btn" data-x="tg">Телеграм</button>
+    <button type="button" class="btn" data-x="copy">Копировать ссылку</button><button type="button" class="btn" data-x="close">Закрыть</button></div></form>`;
+  document.body.appendChild(m); const f=m.querySelector("form"), nm=()=>f.elements.nm.value;
+  f.addEventListener("submit",e=>{ e.preventDefault(); let t=String(f.elements.tel.value||"").replace(/\D/g,""); if(t.length===11&&t[0]==="8") t="7"+t.slice(1); if(t.length===10) t="7"+t;
+    window.open("https://wa.me/"+(t.length>=11?t:"")+"?text="+encodeURIComponent(txt(nm())),"_blank","noopener"); });
+  m.addEventListener("click",async e=>{ const x=e.target.closest("[data-x]"); if(e.target===m||(x&&x.dataset.x==="close")) return m.remove();
+    if(x&&x.dataset.x==="tg"){ const n=String(nm()).trim(); window.open("https://t.me/share/url?url="+encodeURIComponent(mk(n))+"&text="+encodeURIComponent("Ваш 3D-проект"+(n?" «"+n+"»":"")),"_blank","noopener"); }
+    if(x&&x.dataset.x==="copy"){ const u=mk(nm()); try{ await navigator.clipboard.writeText(u); toast("Ссылка скопирована"); }catch(_){ prompt("Скопируйте ссылку:",u); } } }); };
 
 /* ---------- снабжение: закупка по всем заказам, статусы, правки позиций (данные — в Google-таблице, лист «Снабжение») ---------- */
 const SUP_ST=[{name:"Нужно",c:"#9aa0a6"},{name:"Заказано",c:"#e8a33d"},{name:"Пришло",c:"#3b82c4"},{name:"Выдано на производство",c:"#2e8b57"}];
@@ -9733,6 +9824,23 @@ document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.clo
 if(typeof viewOrder==="function"){ const _vO=viewOrder; viewOrder=function(){ const h=_vO(); return siteIsStaff()?h:_stripFull(h); }; }
 /* верхнее меню не должно раздвигать страницу на телефоне (кнопки Work24link, «Модули» добавляются позже) */
 (function(){ const st=document.createElement("style"); st.textContent=`.top{max-width:100vw}.top>*{min-width:0}#nav{min-width:0;max-width:100%}html,body{overflow-x:clip}`; document.head.appendChild(st); })();
+/* ---- 20.11 (Кирилл 16:57 «Вся информацию видно клиенту»): клиент по ссылке (?c=1 / ссылка «Отправить 3D») — только 3D и цвета ----
+   Шапка страницы заказа: вместо внутреннего названия («Под распил …»), номера заказа, габаритов и фамилии — «Ваш проект» или название для клиента из ссылки.
+   Чертежи деталей, присадка, «Такие же», «Проблема» — клиенту по ссылке не открываются (и по старым ссылкам на деталь «#4444-012»). */
+function cliLink(){ try{ return !!(S.site&&!S.cliOff&&window.__cli1); }catch(_){ return false; } }
+if(typeof viewOrder==="function"){ const _cliVO=viewOrder; viewOrder=function(){ const h=String(_cliVO.apply(this,arguments));
+  try{ if(!clientMode()) return h; return h.replace(/<div class="cl-head">[\s\S]*?<\/div><\/div>/,()=>`<div class="cl-head"><h1>${esc(typeof cliTitle==="function"?cliTitle():"Ваш проект")}</h1></div>`); }catch(_){ return h; } }; }
+if(typeof goPart==="function"){ const _cliGP=goPart; goPart=function(code){ try{ if(cliLink()){ const c=String(hashHook(String(code||"").trim().replace(/^.*#/,""))||"").toUpperCase(), oid=orderIdOf(c); if(oid){ S.partCode=null; goOrder(oid); return; } } }catch(_){} return _cliGP.apply(this,arguments); }; }
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="part"],[data-act="asm-iso"],[data-act="prob"],[data-act="asm-sameof"],[data-act="asm-multi"],[data-act="dq-send"],[data-act="dq-warn"],[data-act="scan-open"],[data-act="fv-open"],[data-act="asm-labels"],[data-act="asm-pos"],[data-act="asm-holes"]');
+  if(!t||!cliLink()) return; ev.preventDefault(); ev.stopImmediatePropagation(); },true);
+/* 20.11: «Снимок» у клиента — файл «Ваш проект.png», без внутреннего названия и номера заказа (у сотрудника — как было) */
+document.addEventListener("click",ev=>{ const t=ev.target.closest&&ev.target.closest('[data-act="dq-shot"]'); if(!t) return; try{ if(!(S.site&&clientMode())) return; }catch(_){ return; }
+  const a=window.cehqrAsm; if(!a||!a.snap) return; ev.preventDefault(); ev.stopImmediatePropagation();
+  const ttl=typeof cliTitle==="function"?cliTitle():"Ваш проект", name=ttl.replace(/[\\/:*?"<>|]+/g," ").trim()+".png";
+  let url=""; try{ url=a.snap(); }catch(_){ url=""; } if(!url) return;
+  fetch(url).then(r=>r.blob()).then(bl=>{ const f=new File([bl],name,{type:"image/png"});
+    if(navigator.canShare&&matchMedia("(pointer:coarse)").matches&&navigator.canShare({files:[f]})) navigator.share({files:[f],title:ttl}).catch(()=>{});
+    else { const a2=document.createElement("a"); a2.href=URL.createObjectURL(bl); a2.download=name; document.body.appendChild(a2); a2.click(); setTimeout(()=>{ URL.revokeObjectURL(a2.href); a2.remove(); },500); toast("Снимок сохранён"); } }).catch(()=>{}); },true);
 
 /* ---------- НАСТРОЙКИ КОМПАНИИ (Work24link → Ещё → Настройки): ставки работ, наценки, доли офиса, доставка, цоколь, валюта.
    Всё, что у другой фабрики будет своё, — здесь, а не в коде. Меняет технолог, читают все. ---------- */
@@ -25558,7 +25666,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="6c4453f88b";
+const CHK_BUILD="e606d3ac54";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -33349,7 +33457,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="6c4453f88b"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="e606d3ac54"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -34093,7 +34201,7 @@ function akDock(code){ const asmEl=document.querySelector(".asm"); let d=documen
 try{ const _akSP=showPick; showPick=function(code){ const r=_akSP.apply(this,arguments); try{ akDock(code); akSb(code); }catch(_){} return r; }; }catch(_){}
 
 /* ---------- строка состояния внизу (компьютер, «Технолог 3D») ---------- */
-function akSb(code){ try{ const on=akPc()&&!window.APP_MODE&&(S.view==="order"||S.view==="part"); let el=document.getElementById("akSb");
+function akSb(code){ try{ const on=akPc()&&!window.APP_MODE&&(S.view==="order"||S.view==="part")&&!(typeof clientMode==="function"&&clientMode());   /* 20.11: клиенту — без номера заказа, числа деталей и «Выбрано: поз. …» */ let el=document.getElementById("akSb");
   document.body.classList.toggle("ak-sbon",on); if(!on){ if(el) el.hidden=true; return; }
   if(!el){ el=document.createElement("div"); el.id="akSb"; el.className="ak-sb"; el.setAttribute("role","status"); document.body.appendChild(el); }
   try{ const ab=document.getElementById("appBar")||document.querySelector(".shp-tabs.bottom.app-bar"), zm=parseFloat(getComputedStyle(document.body).zoom)||1, w=ab?ab.getBoundingClientRect().right/zm:0; const lf=(w>40&&w<500?Math.round(w):0)+"px"; if(el.style.left!==lf) el.style.left=lf; }catch(_){}
@@ -39550,15 +39658,15 @@ function dq3Items(){ const st=dq3St(), cl=dq3Cl(), km=typeof kmRedOn==="function
   if(st.sameMode&&!cl) R.push(["asm-same","Такие же","same",true]);
   R.push(["asm-explode","Разбор","explode",!!st.explode]);
   R.push(["asm-facades","Без фасадов","facades",!!st.hideFacades]);
-  R.push(["asm-labels","Размеры","dims",st.labels!==false,' data-dq3l="dims"']);   // 19.11: подписи деталей (название и размер); линии изделий — в листе по долгому нажатию
+  if(!cl) R.push(["asm-labels","Размеры","dims",st.labels!==false,' data-dq3l="dims"']);   /* 20.11: клиенту — без подписей деталей (названия и размеры) */   // 19.11: подписи деталей (название и размер); линии изделий — в листе по долгому нажатию
   if(!cl) R.push(["asm-holes","Отверстия","holes",st.holes!==false]);
-  R.push(["dq-hide","Скрыть","hide",!!st.hideMode]);
+  if(!cl) R.push(["dq-hide","Скрыть","hide",!!st.hideMode]);
   R.push(["dq-doors","Дверцы","doors",!!st.openMode]);
   R.push(["asm-wire","Каркас","wire",!!st.wire]);
-  R.push(["asm-pos","Номера","pos",st.pos!==false]);
+  if(!cl) R.push(["asm-pos","Номера","pos",st.pos!==false]);
   if(!cl) R.push(["asm-furn","Фурнитура","furn",st.furn!==false]);
   if(!cl&&km) R.push(["km-red","Кромка","edge",!!kmRedOn()]);
-  R.push(["dq-block","Блок","block",!!st.blockMode]);
+  if(!cl) R.push(["dq-block","Блок","block",!!st.blockMode]);
   /* 16.11 «Стены комнаты в 3D» (merge70w): только у заказа со стенами из Базиса; вкл/выкл запоминается на этом телефоне (asmWallsOn, w24-walls3d); в реализме — свой раздел «Стены» */
   if(typeof asmWallsOn==="function"&&S.current&&Array.isArray(S.current.walls)&&S.current.walls.length&&!(typeof realOn==="function"&&realOn())) R.push(["asm-walls","Стены","walls",asmWallsOn()]);
   if(typeof realOn==="function"&&realOn()) R.push(["real-photo","Фото","photo",null]);
@@ -39568,7 +39676,8 @@ function dq3BtnHtml(x){ return `<button type="button" class="dq3-b" data-act="${
 function dq3Title(){ const oid=(S.current&&S.current.orderId)||"", o=(S.orders&&S.orders[oid])||{};
   const n=(S.current&&S.current.parts||[]).length||+o.count||0, pl=typeof opPl==="function"?opPl(n,"деталь","детали","деталей"):"дет.";
   return {name:String(o.name||"").trim()||("Заказ "+oid), sub:(oid?"№ "+oid:"")+(n?" · "+n+" "+pl:"")}; }
-function dq3Top(){ const t=dq3Title();
+function dq3Top(){ if(dq3Cl()) return `<div class="dq3-ttc"><b>${esc(typeof cliTitle==="function"?cliTitle():"Ваш проект")}</b></div>`;   /* 20.11 (Кирилл: «вся информация видна клиенту»): без «№ заказа · N деталей» и внутреннего названия */
+  const t=dq3Title();
   return `<button type="button" class="dq3-tt" data-dq3="sheet" aria-haspopup="dialog" aria-label="${esc(t.name)} — ещё действия (нажмите или подержите)"><b>${esc(t.name)}</b><small>${esc(t.sub)}</small></button>`; }
 
 /* панель: верх — только «‹», название, «Отправить»; всё остальное из старой верхней панели — в строку снизу или в лист */
@@ -39576,7 +39685,7 @@ if(typeof dqBar==="function"){ const _dq3Bar=dqBar; dqBar=function(){ const h=_d
   try{ const i=h.indexOf('<div class="dq-cube"'); const rest=i>=0?h.slice(i):"";
     const b=(act,ic,title)=>`<button type="button" class="dq-b dq3-tb" data-act="${act}" title="${title}" aria-label="${title}">${dq3Svg(ic,"")}</button>`;
     const sl=S.dq3x||0;
-    return `<div class="dq-bar dq3-top"><div class="dq-l">${b("dq-close","back","Назад — к странице заказа")}</div>${dq3Top()}<div class="dq-r">${b("dq-send","send","Отправить 3D по ссылке: WhatsApp, Телеграм")}</div></div>`
+    return `<div class="dq-bar dq3-top"><div class="dq-l">${b("dq-close","back","Назад — к странице заказа")}</div>${dq3Top()}<div class="dq-r">${dq3Cl()?"":b("dq-send","send","Отправить 3D по ссылке: WhatsApp, Телеграм")}</div></div>`
       +`<div class="dq3-row" role="toolbar" aria-label="Показать на модели" data-x="${sl}"><div class="dq3-in">${dq3Items().map(dq3BtnHtml).join("")}</div></div>`+rest; }
   catch(e){ console.error(e); return h; } }; }
 
@@ -39591,12 +39700,25 @@ function dq3After(){ if(!dq3On()) { dq3Close(true); return; }
     const end=()=>row.classList.toggle("dq3-end",row.scrollLeft+row.clientWidth>=row.scrollWidth-4);   /* 16.11: дошли до конца — затухание справа убираем */
     row.addEventListener("scroll",()=>{ S.dq3x=row.scrollLeft; end(); },{passive:true}); end(); }
   dq3Sync();
-  try{ if(!localStorage.getItem("t3d-dq3hint")){ localStorage.setItem("t3d-dq3hint","1"); setTimeout(()=>{ if(dq3On()) toast(dq3Cl()?"Нажмите на название вверху — ещё действия":"Нажмите на название вверху — снимок, договор, ошибка в заказе и другое"); },1400); } }catch(_){} }
+  try{ if(!dq3Cl()&&!localStorage.getItem("t3d-dq3hint")){ localStorage.setItem("t3d-dq3hint","1"); setTimeout(()=>{ if(dq3On()) toast(dq3Cl()?"Нажмите на название вверху — ещё действия":"Нажмите на название вверху — снимок, договор, ошибка в заказе и другое"); },1400); } }catch(_){} }
 if(typeof render==="function"){ const _dq3R=render; render=function(){ if(S.view==="order"&&S.asmOrder) dq3Restore(S.asmOrder);
   const r=_dq3R.apply(this,arguments);
   try{ if(S.view==="order"&&S.asmOrder&&dq3Restore(S.asmOrder)&&typeof asm!=="undefined"&&asm&&asm.st===S.asmOrder){ asm.st.apply&&asm.st.apply(); asm.relabel&&asm.relabel(); }
+    try{ dq3TexFill(); }catch(_){}
+    if(dq3Cl()&&S.view==="order"&&S.asmOrder){ const s=S.asmOrder; let f=false; ["labels","pos","holes"].forEach(k=>{ if(s[k]!==false){ s[k]=false; f=true; } }); if(s.hideMode||s.blockMode||s.sameMode){ s.hideMode=s.blockMode=s.sameMode=false; f=true; }
+      if(f&&typeof asm!=="undefined"&&asm&&asm.st===s){ asm.st.apply&&asm.st.apply(); asm.relabel&&asm.relabel(); } }   /* 20.11: клиенту — без надписей на деталях */
     dq3After(); }catch(e){ console.error(e); } return r; }; }
-if(typeof showPick==="function"){ const _dq3SP=showPick; showPick=function(){ const r=_dq3SP.apply(this,arguments); try{ dq3Sync(); }catch(_){} return r; }; }
+if(typeof showPick==="function"){ const _dq3SP=showPick; showPick=function(){ const r=_dq3SP.apply(this,arguments); try{ dq3CliPick(); }catch(e){ console.error(e); } try{ dq3Sync(); }catch(_){} return r; }; }
+/* 20.11: клиент по ссылке — карточка детали только с цветом: образец и название декора (как в «Материалы» под 3D) */
+function dq3CliMat(m){ const t=String(m||"").split(/[\r\n]/)[0].replace(/\s+/g," ").split(",").map(x=>x.trim()).filter(Boolean); if(!t.length) return ""; const last=t[t.length-1]; return /мм$/i.test(last)&&t.length>1?t[t.length-2]:last; }
+function dq3CliPick(){ if(!dq3Cl()) return; const el=document.getElementById("asmPick"); if(!el||el.hidden) return;
+  const code=el.dataset.code||"", p=code&&!code.startsWith("F:")&&typeof partByCode==="function"?partByCode(code):null;
+  if(!p||el.querySelector(".multi-list")){ el.hidden=true; el.className="asm-pick"; el.innerHTML=""; return; }
+  const m=String(p.material||"").split(/[\r\n]/)[0].trim(), nm=dq3CliMat(m);
+  let sw=""; try{ const it=typeof catFind==="function"?catFind(m):null; if(it&&typeof catSw==="function") sw=catSw(it,"cat-sw"); }catch(_){}
+  if(!sw){ const tx=S.textures&&S.textures[m]; sw=tx?`<span class="cl-sw" style="background-image:url('${esc(tx)}')"></span>`:`<span class="cl-sw" style="background:#${(typeof matColor==="function"?matColor(m):0xcccccc).toString(16).padStart(6,"0")}"></span>`; }
+  el.className="asm-pick tag dq3-clpk";
+  el.innerHTML=`<span class="tg-sw">${sw}</span><span class="tg-t"><b>${esc(nm||"Цвет")}</b></span><button type="button" class="tg-b" data-act="asm-sel-clear" title="Снять выделение" aria-label="Снять выделение"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`; }
 document.addEventListener("click",ev=>{ if(!document.querySelector(".dq3-row")) return; const t=ev.target.closest&&ev.target.closest(".dq3-row [data-act]");
   setTimeout(()=>{ try{ dq3Sync(); if(t) dq3Save(); }catch(_){} },0); });
 
@@ -39705,6 +39827,9 @@ html .asm.full.dq .dq3-top .dq-b.dq3-tb svg{width:21px!important;height:21px!imp
 html .asm.full.dq .dq3-top .dq-b.dq3-tb::after,html .asm.full.dq .dq3-top .drw-dq{display:none!important;content:none!important}
 .dq3-tt{pointer-events:auto;justify-self:center;max-width:100%;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:4px 12px;border:0;border-radius:14px;background:transparent;color:var(--ink,#111);font:inherit;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;transition:opacity .15s,transform .15s}
 .dq3-tt:active{opacity:.6;transform:scale(.98)}
+.dq3-ttc{justify-self:center;max-width:100%;min-height:44px;display:flex;align-items:center;justify-content:center;padding:4px 12px;pointer-events:none}
+.dq3-ttc b{font:700 16px/1.2 var(--f-body,system-ui);color:var(--ink,#111);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asm-pick.dq3-clpk{display:flex;align-items:center;gap:10px}.asm-pick.dq3-clpk .tg-sw .cat-sw,.asm-pick.dq3-clpk .tg-sw .cl-sw{width:28px;height:28px;border-radius:8px;display:inline-block;background-size:cover;flex:none}
 .dq3-tt b{font:700 16px/1.2 var(--f-body,system-ui);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dq3-tt small{font:500 12.5px/1.2 var(--f-body,system-ui);color:var(--muted,#6b7280);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 html .asm.full.dq .dq-help{display:none!important}
@@ -39768,6 +39893,33 @@ body:has(.asm.full.dq .dq3-row) .inst-ban{display:none!important}   /* «Пос�
 @media (prefers-reduced-motion:reduce){.dq3-pn,.dq3-bd,html .asm.full.dq .dq3-row,.dq3-c{transition:none!important}}
 `; document.head.appendChild(st); })();
 try{ window.vtx3d={items:dq3Items,sheet:dq3SheetItems,open:dq3Open,close:dq3Close}; }catch(_){}   // для проверок
+/* ---------- 20.11 (Кирилл: «И текстура где»): модели, загруженные файлом .b3d / SketchUp (B3D…, SK…), приходят без текстур —
+   скрипт Базиса кладёт картинки декоров в файл заказа, а разбор .b3d на телефоне — только названия материалов. Подбираем текстуру
+   по названию материала из справочника сайта (catalog.json: catalog/t, catalog/s; decor.json: decor/s) — так же, как «Проект» (prjCatTex).
+   Геометрию и детали не трогаем: только S.textures[материал] для показа. Не нашли декор — остаётся цвет, как было. ---------- */
+const DQ3_TX={busy:false,done:{}};
+function dq3TexOn(oid){ return /^(B3D|SK)\d/i.test(String(oid||"")); }
+function dq3Crop(url,c,j){ return new Promise(ok=>{ let fin=false; const end=v=>{ if(!fin){ fin=true; ok(v); } }; const img=new Image();
+  img.onload=()=>{ try{ const s=img.width/c, cv=document.createElement("canvas"); cv.width=cv.height=256; cv.getContext("2d").drawImage(img,(j%c)*s+1,Math.floor(j/c)*s+1,s-2,s-2,0,0,256,256); end(cv.toDataURL("image/jpeg",0.86)); }catch(_){ end(""); } };
+  img.onerror=()=>end(""); img.src=url; setTimeout(()=>end(""),8000); }); }
+function dq3TexUrl(m){ const D=S.cat&&S.cat.data; if(!D||typeof catFind!=="function") return Promise.resolve("");
+  const m1=String(m||"").split(/[\r\n]/)[0].trim(); let it=catFind(m1); if(!it){ const m2=m1.replace(/[\s,]*\d+(?:[.,]\d+)?\s*мм\s*$/i,""); if(m2&&m2!==m1) it=catFind(m2); }
+  if(it&&it.t!=null&&it.t!==""){ if(typeof it.t==="string") return Promise.resolve("catalog/t/"+it.t+".jpg"); const c=(D.sp&&D.sp.c)||10, per=c*c; return dq3Crop("catalog/s/"+String(Math.floor(it.t/per)).padStart(3,"0")+".jpg",c,it.t%per); }
+  const E=S.cat.dec; let dk=it&&it.d!=null?it.d:null;
+  if(dk==null&&E&&typeof catNorm==="function"){ const nm=" "+catNorm(m1)+" "; let best=null, bl=0; E.items.forEach((d,k)=>{ const dn=catNorm(d.n); if(dn.length>=4&&dn.length>bl&&nm.indexOf(" "+dn+" ")>=0){ best=k; bl=dn.length; } }); if(best!=null) dk=best; }
+  if(dk!=null&&E) return dq3Crop("decor/s"+Math.floor(dk/E.per)+".jpg",E.cols,dk%E.per);
+  return Promise.resolve(""); }
+async function dq3TexFill(){ const oid=S.current&&S.current.orderId;
+  if(S.view!=="order"||!oid||!dq3TexOn(oid)||S.current.loading||DQ3_TX.busy||DQ3_TX.done[oid]) return;
+  const ps=S.current.parts||[]; if(!ps.length) return;
+  if(!(S.cat&&S.cat.data)){ if(typeof catLoad==="function") catLoad(); return; }   // справочник загрузится — страница перерисуется, придём сюда снова
+  if(!S.cat.dec&&typeof decLoad==="function"){ decLoad(); if(S.cat.decL) return; }
+  DQ3_TX.busy=true; let n=0;
+  try{ const ms=[...new Set(ps.map(p=>p.material).filter(m=>m&&String(m).trim()&&!/^\s*стена/i.test(String(m))))];
+    for(const m of ms){ if(S.textures[m]) continue; const u=await dq3TexUrl(m); if(u&&S.current.orderId===oid&&!S.textures[m]){ S.textures[m]=u; n++; } } }
+  catch(e){ console.error(e); }
+  DQ3_TX.busy=false; DQ3_TX.done[oid]=1;
+  if(n&&S.current.orderId===oid&&S.view==="order") render(); }
 
 /* ---------- «Посмотреть у себя» (19.11, Кирилл: «Давай давай»): изделие из Базиса в комнате клиента через камеру телефона, в настоящем размере ----------
    iPhone (Safari) — AR Quick Look: файл USDZ собирается прямо в телефоне, ссылка <a rel="ar" href="blob:…"><img></a> (так же делает model-viewer Google).
@@ -40011,7 +40163,8 @@ function arFree(){ if(!arCache) return; ["usdz","glb"].forEach(k=>{ try{ arCache
 function arInfo(kind){ const c=arCache, m=c&&c.model, f=c&&c[kind]; if(!m) return null;
   return {kind,size:f?f.size:0,msModel:m.ms,msFile:f?f.ms:0,ms:m.ms+(f?f.ms:0),dims:m.size.map(x=>+x.toFixed(4)),partsDims:m.psize.map(x=>+x.toFixed(4)),
     partsFloor:+m.pfloor.toFixed(4),nParts:m.nParts,furn:m.furn,tris:m.tris,mats:m.mats,tex:m.groups.filter(g=>g.tex).length}; }
-function arName(){ const oid=(S.current&&S.current.orderId)||"izdelie"; return "work24link-"+String(oid).replace(/[^0-9A-Za-z_-]+/g,"")||"izdelie"; }
+function arName(){ if(typeof clientMode==="function"&&clientMode()) return "work24link-proekt";   /* 20.11: клиенту — без номера заказа в имени файла */
+  const oid=(S.current&&S.current.orderId)||"izdelie"; return "work24link-"+String(oid).replace(/[^0-9A-Za-z_-]+/g,"")||"izdelie"; }
 const arMB=b=>(b/1048576).toFixed(b<1048576*10?1:0).replace(".",",")+" МБ";
 const arM=x=>x.toFixed(2).replace(".",",");
 
@@ -40030,7 +40183,7 @@ async function arOpen(oid){ const dev=arDev(); if(!dev){ toast("Изделие �
   const have=()=>arParts().length>0&&(!oid||(S.current&&S.current.orderId===oid&&!S.current.loading));
   if(!have()){ if(oid&&typeof openOrder==="function") openOrder(oid); else { toast("В заказе нет деталей для показа"); return; } }
   arClose(true); if(!arHist){ try{ history.pushState(Object.assign({},history.state||{},{w24ar:1}),""); arHist=true; }catch(_){} }
-  const kind=dev==="ios"?"usdz":"glb", oname=()=>{ const o=(S.orders&&S.orders[(S.current&&S.current.orderId)||oid])||{}; return String(o.name||"").trim()||"Изделие"; };
+  const kind=dev==="ios"?"usdz":"glb", oname=()=>{ if(typeof clientMode==="function"&&clientMode()&&typeof cliTitle==="function") return cliTitle(); const o=(S.orders&&S.orders[(S.current&&S.current.orderId)||oid])||{}; return String(o.name||"").trim()||"Изделие"; };   /* 20.11: клиенту — «Ваш проект», не внутреннее название */
   const m=document.createElement("div"); m.id="arSheet"; m.className="ar-sh"; m.dataset.kind=kind;
   m.innerHTML=`<div class="ar-bd" data-arx="1"></div><div class="ar-pn" role="dialog" aria-modal="true" aria-labelledby="arTtl"><div class="ar-card">
     <div class="ar-top"><i aria-hidden="true"></i><h2 class="ar-h" id="arTtl">Посмотреть у себя</h2><button type="button" class="ar-x" data-arx="1" aria-label="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
@@ -51386,7 +51539,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="6c4453f88b";/*cehqr-build*/
+  const BUILD="e606d3ac54";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -51498,7 +51651,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="6c4453f88b";/*cehqr-build*/
+  const BUILD="e606d3ac54";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
