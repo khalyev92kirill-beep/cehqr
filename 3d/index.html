@@ -5057,6 +5057,7 @@ async function v3dPayload(oid){ const r=await fetch("orders/"+encodeURIComponent
   if(!o||!Array.isArray(o.parts)||!o.parts.length) return null;
   o=v3dClean(o); if(JSON.stringify(o).length>8.5e6) delete o.textures;
   return JSON.stringify(o).length>8.5e6?false:o; }
+const V3D_CS="w24-v3dc";   // у сотрудника: {ID: ключ копии} — повторная отправка с этого телефона даёт ту же ссылку
 function v3dPin(){ try{ return (typeof shpPin==="function"&&S.shop?shpPin():"")||srvPin(); }catch(_){ return ""; } }
 send3dModal=async function(){ const oid=S.current&&S.current.orderId; if(!oid) return; const OID=String(oid).toUpperCase();
   if(/^QK/i.test(OID)){ toast("Это черновик — его нет на сайте. Отправить можно заказ, выгруженный из Базиса."); return; }
@@ -5070,10 +5071,11 @@ send3dModal=async function(){ const oid=S.current&&S.current.orderId; if(!oid) r
     toast("Готовлю ссылку…"); const ord=await v3dPayload(oid);
     if(ord===false){ toast("Модель слишком большая для ссылки — разделите её в Базисе на части"); return; }
     if(!ord){ toast("Модель не открылась на этом телефоне — откройте заказ ещё раз и повторите"); return; }
-    let j=null; try{ const r=await fetch(su,{method:"POST",body:JSON.stringify({action:"v3dPut",pin,oid:OID,order:ord})}); j=await r.json(); }catch(_){ j=null; }
+    let j=null; try{ const r=await fetch(su,{method:"POST",body:JSON.stringify({action:"v3dPut",pin,oid:OID,cid:(()=>{ try{ return (JSON.parse(localStorage.getItem(V3D_CS)||"{}")||{})[OID]||""; }catch(_){ return ""; } })(),order:ord})}); j=await r.json(); }catch(_){ j=null; }
     if(!j){ toast("Нет связи — проверьте интернет и нажмите ещё раз"); return; }
     if(!j.ok||!/^[A-Za-z0-9_-]{40,80}$/.test(String(j.t||""))){ const w=+j.wait||0;
       toast(j.error==="pin"?"PIN не подошёл — войдите заново":j.error==="role"?"Нет права «Заказы из Базиса» — попросите директора":j.error==="big"?"Модель слишком большая для ссылки":j.error==="often"?"Много новых ссылок за час — подождите "+(w>1?w+" мин":"минуту"):j.msg?String(j.msg):"Ссылку сделать не получилось ("+(j.error||"ошибка")+")"); return; }
+    try{ const C=JSON.parse(localStorage.getItem(V3D_CS)||"{}")||{}; if(/^[0-9a-f]{16}$/.test(String(j.cid||""))&&C[OID]!==j.cid){ C[OID]=j.cid; localStorage.setItem(V3D_CS,JSON.stringify(C)); } }catch(_){}
     tail="#"+OID+"~v~"+j.t; }
   else { let k=keyFor(oid); const enc=!!(window.__w24enc&&window.__w24enc[OID]);
     if(S.site&&enc&&!k&&typeof srvSync==="function"){ try{ await Promise.race([srvSync(true),new Promise(r=>setTimeout(r,4000))]); }catch(_){} k=keyFor(oid); }
@@ -25666,7 +25668,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="e606d3ac54";
+const CHK_BUILD="b8ffc35a6f";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -33457,7 +33459,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="e606d3ac54"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="b8ffc35a6f"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -51539,7 +51541,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="e606d3ac54";/*cehqr-build*/
+  const BUILD="b8ffc35a6f";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -51651,7 +51653,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="e606d3ac54";/*cehqr-build*/
+  const BUILD="b8ffc35a6f";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
