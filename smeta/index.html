@@ -25523,7 +25523,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="a185fb4c35";
+const CHK_BUILD="ef283ccdda";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -33308,7 +33308,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="a185fb4c35"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="ef283ccdda"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -34725,17 +34725,34 @@ function rkT(x,y,t,fs,o){ o=o||{}; const a=o.a||"middle", w=o.b===0?400:o.b||700
 /* ширина текста примерно: 0,58 кегля на букву (жирный), цифры уже */
 function rkTW(t,fs,b){ let w=0; for(const ch of String(t)){ w+=/[0-9.,·\-×]/.test(ch)?0.56:/[ШЩЖМЮЫ]/.test(ch)?0.86:/[А-ЯA-Z]/.test(ch)?0.7:/\s/.test(ch)?0.3:0.56; } return w*fs*(b===0?0.95:1); }
 function rkFit(t,maxW,fs,b){ t=String(t); if(rkTW(t,fs,b)<=maxW) return t; while(t.length>2&&rkTW(t+"…",fs,b)>maxW) t=t.slice(0,-1); return t+"…"; }
+/* 20.11 (Кирилл 14:43, скрин «Все листы»: «33 · Вертик…», «36 · Фронтальная3 32…»): подпись детали без «…».
+   Перебираем подписи от полной к короткой; каждую сначала обычным кеглем, потом ужимаем до fmin. Ни одна не влезла — null (тогда номер в кружке, полное имя — по нажатию). */
+function rkFitPick(cands,maxW,fs,fmin,b){ for(const t of cands){ if(!t) continue; if(rkTW(t,fs,b)<=maxW) return {t,fs}; const f=maxW/Math.max(1e-6,rkTW(t,1,b)); if(f>=fmin) return {t,fs:f}; } return null; }
+/* 20.11 (Кирилл: «Сделай на мой раскрой также красные линии», карта «Как в Базисе»): контуры деталей — красные, как BZ_RED в site_cutbz.js;
+   отход — красная сетка (как bzWst), деловой остаток — серая косая штриховка с подписью; кромка — чёрная линия у стороны (как штрих кромки в Базисе), 2 мм — двойная */
+const RK_RED="#FF0000", RK_CUT="#7a0000", RK_BAD="#ff9f0a";
+let rkPatN=0;
 /* стороны с кромкой на листе: длина детали вдоль листа (lenX) — L1 низ, L2 верх, W1 лево, W2 право (как в картах «как в Базисе») */
-function rkEdgeSides(q){ const e=(q.p&&q.p.edges)||{}, lenX=!q.r, o={};
-  if(lenX){ if(e.L1) o.b=1; if(e.L2) o.t=1; if(e.W1) o.l=1; if(e.W2) o.r=1; } else { if(e.L1) o.l=1; if(e.L2) o.r=1; if(e.W1) o.b=1; if(e.W2) o.t=1; } return o; }
+/* 20.11: значение стороны — толщина кромки, мм (как bzEdgeT: нет толщины — 1); данные кромки только читаем */
+function rkEdgeT(v){ return v?(+v.t||1):0; }
+function rkEdgeSides(q){ const e=(q.p&&q.p.edges)||{}, lenX=!q.r, o={}, T=rkEdgeT;
+  if(lenX){ if(e.L1) o.b=T(e.L1); if(e.L2) o.t=T(e.L2); if(e.W1) o.l=T(e.W1); if(e.W2) o.r=T(e.W2); } else { if(e.L1) o.l=T(e.L1); if(e.L2) o.r=T(e.L2); if(e.W1) o.b=T(e.W1); if(e.W2) o.t=T(e.W2); } return o; }
 /* Кирилл 17.11 15:54 «поменяй слово К на линии», 16:12 «не понятно где кромка — тонкая линия должна отходить»: кромка — ТОНКАЯ линия (как рез) параллельно стороне,
    с заметным отступом внутрь (двойной контур, как в Базисе): отступ ~3,5 % меньшей стороны, не меньше ~2 и не больше ~6 точек экрана телефона; концы не доходят до углов.
    Пунктир вместо сплошной — localStorage.rkEdgeDash="1" (для выбора Кириллом). ins — сколько места от края занимает кромка (для надписей) */
-function rkEdgeLines(x,y,w,h,ed,u){ const m=Math.min(w,h), off=Math.min(m*0.22,Math.max(6*u,Math.min(17*u,m*0.035))), ins=off+2.5*u; let g="";
+/* 20.11 (Кирилл «И кромку так же»): по толщине кромки — до 1 мм тонкая линия, 1–2 мм потолще, от 2 мм — ДВОЙНАЯ (как в Базисе: двойной штрих у толстой кромки).
+   Класс rk-edge — одна линия на сторону (по ней считают стороны), вторая линия толстой кромки — rk-edge2 */
+function rkEdgeLines(x,y,w,h,ed,u){ const m=Math.min(w,h), off=Math.min(m*0.22,Math.max(6*u,Math.min(17*u,m*0.035))), gap=Math.min(m*0.12,Math.max(4*u,off*0.5));
+  const thick=["t","b","l","r"].some(k=>ed[k]>=2), ins=off+2.5*u+(thick?gap:0); let g="";
   let dash=false; try{ dash=localStorage.getItem("rkEdgeDash")==="1"; }catch(_){}
-  const L=(x1,y1,x2,y2)=>{ g+=`<line class="rk-edge" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" vector-effect="non-scaling-stroke"/>`; };
-  if(ed.t) L(x+off,y+off,x+w-off,y+off); if(ed.b) L(x+off,y+h-off,x+w-off,y+h-off); if(ed.l) L(x+off,y+off,x+off,y+h-off); if(ed.r) L(x+w-off,y+off,x+w-off,y+h-off);
+  const L=(cls,sw,x1,y1,x2,y2)=>{ g+=`<line class="${cls}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"${sw!==1?` stroke-width="${sw}"`:""} vector-effect="non-scaling-stroke"/>`; };
+  const side=(k,t)=>{ if(!t) return; const sw=t>=2?1.1:t>=1?1.3:1, d=[off].concat(t>=2?[off+gap]:[]);
+    d.forEach((o,i)=>{ const c=i?"rk-edge2":"rk-edge";
+      if(k==="t") L(c,sw,x+off,y+o,x+w-off,y+o); else if(k==="b") L(c,sw,x+off,y+h-o,x+w-off,y+h-o); else if(k==="l") L(c,sw,x+o,y+off,x+o,y+h-off); else L(c,sw,x+w-o,y+off,x+w-o,y+h-off); }); };
+  side("t",ed.t); side("b",ed.b); side("l",ed.l); side("r",ed.r);
   return {svg:g?`<g stroke="#000" stroke-width="1" stroke-linecap="butt" fill="none"${dash?` stroke-dasharray="${(5*u).toFixed(1)} ${(4*u).toFixed(1)}"`:""}>${g}</g>`:"",ins}; }
+/* 20.11: подпись условных знаков под листом (экран) */
+function rkLegTxt(){ return "кромка — тонкая линия с отступом от стороны, двойная — кромка 2 мм"+(RK.view==="bz"?" · красная сетка — отход · серая штриховка — остаток на склад":""); }
 function rkEdgeWords(p){ const e=p.edges||{}, nl=(e.L1?1:0)+(e.L2?1:0), nw=(e.W1?1:0)+(e.W2?1:0); if(!nl&&!nw) return "без кромки"; if(nl===2&&nw===2) return "все 4";
   return [nl?(nl===2?"2 длинные":"1 длинная"):"", nw?(nw===2?"2 короткие":"1 короткая"):""].filter(Boolean).join(", "); }
 /* номера мелких деталей листа (меньше 40 мм по одной стороне) — ①②③…; полный список — в таблице */
@@ -34748,21 +34765,34 @@ const RK_DIM=24;   /* потолок цифр размера: 24 мм на ка�
 function rkSheetSvg(L,s,opt){ opt=opt||{}; const W=L.sh.w, H=L.sh.h, u=Math.max(W,H)/1000, X0=L.TL, Y0=L.TT, ST=L.ST, all=S.current&&S.current.parts||[];
   let g=`<rect x="0" y="0" width="${W}" height="${H}" fill="#fff" stroke="#000" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`;
   g+=`<rect x="${X0}" y="${Y0}" width="${L.W}" height="${L.H}" fill="none" stroke="#000" stroke-width="0.6" stroke-dasharray="${(6*u).toFixed(1)} ${(4*u).toFixed(1)}" vector-effect="non-scaling-stroke" opacity=".5"/>`;
-  /* остатки на склад — пунктир с размером */
-  (s.rem||[]).forEach(f=>{ const x=X0+f.x, y=Y0+f.y; g+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${f.w.toFixed(1)}" height="${f.h.toFixed(1)}" fill="none" stroke="#555" stroke-width="0.8" stroke-dasharray="${(7*u).toFixed(1)} ${(5*u).toFixed(1)}" vector-effect="non-scaling-stroke"/>`;
+  /* 20.11: вид «Как в Базисе» (opt.bz) — отход красной сеткой, деловой остаток серой косой штриховкой + пунктир с подписью «остаток … → склад», контуры красные.
+     «Наш простой» — как было: ч/б, остаток пунктиром */
+  const bz=!!opt.bz;
+  if(!bz) (s.rem||[]).forEach(f=>{ const x=X0+f.x, y=Y0+f.y; g+=`<rect class="rk-rem" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${f.w.toFixed(1)}" height="${f.h.toFixed(1)}" fill="none" stroke="#555" stroke-width="0.8" stroke-dasharray="${(7*u).toFixed(1)} ${(5*u).toFixed(1)}" vector-effect="non-scaling-stroke"/>`;
     const t=`остаток ${rkI(f.w)}×${rkI(f.h)} → склад`, fs=Math.min(14*u,f.h*0.3, f.w/(t.length*0.55)); if(fs>=6*u) g+=rkT(x+f.w/2,y+f.h/2+fs*0.35,t,fs,{b:0,fill:"#444"}); });
+  const pid="rkPt"+(++rkPatN), cw=(9*u).toFixed(1), rw=(14*u).toFixed(1), psw=(0.7*u).toFixed(2);
+  if(bz){ g+=`<defs><pattern id="${pid}w" width="${cw}" height="${cw}" patternUnits="userSpaceOnUse"><path d="M0 0L${cw} ${cw}M${cw} 0L0 ${cw}" stroke="${RK_RED}" stroke-width="${psw}" fill="none"/></pattern>`+
+    `<pattern id="${pid}r" width="${rw}" height="${rw}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${rw}" stroke="#9aa0a6" stroke-width="${(0.9*u).toFixed(2)}"/></pattern></defs>`;
+  const fk=f=>[f.x,f.y,f.w,f.h].map(v=>Math.round(v)).join(","), remSet=new Set((s.rem||[]).map(fk));
+  (s.free||[]).forEach(f=>{ if(remSet.has(fk(f))||!(f.w>0&&f.h>0)) return; g+=`<rect class="rk-waste" x="${(X0+f.x).toFixed(1)}" y="${(Y0+f.y).toFixed(1)}" width="${f.w.toFixed(1)}" height="${f.h.toFixed(1)}" fill="url(#${pid}w)" stroke="${RK_RED}" stroke-width="0.6" vector-effect="non-scaling-stroke"/>`; });
+  (s.rem||[]).forEach(f=>{ const x=X0+f.x, y=Y0+f.y; g+=`<rect class="rk-rem" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${f.w.toFixed(1)}" height="${f.h.toFixed(1)}" fill="url(#${pid}r)" stroke="#555" stroke-width="0.8" stroke-dasharray="${(7*u).toFixed(1)} ${(5*u).toFixed(1)}" vector-effect="non-scaling-stroke"/>`;
+    const t=`остаток ${rkI(f.w)}×${rkI(f.h)} → склад`, fs=Math.min(14*u,f.h*0.3, f.w/(t.length*0.55)); if(fs>=6*u){ const tw=rkTW(t,fs,0)+fs, th=fs*1.5;
+      g+=`<rect x="${(x+f.w/2-tw/2).toFixed(1)}" y="${(y+f.h/2-th/2).toFixed(1)}" width="${tw.toFixed(1)}" height="${th.toFixed(1)}" fill="#fff"/>`+rkT(x+f.w/2,y+f.h/2+fs*0.35,t,fs,{b:0,fill:"#444"}); } }); }
+  const cLine=bz?RK_RED:"#000", cBad=bz?RK_BAD:"#ff453a";
   let sn=0; const smalls=[];
   s.placed.forEach(q=>{ const p=q.p, x=X0+q.x, y=Y0+q.y, w=q.w, h=q.h, cx=x+w/2, st=ST?ST.of(p):null, code=rkCode(p), sel=opt.screen&&RK.sel===q.code, lock=opt.locks&&opt.locks[q.code], bad=opt.badSet&&opt.badSet[q.code];
-    let k=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${sel?"#e5e5e7":"#fff"}" stroke="${bad?"#ff453a":"#000"}" stroke-width="${sel||bad?2.4:1}" vector-effect="non-scaling-stroke"/>`;
+    let k=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${sel?"#e5e5e7":"#fff"}" stroke="${bad?cBad:cLine}" stroke-width="${sel||bad?2.4:bz?1.3:1}" vector-effect="non-scaling-stroke"><title>${esc(`${code} · ${rkName(p)} · ${rkSz(rkCq(q))}`)}</title></rect>`;
     const c=rkCq(q), ed=rkEdgeSides(q), dims=rkSz(c), kind=rkKind(p), ext=p.order&&p.order!==RK.oid?" · №"+(rkOrderInfo(p.order).num||p.order):"";
     const EL=rkEdgeLines(x,y,w,h,ed,u), ei=EL.ins; k+=EL.svg;
     if(rkSmall(q)){ sn++; smalls.push({n:sn,q}); const fs=Math.min(w,h)*0.62, f2=Math.min(fs,22*u); k+=rkT(cx,y+h/2+f2*0.36,rkCir(sn),f2,{b:400}); }
     else if(rkNarrow(q)){ const vert=h>w, len=vert?h:w, th=vert?w:h, s1=vert?ed.l:ed.t, s2=vert?ed.r:ed.b, e1=vert?ed.b:ed.l, e2=vert?ed.t:ed.r,   /* s — длинные стороны, e — торцы */
         av=Math.max(th*0.4,th-(s1?ei:0)-(s2?ei:0)), off=(s1?ei:0)+av/2, fs=Math.min(av*0.66,15*u), pad=4*u, p1=pad+(e1?ei:0), p2=pad+(e2?ei:0);
-      const txt=rkFit(`${code} · ${kind} ${dims}${st?" · "+st.lab:""}${ext}`,len-p1-p2,fs);
-      if(!txt.startsWith(code+" ")&&txt!==code){ sn++; smalls.push({n:sn,q}); const f2=Math.min(th*0.7,len*0.5,22*u); k+=rkT(cx,y+h/2+f2*0.36,rkCir(sn),f2,{b:400}); }
-      else if(vert){ k+=rkT(x+off+fs*0.35,y+h-p1,txt,fs,{a:"start",rot:-90}); }
-      else { k+=rkT(x+p1,y+off+fs*0.36,txt,fs,{a:"start"}); } }
+      /* 20.11: без «…» — полная подпись, ужатая до ~60 % кегля; не влезла — короче (без стопки, без размера, без названия); совсем не влезла — номер в кружке */
+      /* 20.11 14:50 (Кирилл, крупный лист: «Название убираем все отсюда»): на листе — только номер и размер реза; название — по нажатию и в таблице */
+      const fit=rkFitPick([`${code} · ${dims}${ext}`,`${code} · ${dims}`,code],len-p1-p2,fs,Math.min(fs,Math.max(6*u,fs*0.6)));
+      if(!fit){ sn++; smalls.push({n:sn,q}); const f2=Math.min(th*0.7,len*0.5,22*u); k+=rkT(cx,y+h/2+f2*0.36,rkCir(sn),f2,{b:400}); }
+      else if(vert){ k+=rkT(x+off+fit.fs*0.35,y+h-p1,fit.t,fit.fs,{a:"start",rot:-90,cls:"rk-code"}); }
+      else { k+=rkT(x+p1,y+off+fit.fs*0.36,fit.t,fit.fs,{a:"start",cls:"rk-code"}); } }
     else { /* Кирилл 17.11 15:54 «эти цифры очень большие, неаккуратно»: размер цифр один для всех деталей (потолок 24 на 1000 мм листа, было до 40 и от размера детали), полужирный, «К» убрано — кромка линией.
          Кирилл 15.11 02:50–02:58 (макет razmer.png, вариант Б): главное — размер реза. Размеры по сторонам, как в Базисе:
          по горизонтали — крупно у верхнего края, по вертикали — крупно у левого края (повёрнуто); «К» — у стороны с кромкой рядом с размером.
@@ -34773,25 +34803,28 @@ function rkSheetSvg(L,s,opt){ opt=opt||{}; const W=L.sh.w, H=L.sh.h, u=Math.max(
       k+=rkT(cx+(df*0.35),y+mt+dT*0.86,sT,dT,{cls:"rk-dim",b:600});
       k+=rkT(x+ml+dL*0.86,y+h/2+dT*0.4,sL,dL,{rot:-90,cls:"rk-dim",b:600});
       const cL=x+ml+dL*1.25, cR=x+w-mr, cT=y+mt+dT*1.25, cB=y+h-mb, ccx=(cL+cR)/2, ccy=(cT+cB)/2, cw=cR-cL, ch=cB-cT;
-      const hts=opt.heights!==false?rkHeights(p,all):null, txt=`${code} · ${kind}${st?" · "+st.lab:""}${ext}`;
+      const hts=opt.heights!==false?rkHeights(p,all):null;
+      let txt=`${code}${ext}`;   /* 20.11 14:50 «Название убираем все отсюда»: только номер (+ значок стопки), название — по нажатию */
       const ps=st?1.15:0, cfOf=(CW,CH)=>Math.max(5*u,Math.min(13*u,Math.min(dT,dL)*0.55,CH*(hts?0.28:0.4),CW/(rkTW(txt,1,0)+ps+0.4))), okOf=(CW,f)=>f>=7*u&&CW>=rkTW(code,7*u,0);
       /* Кирилл 15.11 22:45: «при повороте пропадают обозначения» — у высокой узкой детали (после поворота) код и «↕ высоты» поперёк не влезали и менялись на кружок.
-         Теперь, если поперёк не влезает, код пишем вдоль длинной стороны (повёрнутым), как размер слева */
-      let CW=cw, CH=ch, vt=false, cf=cfOf(cw,ch); if(!okOf(cw,cf)&&ch>cw){ const f2=cfOf(ch,cw); if(okOf(ch,f2)){ CW=ch; CH=cw; vt=true; cf=f2; } }
+         Теперь, если поперёк не влезает, код пишем вдоль длинной стороны (повёрнутым), как размер слева.
+         20.11: полная подпись не влезла ни так, ни вдоль — пробуем короче («код · что это», потом один код), без «…» */
+      let CW=cw, CH=ch, vt=false, cf=0;
+      for(const t of [txt,code]){ txt=t; CW=cw; CH=ch; vt=false; cf=cfOf(cw,ch); if(!okOf(cw,cf)&&ch>cw){ const f2=cfOf(ch,cw); if(okOf(ch,f2)){ CW=ch; CH=cw; vt=true; cf=f2; } } if(okOf(CW,cf)) break; }
       const lines=hts?2:1, y0=ccy-(lines-1)*cf*0.65, tw=rkTW(txt,cf,0), x0=ccx-(tw+ps*cf)/2;
       if(!okOf(CW,cf)){ sn++; smalls.push({n:sn,q}); const f2=Math.max(6*u,Math.min(ch*0.5,cw*0.6,16*u)); k+=rkT(ccx,ccy+f2*0.36,rkCir(sn),f2,{b:400}); }   /* код не читается и вдоль — номер в кружке, код и стопка в таблице */
       else { let c2=""; if(st&&CW>40*u) c2+=`<g color="#000">${rkPatSvg(st.pat,x0,y0-cf*0.78,cf*0.9)}</g>`;
-        c2+=rkT(x0+ps*cf,y0+cf*0.1,rkFit(txt,CW-ps*cf,cf,0),cf,{a:"start",b:500,cls:"rk-code"});
-        if(hts) c2+=rkT(ccx,y0+cf*1.35,rkFit(`↕ ${hts.join(" · ")}`,CW,cf,0),cf,{b:400});
+        c2+=rkT(x0+ps*cf,y0+cf*0.1,txt,cf,{a:"start",b:500,cls:"rk-code"});
+        if(hts){ const ht=`↕ ${hts.join(" · ")}`, hf=Math.min(cf,CW/Math.max(1e-6,rkTW(ht,1,0))); if(hf>=5*u) c2+=rkT(ccx,y0+cf*1.35,ht,hf,{b:400}); }
         k+=vt?`<g transform="rotate(-90 ${ccx.toFixed(1)} ${ccy.toFixed(1)})">${c2}</g>`:c2; }
       if(opt.texArrow&&q.it&&q.it.tex){ const along=(q.it.lIsL?!q.r:q.r); k+=rkT(x+w-mr,y+h-mb,along?"→":"↑",kf,{a:"end",b:400}); } }
     if(lock) k+=`<g transform="translate(${(x+w-18*u).toFixed(1)} ${(y+5*u).toFixed(1)}) scale(${(u*0.55).toFixed(3)})" fill="none" stroke="#000" stroke-width="2.2"><rect x="3" y="11" width="18" height="13" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></g>`;
     g+=opt.screen?`<g class="rk-p" data-code="${esc(q.code)}">${k}</g>`:k; });
   /* номера первых резов — по середине линии реза */
   if(opt.cutNo!==false) (s.cuts||[]).filter(c=>c.lv===1).forEach(c=>{ const mx=X0+(c.x1+c.x2)/2, my=Y0+(c.y1+c.y2)/2, r=9*u;
-    g+=`<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="${r.toFixed(1)}" fill="#fff" stroke="#000" stroke-width="1" vector-effect="non-scaling-stroke"/>`+rkT(mx,my+r*0.42,String(c.no),r*1.15); });
+    g+=`<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="${r.toFixed(1)}" fill="#fff" stroke="${bz?RK_CUT:"#000"}" stroke-width="${bz?1.2:1}" vector-effect="non-scaling-stroke"/>`+rkT(mx,my+r*0.42,String(c.no),r*1.15,bz?{fill:RK_CUT}:{}); });
   s._smalls=smalls;
-  return `<svg class="rk-svg" viewBox="${opt.vb||`0 0 ${W} ${H}`}" font-family="Inter,Arial,'Liberation Sans',sans-serif" fill="#000">${g}</svg>`; }
+  return `<svg class="rk-svg${bz?" rk-bz":""}" viewBox="${opt.vb||`0 0 ${W} ${H}`}" font-family="Inter,Arial,'Liberation Sans',sans-serif" fill="#000">${g}</svg>`; }
 /* резы листа — строками: «① вдоль 492», «④ поперёк (полоса 1): 720 · 720 · 564»; «упор 600 — 4 подряд, не трогать» */
 function rkCutRows(L,s){ const dw=d=>(d==="h")===(L.sh.w>=L.sh.h)?"вдоль":"поперёк", rows=[];
   s.groups.forEach((gp,gi)=>{ if(!gp.cuts.length) return; if(gp.lv===1) gp.cuts.forEach(c=>rows.push({no:c.no,t:dw(c.d),v:rkI(c.size),lv:1}));
@@ -34817,7 +34850,7 @@ function rkPage(L,s,si,opt){ opt=opt||{}; const PW=297, PH=210, M=8, inf=rkOrder
   g+=rkT(PW-M,M+4.6,`${rkMatShort(L.mat)} · ${L.sh.w}×${L.sh.h} · обпил ${rkN(set.tl)} · пропил ${rkN(set.k)}`,3.1,{a:"end",b:400});
   const grpN=L.sheets.filter(x=>x.grp===s.grp).length;
   const nSt=set.stTable!==false?new Set(s.placed.map(q=>L.ST.of(q.p).key)).size:0, tabH=nSt?(nSt+1)*7.2+4:0, top=M+9, maxH=Math.max(95,Math.min(150,PH-M-top-10-tabH)), maxW=PW-2*M-50, k=Math.min(maxW/L.sh.w,maxH/L.sh.h), w=L.sh.w*k, h=L.sh.h*k;
-  const inner=rkSheetSvg(L,s,{heights:set.heights,texArrow:set.texArrow}).replace(/^<svg class="rk-svg" /,`<svg x="${M}" y="${top}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" `);
+  const inner=rkSheetSvg(L,s,{heights:set.heights,texArrow:set.texArrow,bz:RK.view==="bz"}).replace(/^<svg class="rk-svg[^"]*" /,`<svg x="${M}" y="${top}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" `);
   g+=inner;
   /* справа: QR листа, резы по порядку, остатки */
   const rx=M+w+6, rw=PW-M-rx; let ry=top;
@@ -34830,7 +34863,8 @@ function rkPage(L,s,si,opt){ opt=opt||{}; const PW=297, PH=210, M=8, inf=rkOrder
   if(s.rem.length){ g+=rkT(rx,ry+4,"Остатки → склад",3,{a:"start"}); ry+=5.5; s.rem.slice(0,3).forEach(f=>{ g+=rkT(rx,ry+3,`${rkI(f.w)} × ${rkI(f.h)}`,2.8,{a:"start",b:400}); ry+=4; }); }
   /* условные знаки */
   let ly=top+h+5;
-  g+=rkT(M,ly,"568 · 470 — размеры реза по сторонам    — кромка: тонкая линия внутри детали с отступом от стороны    ① порядок резов    3-7 — код: напиши карандашом на обороте    ⑫ — мелкая, смотри таблицу    ↕ — высоты от низа",2.7,{a:"start",b:400});
+  g+=rkT(M,ly,"568 · 470 — размеры реза по сторонам    — кромка: тонкая линия внутри детали с отступом от стороны, двойная — кромка 2 мм    ① порядок резов    3-7 — код: напиши карандашом на обороте    ⑫ — мелкая, смотри таблицу    ↕ — высоты от низа",2.7,{a:"start",b:400});
+  if(RK.view==="bz"){ ly+=3.6; g+=rkT(M,ly,"красный контур — деталь    красная сетка — отход    серая штриховка с пунктиром — деловой остаток на склад",2.7,{a:"start",b:400}); }
   /* таблица стопок: стопка → детали с этого листа → кромка */
   const rows=set.stTable!==false?rkStackRows(L,s):[]; const smalls=s._smalls||[];
   if(rows.length){ let ty=ly+3; const c1=40, c3=74, x2=M+c1, x3=PW-M-c3, tw=PW-2*M; const room=PH-M-ty-6;
@@ -34977,7 +35011,7 @@ function rkCard(vk,L,cur,best){ const st=L.stats, T={waste:"Меньше отх�
     <span class="rk-st"><span><small>листов</small>${st.n}</span><span><small>отход</small>${st.waste} %</span><span><small>резов</small>${st.cuts}</span><span><small>пилить</small>≈ ${rkTime(st.min)}</span></span></button>`; }
 function rkChips(cur){ const L=cur.L, out=[]; let i=0; while(i<L.sheets.length){ let j=i; while(j+1<L.sheets.length&&L.sheets[j+1].grp===L.sheets[i].grp) j++;
     const on=RK.si>=i&&RK.si<=j, n=j-i+1; out.push(`<button type="button" class="rk-chip${on?" on":""}" data-rk-si="${i}" data-rk-sj="${j}">${n>1?`${i+1}–${j+1} <b>×${n}</b>`:i+1}</button>`); i=j+1; }
-  const D=rkData(); D.mats.forEach(m=>{ if(m.mat!==RK.mat) out.push(`<button type="button" class="rk-chip rk-chm" data-rk-mat="${esc(m.mat)}" title="${esc(m.mat)}">${esc(rkMatFit(m.mat,150,13,0))}</button>`); });
+  const D=rkData(); D.mats.forEach(m=>{ if(m.mat!==RK.mat) out.push(`<button type="button" class="rk-chip rk-chm" data-rk-mat="${esc(m.mat)}" title="${esc(m.mat)}">${esc(rkMatShort(m.mat))}</button>`); });
   return out.join(""); }
 function rkLeftHtml(cur){ const set=rkSet(), L=cur.L, texOn=rkTexOn(RK.mat,set), plain=rkPlain(RK.mat), fs=rkCanFirm();
   return `<div class="rk-grp"><div class="rk-gh">лист</div><div class="rk-row"><span>Размер листа</span><b>${L.sh.w} × ${L.sh.h}</b></div><div class="rk-row"><span>Обпил по краю</span><b>${rkN(set.tl)} мм</b></div><div class="rk-row"><span>Пропил (пила)</span><b>${rkN(set.k)} мм</b></div>
@@ -35043,9 +35077,10 @@ function rkListTot(){ return rkData().mats.reduce((a,m)=>{ const c=rkCur(m.mat);
 function rkListHtml(){ const D=rkData(), mp=rkMrepP(RK.oid), one=D.mats.length<2; let h="";
   D.mats.map((m,mi)=>({m,mi})).sort((a,b)=>(b.m.mat===RK.mat)-(a.m.mat===RK.mat)||a.mi-b.mi).forEach(({m,mi})=>{ const cur=rkCur(m.mat); if(!cur) return; const L=cur.L, n=L.sheets.length, nm=rkMatShort(m.mat);
     if(!one) h+=`<div class="rk-lgh">${esc(nm)} · ${n} ${rkPl(n,"лист","листа","листов")}${cur.man?" · своя правка":""}</div>`;
+    let skM=null; if(RK.view==="sk"&&typeof skSvg==="function"){ try{ skM=rkBzMap(L); }catch(_){ skM=null; } }   /* 20.11: вид «Как в SketchUp» — и в списке листов */
     h+=`<div class="rk-lgrid">`+L.sheets.map((s,si)=>{ const own=s.placed.filter(q=>q.p&&!(q.p.order&&q.p.order!==RK.oid)), ch=own.filter(q=>mp[q.code]).length, pc=Math.round((s.used||0)*100), np=s.placed.length;
       return `<div class="rk-lcard" data-rk-lcard="${mi}-${si}"><div class="rk-lcap"><b>Лист ${si+1} из ${n}</b> · ${esc(nm)} · ${L.sh.w} × ${L.sh.h} · занято ${pc} %</div>
-        <button type="button" class="rk-lsh" data-rk-lmi="${mi}" data-rk-lsi="${si}" aria-label="Лист ${si+1} из ${n} — открыть крупно"><div class="rk-lsheet">${rkSheetSvg(L,s,{screen:1,locks:L.locks,heights:L.set.heights,texArrow:L.set.texArrow})}</div></button>
+        <button type="button" class="rk-lsh" data-rk-lmi="${mi}" data-rk-lsi="${si}" aria-label="Лист ${si+1} из ${n} — открыть крупно"><div class="rk-lsheet${RK.view==="sk"&&skM?" rk-lsk":""}">${RK.view==="sk"&&skM?skSvg(skM,skM.sheets[si]).replace(/ data-act="part"/g,""):rkSheetSvg(L,s,{screen:1,locks:L.locks,heights:L.set.heights,texArrow:L.set.texArrow,bz:RK.view==="bz"})}</div></button>
         <div class="rk-lft"><span class="rk-lmt">${np} ${rkPl(np,"деталь","детали","деталей")}${ch?` · ${ch} с заменой`:""}</span>${ch?`<button type="button" class="rk-pill" data-rk-lback="${mi}-${si}">Вернуть как было</button>`:""}<button type="button" class="rk-pill rk-pill-sh" data-rk-lmat="${mi}-${si}">Материал ✎</button></div></div>`; }).join("")+`</div>`; });
   return h; }
 /* действия списка листов: открыть крупно, материал листа, вернуть как было */
@@ -35061,11 +35096,11 @@ function rkMidHtml(cur){ const L=cur.L, s=L.sheets[RK.si]||L.sheets[0];
   if(!s) return h+`<p class="rk-mut">Нет деталей этого материала.</p>`;
   let body;
   if(RK.view==="sk") body=`<div class="rk-skwrap">${rkSkHtml(cur)}</div>`;
-  else if(RK.view==="bz"&&typeof cutSvg==="function"){ const m=rkBzMap(L); let sv=""; const cs=typeof cutStyle==="function"?cutStyle:null; try{ if(cs) cutStyle=()=>"bz"; sv=cutSvg(m,m.sheets[RK.si]||m.sheets[0]); }catch(e){ sv=""; } finally{ if(cs) cutStyle=cs; }
-    body=`<div class="rk-paper">${sv||rkSheetSvg(L,s,{screen:1})}</div>`; }
-  else body=`<div class="rk-sheet" data-rk-sheet="${RK.si}">${rkSheetSvg(L,s,{screen:1,locks:L.locks,badSet:L.badSet,heights:L.set.heights,texArrow:L.set.texArrow})}</div>`;
+  /* 20.11 (Кирилл 14:48 «И вот это не работает 😖»): «Как в Базисе» — наш лист в стиле Базиса (красные контуры, сетка отхода, кромка) — правка, печать и номера резов как у нашего;
+     прежняя карта Базиса (cutSvg) осталась в «DXF, сводка, прежние карты» */
+  else body=`<div class="rk-sheet" data-rk-sheet="${RK.si}">${rkSheetSvg(L,s,{screen:1,locks:L.locks,badSet:L.badSet,heights:L.set.heights,texArrow:L.set.texArrow,bz:RK.view==="bz"})}</div>`;
   const grpN=L.sheets.filter(x=>x.grp===s.grp).length, gi=L.sheets.filter((x,i)=>x.grp===s.grp&&i<RK.si).length;
-  h+=`<div class="rk-box">${body}</div><div class="rk-hint">Лист ${RK.si+1} из ${L.sheets.length}${grpN>1?` · одинаковых ×${grpN} (это ${gi+1}-й)`:""} · занято ${Math.round((s.used||0)*100)} % · ${cur.man?"своя правка · ":""}${rkPhone()?"держите деталь — двигайте":"тот же лист уйдёт на печать · двигать мышкой, R — повернуть, L — замок"}${rkPhone()?"":` · <span class="rk-legl"></span>кромка — тонкая линия с отступом от стороны`}</div>`;
+  h+=`<div class="rk-box">${body}</div><div class="rk-hint">Лист ${RK.si+1} из ${L.sheets.length}${grpN>1?` · одинаковых ×${grpN} (это ${gi+1}-й)`:""} · занято ${Math.round((s.used||0)*100)} % · ${cur.man?"своя правка · ":""}${rkPhone()?"держите деталь — двигайте":"тот же лист уйдёт на печать · двигать мышкой, R — повернуть, L — замок"}${rkPhone()?"":` · <span class="rk-legl"></span>${rkLegTxt()}`}</div>`;
   return h; }
 function rkTopHtml(cur){ const inf=rkOrderInfo(RK.oid), L=cur.L, ck=rkCheck(L), set=rkSet(), pr={pencil:"карандашом",thermo:"наклейки",a4:"наклейки A4"}[set.print]||"";
   const vs=(k,t)=>`<button type="button" data-rk-view="${k}" aria-pressed="${RK.view===k}">${t}</button>`;
@@ -35088,7 +35123,7 @@ function rkDeskHtml(cur){ return `<div class="rk-in${RK.full?" rk-full":""}">${r
 function rkPhoneHtml(cur){ const inf=rkOrderInfo(RK.oid), L=cur.L, R=cur.R, set=rkSet(), ck=rkCheck(L), vk=cur.man?"":(rkVkGet()[RK.mat]||"waste");
   const bar=(t,right)=>`<div class="rk-top"><button type="button" class="rk-ib" data-rk="${RK.ph==="cards"?"close":"phback"}" aria-label="${RK.ph==="cards"?"Закрыть раскрой":RK.ph==="sheet"?"Назад: все листы":"Назад: к вариантам"}">${rkIc("back")}</button><b class="rk-tt">${t}</b>${right||'<span class="rk-ib0"></span>'}</div>`;
   if(RK.ph==="list"){ const tot=rkListTot();
-    return `<div class="rk-in rk-ph">${bar(`Все листы · ${tot}`)}<div class="rk-sub">Нажмите лист — откроется крупно. «Материал ✎» — заменить материал только этого листа.</div>${rkListHtml()}
+    return `<div class="rk-in rk-ph">${bar(`Все листы · ${tot}`,`<button type="button" class="rk-ib" data-rk="phmore" aria-label="Вид листов">${rkIc("more")}</button>`)}<div class="rk-sub">Нажмите лист — откроется крупно. «Материал ✎» — заменить материал только этого листа.</div>${rkListHtml()}
       <button type="button" class="rk-main-b" data-rk="phprint">Печать · ${tot} ${rkPl(tot,"лист","листа","листов")}</button></div>`; }
   if(RK.ph==="sheet"){ const s=L.sheets[RK.si]||L.sheets[0], nb=s?s.placed.filter(q=>rkMrepP(RK.oid)[q.code]&&!(q.p.order&&q.p.order!==RK.oid)).length:0;
     /* Кирилл 15.11 22:46: «поворачивал и вернуть обратно — такая кнопка нужна». Вверху справа была вторая «Повернуть» (значок как «обновить») — теперь там «Отменить»;
@@ -35096,8 +35131,8 @@ function rkPhoneHtml(cur){ const inf=rkOrderInfo(RK.oid), L=cur.L, R=cur.R, set=
     const undoRow=(RK.undo.length||cur.man)?`<div class="rk-undo"><button type="button" class="rk-b rk-ub" data-rk="undo" ${RK.undo.length?"":"disabled"}>${rkIc("undo",18)}<span>Отменить</span></button>${cur.man?`<button type="button" class="rk-b rk-ub" data-rk="reset">${rkIc("back",18)}<span>Как было по расчёту</span></button>`:""}</div>`:"";
     return `<div class="rk-in rk-ph">${bar(`Лист ${RK.si+1} из ${L.sheets.length}`,`<button type="button" class="rk-ib" data-rk="undo" aria-label="Отменить последнее" title="Отменить последнее" ${RK.undo.length?"":"disabled"}>${rkIc("undo")}</button>`)}
       <div class="rk-chips">${rkChips(cur)}</div><div class="rk-sub">${esc(rkMatShort(RK.mat))} · лист ${L.sh.w} × ${L.sh.h} мм · занято ${Math.round((s.used||0)*100)} %</div>
-      <div class="rk-pills"><button type="button" class="rk-pill rk-pill-sh" data-rk="shmat">Материал листа ✎</button>${nb?`<button type="button" class="rk-pill" data-rk="shback">Вернуть как было</button>`:""}</div><div class="rk-box rk-swipe">${RK.view==="our"?`<div class="rk-sheet" data-rk-sheet="${RK.si}">${rkSheetSvg(L,s,{screen:1,locks:L.locks,badSet:L.badSet,heights:set.heights,texArrow:set.texArrow})}</div>`:rkMidHtml(cur).replace(/^[\s\S]*?<div class="rk-box">/,"<div>")}</div>
-      ${(rkSelTools(L)||`<div class="rk-grp rk-selc"><p class="rk-mut">Нажмите деталь — повернуть, закрепить, перенести. Держите — двигайте.</p></div>`).replace(/<\/div>$/,undoRow+'<p class="rk-mut rk-leg"><span class="rk-legl"></span>кромка — тонкая линия с отступом от стороны</p>'+"</div>")}
+      <div class="rk-pills"><button type="button" class="rk-pill rk-pill-sh" data-rk="shmat">Материал листа ✎</button>${nb?`<button type="button" class="rk-pill" data-rk="shback">Вернуть как было</button>`:""}</div><div class="rk-box rk-swipe">${RK.view!=="sk"?`<div class="rk-sheet" data-rk-sheet="${RK.si}">${rkSheetSvg(L,s,{screen:1,locks:L.locks,badSet:L.badSet,heights:set.heights,texArrow:set.texArrow,bz:RK.view==="bz"})}</div>`:rkMidHtml(cur).replace(/^[\s\S]*?<div class="rk-box">/,"<div>")}</div>
+      ${(rkSelTools(L)||`<div class="rk-grp rk-selc"><p class="rk-mut">Нажмите деталь — повернуть, закрепить, перенести. Держите — двигайте.</p></div>`).replace(/<\/div>$/,undoRow+'<p class="rk-mut rk-leg"><span class="rk-legl"></span>'+rkLegTxt()+'</p>'+"</div>")}
       ${ck.red.length?`<div class="rk-grp">${ck.red.slice(0,3).map(x=>`<div class="rk-row rk-red"><span>${esc(x.t)}</span>${x.fix?`<button type="button" class="rk-fix" data-rk-fix="${x.fix.k}" data-code="${esc(x.fix.code||x.code||"")}" data-v="${esc(x.fix.v||"")}">${esc(x.fix.t)}</button>`:""}</div>`).join("")}</div>`:""}
       <button type="button" class="rk-main-b" data-rk="phprint">Печать</button></div>`; }
   if(RK.ph==="print"){ const pr=set.print, s=L.sheets.length, prn={pencil:"карандашом",thermo:"наклейки (термопринтер)",a4:"наклейки на листах A4"}[pr];
@@ -35113,7 +35148,7 @@ function rkPhoneHtml(cur){ const inf=rkOrderInfo(RK.oid), L=cur.L, R=cur.R, set=
   const D=rkData(), m=D.mats.find(x=>x.mat===RK.mat), np=m?m.ps.length:0;
   return `<div class="rk-in rk-ph">${bar(`Раскрой · ${esc(inf.num?"№ "+inf.num:inf.name)}`,`<button type="button" class="rk-ib" data-rk="phmore" aria-label="Ещё">${rkIc("more")}</button>`)}
     <div class="rk-sub">${esc(rkMatShort(RK.mat))} · ${np} ${rkPl(np,"деталь","детали","деталей")} · лист ${L.sh.w} × ${L.sh.h} мм</div>${rkRecalcHtml()}
-    ${D.mats.length>1?`<div class="rk-chips">${D.mats.map(x=>`<button type="button" class="rk-chip${x.mat===RK.mat?" on":""}" data-rk-mat="${esc(x.mat)}">${esc(rkMatFit(x.mat,150,13,0))}</button>`).join("")}</div>`:""}
+    ${D.mats.length>1?`<div class="rk-chips">${D.mats.map(x=>`<button type="button" class="rk-chip${x.mat===RK.mat?" on":""}" data-rk-mat="${esc(x.mat)}">${esc(rkMatShort(x.mat))}</button>`).join("")}</div>`:""}
     <div class="rk-cards">${["waste","cuts","mod"].filter((k,i,a)=>vk===k||!a.slice(0,i).some(j=>{ const A=R.V[j].stats, B=R.V[k].stats; return A.n===B.n&&A.waste===B.waste&&A.cuts===B.cuts; })).map(k=>rkCard(k,R.V[k],vk===k,k==="waste")).join("")}</div>
     ${cur.man?`<div class="rk-grp"><div class="rk-row"><span>Своя правка: ${L.sheets.length} ${rkPl(L.sheets.length,"лист","листа","листов")}</span><button type="button" class="rk-fix" data-rk-vk="waste">Сбросить</button></div></div>`:""}
     ${rkMsgHtml("vk")}
@@ -35190,7 +35225,9 @@ function rkAct(a,t){ const cur=rkCur(); if(!cur) return; const L=cur.L, R=cur.R;
   if(a==="phtex") return rkSetVal("tex",rkTexOn(RK.mat,rkSet())?"none":"along");
   if(a==="phrot") return rkSetVal("rot",{no:"where",where:"all",all:"no"}[rkSet().rot]);
   if(a==="phfirst") return rkSetVal("first",{along:"cross",cross:"both",both:"along"}[rkSet().first]);
-  if(a==="phmore") return rkMenu(t,[["our","Наш простой"],["bz","Как в Базисе"],["sk","Как в SketchUp"]].map(([k,n])=>({t:"Вид: "+n,on:RK.view===k,f:()=>{ RK.view=k; try{ localStorage.setItem("rk-view",k); }catch(_){} rkRender(); }})));
+  /* 20.11 (Кирилл 14:48 «И вот это не работает 😖»): на экране вариантов листов не видно — выбор вида ничего не менял на глазах. Теперь: ✓ у текущего,
+     выбор сразу открывает «Все листы» в этом виде (из листа — остаётся на листе), запоминается (rk-view) */
+  if(a==="phmore") return rkMenu(t,[["our","Наш простой"],["bz","Как в Базисе"],["sk","Как в SketchUp"]].map(([k,n])=>({t:(RK.view===k?"✓ ":"")+"Вид: "+n,on:RK.view===k,f:()=>{ RK.view=k; try{ localStorage.setItem("rk-view",k); }catch(_){} if(RK.ph==="cards") RK.ph="list"; rkRender(); toast("Вид листов: "+n); }})));
   if(a==="where"){ return rkModal(`<div class="rk-gh">где стоит</div>${rkWhereSvg(RK.sel)}`); }
   if(a==="ost"){ const f={w:+t.dataset.w,h:+t.dataset.h}; rkOstAdd({mat:RK.mat,w:f.w,h:f.h,oid:RK.oid,at:Date.now()}); rkPrintRem(L,f); toast(`Остаток ${f.w}×${f.h} — бирка на печать, отложен на склад`); return rkRender(); }
   if(a==="join"){ const oid=t.dataset.o; if(RK.join[oid]){ delete RK.join[oid]; RK.cache=null; toast("Заказ убран из раскроя"); return rkRender(); } rkJoin(oid); return; }
@@ -35379,7 +35416,10 @@ try{ const _rkPM=posMatch; posMatch=function(v){ const r=_rkPM.apply(this,argume
 window.__rk={sheets:()=>{ const o={}; rkData().mats.forEach(m=>{ const c=rkCur(m.mat); o[m.mat]=c?c.L.sheets.length:0; }); return o; },mats:()=>rkData().mats.map(m=>m.mat),oid:()=>RK.oid,
   mat:code=>{ const p=(S.current&&S.current.parts||[]).find(x=>x.code===code); return p?rkMatKey(p.material):null; },codesOf:mat=>(S.current&&S.current.parts||[]).filter(p=>p&&rkMatKey(p.material)===mat).map(p=>p.code),
   fresh:()=>{ const P=(S.current&&S.current.parts||[]).map(p=>{ const q=Object.assign({},p,{material:p._mat0||p.material}); delete q._mat0; return q; }); rkMrepApply(RK.oid,P); const o={}; P.forEach(p=>{ o[p.code]=rkMatKey(p.material); }); return o; },
-  sup:()=>typeof supBaseP==="function"?supBaseP(S.current.parts||[],[]).filter(x=>x.type==="L").map(x=>({name:x.name,qty:x.qty})):null,short:m=>rkMatShort(m),th:m=>rkMatTh(m),cur:()=>RK.mat};
+  sup:()=>typeof supBaseP==="function"?supBaseP(S.current.parts||[],[]).filter(x=>x.type==="L").map(x=>({name:x.name,qty:x.qty})):null,short:m=>rkMatShort(m),th:m=>rkMatTh(m),cur:()=>RK.mat,
+  /* 20.11 (bench/kirill/2026-11-20_raskroj_krasnye.js): детали с размером реза и кромкой — только чтение */
+  parts:()=>(S.current&&S.current.parts||[]).map(p=>{ const c=rkCutOf(p); return {code:p.code,art:p.art,name:p.name,edges:p.edges||{},L:+c.L,W:+c.W}; }),
+  edge:ed=>rkEdgeLines(0,0,600,400,ed,2.75).svg};
 /* ---------- 12. вид: тёмный, как iPhone (docs/stil: фон #0b0b0b, слои #1c1c1e/#2a2a2c, рамки rgba(255,255,255,.08), цвет только по смыслу) ---------- */
 (function(){ const st=document.createElement("style"); st.id="rkCss"; st.textContent=`
 .rk-entry{display:flex;align-items:center;gap:12px;margin:8px 0 10px;padding:12px 14px;border:1px solid rgba(142,142,147,.32);border-radius:16px}.rk-et{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.rk-et b{font-size:16px}.rk-et span{font-size:13px;opacity:.65}.rk-eb{min-height:44px;min-width:96px;border-radius:22px}
@@ -35422,7 +35462,7 @@ html.rk-on,html.rk-on body{overflow:hidden}html.rk-on.rk-on.rk-on.rk-on body but
 .rk-fix{flex:none;min-height:34px;padding:0 12px;border-radius:17px;border:1px solid rgba(255,255,255,.12);background:#2a2a2c;font-size:13px;white-space:nowrap}.rk-fix.rk-g{color:#30d158!important}
 .rk-mid{display:flex;flex-direction:column;gap:8px;min-height:0;background:#1c1c1e;border-radius:18px;padding:10px}
 .rk-chips{display:flex;gap:6px;align-items:center;overflow-x:auto;scrollbar-width:none;flex:none;padding:1px}.rk-chips::-webkit-scrollbar{display:none}
-.rk-chip{min-height:40px;min-width:40px;padding:0 13px;border-radius:20px;border:1.5px solid transparent;background:#2a2a2c;white-space:nowrap;flex:none;font-variant-numeric:tabular-nums}.rk-chip.on{border-color:#fff}.rk-chip.drop{border-color:#30d158}.rk-chm{color:rgba(235,235,245,.7)}
+.rk-chip{min-height:40px;min-width:40px;padding:0 13px;border-radius:20px;border:1.5px solid transparent;background:#2a2a2c;white-space:nowrap;flex:none;font-variant-numeric:tabular-nums}.rk-chip[data-rk-mat]{white-space:normal;max-width:min(80vw,340px);line-height:1.2;text-align:left}.rk-chip.on{border-color:#fff}.rk-chip.drop{border-color:#30d158}.rk-chm{color:rgba(235,235,245,.7)}
 .rk-find{display:flex;align-items:center;gap:6px;min-height:40px;padding:0 12px;border-radius:20px;background:#2a2a2c;flex:none;color:rgba(235,235,245,.6)}.rk-find input{width:70px;border:0;background:none;color:#fff;font:inherit;outline:none}
 .rk-box{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:auto}.rk-sheet,.rk-paper{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
 .rk-sheet svg.rk-svg{max-width:100%;max-height:100%;width:auto;height:auto;display:block;border-radius:4px;touch-action:pan-y}
@@ -51303,7 +51343,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="a185fb4c35";/*cehqr-build*/
+  const BUILD="ef283ccdda";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -51415,7 +51455,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="a185fb4c35";/*cehqr-build*/
+  const BUILD="ef283ccdda";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
