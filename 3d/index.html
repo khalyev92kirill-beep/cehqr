@@ -3548,7 +3548,14 @@ function dqBar(){
 }
 /* Кирилл 06.11: «3D вид — любой человек может отправить ссылку на любой номер через WhatsApp».
    Ссылка открывает только 3D и материалы этого заказа (вид для клиента): без чертежей, цен и чатов. */
-function send3dModal(){ const oid=S.current&&S.current.orderId; if(!oid) return; if(/^QK/i.test(oid)){ toast("Это черновик — его нет на сайте. Отправить можно заказ, выгруженный из Базиса."); return; } const url=partUrl(oid); if(!/^https?:\/\//.test(url)){ toast("Нет адреса сайта — ссылку не сделать"); return; }
+async function send3dModal(){ const oid=S.current&&S.current.orderId; if(!oid) return; if(/^QK/i.test(oid)){ toast("Это черновик — его нет на сайте. Отправить можно заказ, выгруженный из Базиса."); return; }
+  /* 20.11 (Кирилл 16:10 «отправляем 3д клиентам — там показывает пароль»): ссылка без ключа зашифрованного заказа открывала клиенту «Проект закрыт. Войдите своим PIN».
+     Нет ключа — тихо спрашиваем сервер ещё раз; всё равно нет — ссылку не даём. Ссылка — как у вкладки «Клиент» (shpK3d): 3d/?c=1#ID~ключ — у клиента всегда вид клиента */
+  let k=keyFor(oid); const enc=!!(window.__w24enc&&window.__w24enc[String(oid).toUpperCase()]);
+  if(S.site&&enc&&!k&&typeof srvSync==="function"){ try{ await Promise.race([srvSync(true),new Promise(r=>setTimeout(r,4000))]); }catch(_){} k=keyFor(oid); }
+  const u0=partUrl(oid); if(!/^https?:\/\//.test(u0)){ toast("Нет адреса сайта — ссылку не сделать"); return; }
+  if(S.site&&enc&&!k){ toast("Ключа заказа на телефоне нет — войдите по PIN заново"); return; }
+  const url=S.site&&k?u0.split("#")[0].split("?")[0]+"?c=1#"+oid+"~"+k:u0;
   const o=S.orders&&S.orders[oid]||{}, nm=String(o.name||"").trim(), txt="Здравствуйте! 3D-проект"+(nm?" «"+nm+"»":"")+": "+url;
   document.getElementById("send3dM")?.remove(); const m=document.createElement("div"); m.className="modal"; m.id="send3dM";
   m.innerHTML=`<form class="modal-card" style="width:min(420px,100%)" autocomplete="off"><h2 style="margin:0 0 6px">Отправить 3D</h2>
@@ -4825,7 +4832,9 @@ function srvRoleOut(role){ if(srvRole()!==role) return false;
   location.reload(); return true; }
 /* «Проект закрыт»: заказы теперь открываются по входу — подсказываем про PIN, а не только про QR */
 if(typeof viewOrder==="function"){ const _srvVO=viewOrder; viewOrder=function(){ const h=_srvVO.apply(this,arguments);
-  try{ return S.current&&S.current.locked?String(h).replace("Этот заказ открывается только по своему QR-коду. Попросите QR у технолога.","Войдите своим PIN — заказы откроются сами. Или откройте заказ по его QR-коду."):h; }catch(_){ return h; } }; }
+  try{ if(!(S.current&&S.current.locked)) return h;
+    const cli=!srvPin()&&(!!window.__cli1||(typeof clientMode==="function"&&clientMode()));   /* 20.11: клиент по ссылке — не «Войдите своим PIN» (Кирилл: «показывает пароль») */
+    return String(h).replace("Этот заказ открывается только по своему QR-коду. Попросите QR у технолога.",cli?"Ссылка устарела — попросите у мастерской новую.":"Войдите своим PIN — заказы откроются сами. Или откройте заказ по его QR-коду."); }catch(_){ return h; } }; }
 function siteIsAdmin(){ return !!_ks.master||srvRole()==="tech"; }
 function siteIsSupply(){ return !!_ks.supply||srvRole()==="supply"; }
 function siteIsMasters(){ return !!_ks.masters||srvRole()==="master"; }
@@ -4902,6 +4911,7 @@ async function siteOrderText(oid,txt){
   let obj=null; try{ obj=JSON.parse(txt.replace(/^﻿/,"")); }catch(_){ return txt; }
   if(obj&&obj.deny){ const e=new Error("locked"); e.locked=true; throw e; }   /* фирма: сервер не отдал заказ (нет входа или не та роль) */
   if(!obj||!obj.ct) return txt;
+  try{ (window.__w24enc=window.__w24enc||{})[String(oid||"").toUpperCase()]=1; }catch(_){}
   /* вариант Б. Сверка 12.11: открытие заказа сервера НЕ ждёт, если ключ на телефоне есть и вход подтверждён меньше 12 часов назад —
      открываем сразу, а вход перепроверяем тихо в фоне (не чаще раза в 10 минут; сервер ответил «вход не действует» — заказ закроется сам, srvOut).
      Ждём (до 4 с) только когда ключа нет совсем: вдруг заказ выдали только что. Нет связи — минуту не переспрашиваем */
@@ -7505,7 +7515,7 @@ async function vtxFromOrder(){
   if(vtxElse(oid)){ toast(vtxElseText()); return; }
   vtxSheet(oid);
 }
-function vtxDealData(oid){ const o=S.orders[oid]||{}, u=typeof partUrl==="function"?partUrl(oid):""; return {name:o.name||"",client:o.client||"",link:/^https?:\/\//.test(u)?u:"",notes:typeof orderStatsLine==="function"?orderStatsLine():""}; }
+function vtxDealData(oid){ const o=S.orders[oid]||{}, u=typeof partUrl==="function"?partUrl(oid):""; return {name:o.name||"",client:o.client||"",link:/^https?:\/\//.test(u)&&/~[A-Za-z0-9_-]{20,}$/.test(u)?u:"",notes:typeof orderStatsLine==="function"?orderStatsLine():""}; }
 function vtxSheet(oid){
   const act=S.shop.orders.filter(o=>!shpClosed(o)).sort((a,b)=>(b.created||0)-(a.created||0)), o=S.orders[oid]||{};
   const m=document.createElement("div"); m.className="modal vtx-sheet"; m.id="vtxSheet";
@@ -14522,7 +14532,7 @@ if(window.APP_MODE==="vertaks"||window.APP_ONE){ const _opH=hashHook;
   const dec=v=>{ try{ return decodeURIComponent(v); }catch(_){ return v; } };
   hashHook=h=>{ h=String(h||""); let m=/^deal=([^&]+)$/.exec(h); if(m){ S.op.deal0=dec(m[1]); opDealWait(); }
     else if((m=/^new=([A-Za-z0-9]{1,16})(?:&d=(.*))?$/.exec(h))){ const oid=m[1].toUpperCase(); let d={}; try{ d=JSON.parse(dec(m[2]||""))||{}; }catch(_){}
-      S.op.new0={oid,d:{name:String(d.name||""),client:String(d.client||""),link:/^https?:\/\//.test(d.link||"")?String(d.link):"",notes:String(d.notes||"")}}; opDealWait(); }
+      S.op.new0={oid,d:{name:String(d.name||""),client:String(d.client||""),link:/^https?:\/\//.test(d.link||"")&&/~[A-Za-z0-9_-]{20,}$/.test(String(d.link))?String(d.link):"",notes:String(d.notes||"")}}; opDealWait(); }
     return _opH(h); };
   // заказ из Технолог 3D без сделки: тот же выбор «Новая сделка / привязать», данные заказа — из ссылки
   if(typeof vtxDealData==="function"){ const _opDD=vtxDealData; vtxDealData=function(oid){ const n=S.op.newD; return n&&n.oid===oid?n.d:_opDD.apply(this,arguments); }; }
@@ -25522,7 +25532,7 @@ html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-
    Ничего не проверяет, ничего не показывает и не шлёт на сервер (ни замечания, ни геометрию). Старые записи в «Вопросах и ошибках» остаются.
    Вернуть — CHK_ON=true (и на сервере свойство скрипта CHK_ON=1, иначе сервер замечания «Проверщика» не записывает). */
 const CHK_ON=false;
-const CHK_BUILD="10fbf161df";
+const CHK_BUILD="b7ac7fdeaa";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){ try{ return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{}; }catch(_){ return {}; } }
@@ -33307,7 +33317,7 @@ function otzView(){ try{ const v=S.view||"", m=S.shop&&S.shop.mode||"";
 function otzDev(){ const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)), ua=navigator.userAgent||"";
   const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
   return (w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":""); }
-function otzVer(){ const b="10fbf161df"; return /^__/.test(b)?"стенд":b; }
+function otzVer(){ const b="b7ac7fdeaa"; return /^__/.test(b)?"стенд":b; }
 function otzDet(){ return {view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()}; }
 
 /* ---------- снимок экрана: копия страницы → SVG (foreignObject) → картинка → jpeg ≤ 300 КБ ---------- */
@@ -43677,7 +43687,7 @@ function smmPic(id){ const th=smmThumb(id); return `<span class="smm-pic">${th?`
 /* ссылка сделки показывала старую модель (#0004~ключ) — при смене/отвязке её убираем или ставим на новую, иначе «Открыть 3D» открыл бы прежнюю */
 function smmLinkFor(d,oldT,newT){ const l=String(d.link||""); if(!l) return ""; let dl=l; try{ dl=decodeURIComponent(l); }catch(_){}
   const was=oldT&&new RegExp("#"+String(oldT).replace(/[^\w-]/g,"")+"(?:$|[~\\-?&])","i").test(dl); if(!was) return l;
-  if(!newT) return ""; try{ const u=typeof partUrl==="function"?partUrl(newT):""; return /^https?:\/\//.test(u)?u:""; }catch(_){ return ""; } }
+  if(!newT) return ""; try{ const u=typeof partUrl==="function"?partUrl(newT):""; return /^https?:\/\//.test(u)&&/~[A-Za-z0-9_-]{20,}$/.test(u)?u:""; }catch(_){ return ""; } }   /* 20.11: без ключа — не записываем */
 function smmRepaint(){ try{ if(S.view==="shop") shpRenderKeep(); else render(); }catch(_){ try{ render(); }catch(__){} } try{ smoPaint(true); }catch(_){} }
 async function smmSet(d,t3d){ t3d=String(t3d||""); const prev={t3d:String(d.t3d||""),link:String(d.link||"")}, link=smmLinkFor(d,prev.t3d,t3d);
   d.t3d=t3d; d.link=link; smmRepaint();
@@ -51344,7 +51354,7 @@ render();
    Номер сборки вписывает tools/site_version.py (в конце build_site.py). Номер на сервере другой — показываем
    «Вышла новая версия — обновляю» и перезагружаем. Пока человек печатает или открыто окно — ждём. */
 (function(){
-  const BUILD="10fbf161df";/*cehqr-build*/
+  const BUILD="b7ac7fdeaa";/*cehqr-build*/
   // после перезагрузки убираем из адреса ?v=… (нужен только чтобы обойти кэш)
   try{ const u=new URL(location.href); if(u.searchParams.has("v")){ u.searchParams.delete("v"); history.replaceState(history.state,"",u.pathname+u.search+u.hash); } }catch(_){}
   if(/^__/.test(BUILD)) return;   // сборка без номера (проверка в Claude) — не следим
@@ -51456,7 +51466,7 @@ render();
    Данные — updates.json в корне сайта (пишет tools/site_version.py при сборке с непустым release_note.txt). Только DOM, без переменных сборки. */
 (function(){
   if(window.__w24obnov) return; window.__w24obnov=1;
-  const BUILD="10fbf161df";/*cehqr-build*/
+  const BUILD="b7ac7fdeaa";/*cehqr-build*/
   const SEEN="w24-upd-seen", CACHE="w24-upd-cache";
   const ls={ get(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(_){} } };
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
