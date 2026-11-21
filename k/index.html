@@ -157,6 +157,8 @@ form.send textarea{border-radius:24px;padding:12px 16px;background:var(--me);bor
 (function(){
 "use strict";
 var TOK=(location.hash||"").replace(/^#/,"").trim().toLowerCase(), URLS="", ORD=null, HAND=null, MSGS=[], LAST=0, BUSY=false, REM=false;
+/* 21.11: код фирмы из ссылки k/?f=<код>#ключ — сервер ищет ключ в таблице этой фирмы. Без кода — главная таблица (старые ссылки) */
+var FIRM=(function(){ var m=/[?&]f=([A-Za-z0-9]{5,8})(?:&|$)/.exec(location.search||""); return m?m[1].toUpperCase():""; })();
 var ROUTE=[["dogovor","Договор и предоплата","Оформили заказ"],["zamer","Замер","Приезжаем и замеряем помещение"],["proekt","Проект","Делаем проект и чертежи"],["zakup","Материалы","Закупаем материалы"],["cex","Производство","Изготавливаем мебель на производстве"],["montazh","Монтаж","Привозим и собираем"],["closed","Готово","Заказ сдан"]];
 var IDX={dogovor:0,zamer:1,proekt:2,proekt_ok:2,zakup:3,cex:4,montazh:5,closed:6};
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
@@ -167,7 +169,8 @@ function span(a,b){return a&&b&&a!==b?dshort(a)+" — "+dshort(b):dlong(a||b);}
 function tm(ms){var d=new Date(ms),t=d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});return d.toDateString()===new Date().toDateString()?t:d.toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"})+" "+t;}
 function safe(u){return /^https:\/\/[^\s"<>]+$/.test(String(u||""));}
 function thumb(u,w){return String(u||"").replace(/([?&]sz=)w\d+/,"$1w"+(w||480));}
-function api(q){return URLS+(URLS.indexOf("?")>=0?"&":"?")+q;}
+function api(q){return URLS+(URLS.indexOf("?")>=0?"&":"?")+q+(FIRM?"&firm="+FIRM:"");}
+function withFirm(b){ if(FIRM) b.firm=FIRM; return b; }
 var main=document.getElementById("main");
 function fail(h,p){document.getElementById("ttl").textContent=h;main.innerHTML='<div class="empty"><p>'+p+'</p></div>';}
 
@@ -268,7 +271,7 @@ function bindOffer(){ var box=document.getElementById("offer"); if(!box) return;
     if(!go.dataset.sure){ go.dataset.sure="1"; go.textContent="Подтвердить: "+ofRub(ofTotal()); return; }
     go.disabled=true; go.textContent="Отправляю…";
     post({action:"clientAgree",v:s.v,opts:Object.keys(s.opts).filter(function(k){ return s.opts[k]; }),pre:s.pre}).then(function(j){ go.disabled=false;
-      if(!j||!j.ok){ go.textContent="Согласовать"; delete go.dataset.sure; fh.textContent=j&&j.error==="often"?"Слишком часто. Подождите несколько минут.":"Не отправилось. Проверьте интернет и попробуйте ещё раз."; return; }
+      if(!j||!j.ok){ go.textContent="Согласовать"; delete go.dataset.sure; fh.textContent=j&&j.error==="lic"?"Компания сейчас не принимает сообщения через эту страницу — позвоните им.":j&&j.error==="often"?"Слишком часто. Подождите несколько минут.":"Не отправилось. Проверьте интернет и попробуйте ещё раз."; return; }
       OFFER.agreed=j.agreed; OFEDIT=false; OFS=null; render(); var ob=document.getElementById("offer"); if(ob&&ob.scrollIntoView) ob.scrollIntoView({block:"start"}); load(false); })
     .catch(function(){ go.disabled=false; go.textContent="Согласовать"; delete go.dataset.sure; fh.textContent="Нет связи — нажмите ещё раз."; }); }); }
 /* ---- 15.11 «Живой заказ»: модель по этапу (сервер присылает order.live только если мастерская включила «Показывать клиенту процесс работы») ----
@@ -338,15 +341,15 @@ function send(){
   btn.disabled=true; btn.textContent="Отправляю…";
   (file?shrink(file):Promise.resolve("")).then(function(photo){
     var body={action:"clientSend",t:TOK,text:text}; if(photo) body.photo=photo;
-    return fetch(URLS,{method:"POST",body:JSON.stringify(body)}).then(function(r){return r.json();});
+    return fetch(URLS,{method:"POST",body:JSON.stringify(withFirm(body))}).then(function(r){return r.json();});
   }).then(function(j){
     btn.disabled=false; btn.textContent="Отправить";
-    if(!j||!j.ok){ fh.hidden=false; fh.textContent=j&&j.error==="often"?"Слишком много сообщений подряд. Подождите несколько минут.":j&&j.error==="big"?"Фото слишком большое. Выберите другое.":"Не отправилось. Проверьте интернет и попробуйте ещё раз."; return; }
+    if(!j||!j.ok){ fh.hidden=false; fh.textContent=j&&j.error==="lic"?"Компания сейчас не принимает сообщения через эту страницу — позвоните им.":j&&j.error==="often"?"Слишком много сообщений подряд. Подождите несколько минут.":j&&j.error==="big"?"Фото слишком большое. Выберите другое.":"Не отправилось. Проверьте интернет и попробуйте ещё раз."; return; }
     ta.value=""; fi.value=""; fh.hidden=true; load(false);
   }).catch(function(){ btn.disabled=false; btn.textContent="Отправить"; fh.hidden=false; fh.textContent="Не отправилось. Проверьте интернет и попробуйте ещё раз."; });
 }
-function post(body){ body.t=TOK; return fetch(URLS,{method:"POST",body:JSON.stringify(body)}).then(function(r){return r.json();}); }
-function errText(j){ return j&&j.error==="often"?"Слишком много сообщений подряд. Подождите несколько минут.":j&&j.error==="big"?"Фото слишком большое. Выберите другое.":"Не отправилось. Проверьте интернет и попробуйте ещё раз."; }
+function post(body){ body.t=TOK; return fetch(URLS,{method:"POST",body:JSON.stringify(withFirm(body))}).then(function(r){return r.json();}); }
+function errText(j){ return j&&j.error==="lic"?"Компания сейчас не принимает сообщения через эту страницу — позвоните им.":j&&j.error==="often"?"Слишком много сообщений подряд. Подождите несколько минут.":j&&j.error==="big"?"Фото слишком большое. Выберите другое.":"Не отправилось. Проверьте интернет и попробуйте ещё раз."; }
 function bindHand(){
   var ko=document.getElementById("akok"), kn=document.getElementById("akno");
   var akGo=function(btn,no){ btn.disabled=true; post({action:no?"clientAktNo":"clientAktOk"}).then(function(j){ btn.disabled=false; if(!j||!j.ok){ btn.textContent=errText(j); return; } AKT=j.akt; render(); load(false); }).catch(function(){ btn.disabled=false; btn.textContent="Нет связи — нажмите ещё раз"; }); };
