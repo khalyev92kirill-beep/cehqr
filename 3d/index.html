@@ -12757,9 +12757,10 @@ const payOk=!!S.shop.sumSee&&(!!S.shop.tech||O.some(o=>o.prepay!==undefined&&o.p
 const late=[],soon=[],pay=[];let wait=0;
 open.forEach(o=>{const l=plLate(o,today),s=l?null:plSoon(o,today);if(l)late.push({o,u:l});else if(s)soon.push({o,u:s});
 if(payOk){const r=plRest(o);if(r>0){wait+=r;pay.push({o,r});}}});
+if(payOk&&typeof w24Debt==="function")O.forEach(o=>{if(!shpClosed(o)||!w24Debt(o))return;if(S.shop.mine&&(typeof shpOwnOf==="function"?shpOwnOf(o):shpNorm(o.owner))!==me)return;const r=plRest(o);if(r>0){wait+=r;pay.push({o,r});}});
 late.sort((a,b)=>a.u.d.localeCompare(b.u.d));soon.sort((a,b)=>a.u.d.localeCompare(b.u.d));pay.sort((a,b)=>b.r-a.r);
 const fresh=all.filter(o=>o.stage===SHP_ST[0].k&&!String(o.owner||"").trim()).sort((a,b)=>(a.created||0)-(b.created||0)).map(o=>({o}));
-const tasks=(S.shop.tasks||[]).filter(t=>t.status!=="done"&&shpNorm(t.to)===me),tNow=tasks.filter(t=>plIsDay(t.due)&&t.due<=today).sort((a,b)=>a.due.localeCompare(b.due));
+const tasks=(S.shop.tasks||[]).filter(t=>t.status!=="done"&&shpNorm(t.to)===me&&!(t.order&&shpById(t.order)&&shpClosed(shpById(t.order)))),tNow=tasks.filter(t=>plIsDay(t.due)&&t.due<=today).sort((a,b)=>a.due.localeCompare(b.due));
 return{today,me,open,late,soon,fresh,pay,wait,payOk,tasks,tNow};}
 function plSelHtml(D){const k=S.shop.plSel;if(!k||(k==="pay"&&!D.payOk)||(k==="new"&&!D.fresh.length))return"";const T={late:"Опоздали",soon:"Сегодня и завтра",new:"Новые заявки без ответа",pay:"Ждём денег от клиентов"};
 const rows=k==="late"?D.late.map(x=>sgRowLate(x)):k==="soon"?D.soon.map(x=>sgRowSoon(x)):k==="new"?D.fresh.map(x=>sgRowNew(x))
@@ -14356,7 +14357,7 @@ if(typeof shpMoveStage!=="function")return;
 const dlgN=v=>Math.round(+v||0).toLocaleString("ru-RU");
 function dlgRest(o){if(!o||!S.shop||!S.shop.full||o.otype==="gift")return 0;if(o.sum===""||o.sum==null||o.prepay===undefined)return 0;
 const r=Math.round((+o.sum||0)-(+o.prepay||0));return r>0?r:0;}
-async function dlgAsk(o){const r=dlgRest(o);if(!r)return{go:true,r:0};const ok=await appConfirm("Клиент должен "+dlgN(r)+" ₽ — закрыть всё равно?","Закрыть",false);return{go:!!ok,r};}
+async function dlgAsk(o){const r=dlgRest(o);if(!r)return{go:true,r:0};const ok=await appConfirm("Клиент должен "+dlgN(r)+" ₽ — закрыть всё равно?","Закрыть сделку",false);return{go:!!ok,r};}
 async function dlgTask(o,r){try{
 const to=String(o.designer||o.owner||"").trim(),text="Клиент должен — позвонить: "+(String(o.client||"").trim()||"клиент");
 const has=()=>(S.shop.tasks||[]).some(t=>t.order===o.id&&t.status!=="done"&&(t.kind==="dolg"||/^(Должен |Клиент должен)/.test(t.text||"")));
@@ -14376,7 +14377,7 @@ const base=S.shop&&S.shop.edit,old=base&&base.id?shpById(base.id):null;if(!old||
 const st=f.elements.stage?String(f.elements.stage.value||""):"";if(st!=="closed")return;
 const nw=Object.assign({},old,shpFormRead(f)),r=dlgRest(nw);if(!r)return;
 ev.preventDefault();ev.stopImmediatePropagation();
-const ok=await appConfirm("Клиент должен "+dlgN(r)+" ₽ — закрыть всё равно?","Закрыть",false);if(!ok)return;
+const ok=await appConfirm("Клиент должен "+dlgN(r)+" ₽ — закрыть всё равно?","Закрыть сделку",false);if(!ok)return;
 f._dlgOk=1;if(f.requestSubmit)f.requestSubmit();else f.dispatchEvent(new Event("submit",{cancelable:true}));
 for(let i=0;i<40&&S.shop.edit;i++)await new Promise(z=>setTimeout(z,500));
 if(!S.shop.edit){const o2=shpById(old.id)||nw;if(o2.stage==="closed")dlgTask(o2,r);}},true);
@@ -17397,18 +17398,21 @@ const add=st.done?`<p class="dg-st">✓ Монтаж завершён ${esc(shpT
 :`<button type="button" class="btn primary dg-mdone" data-act="dg-mdone" data-id="${esc(o.id)}">Монтаж завершён</button><p class="muted dg-h">Нужны фото: все модули, фасады, столешница. Клиент получит уведомление и примет работу без вас.</p>`;
 return h.replace(/<\/div>\s*$/,add+"</div>");};}
 function dgDoneModal(id){const o=shpById(id);if(!o)return;document.getElementById("dgDM")?.remove();const files=[];
-const m=document.createElement("div");m.className="modal";m.id="dgDM";
-const draw=()=>{m.querySelector(".dg-ph").innerHTML=files.map((f,i)=>`<li><img src="${URL.createObjectURL(f)}" alt="Фото ${i+1}"><button type="button" data-rm="${i}" aria-label="Убрать фото">✕</button></li>`).join("");const b=m.querySelector('[data-x="go"]');b.disabled=!files.length;b.textContent=files.length?`Отправить клиенту · фото: ${files.length}`:"Сначала добавьте фото";};
-m.innerHTML=`<div class="modal-card dg-dm"><h2 style="margin:0 0 4px">Монтаж завершён</h2><p class="muted" style="margin:0 0 10px">Сфотографируйте все модули, фасады и столешницу. Фото сохранятся в заказе с датой и временем — это доказательство состояния мебели.</p>
+let had=(()=>{try{const H=S.shop.hd&&S.shop.hd[id];const a=H&&H.hand&&Array.isArray(H.hand.photos)?H.hand.photos.length:0;return Math.max(a,+(o.hand&&o.hand.photos)||0);}catch(_){return 0;}})();
+const m=document.createElement("div");m.className="modal";m.id="dgDM";m.dataset.ownx="1";
+const draw=()=>{m.querySelector(".dg-ph").innerHTML=files.map((f,i)=>`<li><img src="${URL.createObjectURL(f)}" alt="Фото ${i+1}"><button type="button" data-rm="${i}" aria-label="Убрать фото">✕</button></li>`).join("");const b=m.querySelector('[data-x="go"]');b.disabled=!files.length&&!had;b.textContent=files.length?`Отправить клиенту · фото: ${had+files.length}`:had?`Монтаж завершён — отправить клиенту (фото: ${had})`:"Сначала добавьте фото";};
+m.innerHTML=`<div class="modal-card dg-dm"><h2 style="margin:0 0 4px">Монтаж завершён</h2><p class="muted" style="margin:0 0 10px">${had?`В сделке уже есть фото после монтажа: ${had}. Можно отправить клиенту сразу или добавить ещё.`:"Сфотографируйте все модули, фасады и столешницу. Фото сохранятся в заказе с датой и временем — это доказательство состояния мебели."}</p>
     <div class="smn-acts"><label class="btn primary"><input type="file" accept="image/*" capture="environment" hidden data-in="cam">Снять камерой</label><label class="btn"><input type="file" accept="image/*" multiple hidden data-in="gal">Из галереи</label></div>
     <ul class="dg-ph"></ul><div class="smn-acts"><button type="button" class="btn primary" data-x="go" disabled>Сначала добавьте фото</button><button type="button" class="btn" data-x="close">Отмена</button></div></div>`;
 document.body.appendChild(m);draw();
 m.addEventListener("change",e=>{const i=e.target;if(!i.dataset||!i.dataset.in)return;[...i.files].slice(0,20).forEach(f=>files.push(f));i.value="";draw();});
 m.addEventListener("click",async e=>{const r=e.target.closest("[data-rm]");if(r){files.splice(+r.dataset.rm,1);return draw();}
 if(e.target===m||e.target.closest('[data-x="close"]'))return m.remove();
-const go=e.target.closest('[data-x="go"]');if(!go||!files.length||go.disabled)return;go.disabled=true;let n=0;
+const go=e.target.closest('[data-x="go"]');if(!go||(!files.length&&!had)||go.disabled)return;go.disabled=true;let n=0;
 for(const f of files){go.textContent=`Загружаю фото ${n+1} из ${files.length}…`;let b64="";try{b64=await siteShrink(f);}catch(_){continue;}const j=await shpPost({action:"handPhoto",id,photo:b64});if(j)n++;}
-if(!n){go.disabled=false;draw();toast("Фото не загрузились — проверьте связь");return;}
+if(files.length&&!n&&!had){go.disabled=false;draw();toast("Фото не загрузились — проверьте связь");return;}
+if(n){had+=n;files.splice(0);}
+go.textContent="Отправляю клиенту…";
 const d=await shpPost({action:"handDone",id});if(!d){go.disabled=false;draw();return;}
 m.remove();if(S.shop.hd)delete S.shop.hd[id];if(S.shop.dg)delete S.shop.dg[id];toast("Монтаж завершён — клиенту отправлено уведомление");
 const k=await shpPost({action:"clientLink",id,link3d:typeof shpK3d==="function"?shpK3d(o):""});if(k&&k.token&&typeof shpKModal==="function"){o.kOn=true;shpKModal(o,shpKUrl(k.token));}
@@ -20431,7 +20435,7 @@ if(!data){toast("Не получилось прочитать "+x.name);continue
 const j=await shpPost({action:"dfileAdd",order:id,name:pre+shpToday().split("-").reverse().join(".")+" "+name,mime,data,hide:kind!=="act"});if(j&&j.file){n++;if(S.df&&Array.isArray(S.df[id]))S.df[id].push(j.file);}}
 if(n){toast(kind==="act"?"Акт вложен — зарплата по заказу пойдёт":"Договор сохранён");if(S.docs.map&&S.docs.map!=="err"){const x=S.docs.map[id]||(S.docs.map[id]={dg:0,act:0});x[kind==="act"?"act":"dg"]+=n;}}
 return n;}
-function docPick(id,kind,after){const i=document.createElement("input");i.type="file";i.accept="image/*,application/pdf";i.multiple=true;i.capture="";i.style.display="none";document.body.appendChild(i);
+function docPick(id,kind,after){const i=document.createElement("input");i.type="file";i.accept="image/*,application/pdf";i.multiple=true;i.style.display="none";document.body.appendChild(i);
 i.addEventListener("change",async()=>{const f=i.files;i.remove();if(f&&f.length){await docUpload(id,kind,f);after&&after();}});i.click();}
 function docModal(){document.getElementById("docM")?.remove();const m=document.createElement("div");m.className="modal";m.id="docM";const st={f:"all"};
 m._draw=()=>{const M=S.docs.map,L=(S.shop.orders||[]).filter(o=>o.stage!=="lost").slice().sort((a,b)=>(b.created||0)-(a.created||0));
@@ -20450,11 +20454,20 @@ m.addEventListener("click",e=>{const b=e.target.closest("[data-dc]");if(e.target
 if(a==="f"){st.f=b.dataset.v;m._draw();}else if(a==="open"){m.remove();shpGo("order",b.dataset.id);}else if(a==="up")docPick(b.dataset.id,b.dataset.k,()=>m._draw());});}
 document.addEventListener("click",e=>{const t=e.target.closest&&e.target.closest('[data-act="doc-open"]');if(!t)return;e.stopPropagation();docModal();},true);
 if(typeof shpMoreHtml==="function"){const _dcM=shpMoreHtml;shpMoreHtml=function(){let h=String(_dcM.apply(this,arguments));if(docCan())h=`<div class="firm-top dir-top doc-top"><span>📁 <b>Документы</b> — договоры и акты</span><button type="button" class="btn" data-act="doc-open">Открыть</button></div>`+h;return h;};}
+function docActDate(ms){try{return new Date(+ms).toLocaleDateString("ru-RU");}catch(_){return"";}}
 function docActCard(o){if(!docActNeed(o))return"";const L=S.df&&S.df[o.id];if(L===undefined&&typeof tzFiles==="function")tzFiles(o.id);
-const A=Array.isArray(L)?L.filter(f=>String(f.name).indexOf(DOC_ACT)===0):[];
-return`<div class="card doc-act"><div class="shp-rc-h"><h2>📄 Акт сдачи</h2>${A.length?`<b class="doc-ok">✓ вложен</b>`:`<b class="doc-no">нужен</b>`}</div>
-    ${A.length?`<ul class="tz-fl">${A.map(f=>`<li class="tz-f"><a href="${esc(f.url)}" target="_blank" rel="noopener">🖼 ${esc(String(f.name).slice(DOC_ACT.length))}</a><small class="muted">${esc(f.who||"")}</small></li>`).join("")}</ul>`:`<p class="muted" style="margin:4px 0 8px">Клиент расписывается пальцем на вашем телефоне — или сфотографируйте подписанный бумажный акт. Без акта зарплата за этот заказ не начислится.</p>`}
-    ${A.length?"":`<button type="button" class="btn primary doc-big" data-act="doc-sign" data-id="${esc(o.id)}">✍ Клиент подпишет здесь, на телефоне</button>`}<button type="button" class="btn doc-big" data-act="doc-act" data-id="${esc(o.id)}" style="margin-top:8px">📷 ${A.length?"Добавить ещё фото":"Или сфотографировать бумажный"}</button></div>`;}
+const A=Array.isArray(L)?L.filter(f=>String(f.name).indexOf(DOC_ACT)===0).sort((a,b)=>(+a.when||0)-(+b.when||0)):[];
+if(A.length){const f0=A[0],canClose=o.stage==="montazh"&&typeof shpCanStage==="function"&&shpCanStage(o,"closed");
+return`<div class="card doc-act doc-done"><div class="shp-rc-h"><h2>📄 Акт сдачи</h2><b class="doc-ok">✓ подписан</b></div>
+      <p class="doc-sig">✓ Акт подписан · ${esc(docActDate(f0.when))} · <a href="${esc(f0.url)}" target="_blank" rel="noopener">Открыть</a></p>
+      ${A.length>1?`<ul class="tz-fl">${A.slice(1).map(f=>`<li class="tz-f"><a href="${esc(f.url)}" target="_blank" rel="noopener">🖼 ${esc(String(f.name).slice(DOC_ACT.length))}</a><small class="muted">${esc(f.who||"")}</small></li>`).join("")}</ul>`:""}
+      ${canClose?`<button type="button" class="btn primary doc-big" data-act="doc-close" data-id="${esc(o.id)}">✓ Поставить «Сдано» — акт есть</button>`:""}
+      <button type="button" class="linkbtn doc-more" data-act="doc-act" data-id="${esc(o.id)}">+ Добавить фото акта</button></div>`;}
+return`<div class="card doc-act"><div class="shp-rc-h"><h2>📄 Акт сдачи</h2><b class="doc-no">нужен</b></div>
+    <p class="muted" style="margin:4px 0 8px">Клиент расписывается пальцем на вашем телефоне — или прикрепите фото подписанного бумажного акта. Без акта зарплата за этот заказ не начислится.</p>
+    <button type="button" class="btn primary doc-big" data-act="doc-sign" data-id="${esc(o.id)}">✍ Сдать заказ — подписать акт</button></div>`;}
+document.addEventListener("click",async e=>{const t=e.target.closest&&e.target.closest('[data-act="doc-close"]');if(!t)return;e.stopPropagation();const d=shpById(t.dataset.id);if(!d||t.disabled)return;
+t.disabled=true;const ok=await shpMoveStage(d,"closed");t.disabled=false;if(ok){toast("Заказ сдан");try{shpRenderKeep();}catch(_){try{render();}catch(__){}}}},true);
 if(typeof shpOrderHtml==="function"){const _dcO=shpOrderHtml;shpOrderHtml=function(){const h=_dcO.apply(this,arguments);try{const o=shpById(S.shop.cur);if(!o)return h;const c=docActCard(o);if(!c)return h;const i=String(h).indexOf('<div class="card');
 return i>0?h.slice(0,i)+c+h.slice(i):h+c;}catch(_){return h;}};}
 document.addEventListener("click",e=>{const t=e.target.closest&&e.target.closest('[data-act="doc-act"]');if(!t)return;e.stopPropagation();docPick(t.dataset.id,"act",()=>shpRenderKeep());},true);
@@ -20471,42 +20484,74 @@ try{return(window.APP_FIRM&&S.firmX&&S.firmX.name)||(S.site&&S.site.firmName)||d
 function aktText(){return"Работы по заказу выполнены полностью: мебель изготовлена, доставлена, собрана и установлена. Заказчик осмотрел мебель. Претензий по качеству, комплектности и срокам у заказчика нет.";}
 async function aktModal(id){const o0=shpById(id);if(!o0)return;document.getElementById("aktM")?.remove();
 let I=null;try{I=await shpGet("action=aktInfo&id="+encodeURIComponent(id),true);}catch(_){}I=I&&I.ok?I:{};
-const o=Object.assign({},o0,{client:I.client||o0.client,kind:I.kind||o0.kind,address:I.addr||o0.address,num:I.num||o0.num});o.dogTxt=I.date?"к договору № "+(o.num||"")+" от "+new Date(I.date).toLocaleDateString("ru-RU"):"к заказу № "+(o.num||"");o.isp=I.ip?"ИП "+I.ip:aktFirm();o.hph=+I.hph||0;const offCan=!!(S.shop&&(S.shop.tech||S.shop.role==="office"));let where=offCan?"of":"ob";
-const m=document.createElement("div");m.className="modal akt-m";m.id="aktM";const now=new Date(),dt=now.toLocaleDateString("ru-RU");
-m.innerHTML=`<div class="modal-card akt-c"><div class="akt-top"><h2 style="margin:0">Акт сдачи</h2><button type="button" class="btn sm" data-ak="x">Отмена</button></div>
-    <p class="muted" style="margin:2px 0 10px">${esc(o.isp)} · ${esc(o.dogTxt)} · ${esc(dt)}</p>
+const o=Object.assign({},o0,{client:I.client||o0.client,kind:I.kind||o0.kind,address:I.addr||o0.address,num:I.num||o0.num});o.dogTxt=I.date?"к договору № "+(o.num||"")+" от "+new Date(I.date).toLocaleDateString("ru-RU"):"к заказу № "+(o.num||"");o.isp=I.ip?"ИП "+I.ip:aktFirm();
+o.hph=Math.max(+I.hph||0,(()=>{try{const H=S.shop.hd&&S.shop.hd[id];return H&&H.hand&&Array.isArray(H.hand.photos)?H.hand.photos.length:0;}catch(_){return 0;}})(),(()=>{try{return+(o0.hand&&o0.hand.photos)||0;}catch(_){return 0;}})());
+const offCan=!!(S.shop&&(S.shop.tech||S.shop.role==="office"));let where=offCan?"of":"ob";
+const m=document.createElement("div");m.className="modal akt-m";m.id="aktM";m.dataset.ownx="1";const now=new Date(),dt=now.toLocaleDateString("ru-RU");
+m.innerHTML=`<div class="modal-card akt-c"><div class="akt-top"><button type="button" class="akt-x" data-akt="x" aria-label="Закрыть">Отмена</button><h2>Акт сдачи</h2><span class="akt-sp" aria-hidden="true"></span></div>
+    <p class="muted akt-sub">${esc(o.isp)} · ${esc(o.dogTxt)} · ${esc(dt)}</p>
     <div class="akt-doc"><b>Заказчик: ${esc(o.client||"—")}</b>${o.kind?`<span>Изделие: ${esc(o.kind)}</span>`:""}${o.address?`<span>Адрес: ${esc(o.address)}</span>`:""}<p>${esc(aktText())}</p></div>
     <label class="akt-l">Замечания (если есть)<textarea id="aktRem" rows="2" maxlength="600" placeholder="Нет"></textarea></label>
-    ${offCan?`<div class="akt-wh" role="group" aria-label="Где подписывают"><span>Где подписывают:</span><button type="button" data-ak="wh" data-v="ob">На объекте</button><button type="button" data-ak="wh" data-v="of">В офисе</button></div><p class="muted akt-whn" id="aktWhn"></p>`:""}
-    <div class="akt-ph"><button type="button" class="btn" data-ak="pm">📷 Фото готовой мебели <small>(обязательно)</small></button><button type="button" class="btn" data-ak="pc">🙂 Фото клиента <small>(по желанию)</small></button></div><div class="akt-th" id="aktTh"></div>
+    ${offCan?`<div class="akt-wh" role="group" aria-label="Где подписывают"><span>Где подписывают:</span><button type="button" data-akt="wh" data-v="ob">На объекте</button><button type="button" data-akt="wh" data-v="of">В офисе</button></div>`:""}<p class="muted akt-whn" id="aktWhn"></p>
+    <div class="akt-ph"><button type="button" class="btn" data-akt="pm"></button><button type="button" class="btn" data-akt="pc"></button></div><div class="akt-th" id="aktTh"></div>
     <label class="akt-l">ФИО заказчика<input id="aktName" maxlength="80" value="${esc(o.client||"")}" autocomplete="off"></label>
-    <div class="akt-sl"><span>Подпись заказчика</span><button type="button" class="linkbtn" data-ak="clr">Стереть</button></div>
+    <div class="akt-sl"><span>Подпись заказчика</span><button type="button" class="linkbtn" data-akt="clr">Стереть</button></div>
     <canvas id="aktCv" class="akt-cv" aria-label="Поле для подписи пальцем"></canvas>
-    <p class="akt-err" id="aktErr"></p>
-    <button type="button" class="btn primary akt-go" data-ak="ok">✍ Подписать акт</button></div>`;
+    <div class="akt-pap"><span>Или бумажный акт, подписанный от руки:</span><div class="akt-pb"><button type="button" class="btn" data-akt="pcam">📷 Снять камерой</button><button type="button" class="btn" data-akt="pgal">🖼 Из галереи / PDF</button></div><ul class="akt-pl" id="aktPl"></ul></div>
+    <p class="akt-err" id="aktErr" role="alert"></p>
+    <button type="button" class="btn primary akt-go" data-akt="ok">✍ Подписать акт</button></div>`;
 document.body.appendChild(m);
-const cv=m.querySelector("#aktCv"),ctx=cv.getContext("2d");let drawn=0,last=null;
-const PH={m:[],c:[]};const thDraw=()=>{const t=m.querySelector("#aktTh");t.innerHTML=PH.m.concat(PH.c).map(x=>`<img src="${x.u}" alt="">`).join("");m.querySelector('[data-ak="pm"]').innerHTML=PH.m.length?`✓ Фото мебели: ${PH.m.length} <small>(ещё)</small>`:`📷 Фото готовой мебели <small>(обязательно)</small>`;m.querySelector('[data-ak="pc"]').innerHTML=PH.c.length?`✓ Фото клиента <small>(заменить)</small>`:`🙂 Фото клиента <small>(по желанию)</small>`;};
-const whDraw=()=>{m.querySelectorAll('[data-ak="wh"]').forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===where)));const n=m.querySelector("#aktWhn");if(n)n.textContent=where==="of"?("В офисе фото мебели не обязательно."+(o.hph?" В сделке уже есть фото после монтажа: "+o.hph+".":"")):"";const pb=m.querySelector('[data-ak="pm"] small');if(pb&&!PH.m.length)pb.textContent=where==="of"?"(по желанию)":"(обязательно)";};
-setTimeout(whDraw,0);
+const cv=m.querySelector("#aktCv"),ctx=cv.getContext("2d");let drawn=0,last=null,busy=false;
+const PH={m:[],c:[],p:[]},ST={sig:null,pap:{},stage:false};
+const started=()=>!!ST.sig||Object.keys(ST.pap).length>0;
+const needPh=()=>where!=="of"&&!o.hph&&!PH.p.length;
+const goLbl=()=>{const b=m.querySelector('[data-akt="ok"]');if(!b||busy||started())return;b.textContent=PH.p.length&&drawn<40?"✓ Акт подписан — сохранить":"✍ Подписать акт";};
+const thDraw=()=>{m.querySelector("#aktTh").innerHTML=PH.m.concat(PH.c).map(x=>`<img src="${x.u}" alt="">`).join("");
+m.querySelector('[data-akt="pm"]').innerHTML=PH.m.length?`✓ Фото мебели: ${PH.m.length} <small>(ещё)</small>`:`📷 Фото готовой мебели <small>${needPh()?"(обязательно)":"(по желанию)"}</small>`;
+m.querySelector('[data-akt="pc"]').innerHTML=PH.c.length?`✓ Фото клиента <small>(заменить)</small>`:`🙂 Фото клиента <small>(по желанию)</small>`;
+m.querySelector("#aktPl").innerHTML=PH.p.map((x,i)=>`<li>${x.u?`<img src="${x.u}" alt="Акт, стр. ${i+1}">`:`<span class="akt-pdf">📄 ${esc(x.f.name||"файл")}</span>`}<button type="button" data-akt="prm" data-i="${i}" aria-label="Убрать страницу ${i+1}">✕</button></li>`).join("");
+const n=m.querySelector("#aktWhn");if(n)n.textContent=where==="of"?"В офисе фото мебели не обязательно."+(o.hph?" В сделке уже есть фото после монтажа: "+o.hph+".":""):o.hph?"В сделке уже есть фото после монтажа: "+o.hph+" — новые не обязательны.":PH.p.length?"Бумажный акт прикреплён — фото мебели по желанию.":"Сфотографируйте готовую мебель — фото попадут в акт.";
+m.querySelectorAll('[data-akt="wh"]').forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===where)));goLbl();};
+thDraw();
 const pick=(k)=>{const i=document.createElement("input");i.type="file";i.accept="image/*";i.setAttribute("capture",k==="c"?"user":"environment");if(k==="m")i.multiple=true;i.style.display="none";document.body.appendChild(i);
 i.addEventListener("change",()=>{const L=[...(i.files||[])];i.remove();if(k==="c")PH.c=[];L.slice(0,k==="m"?3:1).forEach(f=>{const u=URL.createObjectURL(f),im=new Image();im.onload=()=>{PH[k].push({u,im});if(PH.m.length>3)PH.m=PH.m.slice(-3);thDraw();};im.src=u;});});i.click();};
+const pickP=cam=>{const i=document.createElement("input");i.type="file";i.accept=cam?"image/*":"image/*,application/pdf";if(cam)i.setAttribute("capture","environment");else i.multiple=true;i.style.display="none";document.body.appendChild(i);
+i.addEventListener("change",()=>{const L=[...(i.files||[])];i.remove();L.slice(0,Math.max(0,10-PH.p.length)).forEach(f=>PH.p.push({f,u:/^image\//.test(f.type||"")?URL.createObjectURL(f):""}));thDraw();});i.click();};
 const fit=()=>{const r=cv.getBoundingClientRect(),d=window.devicePixelRatio||1;cv.width=Math.round(r.width*d);cv.height=Math.round(r.height*d);ctx.setTransform(d,0,0,d,0,0);ctx.lineWidth=2.6;ctx.lineCap="round";ctx.lineJoin="round";ctx.strokeStyle="#111";ctx.fillStyle="#fff";ctx.fillRect(0,0,r.width,r.height);drawn=0;};
 setTimeout(fit,30);
 const pt=e=>{const r=cv.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top];};
-cv.addEventListener("pointerdown",e=>{e.preventDefault();cv.setPointerCapture(e.pointerId);last=pt(e);ctx.beginPath();ctx.arc(last[0],last[1],1.2,0,7);ctx.fillStyle="#111";ctx.fill();});
+cv.addEventListener("pointerdown",e=>{e.preventDefault();try{cv.setPointerCapture(e.pointerId);}catch(_){}last=pt(e);ctx.beginPath();ctx.arc(last[0],last[1],1.2,0,7);ctx.fillStyle="#111";ctx.fill();});
 cv.addEventListener("pointermove",e=>{if(!last)return;const p=pt(e);ctx.beginPath();ctx.moveTo(last[0],last[1]);ctx.lineTo(p[0],p[1]);ctx.stroke();drawn+=Math.hypot(p[0]-last[0],p[1]-last[1]);last=p;});
-const up=()=>{last=null;};cv.addEventListener("pointerup",up);cv.addEventListener("pointercancel",up);
-m.addEventListener("click",async e=>{const b=e.target.closest("[data-ak]");if(!b)return;const a=b.dataset.ak;
-if(a==="x"){m.remove();return;}if(a==="clr"){fit();return;}if(a==="pm"||a==="pc"){pick(a==="pm"?"m":"c");return;}if(a==="wh"){where=b.dataset.v;whDraw();return;}
-if(a==="ok"){const er=m.querySelector("#aktErr"),nm=m.querySelector("#aktName").value.trim(),rem=m.querySelector("#aktRem").value.trim();
-if(!PH.m.length&&where!=="of"){er.textContent="Сфотографируйте готовую мебель — без фото акт не сохранится";return;}
-if(drawn<40){er.textContent="Нужна подпись заказчика — распишитесь пальцем в белом поле";return;}if(!nm){er.textContent="Впишите ФИО заказчика";return;}
-b.disabled=true;b.textContent="Сохраняю акт…";er.textContent="";
-o.where=where;const data=aktImage(o,nm,rem,cv,now,PH);const j=await shpPost({action:"dfileAdd",order:id,name:DOC_ACT+shpToday().split("-").reverse().join(".")+" подписан на телефоне ("+nm.slice(0,40)+")"+(where==="of"?" · в офисе":"")+".jpg",mime:"image/jpeg",data,hide:false});
-if(!j||!j.file){b.disabled=false;b.textContent="✍ Подписать акт";er.textContent="Не сохранилось — проверьте интернет и нажмите ещё раз";return;}
-if(S.df&&Array.isArray(S.df[id]))S.df[id].push(j.file);if(S.docs.map&&S.docs.map!=="err"){const x=S.docs.map[id]||(S.docs.map[id]={dg:0,act:0});x.act++;}
-m.remove();toast("Акт подписан и сохранён — зарплата по заказу пойдёт");try{shpRenderKeep();}catch(_){}}});}
+const up=()=>{last=null;goLbl();};cv.addEventListener("pointerup",up);cv.addEventListener("pointercancel",up);
+m.addEventListener("click",async e=>{const b=e.target.closest("[data-akt]");if(!b)return;const a=b.dataset.akt;
+if(a==="x"){if(!busy)m.remove();return;}if(busy)return;
+if(a==="clr"){fit();goLbl();return;}if(a==="pm"||a==="pc"){pick(a==="pm"?"m":"c");return;}if(a==="wh"){where=b.dataset.v;thDraw();return;}
+if(a==="pcam"||a==="pgal"){pickP(a==="pcam");return;}if(a==="prm"){if(Object.keys(ST.pap).length)return;PH.p.splice(+b.dataset.i,1);thDraw();return;}
+if(a!=="ok")return;
+const er=m.querySelector("#aktErr"),nm=m.querySelector("#aktName").value.trim(),rem=m.querySelector("#aktRem").value.trim(),hasSig=drawn>=40,hasPap=PH.p.length>0;
+if(!started()){
+if(!hasSig&&!hasPap){er.textContent="Нужна подпись заказчика пальцем в белом поле — или прикрепите фото бумажного акта";return;}
+if(needPh()){er.textContent="Сфотографируйте готовую мебель — в сделке ещё нет фото после монтажа";return;}
+if(hasSig&&!nm){er.textContent="Впишите ФИО заказчика";return;}}
+busy=true;b.disabled=true;er.textContent="";m.classList.add("akt-busy");
+const fail=t=>{busy=false;b.disabled=false;m.classList.remove("akt-busy");b.textContent="↻ Повторить";er.textContent=t;};
+const keep=f=>{if(S.df&&Array.isArray(S.df[id]))S.df[id].push(f);else if(S.df&&S.df[id]!=="busy")delete S.df[id];if(S.docs.map&&S.docs.map!=="err"){const x=S.docs.map[id]||(S.docs.map[id]={dg:0,act:0});x.act++;}};
+const day=shpToday().split("-").reverse().join(".");
+if(hasSig&&!ST.sig){b.textContent="Сохраняю акт…";o.where=where;let data="";try{data=aktImage(o,nm||o.client||"",rem,cv,now,PH);}catch(_){}
+const j=data?await shpPost({action:"dfileAdd",order:id,name:DOC_ACT+day+" подписан на телефоне ("+(nm||"").slice(0,40)+")"+(where==="of"?" · в офисе":"")+".jpg",mime:"image/jpeg",data,hide:false}):null;
+if(!j||!j.file)return fail("Акт не сохранился — нет связи. Подпись и фото остались здесь — нажмите «Повторить».");ST.sig=j.file;keep(j.file);}
+for(let i=0;i<PH.p.length;i++){if(ST.pap[i])continue;const x=PH.p[i].f;b.textContent=PH.p.length>1?`Сохраняю акт: стр. ${i+1} из ${PH.p.length}…`:"Сохраняю акт…";
+let data="",mime=x.type||"application/octet-stream",fname=x.name||"акт";
+try{if(/^image\//.test(mime)&&typeof tzImg==="function"){data=await tzImg(x);mime="image/jpeg";fname=fname.replace(/\.[a-z0-9]+$/i,"")+".jpg";}
+else{if(x.size>25*1048576)return fail("«"+fname+"» больше 25 МБ — снимите акт камерой");data=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]||"");r.onerror=()=>res("");r.readAsDataURL(x);});}}catch(_){data="";}
+if(!data)return fail("Не получилось прочитать «"+fname+"» — выберите другой файл");
+const j=await shpPost({action:"dfileAdd",order:id,name:DOC_ACT+day+" бумажный акт"+(PH.p.length>1?" стр. "+(i+1):"")+" · "+fname,mime,data,hide:false});
+if(!j||!j.file)return fail("Акт не сохранился — нет связи. Фото акта остались здесь — нажмите «Повторить».");ST.pap[i]=j.file;keep(j.file);}
+let closed=false;
+if(!ST.stage){const d=shpById(id);if(d&&d.stage==="montazh"&&typeof shpCanStage==="function"&&shpCanStage(d,"closed")){b.textContent="Ставлю «Сдано»…";let ok=false;try{ok=await shpMoveStage(d,"closed");}catch(_){}
+if(!ok&&d.stage!=="closed")return fail("Акт сохранён ✓. Этап «Сдано» не поставился — нажмите «Повторить» или закройте окно: акт уже в сделке.");closed=true;}
+ST.stage=true;}
+busy=false;m.remove();toast(closed?"Акт подписан — заказ сдан":"Акт подписан и сохранён");try{shpRenderKeep();}catch(_){try{render();}catch(__){}}});}
 function aktImage(o,nm,rem,cv,now,PH){const W=1240,H=1754,c=document.createElement("canvas");c.width=W;c.height=H;const g=c.getContext("2d");
 g.fillStyle="#fff";g.fillRect(0,0,W,H);g.fillStyle="#111";g.textBaseline="top";const F=(s,b)=>g.font=(b?"700 ":"400 ")+s+"px Arial, sans-serif";
 const wrap=(t,x,y,w,lh)=>{const ws=String(t).split(/\s+/);let ln="";for(const wd of ws){const tt=ln?ln+" "+wd:wd;if(g.measureText(tt).width>w&&ln){g.fillText(ln,x,y);y+=lh;ln=wd;}else ln=tt;}if(ln){g.fillText(ln,x,y);y+=lh;}return y;};
@@ -20528,11 +20573,10 @@ document.addEventListener("click",e=>{const t=e.target.closest&&e.target.closest
 body:has(#aktM) .nt-fab,body:has(#aktM) .ai-fab{display:none!important;visibility:hidden!important;pointer-events:none!important}.akt-ph{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px}.akt-ph .btn{min-width:0;width:100%;white-space:normal;padding:6px 8px;min-height:50px;font-size:14px;line-height:1.2;flex-direction:column}.akt-ph small{font-weight:400;opacity:.75}.akt-th{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.akt-th img{width:72px;height:72px;object-fit:cover;border-radius:10px}.akt-wh{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 4px;font-weight:600}.akt-wh button{flex:1 1 110px;min-height:42px;border-radius:12px;border:1px solid var(--line,#444);background:none;color:inherit;font:inherit}.akt-wh button[aria-pressed=true]{border-color:var(--accent,var(--frame-strong));box-shadow:inset 0 0 0 1px var(--accent,rgba(0,0,0,0.35))}.akt-whn{font-size:13px;margin:0 0 8px;min-height:0}.akt-err{color:#e5484d;min-height:1.2em;margin:6px 0}.akt-go{width:100%;min-height:54px}`;document.head.appendChild(st);})();
 function docDealOf(oid){try{const k=String(oid||"").toUpperCase();return k?(S.shop&&S.shop.orders||[]).find(o=>String(o.t3d||"").toUpperCase()===k&&docActNeed(o)):null;}catch(_){return null;}}
 if(typeof viewOrder==="function"){const _dcV=viewOrder;viewOrder=function(){const h=String(_dcV.apply(this,arguments));try{if(typeof clientMode==="function"&&clientMode())return h;if(!(typeof shpPin==="function"&&shpPin()))return h;
-const d=S.current&&!S.current.loading?docDealOf(S.current.orderId):null;if(!d)return h;const c=docActCard(d).replace('<div class="card doc-act">','<div class="card doc-act doc-act-o">').replace("<h2>📄 Акт сдачи</h2>",`<h2>📄 Акт сдачи <small class="muted" style="font-weight:400">· ${esc(d.client||"")}</small></h2>`);
+const d=S.current&&!S.current.loading?docDealOf(S.current.orderId):null;if(!d)return h;const c=docActCard(d).replace('<div class="card doc-act','<div class="card doc-act doc-act-o').replace("<h2>📄 Акт сдачи</h2>",`<h2>📄 Акт сдачи <small class="muted" style="font-weight:400">· ${esc(d.client||"")}</small></h2>`);
 let i=h.indexOf('<div class="op-pic');if(i<0)i=h.indexOf('<div class="op-tiles');return i>0?h.slice(0,i)+c+h.slice(i):c+h;}catch(_){return h;}};}
 function docNextBtn(d){try{if(!d||typeof shpCanStage!=="function")return"";
 if(d.stage==="cex"&&shpCanStage(d,"montazh"))return`<button type="button" class="btn primary doc-big doc-nx" data-act="doc-nx" data-id="${esc(d.id)}" data-v="montazh">🚚 Готово на производстве — перенести на «Монтаж»</button>`;
-if(d.stage==="montazh"&&shpCanStage(d,"closed")){const L=S.df&&S.df[d.id],A=Array.isArray(L)&&L.some(f=>String(f.name).indexOf(DOC_ACT)===0);if(A)return`<button type="button" class="btn doc-big doc-nx" data-act="doc-nx" data-id="${esc(d.id)}" data-v="closed">✓ Акт есть — закрыть заказ</button>`;}
 }catch(_){}return"";}
 if(typeof viewOrder==="function"){const _dcV2=viewOrder;viewOrder=function(){const h=String(_dcV2.apply(this,arguments));try{if(typeof clientMode==="function"&&clientMode())return h;if(!(typeof shpPin==="function"&&shpPin())||!S.current||S.current.loading)return h;
 const k=String(S.current.orderId||"").toUpperCase(),d=(typeof opDeal==="function"&&opDeal(S.current.orderId))||(S.shop&&S.shop.orders||[]).find(o=>String(o.t3d||"").toUpperCase()===k);const b=docNextBtn(d);if(!b)return h;
@@ -20541,7 +20585,7 @@ document.addEventListener("click",async e=>{const t=e.target.closest&&e.target.c
 const nx=t.dataset.v;if(nx==="closed"&&!confirm("Закрыть заказ? Акт сдачи вложен."))return;t.disabled=true;
 const ok=await shpMoveStage(d,nx);t.disabled=false;if(ok){toast(nx==="montazh"?"Перенесено на «Монтаж»":"Заказ закрыт");try{render();}catch(_){}}},true);
 {const st=document.createElement("style");st.textContent=".doc-nx{margin:0 0 12px;width:100%}";document.head.appendChild(st);}
-function dlState(d){if(!d||!d.deadline||!d.master||/^(closed|lost)$/.test(d.stage||""))return null;const ok=d.dlOk&&d.dlOk.d===d.deadline&&shpNorm(d.dlOk.m||"")===shpNorm(d.master);return{ok,mine:shpNorm(d.master)===shpMe()};}
+function dlState(d){if(!d||!d.deadline||!d.master||/^(closed|lost)$/.test(d.stage||"")||(typeof w24Sdano==="function"&&w24Sdano(d)))return null;const ok=d.dlOk&&d.dlOk.d===d.deadline&&shpNorm(d.dlOk.m||"")===shpNorm(d.master);return{ok,mine:shpNorm(d.master)===shpMe()};}
 function dlCard(d){const s=dlState(d);if(!s)return"";const dd=shpDM(d.deadline);
 if(s.ok)return`<p class="dl-ok">🗓 Срок до <b>${esc(dd)}</b> — ✓ согласован с мастером${s.mine?"":" ("+esc(d.master)+")"}</p>`;
 if(!s.mine)return`<p class="dl-wait">🗓 Срок до <b>${esc(dd)}</b> — мастер ${esc(d.master)} ещё не подтвердил</p>`;
@@ -20555,6 +20599,25 @@ document.addEventListener("click",async e=>{const t=e.target.closest&&e.target.c
 let text="";if(!yes){const r=prompt("Почему не успеваете? К какому сроку реально? (напишем дизайнеру)","");if(r===null)return;text=r;}
 t.disabled=true;const j=await shpPost({action:"dlAgree",id:d.id,ok:yes,text});t.disabled=false;if(!j||j.ok===false){if(j&&j.msg)toast(j.msg);return;}
 d.dlOk=j.dlOk||null;toast(yes?"Срок согласован — дизайнеру сообщили":"Дизайнеру сообщили, что не успеваете");try{render();}catch(_){}},true);
+const W24_DEBT_FROM=new Date(2026,10,8).getTime();
+let W24CS=0;
+function w24ActOf(o){try{if(!o||!o.id)return false;const M=S.docs&&S.docs.map;if(M&&M!=="err"&&M[o.id]&&M[o.id].act)return true;
+const L=S.df&&S.df[o.id];if(Array.isArray(L)&&L.some(f=>String(f.name).indexOf(DOC_ACT)===0))return true;
+const h=o.hand;if(h&&+h.acc>0&&+h.acc>=(+h.last||0))return true;}catch(_){}return false;}
+function w24Sdano(o){return!W24CS&&!!o&&o.stage==="montazh"&&w24ActOf(o);}
+function w24Debt(o){if(!o||o.stage==="lost")return false;if(!shpClosed(o))return true;return w24Sdano(o)||(o.stage==="closed"&&(+o.stageAt||0)>=W24_DEBT_FROM);}
+{const _w24C=shpClosed;shpClosed=function(o){return _w24C.apply(this,arguments)||w24Sdano(o);};}
+if(typeof shpCanStage==="function"){const _w24CS=shpCanStage;shpCanStage=function(){W24CS++;try{return _w24CS.apply(this,arguments);}finally{W24CS--;}};}
+if(typeof shpMyOpen==="function"){const _w24MO=shpMyOpen;shpMyOpen=function(){const r=_w24MO.apply(this,arguments);try{const me=shpMe(),today=shpToday();const L=(S.shop.tasks||[]).filter(t=>t.status!=="done"&&shpNorm(t.to)===me&&!(t.order&&shpById(t.order)&&shpClosed(shpById(t.order))));
+return Object.assign({},r,{n:L.length,late:L.filter(t=>shpTaskWhen(t,today)==="late").length});}catch(_){return r;}};}
+function w24DocsKick(){try{if(S.docs.kick||!docCan()||!S.shop||!S.shop.loaded)return;S.docs.kick=1;if(S.docs.map!==null)return;
+Promise.resolve(docLoad()).then(()=>{try{if((S.shop.orders||[]).some(o=>o.stage==="montazh"&&w24ActOf(o))&&!document.querySelector(".modal"))render();}catch(_){}});}catch(_){}}
+{const _w24R=render;render=function(){const r=_w24R.apply(this,arguments);try{w24DocsKick();}catch(_){}return r;};}
+(function(){const st=document.createElement("style");st.textContent=`.akt-top{display:grid;grid-template-columns:minmax(72px,auto) 1fr minmax(72px,auto);align-items:center;gap:8px;margin:0 0 4px;min-height:44px}.akt-top h2{margin:0;text-align:center;font-size:17px;font-weight:700}.akt-x{justify-self:start;min-height:44px;padding:0 4px;border:0;background:none;color:var(--accent,var(--ink));font:inherit;font-size:17px;cursor:pointer}.akt-sub{margin:2px 0 10px;text-align:center;font-size:13px}
+.akt-pap{display:grid;gap:8px;margin:12px 0 4px;padding:10px 12px;border:1px dashed var(--line,#444);border-radius:14px;font-weight:600;font-size:14px}.akt-pb{display:grid;grid-template-columns:1fr 1fr;gap:8px}.akt-pb .btn{min-width:0;width:100%;min-height:46px;font-size:14px;white-space:normal}
+.akt-pl{list-style:none;margin:0;padding:0;display:flex;gap:6px;flex-wrap:wrap}.akt-pl:empty{display:none}.akt-pl li{position:relative}.akt-pl img{width:72px;height:96px;object-fit:cover;border-radius:8px;display:block}.akt-pdf{display:flex;align-items:center;min-height:44px;padding:0 10px;border:1px solid var(--line,#444);border-radius:8px;font-weight:400;font-size:13px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.akt-pl button{position:absolute;right:-6px;top:-6px;width:28px;height:28px;border-radius:14px;border:0;background:rgba(46,50,56,.85);color:#fff;font-size:13px;cursor:pointer}.akt-busy .akt-go{opacity:.7}
+.doc-sig{margin:4px 0 8px;font-size:15px;color:#30a46c;font-weight:600}.doc-sig a{color:inherit;text-decoration:underline}.doc-more{display:block;margin:6px 0 0;min-height:44px;font-size:14px}`;document.head.appendChild(st);})();
 {const st=document.createElement("style");st.textContent=".dl-ok,.dl-wait{margin:0 0 10px;font-size:14px}.dl-ok{color:#30a46c}.dl-wait{color:var(--w2-yt)}.dl-card{border-color:rgba(255,214,10,.45)}.dl-card h2{margin:0;font-size:18px}.dl-b{display:flex;gap:8px;flex-wrap:wrap}.dl-b .btn{flex:1 1 130px;min-height:48px}";document.head.appendChild(st);}
 function qwList(c,q){const L=[],ch=q.chk2||{},all=(c.items||[]).concat((c.P&&c.P.L)||[]),has=re=>all.some(x=>re.test(x.n||"")&&(+x.q||0)>0),N=v=>Math.round(+v||0).toLocaleString("ru-RU");
 const sh=+c.sh||0,fronts=all.some(x=>x.cat==="front"&&(+x.q||0)>0)||(q.pr||[]).length>0||(q.dr||[]).length>0;
@@ -23058,7 +23121,7 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
 (function(){const st=document.createElement("style");st.textContent=`.cpd-ov .cpd-r{fill:#DCEBFF;stroke:#0A84FF;stroke-width:2.5;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))}.cpd-ov[data-st="bad"] .cpd-r{fill:#FFE3E0;stroke:#FF453A}.cpd-ov[data-st="move"] .cpd-r{fill:#E3F8E9;stroke:#30D158}.cpd-ov .cpd-t{fill:#000;font-weight:700;font-family:system-ui,sans-serif}
 html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}.cpd-note{margin:4px 0}`;document.head.appendChild(st);})();
 const CHK_ON=false;
-const CHK_BUILD="4a24d42be8";
+const CHK_BUILD="5bf0a27df7";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){try{return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{};}catch(_){return{};}}
@@ -23725,7 +23788,7 @@ if(x)x.click();else m.remove();setTimeout(()=>{if(m.isConnected&&m.getClientRect
 const OVW=[{s:".zk-sh",c:m=>{if(typeof m._close==="function")m._close();else m.remove();}},{s:"#scanWin",c:()=>{try{scanClose();}catch(_){const w=document.getElementById("scanWin");if(w)w.remove();}}},
 {s:"#v2New",c:ovBtnClose,x:1},{s:"body>.modal:not(#v2All)",c:ovBtnClose,x:1},{s:".pq-full",c:ovBtnClose},{s:"#aiM",c:ovBtnClose,x:1}];
 const OVS={skip:0};
-function ovXTop(n){requestAnimationFrame(()=>{try{if(!n.isConnected||n.querySelector(":scope>.v2ovx"))return;const tb=[...n.querySelectorAll("button,[role=button]")].filter(b=>{const r=b.getBoundingClientRect();return r.width>0&&r.top<150&&r.bottom>0;});
+function ovXTop(n){requestAnimationFrame(()=>{try{if(!n.isConnected||n.querySelector(":scope>.v2ovx")||n.hasAttribute("data-ownx"))return;const tb=[...n.querySelectorAll("button,[role=button]")].filter(b=>{const r=b.getBoundingClientRect();return r.width>0&&r.top<150&&r.bottom>0;});
 if(tb.some(b=>/закрыть|назад|close/i.test((b.getAttribute("aria-label")||"")+" "+(b.dataset.act||"")+" "+b.textContent)||/^\s*[‹✕×]/.test(b.textContent)))return;
 n.insertAdjacentHTML("afterbegin",`<button type="button" class="v2ovx v2ovf" aria-label="Закрыть">${bkIcX()}<span>Закрыть</span></button>`);const b=n.querySelector(":scope>.v2ovx");
 if(n.id==="aiM"){b.classList.add("v2ovai");document.body.appendChild(b);n._v2btn=b;}
@@ -29769,7 +29832,7 @@ return"Технолог 3D · "+({orders:"заказы",order:"заказ",part:
 function otzDev(){const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)),ua=navigator.userAgent||"";
 const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
 return(w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":"");}
-function otzVer(){const b="4a24d42be8";return/^__/.test(b)?"стенд":b;}
+function otzVer(){const b="5bf0a27df7";return/^__/.test(b)?"стенд":b;}
 function otzDet(){return{view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()};}
 function otzCss(){if(OTZ.css&&Date.now()-OTZ.cssAt<120000)return OTZ.css;let css="";for(const sh of Array.from(document.styleSheets)){try{for(const r of Array.from(sh.cssRules||[]))css+=r.cssText+"\n";}catch(_){}}
 OTZ.css=css.replace(/:root\b/g,"html").replace(/@font-face\s*\{[^}]*\}/g,"");OTZ.cssAt=Date.now();return OTZ.css;}
@@ -39431,7 +39494,8 @@ if(S.shop.v2cl){const seen=new Set(L.map(o=>o.id)),own=(r==="office"||r==="maste
 const hot=o=>{const w=V.why(o);return!!(w&&w.c==="R");};
 if(f==="hot")L=L.filter(o=>!shpClosed(o)&&hot(o));
 else if(f==="mine")L=L.filter(o=>{if(r==="office"||r==="master"){try{return Z().mine(o,r,me);}catch(_){return false;}}return shpNorm(o.owner)===me||shpNorm(o.master)===me||shpNorm(o.designer)===me;});
-else if(f==="pay")L=L.filter(o=>!shpClosed(o)&&rest(o)>0);
+else if(f==="pay"){const seen=new Set(L.map(o=>o.id));L=L.filter(o=>!shpClosed(o)&&rest(o)>0);
+if(typeof w24Debt==="function"){const own=(r==="office"||r==="master")&&!S.shop.zjAll,ids=new Set(L.map(o=>o.id));(D.all||D.L).forEach(o=>{if(ids.has(o.id)||!shpClosed(o)||!w24Debt(o)||!(rest(o)>0))return;if(own&&!seen.has(o.id)){let m=false;try{m=!!Z().mine(o,r,me);}catch(_){}if(!m)return;}ids.add(o.id);L.push(o);});}}
 const O=D.L.filter(o=>!shpClosed(o));return{L,r,me,n:O.length,hot:O.filter(hot).length,other:(r==="office"||r==="master")&&(D.all||[]).some(o=>!shpClosed(o)&&!(()=>{try{return Z().mine(o,r,me);}catch(_){return true;}})())};}
 function tile(o){const w=V.why(o),p=V.pct(o),hot=w&&w.c==="R",st=V.stage(o);
 return`<button type="button" class="v2tl${hot?" hot":""}" data-act="shp-open" data-id="${E(o.id)}" aria-label="${E(V.cl(o)+", "+V.kind(o)+". "+st+(w?". "+w.t:""))}"><div class="v2pod v2tp">${V.th(o,"v2pm v2tm3",70)}<i class="v2flr" aria-hidden="true"></i></div>`
@@ -43348,7 +43412,7 @@ document.body.appendChild(m);
 });
 })();
 (function(){
-const BUILD="4a24d42be8";/*cehqr-build*/
+const BUILD="5bf0a27df7";/*cehqr-build*/
 try{const u=new URL(location.href);if(u.searchParams.has("v")){u.searchParams.delete("v");history.replaceState(history.state,"",u.pathname+u.search+u.hash);}}catch(_){}
 window.__w24VerWait=0;
 if(/^__/.test(BUILD))return;
@@ -43431,7 +43495,7 @@ addEventListener("online",()=>{upd();try{if(typeof toast==="function")toast("И�
 <script>
 (function(){
 if(window.__w24obnov)return;window.__w24obnov=1;
-const BUILD="4a24d42be8";/*cehqr-build*/
+const BUILD="5bf0a27df7";/*cehqr-build*/
 const SEEN="w24-upd-seen",CACHE="w24-upd-cache";
 const ls={get(k){try{return localStorage.getItem(k);}catch(_){return null;}},set(k,v){try{localStorage.setItem(k,v);}catch(_){}}};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
