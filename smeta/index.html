@@ -21429,11 +21429,76 @@ if(body.length>9e6)throw new Error("Модель слишком большая �
 let j=null;try{const r=await fetch(S.site.stagesUrl,{method:"POST",body});j=await r.json();}catch(_){j=null;}
 if(!j)throw new Error("Нет связи — проверьте интернет");if(!j.ok)throw new Error(j.msg||"Не получилось сохранить");
 return{id:j.id,name:j.name||o.order,n:o.parts.length,upd:!!j.upd,o};}
-const L=await b3dAll(),have=new Set(L.map(x=>x.id).concat(Object.keys(S.orders||{}))),at=new Date().toISOString();let id="";
+const L=await b3dAll(),have=b3sTaken(L),at=new Date().toISOString();let id="";
 for(let k=0;k<50&&(!id||have.has(id));k++){const r=new Uint32Array(1);(window.crypto||{getRandomValues:a=>{a[0]=Math.random()*4294967295;return a;}}).getRandomValues(r);id="B3D"+String(r[0]%1e6).padStart(6,"0");}
-o.exportedAt=at;await b3dDbDo("readwrite",st=>st.put({id,name:o.order,count:o.parts.length,createdAt:at,order:o}));
+o.exportedAt=at;let rec={id,name:o.order,count:o.parts.length,createdAt:at,order:o,dk:b3sHex(12)};await b3dDbDo("readwrite",st=>st.put(rec));
 try{if(typeof navigator!=="undefined"&&navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});}catch(_){}
-return{id,name:o.order,n:o.parts.length,local:true,o};}
+let up=await b3sPut(rec);
+for(let t=0;t<3&&(up.err==="taken"||up.err==="deleted");t++){const h2=b3sTaken(await b3dAll());h2.add(rec.id);let nid="";for(let k=0;k<50&&(!nid||h2.has(nid));k++)nid="B3D"+String(parseInt(b3sHex(4),16)%1e6).padStart(6,"0");
+const old=rec.id;rec=Object.assign({},rec,{id:nid});delete rec.srvErr;delete rec.srvSig;await b3dDbDo("readwrite",st=>{st.delete(old);return st.put(rec);});up=await b3sPut(rec);}
+return{id:rec.id,name:o.order,n:o.parts.length,local:true,srv:!!up.ok,why:up.why||"",o};}
+const B3S={list:null,at:0,lb:false,ord:Object.create(null),sync:0,busy:false,tried:Object.create(null),p:null};
+const B3S_MAX=4e6;
+const B3S_PERM=/^(role|oid|empty|big|enc|dk|firm|deleted|taken)$/;
+function b3sTaken(L){const s=new Set((L||[]).map(x=>String(x&&x.id||"").toUpperCase()).concat(Object.keys(S.orders||{}).map(k=>k.toUpperCase())));
+try{(typeof dloList==="function"?dloList():[]).forEach(x=>s.add(String(x&&x.id||"").toUpperCase()));}catch(_){}return s;}
+function b3sHex(n){const a=new Uint8Array(n);try{crypto.getRandomValues(a);}catch(_){for(let i=0;i<n;i++)a[i]=Math.random()*256|0;}return[...a].map(x=>x.toString(16).padStart(2,"0")).join("");}
+function b3sPin(){try{return typeof shpPin==="function"&&S.shop?String(shpPin()||""):"";}catch(_){return"";}}
+function b3sSig(p){let h=5381;p=String(p||"");for(let i=0;i<p.length;i++)h=((h<<5)+h+p.charCodeAt(i))|0;return(h>>>0).toString(36);}
+function b3sOff(){return!!(window.APP_FIRM||window.APP_DEMO);}
+function b3sUrl(){return(S.site&&S.site.stagesUrl)||"";}
+function b3sQ(u){let w="";try{w=S.who||(typeof shpWho==="function"?shpWho():"");}catch(_){}
+return u+(u.indexOf("?")<0?"?":"&")+(w?"who="+encodeURIComponent(w)+"&":"");}
+function b3sChk(){const s=b3sSig(b3sPin());if(B3S.p!==s){B3S.p=s;B3S.list=null;B3S.ord=Object.create(null);B3S.at=0;B3S.tried=Object.create(null);}}
+const b3sSave=x=>b3dDbDo("readwrite",st=>st.put(x)).catch(()=>{});
+function b3sB64(u8){let s="";for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");}
+function b3sUnb64(s){s=String(s).replace(/-/g,"+").replace(/_/g,"/");s+="=".repeat((4-s.length%4)%4);return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}
+const B3S_KEEP=["format","version","source","order","exportedAt","parts","fasteners","bfurn","auto","skipped","colors","textures","walls","anims","furnMesh"];
+function b3sClean(o){const c={};B3S_KEEP.forEach(k=>{if(o&&o[k]!==undefined)c[k]=o[k];});return c;}
+async function b3sEnc(txt){const raw=new Uint8Array(32),iv=new Uint8Array(12);crypto.getRandomValues(raw);crypto.getRandomValues(iv);
+const key=await crypto.subtle.importKey("raw",raw,"AES-GCM",false,["encrypt"]);const ct=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(txt)));
+return{enc:{v:1,iv:b3sB64(iv),ct:b3sB64(ct)},k:b3sB64(raw)};}
+async function b3sDec(enc,k){const key=await crypto.subtle.importKey("raw",b3sUnb64(k),"AES-GCM",false,["decrypt"]);
+return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:b3sUnb64(enc.iv)},key,b3sUnb64(enc.ct))));}
+const B3S_WHY={pin:"войдите своим PIN — отправлю сам",role:"на сервер модели кладёт технолог или директор",big:"модель больше 4 МБ — мастерам не отправить",net:"нет связи — отправлю сам при следующем открытии",
+often:"сервер пока занят — отправлю позже",hours:"сейчас нерабочее время — отправлю позже",lic:"подписка закончилась",deleted:"этот номер удалён",taken:"номер занят моделью с другого телефона",demo:"демо"};
+async function b3sPut(x){
+if(window.APP_DEMO)return{ok:false,err:"demo",why:B3S_WHY.demo};if(window.APP_FIRM||!x||!x.order||!Array.isArray(x.order.parts))return{ok:false,err:"firm",why:""};
+const pin=b3sPin(),u=b3sUrl();if(!pin||!u)return{ok:false,err:"pin",why:B3S_WHY.pin};
+const r0=S.shop&&S.shop.role;if(r0&&r0!=="tech")return{ok:false,err:"role",why:B3S_WHY.role};
+if(!/^[0-9a-f]{16,32}$/.test(String(x.dk||""))){x.dk=b3sHex(12);await b3sSave(x);}
+let txt;try{txt=JSON.stringify(b3sClean(x.order));}catch(_){return{ok:false,err:"empty",why:""};}
+if(txt.length>B3S_MAX){x.srvErr="big";x.srvSig=b3sSig(pin);await b3sSave(x);return{ok:false,err:"big",why:B3S_WHY.big+` (${Math.round(txt.length/1048576)} МБ)`};}
+let E;try{E=await b3sEnc(txt);}catch(_){return{ok:false,err:"net",why:"телефон не смог зашифровать модель"};}
+const body=JSON.stringify({action:"b3dPut",pin,who:S.who||"",oid:x.id,dk:x.dk,name:x.name||"",n:x.order.parts.length,enc:E.enc,k:E.k});E=null;
+let j=null;try{const r=await fetch(u,{method:"POST",body});j=await r.json();}catch(_){j=null;}
+if(j&&j.ok&&j.id===x.id){x.srv=Date.now();delete x.srvErr;delete x.srvSig;await b3sSave(x);B3S.at=0;return{ok:true};}
+const err=j?String(j.error||"x"):"net";
+if(B3S_PERM.test(err)){x.srvErr=err;x.srvSig=b3sSig(pin);await b3sSave(x);}
+return{ok:false,err,why:B3S_WHY[err]||(j&&j.msg)||"сервер не принял"};}
+async function b3sSyncAll(){
+if(b3sOff()||B3S.busy||Date.now()-B3S.sync<60000||!b3sPin()||!b3sUrl())return;const r0=S.shop&&S.shop.role;if(r0&&r0!=="tech")return;
+B3S.busy=true;B3S.sync=Date.now();let n=0;
+try{const L=await b3dAll(),sg=b3sSig(b3sPin());for(const x of L){if(!x||x.srv||(x.srvErr&&x.srvSig===sg)||(B3S.tried[x.id]&&Date.now()-B3S.tried[x.id]<600000))continue;B3S.tried[x.id]=Date.now();const r=await b3sPut(x);if(r.ok)n++;}}catch(_){}finally{B3S.busy=false;}
+if(n&&typeof siteLoadIndex==="function"){try{await siteLoadIndex();if(typeof render==="function")render();}catch(_){}}}
+async function b3sListGet(){
+if(b3sOff())return null;b3sChk();const u=b3sUrl(),pin=b3sPin();if(!u||!pin||B3S.lb||Date.now()-B3S.at<60000)return null;B3S.lb=true;B3S.at=Date.now();
+try{const r=await fetch(b3sQ(u)+"action=b3dList&pin="+encodeURIComponent(pin),{cache:"no-store"});const j=await r.json();if(j&&j.ok&&Array.isArray(j.orders)){B3S.list=j.orders;return j.orders;}if(j&&j.error==="pin")B3S.list=[];}catch(_){}finally{B3S.lb=false;}
+return null;}
+function b3sMerge(){if(b3sOff())return 0;b3sChk();if(!b3sPin())return 0;let n=0;const del=new Set((typeof dloList==="function"?dloList():[]).map(x=>String(x&&x.id||"").toUpperCase()));
+(B3S.list||[]).forEach(o=>{const id=String(o&&o.id||"").toUpperCase();if(!/^B3D\d{6}$/.test(id)||del.has(id)||!S.orders||S.orders[id])return;
+S.orders[id]={id,name:String(o.name||id),count:+o.count||0,createdAt:o.exportedAt||"",exportedAt:o.exportedAt||"",srv:1};n++;});return n;}
+async function b3sOrder(id){
+const J=v=>new Response(JSON.stringify(v),{headers:{"Content-Type":"application/json"}});
+if(b3sOff())return new Response("",{status:404});b3sChk();
+if(B3S.ord[id])return J(B3S.ord[id]);
+const u=b3sUrl(),pin=b3sPin();if(!u||!pin)return new Response("",{status:404});
+let j=null;try{const r=await fetch(b3sQ(u)+"action=b3dGet&pin="+encodeURIComponent(pin)+"&o="+encodeURIComponent(id),{cache:"no-store"});j=await r.json();}catch(_){j=null;}
+if(j&&j.ok&&j.id===id&&j.enc&&j.k){let o=null;try{o=await b3sDec(j.enc,j.k);}catch(_){o=null;}j.k=null;
+if(o&&Array.isArray(o.parts)){B3S.ord[id]=o;if(S.orders&&!S.orders[id])S.orders[id]={id,name:String(j.name||o.order||id),count:o.parts.length,createdAt:"",srv:1};return J(o);}
+return J({deny:1});}
+if(j&&(j.error==="role"||j.error==="pin"))return J({deny:1});
+return new Response("",{status:404});}
 function b3dSay(msg){msg=String(msg||"");toast(msg);
 try{const t=typeof document!=="undefined"&&document.getElementById?document.getElementById("toast"):null;if(t&&msg.length>50){clearTimeout(toast._t);toast._t=setTimeout(()=>{t.hidden=true;},Math.min(15000,3200+60*msg.length));}}catch(_){}}
 let b3dPickAt=0;
@@ -21454,7 +21519,7 @@ say(/[а-яё]/i.test(msg)?msg
 try{if(typeof siteLoadIndex==="function")await siteLoadIndex();}catch(_){}
 const bi=r.o._b3d||{},more=[];
 if(r.o.skipped)more.push(`не прочитал контур у ${r.o.skipped} дет. — проверьте по Базису`);if(bi.bent)more.push(`гнутые панели (${bi.bent}) пока не показываем`);if(bi.lost)more.push(`моделей без деталей: ${bi.lost}`);
-b3dSay(`Готово: «${r.name}» — ${r.n} дет.${bi.models?` (моделей в файле: ${bi.models})`:""}${r.upd?" (прежний заказ заменён)":""}${r.local?" (на этом устройстве)":""}`+more.map(s=>" · "+s).join(""));
+b3dSay(`Готово: «${r.name}» — ${r.n} дет.${bi.models?` (моделей в файле: ${bi.models})`:""}${r.upd?" (прежний заказ заменён)":""}${r.local?(r.srv?" — сохранена на сервере: её откроют все, кто видит сделку":` (пока только на этом телефоне${r.why?": "+r.why:""})`):""}`+more.map(s=>" · "+s).join(""));
 if(typeof goOrder==="function")goOrder(r.id);else if(typeof render==="function")render();return r;}
 finally{b3dPickAt=0;}}
 if(typeof window!=="undefined"&&typeof document!=="undefined"){
@@ -21466,15 +21531,15 @@ const putRec=x=>b3dDbDo("readwrite",st=>st.put(x)).catch(()=>{});
 const jr=v=>new Response(JSON.stringify(v),{headers:{"Content-Type":"application/json"}});
 window.__fetchHook=async function(u,o){const us=typeof u==="string"?u:(u&&u.url)||"",nx=()=>(prev||window.__fetch0||fetch)(u,o),su=S.site&&S.site.stagesUrl;
 const m=/(?:^|\/)orders\/(B3D\d{1,8})\.json(?:[?#].*)?$/.exec(us);
-if(m&&!/script\.google/.test(us)){const x=await getRec(m[1]);return x?jr(x.order):new Response("",{status:404});}
+if(m&&!/script\.google/.test(us)){const x=await getRec(m[1]);return x?jr(x.order):b3sOrder(m[1].toUpperCase());}
 if(/script\.google/.test(us)&&o&&typeof o.body==="string"&&o.body.indexOf('"dbgGeo"')>0){try{const b=JSON.parse(o.body);if(b&&b.action==="dbgGeo"&&isLoc(b.oid))return jr({ok:true,local:1});}catch(_){}}
 if(!su||us.indexOf(su)!==0)return nx();
 try{
 if(o&&o.body&&typeof o.body==="string"&&String(o.method||"").toUpperCase()==="POST"){let b=null;try{b=JSON.parse(o.body);}catch(_){b=null;}
 if(b&&b.action==="delOrdAdd"&&Array.isArray(b.ids)&&b.ids.some(isLoc)){
-const loc=[];for(const id of b.ids){if(isLoc(id)&&await getRec(id))loc.push(String(id).toUpperCase());}
+const loc=[],up=[];for(const id of b.ids){const x=isLoc(id)?await getRec(id):null;if(x){loc.push(String(id).toUpperCase());if(x.srv&&!b3sOff())up.push(String(id).toUpperCase());}}
 for(const id of loc)await b3dDbDo("readwrite",st=>st.delete(id)).catch(()=>{});
-const rest=b.ids.filter(id=>!loc.includes(String(id).toUpperCase()));if(!rest.length)return jr({ok:true,at:Date.now(),local:loc.length});
+const rest=b.ids.filter(id=>!loc.includes(String(id).toUpperCase())||up.includes(String(id).toUpperCase()));if(!rest.length)return jr({ok:true,at:Date.now(),local:loc.length});
 return(prev||window.__fetch0||fetch)(u,Object.assign({},o,{body:JSON.stringify(Object.assign({},b,{ids:rest}))}));}
 if(b&&!b.action&&b.order&&isLoc(b.order)&&b.stage!=null){const x=await getRec(b.order);if(x){
 x.stages=x.stages||{};(Array.isArray(b.items)?b.items.map(i=>i&&i.code):[b.code]).forEach(c=>{if(c)x.stages[c]=b.stage;});await putRec(x);return jr({ok:true,local:1});}}}
@@ -21485,13 +21550,14 @@ if(/[?&]action=all(?:&|$)/.test(us)){const r=await nx();try{const j=await r.clon
 return nx();};
 if(typeof siteLoadIndex==="function"){const _b3dLI=siteLoadIndex;siteLoadIndex=async function(){const r=await _b3dLI.apply(this,arguments);
 try{const L=await b3dAll();
-for(const x of L)S.orders[x.id]={id:x.id,name:x.name,count:x.count,client:"модель с этого устройства",createdAt:x.createdAt,exportedAt:x.createdAt,local:1};}catch(_){}
+for(const x of L)S.orders[x.id]={id:x.id,name:x.name,count:x.count,client:x.srv&&!b3sOff()?"модель с этого телефона · на сервере":"только на этом телефоне",createdAt:x.createdAt,exportedAt:x.createdAt,local:1,srv:x.srv?1:0};}catch(_){}
+try{if(!b3sOff()){b3sMerge();b3sListGet().then(L=>{if(L&&b3sMerge()&&typeof render==="function")render();}).catch(()=>{});setTimeout(()=>{b3sSyncAll().catch(()=>{});},3000);}}catch(_){}
 return r;};}
 if(typeof dloHide==="function"){const _b3dDH=dloHide;dloHide=function(){const keep={};Object.keys(S.orders||{}).forEach(id=>{if(S.orders[id]&&S.orders[id].local)keep[id]=S.orders[id];});
 const r=_b3dDH.apply(this,arguments);Object.assign(S.orders,keep);return r;};}
 if(typeof viewOrders==="function"){const _b3dVO=viewOrders;viewOrders=function(){const h=_b3dVO.apply(this,arguments);
 const can=(typeof siteIsAdmin==="function"&&siteIsAdmin())||(S.shop&&S.shop.tech);if(!can)return h;
-return`<div class="b3d-bar"><label class="btn sm" for="b3dFile" title="Модель без Базиса: файл Базиса «….b3d», «….bln» или SketchUp «….w24.json» → 3D, детали, раскрой, присадка (ставится сама — проверьте). Хранится на этом устройстве."><span>📥 Загрузить модель</span></label></div>`+h;};}
+return`<div class="b3d-bar"><label class="btn sm" for="b3dFile" title="Модель без Базиса: файл Базиса «….b3d», «….bln» или SketchUp «….w24.json» → 3D, детали, раскрой, присадка (ставится сама — проверьте). Зашифрованная копия уходит на сервер: модель откроют все, кто видит сделку, к которой она закреплена."><span>📥 Загрузить модель</span></label></div>`+h;};}
 }
 const b3dInp=()=>{let i=document.getElementById("b3dFile");if(!i&&document.body){i=document.createElement("input");i.type="file";i.id="b3dFile";i.hidden=true;document.body.appendChild(i);}return i;};
 if(!window.APP_FIRM){if(document.body)b3dInp();else document.addEventListener("DOMContentLoaded",b3dInp,{once:true});}
@@ -22993,7 +23059,7 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
 (function(){const st=document.createElement("style");st.textContent=`.cpd-ov .cpd-r{fill:#DCEBFF;stroke:#0A84FF;stroke-width:2.5;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))}.cpd-ov[data-st="bad"] .cpd-r{fill:#FFE3E0;stroke:#FF453A}.cpd-ov[data-st="move"] .cpd-r{fill:#E3F8E9;stroke:#30D158}.cpd-ov .cpd-t{fill:#000;font-weight:700;font-family:system-ui,sans-serif}
 html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}.cpd-note{margin:4px 0}`;document.head.appendChild(st);})();
 const CHK_ON=false;
-const CHK_BUILD="2e50fee4dc";
+const CHK_BUILD="4a24d42be8";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){try{return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{};}catch(_){return{};}}
@@ -29704,7 +29770,7 @@ return"Технолог 3D · "+({orders:"заказы",order:"заказ",part:
 function otzDev(){const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)),ua=navigator.userAgent||"";
 const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
 return(w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":"");}
-function otzVer(){const b="2e50fee4dc";return/^__/.test(b)?"стенд":b;}
+function otzVer(){const b="4a24d42be8";return/^__/.test(b)?"стенд":b;}
 function otzDet(){return{view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()};}
 function otzCss(){if(OTZ.css&&Date.now()-OTZ.cssAt<120000)return OTZ.css;let css="";for(const sh of Array.from(document.styleSheets)){try{for(const r of Array.from(sh.cssRules||[]))css+=r.cssText+"\n";}catch(_){}}
 OTZ.css=css.replace(/:root\b/g,"html").replace(/@font-face\s*\{[^}]*\}/g,"");OTZ.cssAt=Date.now();return OTZ.css;}
@@ -43283,7 +43349,7 @@ document.body.appendChild(m);
 });
 })();
 (function(){
-const BUILD="2e50fee4dc";/*cehqr-build*/
+const BUILD="4a24d42be8";/*cehqr-build*/
 try{const u=new URL(location.href);if(u.searchParams.has("v")){u.searchParams.delete("v");history.replaceState(history.state,"",u.pathname+u.search+u.hash);}}catch(_){}
 window.__w24VerWait=0;
 if(/^__/.test(BUILD))return;
@@ -43366,7 +43432,7 @@ addEventListener("online",()=>{upd();try{if(typeof toast==="function")toast("И�
 <script>
 (function(){
 if(window.__w24obnov)return;window.__w24obnov=1;
-const BUILD="2e50fee4dc";/*cehqr-build*/
+const BUILD="4a24d42be8";/*cehqr-build*/
 const SEEN="w24-upd-seen",CACHE="w24-upd-cache";
 const ls={get(k){try{return localStorage.getItem(k);}catch(_){return null;}},set(k,v){try{localStorage.setItem(k,v);}catch(_){}}};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
