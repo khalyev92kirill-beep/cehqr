@@ -1306,7 +1306,7 @@ for(let k=0;k<4;k++){const i=f*4+k,u=uv.getX(i),v=uv.getY(i);if(rot)uv.setXY(i,v
 uv.needsUpdate=true;
 }
 var W3M={col:{},src:{},pv:0};
-const W3F={on:true,px:1.5,aa:true,U:null,v2:null};
+const W3F={on:true,px:1.0,aa:true,pof:3,pou:3,U:null,v2:null};
 try{if(window.__w3thin)W3F.on=false;}catch(_){}
 function w3FatInit(){if(W3F.U||typeof THREE==="undefined")return;
 W3F.U={resolution:{value:new THREE.Vector2(1,1)},linewidth:{value:3},hw:{value:1.5}};W3F.v2=new THREE.Vector2();
@@ -1314,7 +1314,7 @@ W3F.vs=`uniform vec2 resolution; uniform float linewidth; attribute vec3 aEnd; a
 void trimSeg(const in vec4 a, inout vec4 b){ float n=-0.5*projectionMatrix[3][2]/projectionMatrix[2][2]; float t=(n-a.z)/(b.z-a.z); b.xyz=mix(a.xyz,b.xyz,t); }
 void main(){ float asp=resolution.x/resolution.y; vec4 s=modelViewMatrix*vec4(position,1.0); vec4 e=modelViewMatrix*vec4(aEnd,1.0);
   bool persp=projectionMatrix[2][3]==-1.0;
-  if(persp){ if(s.z<0.0&&e.z>=0.0) trimSeg(s,e); else if(e.z<0.0&&s.z>=0.0) trimSeg(e,s); s.xyz*=0.9988; e.xyz*=0.9988; }
+  if(persp){ if(s.z<0.0&&e.z>=0.0) trimSeg(s,e); else if(e.z<0.0&&s.z>=0.0) trimSeg(e,s); s.xyz*=0.9997; e.xyz*=0.9997; }
   vec4 cs=projectionMatrix*s; vec4 ce=projectionMatrix*e; vec2 d=ce.xy/ce.w-cs.xy/cs.w; d.x*=asp; float L=length(d); d=L>1e-7?d/L:vec2(1.0,0.0);
   vec2 o=vec2(d.y,-d.x); d.x/=asp; o.x/=asp;
   vec4 c=aC.y<0.5?cs:ce; vec2 off=(o*aC.x+d*(aC.y<0.5?-1.0:1.0))*(linewidth/resolution.y);
@@ -1343,6 +1343,7 @@ e.add(f);e.material.visible=false;e.userData.fat=f;return f;}catch(err){console.
 function w3VC(mat){if(!mat||!mat.vertexColors)return mat;
 mat.onBeforeCompile=sh=>{sh.fragmentShader=sh.fragmentShader.replace("#include <color_fragment>","#if defined( USE_COLOR ) && !defined( USE_COLOR_ALPHA )\n if(vColor.r+vColor.g+vColor.b<2.999) diffuseColor.rgb=vColor;\n#else\n#include <color_fragment>\n#endif");};
 mat.customProgramCacheKey=()=>"w3vc";return mat;}
+function w3Part(mat){w3VC(mat);if(mat&&W3F.on){mat.polygonOffset=true;mat.polygonOffsetFactor=W3F.pof;mat.polygonOffsetUnits=W3F.pou;}return mat;}
 function w3EdgeRGB(m){const k=String(m||"").split(/[\r\n]/)[0].trim();if(!k)return null;
 let hex=W3M.col[k]||(S.matColors&&S.matColors[k])||"";if(!hex){const h=w3NameCol(k,true);if(h!=null)hex="#"+h.toString(16).padStart(6,"0");}
 if(!/^#[0-9a-f]{6}$/i.test(hex))return null;const v=parseInt(hex.slice(1),16);let r=(v>>16&255)/255,g=(v>>8&255)/255,b=(v&255)/255;if(r+g+b>2.994)r=g=b=0.998;return[r,g,b];}
@@ -1364,6 +1365,22 @@ items.forEach(m=>{const p=typeof partByCode==="function"?partByCode(m.userData.c
 const mt=m.userData._m0||m.material;mats[k]={tex:!!mt.map,col:"#"+mt.color.getHexString(),src:W3M.src[p.material]||W3M.src[k]||(S.textures&&(S.textures[p.material]||S.textures[k])?"заказ":S.matColors&&S.matColors[k]?"цвет из файла":"по названию")};});
 return{fat,n:items.length,px:W3F.px,dev:W3F.U?W3F.U.linewidth.value-1:0,on:W3F.on,mats};}
 try{window.__w3={M:W3M,F:W3F,edge:m=>w3EdgeRGB(m)};}catch(_){}
+function w3BgDark(){try{return(localStorage.getItem("cehqr-3dbg")||"")==="dark";}catch(_){return false;}}
+try{window.__w3.bgDark=()=>w3BgDark();}catch(_){}
+let W3_LEGMAT=null;
+function w3Leg(sx,sy,sz,K){const r=Math.min(sx,sz)/2,rp=Math.min(r,32),rs=Math.max(5,Math.min(rp*0.42,13)),rf=Math.max(rs+3,Math.min(rp*0.72,22)),hf=Math.min(14,sy*0.15),hp=Math.min(5,sy*0.06);
+const pts=[[0,0],[rf,0],[rf,hf],[rs,hf+2],[rs,sy-hp-3],[rp*0.75,sy-hp-1],[rp,sy-hp],[rp,sy],[0,sy]].map(([x,y])=>new THREE.Vector2(x*K,(y-sy/2)*K));
+if(!W3_LEGMAT)W3_LEGMAT=new THREE.MeshLambertMaterial({color:0x34373b});
+return new THREE.Mesh(new THREE.LatheGeometry(pts,18),W3_LEGMAT);}
+function w3Shadow(scene,lo,hi,floorY,C,K,dark){try{
+const W=hi[0]-lo[0],D=hi[2]-lo[2];if(!(W>0&&D>0))return null;const pad=Math.max(120,Math.min(W,D)*0.35),PW=W+pad*2,PD=D+pad*2;
+const c=document.createElement("canvas"),N=256,sx=N/PW,sz=N/PD;c.width=c.height=N;const g=c.getContext("2d");
+const blur=Math.max(6,pad*0.7*Math.min(sx,sz)),col=dark?"rgba(0,0,0,0.55)":"rgba(40,48,72,0.32)";
+g.shadowColor=col;g.shadowBlur=blur;g.shadowOffsetX=N*2;g.fillStyle=col;
+g.fillRect(pad*sx*0.9-N*2,pad*sz*0.9,W*sx+pad*sx*0.2,D*sz+pad*sz*0.2);
+const tx=new THREE.CanvasTexture(c),m=new THREE.Mesh(new THREE.PlaneGeometry(PW*K,PD*K),new THREE.MeshBasicMaterial({map:tx,transparent:true,depthWrite:false,opacity:1}));
+m.rotation.x=-Math.PI/2;m.position.set(((lo[0]+hi[0])/2-C[0])*K,(floorY-C[1])*K-0.0008,((lo[2]+hi[2])/2-C[2])*K);m.renderOrder=-5;m.raycast=()=>{};m.userData.w3shadow=1;m.userData.hole=1;
+scene.add(m);return m;}catch(e){console.warn("shadow",e);return null;}}
 function disposeAsm(){if(asm){cancelAnimationFrame(asm.raf);asm.loop&&asm.loop.stop();asm.batch&&asm.batch.stop();asm.ro&&asm.ro.disconnect();asm.renderer.dispose();asm=null;}}
 const FURN_MAT={};
 const WALL_COL={stena:0xe9e6df,pol:0xb89b7c,potolok:0xf4f3ef};
@@ -1380,10 +1397,10 @@ if(!n)return;const k=a+":"+(fc>=s/n?-1:1);vote[k]=(vote[k]||0)+(b[u+3]-b[u])*(b[
 const tot=Object.values(vote).reduce((x,y)=>x+y,0);
 let faces=Object.keys(vote).filter(k=>vote[k]>=tot*0.12).sort((x,y)=>vote[y]-vote[x]).slice(0,3);
 if(!faces.length)faces=["2:-1"];
-const T=20,m=300,R=rooms&&rooms[0]&&rooms[0].box,y0=R?Math.min(R[1],lo[1]):lo[1],y1=R?Math.max(R[4],hi[1]):Math.max(hi[1]+250,lo[1]+2500);
+const T=20,G=3,y0=lo[1],y1=hi[1];
 return faces.map(k=>{const a=+k.split(":")[0],s=+k.split(":")[1],u=a===0?2:0,b=[0,y0,0,0,y1,0];
-if(s<0){b[a]=lo[a]-T;b[a+3]=lo[a];}else{b[a]=hi[a];b[a+3]=hi[a]+T;}
-b[u]=lo[u]-(faces.includes(u+":-1")?T:m);b[u+3]=hi[u]+(faces.includes(u+":1")?T:m);
+if(s<0){b[a]=lo[a]-G-T;b[a+3]=lo[a]-G;}else{b[a]=hi[a]+G;b[a+3]=hi[a]+G+T;}
+b[u]=lo[u]-(faces.includes(u+":-1")?T+G:0);b[u+3]=hi[u]+(faces.includes(u+":1")?T+G:0);
 return{name:"Стена",kind:"stena",material:"Стена",mat0:"",L:0,W:0,T,box:b,frame:null,shape:null,c:"",tex:"",wall:1,auto:1};});}
 function asmWallList(walls,parts,lo,hi,opt){const W=Array.isArray(walls)?walls:[],rooms=W.filter(asmRoomBox),rest=W.filter(w=>!asmRoomBox(w));
 if((opt&&opt.focus)||(typeof realOn==="function"&&realOn()))return rest;
@@ -1419,9 +1436,11 @@ const b=r.b.map(Number),d=[b[3]-b[0],b[4]-b[1],b[5]-b[2]].sort((x,y)=>x-y);if(d[
 const m=String(r.m||"").split(/[\r\n]/)[0].trim(),n=String(r.n||"").split(/[\r\n]/)[0].trim();if(ASM_BODY_NO.test(m)||ASM_BODY_NO.test(n))return;
 out.push({n:n.slice(0,60),m:m.slice(0,60),b,g:Array.isArray(r.blk)?r.blk.map(String).join(" / ").slice(0,120):""});});}catch(_){}
 return out;}
-function asmWalls(scene,walls,C,K,dk3){
+function asmWalls(scene,walls,C,K,dk3,bgDk,floorY){
 const g=new THREE.Group();g.userData.w24walls=true;scene.add(g);
-const OP=dk3?{stena:0.16,pol:0.42,potolok:0.08,okno:0.22}:{stena:0.22,pol:0.5,potolok:0.1,okno:0.3},NEAR=0.035;
+if(bgDk==null)bgDk=dk3;
+const OP=dk3?{stena:1,pol:0.42,potolok:0.08,okno:0.22}:{stena:1,pol:0.5,potolok:0.1,okno:0.3},NEAR=0.035,WCOL=bgDk?0x47494e:0xdcdee4;
+if(floorY!=null&&isFinite(floorY))walls=walls.map(w=>{const b=w.box;if(w.kind==="pol"||w.kind==="potolok"||w.shape||!b||!(b[1]<floorY-1&&b[4]>floorY+1))return w;const nb=b.slice();nb[1]=floorY;return Object.assign({},w,{box:nb});});
 const lineHex=dk3?0xffffff:0x2a2c2b,LO=dk3?0.32:0.4;
 const isOpen=w=>w.kind==="okno"||w.kind==="proem";
 const opens=walls.filter(isOpen),list=[];
@@ -1431,8 +1450,10 @@ const axisOK=f=>!f||[f.slice(3,6),f.slice(6,9)].every(x=>{const m=x.map(Math.abs
 const inner=(b,a)=>{const c=(b[a]+b[a+3])/2;return C[a]>=c?1:-1;};
 const texOf=w=>{const key=w.mat0||w.tex;if(!key)return null;if(w.tex&&!S.textures[key])S.textures[key]=w.tex;return S.textures[key]?texFor(key):null;};
 const matOf=(w,op,glass)=>{const tex=glass?null:texOf(w);
-const col=glass?0xbfe3ea:w.c?parseInt(w.c.slice(1),16):(w.mat0&&S.matColors&&S.matColors[w.mat0])?matColor(w.mat0):(WALL_COL[w.kind]||WALL_COL.stena);
-return new THREE.MeshLambertMaterial({map:tex||null,color:tex?0xffffff:col,transparent:true,opacity:op,depthWrite:false,side:THREE.DoubleSide,userData:{w24wall:{kind:w.kind,material:w.material,glass:!!glass}}});};
+const col=glass?0xbfe3ea:w.c?parseInt(w.c.slice(1),16):(w.mat0&&S.matColors&&S.matColors[w.mat0])?matColor(w.mat0):w.auto||w.kind==="stena"?WCOL:(WALL_COL[w.kind]||WALL_COL.stena);
+const m=new THREE.MeshLambertMaterial({map:tex||null,color:tex?0xffffff:col,transparent:true,opacity:op,depthWrite:op>=0.99,side:THREE.DoubleSide,userData:{w24wall:{kind:w.kind,material:w.material,glass:!!glass}}});
+if(op>=0.99){m.polygonOffset=true;m.polygonOffsetFactor=4;m.polygonOffsetUnits=6;}
+return m;};
 const lineMat=op=>new THREE.LineBasicMaterial({color:lineHex,transparent:true,opacity:op,depthWrite:false});
 function slab(b,holes){const d=dims(b),a=d.indexOf(Math.min(...d)),u=(a+1)%3,v=(a+2)%3;
 const r=x=>Math.round(x*10)/10,U=[...new Set([b[u],b[u+3]].concat(...holes.map(h=>[h[0],h[2]])).map(r))].sort((x,y)=>x-y),V=[...new Set([b[v],b[v+3]].concat(...holes.map(h=>[h[1],h[3]])).map(r))].sort((x,y)=>x-y);
@@ -1464,7 +1485,7 @@ const boxLines=b=>{const[x0,y0,z0,x1,y1,z1]=b,c=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0
 E.forEach(([i,j])=>{s.push((c[i][0]-C[0])*K,(c[i][1]-C[1])*K,(c[i][2]-C[2])*K,(c[j][0]-C[0])*K,(c[j][1]-C[1])*K,(c[j][2]-C[2])*K);});
 const lg=new THREE.BufferGeometry();lg.setAttribute("position",new THREE.Float32BufferAttribute(s,3));return lg;};
 walls.filter(w=>!isOpen(w)).forEach(w=>{try{const b=w.box,d=dims(b);if(Math.max(...d)<1)return;
-const op=w.auto?(dk3?0.4:0.5):(OP[w.kind]||OP.stena);
+const op=w.auto?1:(OP[w.kind]||OP.stena);
 const a=d.indexOf(Math.min(...d)),u=(a+1)%3,v=(a+2)%3,mat=matOf(w,op);
 let mesh=null,line=null,nh=0;
 const sg=w.shape&&w.frame?shapeGeoGlobal(w,K):null;
@@ -1493,8 +1514,8 @@ const W={g,list,real:list.some(e=>e.mat&&e.mat.userData&&e.mat.userData.real),on
 face(cp){if(cp)W._cam.copy(cp);const D=new THREE.Vector3();
 list.forEach(e=>{const near=D.copy(W._cam).sub(e.c).dot(e.n)<0;e.near=near;
 if(W.real){if(e.mesh)e.mesh.visible=!near;if(e.line)e.line.visible=false;return;}
-if(e.mesh){e.mesh.visible=true;e.mat.opacity=near?(e.solid?NEAR:0.08):e.op;}
-if(e.line){e.line.visible=true;e.line.material.opacity=e.w.auto?(near?0.04:0.2):near?0.1:(e.solid?LO:LO+0.15);}});},
+if(e.mesh){e.mesh.visible=true;e.mat.opacity=near?(e.solid?NEAR:0.08):e.op;e.mat.depthWrite=!near&&e.op>=0.99;}
+if(e.line){e.line.visible=true;e.line.material.opacity=e.w.auto?(near?0.04:0.12):near?0.1:(e.solid?LO:LO+0.15);}});},
 sync(st){g.visible=W.on()&&!(st&&(st.explode||st.steps));},
 info(){const solid=list.filter(e=>e.solid&&e.mesh),ray=new THREE.Raycaster();let openSolid=0;
 list.filter(e=>!e.solid).forEach(e=>{const b=e.w.box,d=dims(b),a=d.indexOf(Math.min(...d)),o=e.c.clone(),dir=new THREE.Vector3();o.setComponent(a,o.getComponent(a)+1.5);dir.setComponent(a,-1);
@@ -1538,7 +1559,7 @@ const glass=/стекл/i.test((p.material||"")+" "+(p.name||""))&&!/зерка�
 const tex=glass?null:texFor(p.material);
 if(tex){if(sg)texUVAny(geo,grainAxis(p),K);else texUV(geo,{x:b[3]-b[0],y:b[4]-b[1],z:b[5]-b[2]},grainAxis(p));}
 const vc=!!geo.attributes.color;
-const mat=w3VC(tex?new THREE.MeshLambertMaterial({map:tex,color:0xffffff,transparent:true,opacity:1,vertexColors:vc})
+const mat=w3Part(tex?new THREE.MeshLambertMaterial({map:tex,color:0xffffff,transparent:true,opacity:1,vertexColors:vc})
 :new THREE.MeshLambertMaterial({color:glass?0xbfe3ea:matColor(p.material),transparent:true,opacity:1,vertexColors:vc}));
 const mesh=new THREE.Mesh(geo,mat);
 const cx=((b[0]+b[3])/2-C[0])*K,cy=((b[1]+b[4])/2-C[1])*K,cz=((b[2]+b[5])/2-C[2])*K;
@@ -1549,7 +1570,11 @@ if(glass){mesh.renderOrder=2;edges.material.color=new THREE.Color(0x6f9aa6);}
 mesh.userData={code:p.code,glass,an:p.an==null?null:p.an,home:new THREE.Vector3(cx,cy,cz),facade:/фасад|дверь/i.test(p.name),dims:`${fmt(p.L)}×${fmt(p.W)}`,nm:String(p.name||"").replace(/\s+/g," ").trim(),art:String(p.art||"").trim(),mod:String(p.mod||"")};
 scene.add(mesh);items.push(mesh);
 });
-let WALLS=null;try{const wl=asmWallList(opt.walls,withBox,lo,hi,opt);if(wl.length)WALLS=asmWalls(scene,wl,C,K,dk3);}catch(e){console.warn("walls",e);}
+const LEG_RE=/опор[аыу]?([^а-яё]|$)|ножк|регулируем.*опор/i;
+let floorY=lo[1];try{(opt.fasteners||[]).forEach(f=>{const b=f.b;if(b&&LEG_RE.test(String(f.n||"")+" "+String(f.g||""))&&b[1]<floorY&&b[1]>lo[1]-300)floorY=b[1];});}catch(_){}
+const bgDk=w3BgDark();
+let WALLS=null;try{const lo2=lo.slice();lo2[1]=floorY;const wl=asmWallList(opt.walls,withBox,lo2,hi,opt);if(wl.length)WALLS=asmWalls(scene,wl,C,K,dk3,bgDk,floorY);}catch(e){console.warn("walls",e);}
+const SHADOW=opt.focus?null:w3Shadow(scene,lo,hi,floorY,C,K,bgDk);
 const modC={};items.forEach(m=>{const k=m.userData.mod,c=modC[k]||(modC[k]={v:new THREE.Vector3(),n:0});c.v.add(m.userData.home);c.n++;});
 Object.values(modC).forEach(c=>c.v.multiplyScalar(1/c.n));
 const st_nMods=Object.keys(modC).length;
@@ -1663,6 +1688,7 @@ const m=new THREE.Mesh(geo,exact?furnHidden:krepMat);m.position.set(...pos);
 if(ax===0)m.rotation.z=Math.PI/2;else if(ax===2)m.rotation.x=Math.PI/2;
 m.userData={code:"F:"+fi,furn:true,krep:true};krepGroup.add(m);krepItems.push(m);return;
 }
+if(big&&!exact&&LEG_RE.test(f.n+" "+(f.g||""))&&sy>=20){try{const m=w3Leg(sx,sy,sz,K);m.position.set(...pos);m.userData={code:"F:"+fi,furn:true,anB:b,anN:f.n,leg:1,legMat:m.material};furnGroup.add(m);furnItems.push(m);return;}catch(_){}}
 if(big){
 const geo=new THREE.BoxGeometry(Math.max(sx,1)*K,Math.max(sy,1)*K,Math.max(sz,1)*K);
 const m=new THREE.Mesh(geo,exact?furnHidden:furnMat);m.position.set(...pos);
@@ -1737,6 +1763,7 @@ cam.getWorldDirection(_v);_pl.setFromNormalAndCoplanarPoint(_v,st.target);return
 function zoomAt(cx,cy,f){const nd=Math.max(size*0.15,Math.min(size*6,st.dist*f));f=nd/st.dist;const p=pointAt(cx,cy);
 if(p)st.target.add(p.sub(st.target).multiplyScalar(1-f));st.dist=nd;place2();}
 function apply(){
+if(SHADOW)SHADOW.visible=!st.explode&&!st.steps&&!(typeof realOn==="function"&&realOn());
 const visMods=new Set(items.filter(m=>!(st.hidden&&st.hidden[m.userData.code])).map(m=>m.userData.mod));
 const byBlock=st.explode&&st.explodeBy!=="part"&&visMods.size>1;
 const oneMod=st.explode&&visMods.size===1&&st_nMods>1?modC[[...visMods][0]].v:null;
@@ -1778,6 +1805,7 @@ let lbDpr=1,lbCol=null;
 const lbColors=()=>{const cs=getComputedStyle(layer||document.documentElement),ok=(v,d)=>{v=(v||"").trim();if(!v)return d;lbx.fillStyle="#010203";lbx.fillStyle=v;return lbx.fillStyle!=="#010203"?v:d;};
 const acc=ok(cs.getPropertyValue("--accent"),"#1d1f1e"),ai=ok(cs.getPropertyValue("--accent-ink"),"#ffffff");
 return{acc,ai,tape:ok(cs.getPropertyValue("--tape"),acc),ti:ok(cs.getPropertyValue("--tape-ink"),ai),tb:ok(cs.getPropertyValue("--ink"),"#1d1f1e")};};
+const LB_INK=bgDk?"#f2f3f5":"#1d1f22",LB_HALO=bgDk?"rgba(28,29,32,.9)":"rgba(236,237,241,.92)";
 const lbRR=(x,y,w,h,r)=>{lbx.beginPath();lbx.moveTo(x+r,y);lbx.arcTo(x+w,y,x+w,y+h,r);lbx.arcTo(x+w,y+h,x,y+h,r);lbx.arcTo(x,y+h,x,y,r);lbx.arcTo(x,y,x+w,y,r);lbx.closePath();};
 const _lp=new THREE.Vector3(),_ld=new THREE.Vector3();
 function lbDraw(){if(!lbG)return;const W=lbG.W,H=lbG.H,C=lbCol||{};lbx.setTransform(lbDpr,0,0,lbDpr,0,0);lbx.clearRect(0,0,W,H);if(!lbShown.length)return;
@@ -1785,11 +1813,12 @@ lbx.textAlign="center";lbx.textBaseline="middle";
 for(const r of lbShown){_lp.copy(r.m.position).project(cam);if(_lp.z>1)continue;const x=(_lp.x+1)/2*W,y=(1-_lp.y)/2*H+r.dy,o=r.o,u=r.m.userData;
 if(x<-90||x>W+90||y<-40||y>H+40)continue;
 if(r.k!=="p"){const cp=r.k==="cp",w=cp?o.w+o.wp+4:o.w,h=o.h,x0=Math.round(x-w/2)+0.5,y0=Math.round(y-h/2)+0.5,tx=cp?x0+o.wp+4+o.w/2:x0+w/2;
-lbRR(x0,y0,w,h,7);lbx.fillStyle=r.sel?C.acc:"rgba(255,255,255,.93)";lbx.fill();lbx.lineWidth=1;lbx.strokeStyle=r.sel?C.acc:"rgba(0,0,0,.18)";lbx.stroke();
-if(cp){const px=x0+3,py=y0+h/2-10;lbRR(px,py,o.wp-2,20,10);lbx.fillStyle=r.sel?C.tape:"#fff";lbx.fill();lbx.lineWidth=1.2;lbx.strokeStyle=r.sel?C.tb:"#1d1f1e";lbx.stroke();
-lbx.fillStyle=r.sel?C.ti:"#1d1f1e";lbx.font=F_POS;lbx.fillText(u.art,px+(o.wp-2)/2,y0+h/2+0.5);}
-lbx.fillStyle=r.sel?C.ai:"#1d1f1e";
-if(o.nm){lbx.font=F_NM;lbx.fillText(o.nm,tx,y0+9.5);lbx.font=F_DM;lbx.fillText(u.dims,tx,y0+h-9);}else{lbx.font=F_DM;lbx.fillText(u.dims,tx,y0+h/2+0.5);}}
+const ink=r.sel?C.acc:LB_INK,halo=LB_HALO;lbx.lineJoin="round";lbx.lineWidth=3.5;lbx.strokeStyle=halo;
+const tt=(s,xx,yy)=>{lbx.strokeText(s,xx,yy);lbx.fillStyle=ink;lbx.fillText(s,xx,yy);};
+if(cp){const px=x0+3,py=y0+h/2-10;lbRR(px,py,o.wp-2,20,10);lbx.lineWidth=3.5;lbx.strokeStyle=halo;lbx.stroke();lbx.lineWidth=1.2;lbx.strokeStyle=ink;lbx.stroke();
+lbx.font=F_POS;lbx.lineWidth=3.5;lbx.strokeStyle=halo;tt(u.art,px+(o.wp-2)/2,y0+h/2+0.5);}
+lbx.lineWidth=3.5;lbx.strokeStyle=halo;
+if(o.nm){lbx.font=F_NM;tt(o.nm,tx,y0+9.5);lbx.font=F_DM;tt(u.dims,tx,y0+h-9);}else{lbx.font=F_DM;tt(u.dims,tx,y0+h/2+0.5);}}
 else{const w=o.wp,x0=x-w/2,y0=y-11;lbRR(x0,y0,w,22,11);lbx.fillStyle=r.sel?C.tape:"#fff";lbx.fill();lbx.lineWidth=1.3;lbx.strokeStyle=r.sel?C.tb:"#1d1f1e";lbx.stroke();
 lbx.fillStyle=r.sel?C.ti:"#1d1f1e";lbx.font=F_POS;lbx.fillText(u.art,x,y+0.5);}}}
 let dirty=true;
@@ -1872,7 +1901,7 @@ krepGroup.visible=krepGroupX.visible=!!st.wire&&!st.explode&&st.krep!==false;hin
 krepItems.forEach(m=>{const sel=isSel(m.userData.code);m.material=sel?(exact?furnSelGhost:furnSel):(exact||krepOne?furnHidden:krepMat);});
 furnItems.forEach(m=>{const sel=isSel(m.userData.code);
 if(m.userData.shape){m.material=furnHidden;m.traverse(o=>{if(o!==m&&o.isMesh&&o.userData.mat)o.material=sel?furnSel:o.userData.mat;});return;}
-m.material=sel?(exact?furnSelGhost:furnSel):(exact?furnHidden:furnMat);});dirty=true;};
+m.material=sel?(exact?furnSelGhost:furnSel):(exact?furnHidden:(m.userData.legMat||furnMat));});dirty=true;};
 const furnSelGhost=new THREE.MeshBasicMaterial({color:hiC,transparent:true,opacity:0.35,depthWrite:false});
 const furnSel=new THREE.MeshLambertMaterial({color:hiC});
 const pickable=()=>items.filter(m=>m.visible).concat(furnGroup.visible?furnItems:[]).concat(krepGroup.visible?krepItems:[]);
@@ -2109,7 +2138,8 @@ snap(){renderer.render(scene,cam);return renderer.domElement.toDataURL("image/pn
 facades(){const F=items.filter(m=>m.userData.facade);return{n:F.length,ok:F.filter(m=>m.visible&&m.material.opacity>0.5&&(!m.material.map||!!(m.material.map.image&&(m.material.map.image.width||m.material.map.image.naturalWidth)))).length};},
 center(){st.yaw=-0.55;st.pitch=0.28;st.dist=fitD();st.target.set(0,0,0);st.ortho=false;st.view="3d";syncViewBtns();place2();},
 view(v){const a=VIEWS[v]||VIEWS["3d"];st.view=v;st.yaw=a[0];st.pitch=a[1];st.ortho=v!=="3d";st.target.set(0,0,0);st.dist=size*(v==="3d"?1.75:1.25);syncViewBtns();place2();}};
-asm.look=()=>w3Look(items);
+asm.look=()=>Object.assign(w3Look(items),{shadow:!!(SHADOW&&SHADOW.visible),legs:furnItems.filter(m=>m.userData.leg&&m.visible).length,floorY,bgDark:bgDk});
+asm.proj=p=>{const v=new THREE.Vector3((p[0]-C[0])*K,(p[1]-C[1])*K,(p[2]-C[2])*K);scene.updateMatrixWorld();v.project(cam);return[(v.x+1)/2,(1-v.y)/2,v.z];};
 asm.tech=()=>({hidden:[...HID3D].map(p=>({code:p.code,name:p.name,box:p.box})),drawn:items.length,bodies:bodyItems.map(m=>({name:m.userData.nm,mat:m.userData.mat,box:m.userData.box,shown:!!(m.visible&&furnGroup.visible)}))});
 if(WALLS){asm.walls=WALLS;const ap=st.apply;st.apply=function(){const r=ap.apply(this,arguments);try{WALLS.sync(st);}catch(_){}return r;};WALLS.sync(st);}
 syncViewBtns();
@@ -2213,7 +2243,7 @@ const mk=(key,f)=>mats[key]||(mats[key]=f());
 const itemParts=(m,out)=>{const mt=m.material,ch=m.children,W=m.matrix;
 if(mt.opacity>0){const hex=mt.color.getHex(),op=mt.opacity,dw=mt.depthWrite;
 const vc=!!(mt.vertexColors&&m.geometry.attributes.color);
-out.push({key:"m|"+(mt.map?mt.map.uuid:hex)+"|"+op+"|"+dw+(vc?"|vc":""),ro:op<1?-2:0,mat:()=>w3VC(new THREE.MeshLambertMaterial({map:mt.map||null,color:hex,transparent:op<1,opacity:op,depthWrite:dw,vertexColors:vc})),geo:m.geometry,M:W,uv:!!mt.map,nor:true,col:vc});}
+out.push({key:"m|"+(mt.map?mt.map.uuid:hex)+"|"+op+"|"+dw+(vc?"|vc":""),ro:op<1?-2:0,mat:()=>w3Part(new THREE.MeshLambertMaterial({map:mt.map||null,color:hex,transparent:op<1,opacity:op,depthWrite:dw,vertexColors:vc})),geo:m.geometry,M:W,uv:!!mt.map,nor:true,col:vc});}
 const e=ch[0];if(e.visible){e.updateMatrix();const em=e.material,hx=em.color.getHex(),eo=em.opacity,fat=!!e.userData.fat;
 out.push({key:"e|"+hx+"|"+eo+"|"+e.renderOrder+(fat?"|f":""),ro:fat?10:-1,line:true,fat,mat:()=>fat?w3FatMat(hx,eo):new THREE.LineBasicMaterial({color:hx,transparent:true,opacity:eo}),geo:e.geometry,M:new THREE.Matrix4().multiplyMatrices(W,e.matrix)});}
 const h=ch[1];if(h&&h.visible){h.updateMatrix();const HW=new THREE.Matrix4().multiplyMatrices(W,h.matrix);
@@ -3963,7 +3993,7 @@ cnt[0]=Math.max(0,count-tagged);
 const bar=cnt.map((n,i)=>n? `<span style="width:${n/count*100}%;background:${STAGES[i].color}" title="${STAGES[i].name}: ${n}"></span>`:"").join("");
 return{bar:`<div class="bar" role="img" aria-label="Готовность по этапам">${bar}</div>`,cnt,done:cnt[STAGES.length-1]};
 }
-function asmKey(){const o=S.current||{};return[o.orderId,clientMode(),S.view,Object.keys(S.textures||{}).length,Object.keys(S.matColors||{}).length,W3M.pv].join("|");}
+function asmKey(){const o=S.current||{};return[o.orderId,clientMode(),S.view,Object.keys(S.textures||{}).length,Object.keys(S.matColors||{}).length,W3M.pv,w3BgDark()?"d":"l"].join("|");}
 function asmKeepable(){try{if(!asm||S.view!=="order"||!asm.key||asm.key!==asmKey()||asm.parts!==S.current.parts||asm.fst!==S.current.fasteners||asm.fm!==S.current.furnMesh||!S.asmOrder||asm.st!==S.asmOrder)return null;
 const c=document.getElementById("asm");if(!c||!c.isConnected||!c.parentElement)return null;const box=c.parentElement;return{canvas:c,labels:box.querySelector(".asm-labels"),cube:box.querySelector(".dq-cube")};}catch(_){return null;}}
 function asmReuse(k){const nc=document.getElementById("asm");if(!nc||!asm||nc===k.canvas){disposeAsm();return false;}const box=nc.parentElement,nl=box.querySelector(".asm-labels"),nb=box.querySelector(".dq-cube");
@@ -23346,13 +23376,19 @@ b.querySelector("button").addEventListener("click",()=>{try{localStorage.setItem
 setTimeout(show,2500);
 const st=document.createElement("style");st.textContent=`.w24-icn{position:fixed;inset:0;z-index:9700;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center}.w24-icc{background:var(--bg,#fff);color:var(--ink,#111);width:min(520px,100%);border-radius:18px 18px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));font-size:15px;line-height:1.45}.w24-icc img{display:block;border-radius:12px;margin-bottom:8px}.w24-icc b{font-size:18px}.w24-icc ol{padding-left:20px;margin:6px 0}.w24-icc .btn{width:100%;min-height:48px;margin-top:8px}`;document.head.appendChild(st);})();
 (function(){const K="cehqr-3dbg",get=()=>{try{return localStorage.getItem(K)||"";}catch(_){return"";}};
-const dark=()=>{const v=get();if(v)return v==="dark";const t=document.documentElement;return t.classList.contains("vt")&&t.getAttribute("data-vt")!=="light"||matchMedia("(prefers-color-scheme: dark)").matches&&!/light/.test(t.getAttribute("data-theme")||"");};
-const apply=()=>{const v=get(),h=document.documentElement;h.classList.toggle("bg3d-dark",v==="dark");h.classList.toggle("bg3d-light",v==="light");};
+const dark=()=>get()==="dark";
+const apply=()=>{const v=get(),h=document.documentElement;h.classList.toggle("bg3d-dark",v==="dark");h.classList.toggle("bg3d-light",v!=="dark");};
 apply();
+try{matchMedia("(prefers-color-scheme: dark)").addEventListener("change",apply);}catch(_){}
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest('[data-act="asm-bg"]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();
-const nv=dark()?"light":"dark";try{localStorage.setItem(K,nv);}catch(_){}apply();if(typeof toast==="function")toast(nv==="dark"?"Фон 3D: тёмный":"Фон 3D: светлый");},true);
+const nv=dark()?"light":"dark";try{localStorage.setItem(K,nv);}catch(_){}apply();if(typeof toast==="function")toast(nv==="dark"?"Фон 3D: тёмный":"Фон 3D: светлый");
+try{if(typeof S!=="undefined"&&S.view==="order"&&typeof render==="function")render();}catch(_){}},true);
 const st=document.createElement("style");st.textContent=`html.bg3d-dark.bg3d-dark .asm,html.bg3d-dark.bg3d-dark .asm.full,html.bg3d-dark.bg3d-dark .asm.full.dq{background:radial-gradient(120% 90% at 50% 35%,#2a2b2e 0%,#151618 70%,#0b0b0c 100%)!important}
-html.bg3d-light.bg3d-light .asm,html.bg3d-light.bg3d-light .asm.full,html.bg3d-light.bg3d-light .asm.full.dq{background:radial-gradient(120% 90% at 50% 35%,#ffffff 0%,#eceeeb 70%,#d6d8d4 100%)!important}`;document.head.appendChild(st);})();
+html.bg3d-light.bg3d-light .asm,html.bg3d-light.bg3d-light .asm.full,html.bg3d-light.bg3d-light .asm.full.dq{background:radial-gradient(120% 90% at 50% 40%,#f4f5f8 0%,#e8e9ee 60%,#dcdee5 100%)!important}
+/* 26.11 (Кирилл: «где размеры, там не надо белой обложкой… Сделай как-нибудь прозрачный»): подпись линейки (замер по двум точкам) и размерных линий — без плашки:
+   текст с ореолом цвета фона; на светлом фоне 3D — тёмный, на тёмном — светлый */
+html .asm .asm-labels .meas.meas,html.vt.sk.sk.sk.sk[data-vt] .asm .asm-labels .meas.meas,html .asm .asm-labels .asm-dim.asm-dim,html.vt.sk.sk.sk.sk[data-vt] .asm .asm-labels .asm-dim.asm-dim{background:transparent!important;border-color:transparent!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;color:#1d1f22!important;text-shadow:0 0 2px #eceef1,0 0 2px #eceef1,0 0 4px #eceef1!important}
+html.bg3d-dark .asm .asm-labels .meas.meas,html.vt.sk.sk.sk.sk.bg3d-dark[data-vt] .asm .asm-labels .meas.meas,html.bg3d-dark .asm .asm-labels .asm-dim.asm-dim,html.vt.sk.sk.sk.sk.bg3d-dark[data-vt] .asm .asm-labels .asm-dim.asm-dim{color:#f2f3f5!important;text-shadow:0 0 2px #1c1d20,0 0 2px #1c1d20,0 0 4px #1c1d20!important}`;document.head.appendChild(st);})();
 function cutPos(){try{return JSON.parse(localStorage.getItem(cutOvKey()+"-pos")||"{}")||{};}catch(_){return{};}}
 function cutPosSet(k,v){const m=cutPos();if(v&&Object.keys(v).length)m[k]=v;else delete m[k];try{localStorage.setItem(cutOvKey()+"-pos",JSON.stringify(m));}catch(_){}}
 function cposKeys(s){const n={};return s.placed.map(q=>{const c=q.p.code||"?";n[c]=(n[c]||0)+1;return c+"#"+n[c];});}
@@ -23432,7 +23468,7 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
 (function(){const st=document.createElement("style");st.textContent=`.cpd-ov .cpd-r{fill:#DCEBFF;stroke:#0A84FF;stroke-width:2.5;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))}.cpd-ov[data-st="bad"] .cpd-r{fill:#FFE3E0;stroke:#FF453A}.cpd-ov[data-st="move"] .cpd-r{fill:#E3F8E9;stroke:#30D158}.cpd-ov .cpd-t{fill:#000;font-weight:700;font-family:system-ui,sans-serif}
 html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}.cpd-note{margin:4px 0}`;document.head.appendChild(st);})();
 const CHK_ON=false;
-const CHK_BUILD="b44a72cb52";
+const CHK_BUILD="b5740b95b5";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){try{return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{};}catch(_){return{};}}
@@ -28356,7 +28392,7 @@ function svRender(){if(typeof shpRenderKeep==="function")shpRenderKeep();}
 function svDirty(){const sm=svSm();if(!sm)return;try{X().dirty();}catch(_){sm.dirty=true;}}
 function svModal(id,inner){document.getElementById(id)?.remove();const m=document.createElement("div");m.className="modal";m.id=id;
 m.innerHTML=`<div class="modal-card sv-m" role="dialog">${inner}</div>`;document.body.appendChild(m);m.addEventListener("click",e=>{if(e.target===m)m.remove();});return m;}
-function svOff(){["svSrcM","svKlM","svNrM","svTplM","svHandM","svAlM"].forEach(id=>document.getElementById(id)?.remove());}
+function svOff(){["svSrcM","svKlM","svNrM","svTplM","svHandM","svAlM","svZuM"].forEach(id=>document.getElementById(id)?.remove());}
 function svSetRaw(){const s=X()&&X().set();return s||{firm:null,mine:null};}
 function svDes(){return!!window.APP_DES;}
 async function svSaveMine(patch,q){if(svDes()){try{const o=JSON.parse(localStorage.getItem("w24-smvset")||"{}");Object.assign(o,patch);localStorage.setItem("w24-smvset",JSON.stringify(o));}catch(_){}return true;}
@@ -28392,19 +28428,22 @@ return{base,det:P.parts.reduce((a,p)=>a+(+p.qty||1),0),name:P.order||o.order||""
 function svPrice(n,u,bp){let p=0;try{p=QA().price(n,u)||0;}catch(_){p=0;}return p>0?p:(+bp>0?Math.round(+bp):0);}
 function svAsk3(title,text,a,b){return new Promise(res=>{const m=svModal("svAskM",`<h2 class="sv-h">${esc(title)}</h2><p class="sv-note">${esc(text)}</p><div class="sv-ol"><button type="button" class="sv-o" data-v="a"><span><b>${esc(a)}</b></span></button><button type="button" class="sv-o" data-v="b"><span><b>${esc(b)}</b></span></button></div><button type="button" class="btn sv-x" data-v="">Отмена</button>`);
 let done=false;const fin=v=>{if(done)return;done=true;m.remove();res(v);};m.addEventListener("click",e=>{const t=e.target.closest("[data-v]");if(t)fin(t.dataset.v);else if(e.target===m)fin("");});new MutationObserver((_,o)=>{if(!document.body.contains(m)){o.disconnect();fin("");}}).observe(document.body,{childList:true});});}
+function svRowOf(b,q){const qty=b.type==="E"?Math.ceil(+b.qty||0):Math.round((+b.qty||0)*100)/100;if(!(qty>0))return null;
+const u=b.type==="E"?"м":b.unit||"шт",x={n:String(b.name||"").slice(0,120),u,p:b.own&&+b.bprice>0?Math.round(+b.bprice):svPrice(b.name,u,b.bprice),q:qty,mdl:1};
+if(b.type==="L"&&+b.ar>0)x.ar=+b.ar;
+const grp=svGroupOf(b.name,b.type),cat=svPlace(x,grp);if(cat==="front"&&x.ar>0&&q.fm2){try{X().fa(x,x.ar,!!(b.own&&+b.bprice>0));}catch(_){}}
+return{x,cat,grp};}
 async function svApply(base,meta,mode){const sm=svSm();if(!sm)return;const d=sm.data,q=d.qk;q.it=q.it||{};
 const hand=Object.values(q.it).reduce((a,L)=>a+(L||[]).filter(x=>!x.mdl).length,0)+(q.pr||[]).length+(q.dr||[]).length+(q.kp||[]).length;
 if(hand&&!mode){mode=await svAsk3("В смете уже есть строки",`Вписано руками: ${hand} ${pl(hand,"строка","строки","строк")}. Модель заменит их или добавится к ним?`,"Заменить — только модель","Добавить к тому, что есть");if(!mode)return;mode=mode==="a"?"rep":"add";}
 const snap=JSON.stringify({it:q.it,src:q.src||null,stp:q.stp||"what",pr:q.pr||null,dr:q.dr||null,kp:q.kp||null});
 if(mode==="rep"){Object.keys(q.it).forEach(k=>{q.it[k]=[];});q.pr=[];q.dr=[];q.kp=[];}
 else Object.keys(q.it).forEach(k=>{q.it[k]=(q.it[k]||[]).filter(x=>!x.mdl);});
-let n=0,nr=0,np=0;
-base.forEach(b=>{const qty=b.type==="E"?Math.ceil(+b.qty||0):Math.round((+b.qty||0)*100)/100;if(!(qty>0))return;
-const u=b.type==="E"?"м":b.unit||"шт",x={n:String(b.name||"").slice(0,120),u,p:b.own&&+b.bprice>0?Math.round(+b.bprice):svPrice(b.name,u,b.bprice),q:qty,mdl:1};
-if(b.type==="L"&&+b.ar>0)x.ar=+b.ar;
-const grp=svGroupOf(b.name,b.type),cat=svPlace(x,grp);if(cat==="front"&&x.ar>0&&q.fm2){try{X().fa(x,x.ar,!!(b.own&&+b.bprice>0));}catch(_){}}
-(q.it[cat]=q.it[cat]||[]).push(x);n++;if(grp==="nr")nr++;if(!(x.p>0))np++;});
+let n=0,nr=0,np=0;const sn=meta.oid?[]:null;
+base.forEach(b=>{const r=svRowOf(b,q);if(!r)return;const x=r.x,grp=r.grp;
+(q.it[r.cat]=q.it[r.cat]||[]).push(x);n++;if(grp==="nr")nr++;if(!(x.p>0))np++;if(sn&&b.key)sn.push(szSnE(b.key,x));});
 q.src={k:meta.k,n:String(meta.n||"").slice(0,80),det:+meta.det||0,at:Date.now()};q.fresh=0;d.picked=1;q.stp="mat";
+if(sn){q.src.oid=String(meta.oid);q.src.ex=String(meta.ex||"");q.src.sn=sn;}
 if(S.plOpen)S.plOpen=null;svDirty();svOff();svRender();window.scrollTo(0,0);
 svSnack(`${SV_SRCN[meta.k]||"Загружено"}: ${n} ${pl(n,"позиция","позиции","позиций")}${nr?` · не разобрано ${nr}`:""}${np?` · без цены ${np}`:""}`,()=>{const o=JSON.parse(snap);q.it=o.it;if(o.src)q.src=o.src;else delete q.src;q.stp=o.stp;["pr","dr","kp"].forEach(k=>{if(o[k])q[k]=o[k];else delete q[k];});svDirty();svRender();});}
 const SV_XBIG="Таблица слишком большая или повреждена — сохраните нужный лист как CSV";
@@ -28449,11 +28488,13 @@ if(!r.base.length)throw new Error("В модели не нашёл матери�
 return svApply(r.base,{k:/\.json$/i.test(nm)?"sk":"b3d",n:o.order||nm.replace(/(\.w24)?\.(json|b3d)$/i,""),det:r.det});
 }catch(e){console.error(e);const m=String(e&&e.message||"");toast(/[а-яё]/i.test(m)?m:"Не получилось прочитать файл. Сохраните его ещё раз и попробуйте снова");}}
 async function svOrder(oid,kind){const sm=svSm();if(!sm)return;if(typeof supNeedLoad!=="function"){toast("Заказы здесь не открываются");return;}
-toast("Открываю заказ…");const nd=await supNeedLoad(oid);if(!nd||nd.err||!(nd.items||[]).length){toast("Не получилось открыть заказ — проверьте интернет или ключ заказов");return;}
+toast("Открываю заказ…");
+try{const z=await szLoad(oid);if(z&&z.base.length){if(svSm()!==sm)return;return svApply(z.base,{k:kind,n:z.name,det:z.det,oid,ex:z.ver});}}catch(e){console.log("LOG smzak svOrder "+(e&&e.message));}
+const nd=await supNeedLoad(oid);if(!nd||nd.err||!(nd.items||[]).length){toast("Не получилось открыть заказ — проверьте интернет или ключ заказов");return;}
 const o=(S.orders||{})[oid]||{};svApply(nd.items,{k:kind,n:nd.name||o.name||oid,det:+o.count||0});}
 function svRecent(sm){const L=(S.shop.smList||[]).filter(z=>z.id!==sm.id&&z.total>0).sort((a,b)=>(b.when||0)-(a.when||0));return L;}
-function svSrcBanner(q,small){const s=q.src;if(!s||!s.k)return"";const t=SV_SRCN[s.k]||"Загружено";
-return`<div class="sv-ban${small?" sm":""}"><span class="sv-ok">${svg(SV_IC.ok,16)}</span><span class="sv-bt">${esc(t)}${s.n?`: <b>${esc(s.n)}</b>`:""}${s.det?` · ${N(s.det)} ${pl(s.det,"деталь","детали","деталей")}`:""}</span>${small?"":`<button type="button" class="sv-lnk" data-smv="again">Другая</button>`}</div>`;}
+function svSrcBanner(q,small){const s=q.src;if(!s||!s.k)return"";const t=s.oid&&s.k==="b3d"?"Из заказа Базиса № "+s.oid:SV_SRCN[s.k]||"Загружено";
+return`<div class="sv-ban${small?" sm":""}"><span class="sv-ok">${svg(SV_IC.ok,16)}</span><span class="sv-bt">${esc(t)}${s.n?`: <b>${esc(s.n)}</b>`:""}${s.det?` · ${N(s.det)} ${pl(s.det,"деталь","детали","деталей")}`:""}</span>${small?"":s.oid&&szOrdOk(s.oid)?`<button type="button" class="sv-lnk" data-smz="ord" data-id="${esc(s.oid)}">К заказу</button>`:`<button type="button" class="sv-lnk" data-smv="again">Другая</button>`}</div>`;}
 function svWhatHtml(c,q,d,sm){if(!S.shop.smList&&!S.shop.smListBusy&&typeof smListLoad==="function")setTimeout(()=>{smListLoad().then(()=>{if(svSm()&&(svSm().data.qk.stp||"what")==="what")svRender();}).catch(()=>{});},0);
 const R=S.shop.smList?svRecent(sm):null,tile=(k,t,sub,soon)=>`<button type="button" class="sv-t${soon?" soon":""}" data-smv="src" data-k="${k}"${soon?' aria-disabled="true"':""}><span class="sv-ti">${svg(SV_IC[k],24)}</span><b>${t}</b><small>${sub}</small></button>`;
 let h=svSrcBanner(q)+`<div class="sv-grid">`+tile("b3d","Базис","модель .b3d или заказ из Базиса")+tile("sk","SketchUp","наше расширение")+tile("xls","Другая программа","Excel / CSV: PRO100, К3…")
@@ -28622,7 +28663,7 @@ const SV_TILE_RE=/<div class="smt-t([^"]*)"( style="[^"]*")><button type="button
 function svMatPost(h,c,q,d,sm){try{S.svShownT={sm,t:c.total};}catch(_){}
 const i=h.indexOf('<div class="qk qk-smt">');if(i<0)return h;
 const hasAny=(c.items||[]).length>0||(q.pr||[]).length>0;
-let top=svSrcBanner(q,false)+(hasAny?svKlBar(q):"");
+let top=svSrcBanner(q,false)+szBanHtml(q)+(hasAny?svKlBar(q):"");
 const T=svTileInfo(c,q);
 if(T&&T.furn&&!T.furn.cnt&&q.src&&/^(b3d|sk)$/.test(q.src.k))top+=`<div class="sv-ban sv-nf" role="note"><span class="sv-nfi" aria-hidden="true">!</span><span class="sv-bt">В модели нет фурнитуры — поставьте петли, ручки, направляющие в Базисе или добавьте здесь</span><button type="button" class="sv-nfa" data-pl="qp" data-t="furn" aria-label="Добавить фурнитуру">＋</button></div>`;
 h=h.slice(0,i+23)+top+h.slice(i+23);
@@ -28674,7 +28715,134 @@ function svSnack(txt,undo){document.getElementById("svSnack")?.remove();const x=
 x.innerHTML=`<span>${esc(txt)}</span>${undo?`<button type="button">Отменить</button>`:""}`;document.body.appendChild(x);requestAnimationFrame(()=>x.classList.add("on"));
 const off=()=>{x.classList.remove("on");setTimeout(()=>x.remove(),220);},tm=setTimeout(off,6000);
 if(undo)x.querySelector("button").addEventListener("click",()=>{clearTimeout(tm);off();undo();toast("Отменено");});}
-window.__smetav={msg:()=>S.svKlMsg&&S.svKlMsg.t,cat:()=>{if(typeof catLoad==="function")catLoad();return!!(S.cat&&S.cat.data);},apply:svApply,base:svBaseFromOrder,group:svGroupOf,kl:svKlAll,klApply:svKlApply,match:svMatch,cand:svCand,file:svFile,xlsx:svXlsxRows,matList:svMatList};
+const SZ={fresh:{},busy:false,idx:0},SZ_LS="w24-smzak";
+function szMap(){try{const m=JSON.parse(localStorage.getItem(SZ_LS)||"{}");return m&&typeof m==="object"?m:{};}catch(_){return{};}}
+function szMapPut(oid,id){try{const m=szMap();if(id)m[oid]=id;else delete m[oid];const K=Object.keys(m);while(K.length>200)delete m[K.shift()];localStorage.setItem(SZ_LS,JSON.stringify(m));}catch(_){}}
+function szVer(oid){const o=(S.orders||{})[oid];return o?String(o.exportedAt||o.createdAt||"")+"|"+String(o.count||""):"";}
+function szOrdOk(oid){return!!((S.orders||{})[oid])&&typeof goOrder==="function"&&!svDes();}
+function szKind(name,oid){const m=" · № "+oid;return String(name||"Заказ").replace(/\s+/g," ").trim().slice(0,118-m.length)+m;}
+function szMarkOf(kind){const m=/ · № ([A-Za-z0-9]{1,12})$/.exec(String(kind||""));return m?m[1].toUpperCase():"";}
+function szRows(q){return Object.values((q&&q.it)||{}).reduce((a,L)=>a+(L||[]).length,0)+((q&&q.pr)||[]).length+((q&&q.dr)||[]).length+((q&&q.kp)||[]).length;}
+function szCan(){try{if(window.APP_ENTRY!=="vertaks"||svDes()||typeof smLoad!=="function"||typeof supBaseP!=="function"||typeof shpGo!=="function")return false;
+if(typeof clientMode==="function"&&clientMode())return false;if(!(typeof shpPin==="function"&&shpPin())||!S.shop||!S.shop.loaded||!S.shop.full)return false;
+const c=S.current,oid=c&&c.orderId;if(S.view!=="order"||!oid||c.loading||c.missing||c.locked||!(c.parts||[]).length)return false;
+return!(/^(F:|QK)/i.test(oid)||(S._qkParts&&S._qkParts[oid]));}catch(_){return false;}}
+function szHas(oid){try{const sm=S.shop&&S.shop.sm,s=sm&&sm.data&&sm.data.qk&&sm.data.qk.src;if(s&&s.oid===oid)return true;if(szMap()[oid])return true;
+const d=typeof vtxLinked==="function"?vtxLinked(oid):null,L=S.shop.smList||[];return L.some(z=>(!z.deal&&szMarkOf(z.kind)===oid)||(!!d&&(z.deal===d.id||z.id===d.id)));}catch(_){return false;}}
+function szLabel(oid){return szHas(oid)?"Открыть смету":"Посчитать смету";}
+async function szWait(f,ms){const t0=Date.now();while(Date.now()-t0<ms){try{if(f())return true;}catch(_){}await new Promise(r=>setTimeout(r,120));}return false;}
+async function szReady(){try{if(typeof catLoad==="function")catLoad();}catch(_){}try{if(!svDes()&&X()&&!X().set())X().load(false);}catch(_){}
+await szWait(()=>!!(S.cat&&S.cat.data),6000);if(!svDes())await szWait(()=>!!(X()&&X().set()),5000);}
+function szBars(lens,L,k){const bars=[];let over=0;lens.slice().sort((a,b)=>b-a).forEach(l=>{if(l>L){over+=Math.ceil(l/L);return;}let b=bars.find(x=>x.left>=l+(x.n?k:0));if(!b){b={left:L,n:0};bars.push(b);}b.left-=l+(b.n?k:0);b.n++;});return bars.length+over;}
+function szEdgeName(n,used){try{const qa=QA(),m=/^(.*\S)\s+\d+(?:[.,]\d+)?\s*мм$/.exec(n);if(!m||!qa)return n;if(qa.catIt(n)||svPrice(n,"м",0)>0)return n;const b=m[1];if(used.has(b))return n;if(qa.catIt(b)||svPrice(b,"м",0)>0)return b;}catch(_){}return n;}
+function szBase(parts,fs){const B0=supBaseP(parts,fs),A={},LN={},used=new Set(B0.filter(b=>b.type==="E").map(b=>b.name)),out=[];
+parts.forEach(p=>{const k=String(p.material||"").split(/[\r\n]/)[0];if(!k||!p.L||!p.W)return;A[k]=(A[k]||0)+p.L*p.W/1e6;(LN[k]=LN[k]||[]).push(Math.max(+p.L||0,+p.W||0));});
+B0.forEach(b=>{if(typeof supIsBuild==="function"&&supIsBuild(b.name))return;const x=Object.assign({},b);
+if(b.type==="L"){if(A[b.name]>0)x.ar=Math.round(A[b.name]*100)/100;
+if(b.unit==="м²"&&typeof catPieceKByName==="function"&&catPieceKByName(b.name)>0){const it=typeof catItemByName==="function"?catItemByName(b.name):null,L=+(it&&it.L)||0;if(L>0&&(LN[b.name]||[]).length){x.qty=szBars(LN[b.name],L,4);x.unit="шт";delete x.ar;}}}
+else if(b.type==="E"){const nn=szEdgeName(b.name,used);if(nn!==b.name){used.add(nn);x.name=nn;}}
+out.push(x);});
+return out;}
+async function szLoad(oid,file){oid=String(oid||"").toUpperCase();await szReady();let parts,fs,name="";const c=S.current;
+if(!file&&c&&c.orderId===oid&&!c.loading&&!c.missing&&(c.parts||[]).length){parts=c.parts;fs=typeof curFasteners==="function"?curFasteners():[];}
+else{const r=await fetch("orders/"+encodeURIComponent(oid)+".json",{cache:"no-cache"});if(!r.ok)throw new Error("нет файла заказа");const res=parseJSON(await siteOrderText(oid,await r.text()));
+parts=expandParts(oid,res.parts||[]);fs=typeof supFsOf==="function"?supFsOf(res):(res.fasteners||[]);name=res.order||"";}
+const o=(S.orders||{})[oid]||{},cur=c?c.orderId:null;let base;
+try{if(c&&cur!==oid)c.orderId=oid;base=szBase(parts,fs);}finally{if(c&&cur!==oid)c.orderId=cur;}
+return{oid,base,name:o.name||name||oid,det:+o.count||parts.length,ver:szVer(oid),client:o.client||""};}
+function szSnE(key,x){const e=[String(key),num(x.q),+x.fs||0];if(x.n!==String(key).slice(2).slice(0,120))e.push(x.n);return e;}
+function szSnOf(base,q){const out=[];base.forEach(b=>{const r=b.key?svRowOf(b,q):null;if(r)out.push({key:String(b.key),rq:num(r.x.q),fs:+r.x.fs||0,r});});return out;}
+function szFindRow(q,name){const K=Object.keys(q.it||{});for(let k=0;k<K.length;k++){const L=q.it[K[k]]||[];for(let i=0;i<L.length;i++)if(L[i]&&L[i].mdl&&L[i].n===name)return{cat:K[k],i,x:L[i]};}return null;}
+function szDiff(q,base){const s=q.src||{},old=new Map((s.sn||[]).map(e=>[String(e[0]),{rq:+e[1]||0,fs:+e[2]||0,n:e[3]||String(e[0]).slice(2).slice(0,120)}])),seen=new Set(),out=[];
+szSnOf(base,q).forEach(w=>{seen.add(w.key);const o=old.get(w.key),x=w.r.x;
+if(!o){if(!szFindRow(q,x.n))out.push({t:"add",n:x.n,u:x.u,nq:w.rq,w});return;}
+if(Math.abs(o.rq-w.rq)<0.005&&o.fs===w.fs)return;
+const row=szFindRow(q,o.n);out.push({t:"chg",n:o.n,u:x.u,oq:o.rq,nq:w.rq,ofs:o.fs,nfs:w.fs,row,lost:!row,hand:!!row&&Math.abs(num(row.x.q)-o.rq)>0.005,w});});
+old.forEach((o,key)=>{if(seen.has(key))return;const row=szFindRow(q,o.n);if(!row)return;out.push({t:"del",n:o.n,u:row.x.u,oq:o.rq,row,hand:Math.abs(num(row.x.q)-o.rq)>0.005});});
+return out;}
+const szF=v=>(Math.round((+v||0)*100)/100).toLocaleString("ru-RU");
+function szDTxt(d){const n=String(d.n).length>42?String(d.n).slice(0,40)+"…":String(d.n);return d.t==="add"?`+ ${n} ${szF(d.nq)} ${d.u}`:d.t==="del"?`− ${n}`:Math.abs(d.oq-d.nq)<0.005?`${n}: распил ${d.ofs} → ${d.nfs} л.`:`${n} ${szF(d.oq)} → ${szF(d.nq)} ${d.u}`;}
+function szDLong(d){if(d.t==="add")return`добавится: ${szF(d.nq)} ${d.u}${num(d.w.r.x.p)>0?"":" · цены нет — впишете"}`;
+if(d.t==="del")return d.hand?`в заказе больше нет; в смете ${szF(d.row.x.q)} ${d.u} — вы меняли, оставлю`:`в заказе больше нет — уберу (${szF(d.oq)} ${d.u})`;
+const ch=Math.abs(d.oq-d.nq)<0.005?`распил ${d.ofs} → ${d.nfs} л.`:`${szF(d.oq)} → ${szF(d.nq)} ${d.u}`;
+return d.lost?`в заказе ${ch}; в смете эту строку убрали или заменили — не трогаю`:d.hand?`в заказе ${ch}; в смете ${szF(d.row.x.q)} ${d.u} — вы меняли, оставлю`:ch;}
+function szFreshGet(oid,ver){const c=SZ.fresh[oid];if(c&&(c.ver===ver||c.want===ver))return c;
+const st=SZ.fresh[oid]={st:"load",want:ver};szLoad(oid,true).then(z=>{if(SZ.fresh[oid]===st)SZ.fresh[oid]=Object.assign(z,{ver});},e=>{console.log("LOG smzak fresh "+(e&&e.message));if(SZ.fresh[oid]===st)SZ.fresh[oid]={st:"err",ver};}).then(()=>{if(svSm())svRender();});return st;}
+function szDate(oid){const o=(S.orders||{})[oid]||{},t=o.exportedAt||o.createdAt;if(!t)return"";const d=new Date(t);return isNaN(d)?"":" "+String(d.getDate()).padStart(2,"0")+"."+String(d.getMonth()+1).padStart(2,"0");}
+function szBanHtml(q){try{const s=q.src;if(!s||!s.oid||!Array.isArray(s.sn)||svDes())return"";const O=S.orders||{};
+if(!Object.keys(O).length){if(typeof siteLoadIndex==="function"&&!SZ.idx){SZ.idx=1;siteLoadIndex().then(()=>{if(svSm())svRender();}).catch(()=>{});}return"";}
+if(!O[s.oid])return"";const ver=szVer(s.oid);if(!ver||ver===s.ex)return"";
+const c=szFreshGet(s.oid,ver),head=`Заказ № ${esc(s.oid)} перевыгружен из Базиса${szDate(s.oid)}.`,ban=(t,btn)=>`<div class="sv-ban sv-nf sv-zu" role="note"><span class="sv-nfi" aria-hidden="true">!</span><span class="sv-bt">${t}</span>${btn||""}</div>`;
+if(c.st==="load")return ban(head+" Сверяю со сметой…");
+if(c.st==="err"||!c.base)return ban(head+" Открыть заказ не получилось — проверьте интернет.",`<button type="button" class="sv-zb" data-smz="retry">Повторить</button>`);
+const D=szDiff(q,c.base);if(!D.length)return ban(head+" Материалы и количество те же.",`<button type="button" class="sv-zb" data-smz="same">Понятно</button>`);
+return ban(head+" Изменилось: "+esc(D.slice(0,3).map(szDTxt).join("; ")+(D.length>3?`; ещё ${D.length-3}`:""))+".",`<button type="button" class="sv-zb" data-smz="upd">Обновить из заказа</button>`);}catch(e){console.log("LOG smzak ban "+(e&&e.message));return"";}}
+function szUpdModal(){const sm=svSm();if(!sm)return;const q=sm.data.qk,s=q.src,c=s&&SZ.fresh[s.oid];if(!c||!c.base)return;const D=szDiff(q,c.base);if(!D.length)return;
+const hand=D.some(d=>d.hand);
+svModal("svZuM",`<h2 class="sv-h">Обновить из заказа</h2><p class="sv-note">Заказ № ${esc(s.oid)} перевыгружен из Базиса${szDate(s.oid)}. Цены в смете не меняю. Строки, добавленные руками, не трогаю.</p>
+    <div class="sv-zl">${D.map(d=>`<div class="sv-zr${d.hand||d.lost?" k":""}"><b>${esc(d.n)}</b><small>${esc(szDLong(d))}</small></div>`).join("")}</div>
+    <button type="button" class="btn primary sv-x" data-smz="updgo">${hand?"Обновить, мои правки оставить":"Обновить"}</button>${hand?`<button type="button" class="btn sv-x" data-smz="updall">Обновить всё по заказу</button>`:""}<button type="button" class="btn sv-x" data-smz="x">Отмена</button>`);}
+function szUpdApply(force){const sm=svSm();if(!sm)return;const q=sm.data.qk,s=q.src,c=s&&SZ.fresh[s.oid];if(!c||!c.base)return;
+const D=szDiff(q,c.base),snap=JSON.stringify({it:q.it,src:q.src}),rm=[];let n=0,kept=0;
+D.forEach(d=>{if(d.t==="add"){(q.it[d.w.r.cat]=q.it[d.w.r.cat]||[]).push(d.w.r.x);n++;return;}
+if(d.lost){kept++;return;}if(d.hand&&!force){kept++;return;}
+if(d.t==="del"){rm.push(d.row.x);n++;return;}
+const x=d.row.x,nx=d.w.r.x;x.q=d.nq;if(x.fa){x.fs=d.nfs;x.fsq=d.nq;}if(nx.ar>0)x.ar=nx.ar;n++;});
+if(rm.length)Object.keys(q.it).forEach(k=>{q.it[k]=(q.it[k]||[]).filter(x=>!rm.includes(x));});
+q.src=Object.assign({},s,{ex:c.ver,det:+c.det||s.det||0,at:Date.now(),sn:szSnOf(c.base,q).map(w=>szSnE(w.key,w.r.x))});
+svDirty();svOff();svRender();
+svSnack(`Обновлено из заказа: ${n} ${pl(n,"позиция","позиции","позиций")}${kept?` · оставлено как было ${kept}`:""}`,()=>{const o=JSON.parse(snap);q.it=o.it;q.src=o.src;svDirty();svRender();});}
+function szReprice(sm,n){setTimeout(()=>{try{if(S.shop.sm!==sm||!sm.data||!sm.data.qk||!X())return;const q=sm.data.qk;let ch=0;
+Object.keys(q.it||{}).forEach(k=>(q.it[k]||[]).forEach(x=>{if(!x||!x.mdl||num(x.p)>0||!(num(x.q)>0))return;const p=X().isFa(x)?X().pm2(x.n):svPrice(x.n,x.u,0);if(p>0){x.p=p;ch++;}}));
+if(ch){svDirty();svRender();}if(n<2)szReprice(sm,n+1);}catch(_){}},[900,2500,6000][n]||6000);}
+function szShow(sm){S.shop.sm=sm;if(!sm.saved&&sm.data)sm.dirty=true;S.shop.smAll=false;S.plOpen=null;
+const dl=sm.deal&&typeof shpById==="function"&&shpById(sm.deal)?sm.deal:"";S.shop.smFrom=dl?"order":"smetas";
+try{const q=sm.data&&sm.data.qk;if(q&&(q.stp||"what")==="what"&&szRows(q)){q.stp="mat";sm.data.picked=1;}}catch(_){}
+svOff();shpGo("smeta",dl||sm.id||"");window.scrollTo(0,0);}
+function szFill(sm,z){szShow(sm);const p=svApply(z.base,{k:/^SK/i.test(z.oid)?"sk":"b3d",n:z.name,det:z.det,oid:z.oid,ex:z.ver});SZ.fresh[z.oid]=z;szReprice(sm,0);return p;}
+async function szLeaveOk(){const sm=S.shop&&S.shop.sm;if(!sm||!sm.dirty)return true;const t="Смета не сохранена. Выйти без сохранения?";return typeof appConfirm==="function"?!!(await appConfirm(t,"Выйти")):confirm(t);}
+async function szGo(){if(SZ.busy||!szCan())return;const oid=S.current.orderId;SZ.busy=true;
+try{const mem=S.shop.sm,ms=mem&&!mem.busy&&mem.data&&mem.data.qk&&mem.data.qk.src;
+if(ms&&ms.oid===oid)return szShow(mem);
+if(!(await szLeaveOk()))return;
+const tw=setTimeout(()=>{try{toast("Считаю смету по заказу…");}catch(_){}},600);let z;try{z=await szLoad(oid);}finally{clearTimeout(tw);}
+if(!z.base.length){toast("В заказе не нашёл материалов");return;}
+const here=()=>S.view==="order"&&S.current.orderId===oid;if(!here())return;
+const d=typeof vtxLinked==="function"?vtxLinked(oid):null;
+if(d){await smLoad(d.id);if(!here())return;const sm=S.shop.sm,ok=sm&&!sm.err&&sm.data;
+if(ok&&sm.data.qk&&!sm.saved&&!szRows(sm.data.qk)){if(d.noMont)sm.data.noMont=true;
+return szFill(sm,z);}
+if(ok&&sm.data.qk&&sm.data.qk.src&&sm.data.qk.src.oid===oid)return szShow(sm);
+if(ok){const a=await svAsk3(`У сделки № ${d.num||""} уже есть смета`,`Она составлена не из этого заказа${sm.saved&&sm.saved.total?" — "+N(sm.saved.total)+" ₽":""}. Её не трогаю.`,"Открыть смету сделки","Отдельная пробная смета из заказа");if(!a||!here())return;if(a==="a")return szShow(sm);}}
+if(typeof smListLoad==="function"){try{S.shop.smListBusy=false;await smListLoad();}catch(_){}if(!here())return;}
+const mp=szMap(),cand=[];if(mp[oid])cand.push(mp[oid]);
+(S.shop.smList||[]).filter(x=>!x.deal&&szMarkOf(x.kind)===oid).sort((a,b)=>(b.when||0)-(a.when||0)).forEach(x=>{if(!cand.includes(x.id))cand.push(x.id);});
+for(const id of cand.slice(0,3)){await smLoad(id);if(!here())return;const sm=S.shop.sm,s=sm&&!sm.err&&sm.data&&sm.data.qk&&sm.data.qk.src;
+if(s&&s.oid===oid){szMapPut(oid,sm.id);return szShow(sm);}if(mp[oid]===id&&sm&&!sm.err)szMapPut(oid,"");}
+smLoad("",{client:z.client||(d&&d.client)||"",phone:(d&&d.phone)||"",kind:szKind(z.name,oid)});
+const sm=S.shop.sm;if(!sm||!sm.data||!sm.data.qk){toast("Смета не открылась");return;}return szFill(sm,z);
+}catch(e){console.error(e);toast("Не получилось посчитать смету — проверьте интернет");}
+finally{SZ.busy=false;}}
+if(typeof smSave==="function"){const _szSave=smSave;smSave=async function(){const r=await _szSave.apply(this,arguments);
+try{const sm=S.shop&&S.shop.sm,s=sm&&sm.data&&sm.data.qk&&sm.data.qk.src;if(r!==false&&sm&&sm.id&&s&&s.oid&&!sm.deal)szMapPut(s.oid,sm.id);}catch(_){}return r;};}
+try{if(typeof OP_IC==="object"&&OP_IC)OP_IC.smz='<rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8.5 7.5h7M8.5 12h2M13.5 12h2M8.5 16h2M13.5 16h2"/>';}catch(_){}
+if(typeof specBlock==="function"){const _szSB=specBlock;specBlock=function(){let h=_szSB.apply(this,arguments);
+try{if(h&&szCan()&&h.indexOf('data-smz="go"')<0)h=h.replace('<div class="spec-act">',`<div class="spec-act"><button type="button" class="btn primary sz-go" data-smz="go">${szLabel(S.current.orderId)}</button>`);}catch(_){}return h;};}
+if(typeof opTiles==="function"){const _szOT=opTiles;opTiles=function(oid){const T=_szOT.apply(this,arguments);
+try{if(szCan()&&S.current.orderId===oid){const i=T.findIndex(x=>x.k==="buy"),j=i>=0?i+1:T.findIndex(x=>x.k==="iss");T.splice(j<0?T.length:j,0,{k:"smz",t:"Смета",s:szHas(oid)?"открыть":"посчитать",attr:'data-smz="go"'});}}catch(_){}return T;};}
+try{if(typeof akRightHtml==="function"){const _szAR=akRightHtml;akRightHtml=function(){let h=_szAR.apply(this,arguments);
+try{if(typeof h==="string"&&szCan()&&typeof AKS!=="undefined"&&AKS.rt!=="lnk"&&h.slice(-6)==="</div>")h=h.slice(0,-6)+`<p class="akr-h">Смета</p><button type="button" class="btn primary akr-btn" data-smz="go">${szLabel(S.current.orderId)}</button><p class="ak-note">Листы по раскрою, кромка и фурнитура — из этого заказа, цены — из прайса фирмы.</p></div>`;}catch(_){}return h;};}}catch(_){}
+document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-smz]");if(!b)return;const a=b.dataset.smz;e.preventDefault();e.stopPropagation();
+if(a==="x"){b.closest(".modal")?.remove();return;}
+if(a==="go"){document.getElementById("opMore")?.remove();return szGo();}
+if(a==="ord"){const id=b.dataset.id;if(id&&szOrdOk(id))szLeaveOk().then(ok=>{if(ok&&szOrdOk(id)){svOff();goOrder(id);}});return;}
+const sm=svSm(),s=sm&&sm.data.qk.src;if(!s||!s.oid)return;
+if(a==="upd")return szUpdModal();
+if(a==="updgo"||a==="updall")return szUpdApply(a==="updall");
+if(a==="retry"){delete SZ.fresh[s.oid];return svRender();}
+if(a==="same"){const c=SZ.fresh[s.oid];if(c&&c.base){s.ex=c.ver;s.sn=szSnOf(c.base,sm.data.qk).map(w=>szSnE(w.key,w.r.x));svDirty();svRender();}}},true);
+window.__smetav={msg:()=>S.svKlMsg&&S.svKlMsg.t,cat:()=>{if(typeof catLoad==="function")catLoad();return!!(S.cat&&S.cat.data);},apply:svApply,base:svBaseFromOrder,group:svGroupOf,kl:svKlAll,klApply:svKlApply,match:svMatch,cand:svCand,file:svFile,xlsx:svXlsxRows,matList:svMatList,
+zak:{can:szCan,has:szHas,go:szGo,map:szMap,ver:szVer,bars:szBars,base:()=>szBase(S.current.parts||[],typeof curFasteners==="function"?curFasteners():[]),raw:()=>supBaseP(S.current.parts||[],typeof curFasteners==="function"?curFasteners():[]),diff:()=>{const sm=svSm(),s=sm&&sm.data.qk.src,c=s&&SZ.fresh[s.oid];return c&&c.base?szDiff(sm.data.qk,c.base).map(d=>({t:d.t,n:d.n,u:d.u,oq:d.oq,nq:d.nq,hand:!!d.hand,lost:!!d.lost})):null;}}};
 const st=document.createElement("style");st.textContent=`
 .qk.qk-sv{max-width:760px}
 .sv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 6px}
@@ -28721,7 +28889,13 @@ html[data-vt="dark"] .sv-m .sv-kc,html[data-vt="dark"] .sv-m .sv-ol,html[data-vt
 .sv-snack{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom,0px));z-index:9500;display:flex;align-items:center;gap:14px;box-sizing:border-box;width:max-content;max-width:min(calc(100vw - 32px),520px);padding:10px 10px 10px 16px;border-radius:16px;background:rgba(28,28,30,.94);color:#fff;font-size:14.5px;box-shadow:0 10px 30px rgba(0,0,0,.35);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);opacity:0;transform:translate(-50%,12px);transition:opacity 200ms ease,transform 200ms cubic-bezier(.2,.8,.2,1);pointer-events:none}
 .sv-snack.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}.sv-snack span{flex:1;min-width:0}.sv-snack button{flex:none;min-height:40px;padding:0 12px;border:0;border-radius:12px;background:rgba(255,255,255,.14);color:#fff;font:inherit;font-weight:600;cursor:pointer}
 @media (min-width:900px){.qk-smt>.sv-kl,.qk-smt>.sv-ban,.qk-smt>.sv-msg{max-width:760px}.sv-grid{grid-template-columns:repeat(4,1fr)}.sv-rec{grid-template-columns:repeat(3,1fr)}.sv-snack{bottom:40px}}
-@media (max-width:360px){.sv-t{min-height:118px;padding:12px}.sv-kr{grid-template-columns:92px minmax(0,1fr)}}`;
+@media (max-width:360px){.sv-t{min-height:118px;padding:12px}.sv-kr{grid-template-columns:92px minmax(0,1fr)}}
+.sv-zu{align-items:flex-start}.sv-zu .sv-nfi{margin-top:2px}.sv-zu .sv-bt{align-self:center}
+.sv-zb{flex:none;align-self:center;min-height:44px;padding:0 14px;border:0;border-radius:12px;background:var(--v2bl);color:var(--w-bg,#fff);font:inherit;font-size:14.5px;font-weight:600;cursor:pointer;transition:transform 160ms ease}.sv-zb:active{transform:scale(.97)}
+.sv-zl{display:flex;flex-direction:column;border-radius:16px;background:var(--w-l1,var(--w2-soft));margin:0 0 12px;max-height:46vh;overflow:auto}html[data-vt="dark"] .sv-m .sv-zl{background:#2a2a2c}
+.sv-zr{padding:10px 14px}.sv-zr+.sv-zr{border-top:1px solid var(--w-line,rgba(0,0,0,.08))}.sv-zr b{display:block;font-size:15px;font-weight:500;line-height:1.25}.sv-zr small{display:block;font-size:13px;line-height:1.35;color:var(--w-t2,rgba(60,60,67,.6));margin-top:2px}.sv-zr.k small{color:var(--v2bl)}
+.spec-act .sz-go{min-height:44px}
+@media (max-width:520px){.sv-zu{flex-wrap:wrap}.sv-zu .sv-bt{flex:1 1 70%}.sv-zu .sv-zb{margin-left:36px}}`;
 document.head.appendChild(st);
 })();
 (function(){
@@ -30303,7 +30477,7 @@ return"Технолог 3D · "+({orders:"заказы",order:"заказ",part:
 function otzDev(){const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)),ua=navigator.userAgent||"";
 const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
 return(w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":"");}
-function otzVer(){const b="b44a72cb52";return/^__/.test(b)?"стенд":b;}
+function otzVer(){const b="b5740b95b5";return/^__/.test(b)?"стенд":b;}
 function otzDet(){return{view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()};}
 function otzCss(){if(OTZ.css&&Date.now()-OTZ.cssAt<120000)return OTZ.css;let css="";for(const sh of Array.from(document.styleSheets)){try{for(const r of Array.from(sh.cssRules||[]))css+=r.cssText+"\n";}catch(_){}}
 OTZ.css=css.replace(/:root\b/g,"html").replace(/@font-face\s*\{[^}]*\}/g,"");OTZ.cssAt=Date.now();return OTZ.css;}
@@ -32650,6 +32824,7 @@ __w24realLoad().then(()=>{try{disposeAsm();}catch(_){}render();toast("Реали
 try{if(realOn())__w24realLoad().catch(()=>{});}catch(_){}
 window.__w24real={load:__w24realLoad,ready:()=>!!__w24realW,src:__w24realSrc,on3d:()=>{try{return!!(typeof asm!=="undefined"&&asm&&asm.real);}catch(_){return false;}}};
 const DQ3_IC={
+bg:'<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/>',
 back:'<path d="M15 5l-7 7 7 7"/>',
 send:'<path d="M21 3 10 14"/><path d="M21 3l-7 18-4-7-7-4z"/>',
 explode:'<path d="M9 9 4 4M4 9V4h5M15 9l5-5M15 4h5v5M9 15l-5 5M4 15v5h5M15 15l5 5M20 15v5h-5"/>',
@@ -32686,9 +32861,10 @@ function dq3St(){return(typeof asm!=="undefined"&&asm&&asm.st)||S.asmOrder||{};}
 function dq3On(){return S.view==="order"&&!!document.querySelector(".asm.full.dq");}
 const DQ3_KEEP=["hideFacades","wire","pos","holes","furn","labels"];
 function dq3Saved(){try{return JSON.parse(localStorage.getItem("t3d-row1")||"{}")||{};}catch(_){return{};}}
-function dq3Save(){const st=dq3St(),o=dq3Saved();DQ3_KEEP.forEach(k=>{if(st[k]!==undefined)o[k]=st[k];});o.lb19=1;try{localStorage.setItem("t3d-row1",JSON.stringify(o));}catch(_){}}
+function dq3Save(){const st=dq3St(),o=dq3Saved();DQ3_KEEP.forEach(k=>{if(st[k]!==undefined)o[k]=st[k];});o.lb19=1;o.lb26=1;try{localStorage.setItem("t3d-row1",JSON.stringify(o));}catch(_){}}
 function dq3Restore(st){if(!st||st._dq3)return false;st._dq3=1;const o=dq3Saved();let ch=false;
-DQ3_KEEP.forEach(k=>{if(k==="labels"&&!o.lb19)return;if(o[k]!==undefined&&st[k]!==o[k]){st[k]=o[k];ch=true;}});return ch;}
+if(st.labels===undefined&&!(o.lb26&&o.labels!==undefined)){st.labels=false;ch=true;}
+DQ3_KEEP.forEach(k=>{if(k==="labels"&&!o.lb26)return;if(o[k]!==undefined&&st[k]!==o[k]){st[k]=o[k];ch=true;}});return ch;}
 function dq3Items(){const st=dq3St(),cl=dq3Cl(),km=typeof kmRedOn==="function",R=[];
 if(typeof arCan==="function"&&arCan())R.push(["ar-home","Посмотреть у себя","ar",null]);
 if(st.sameMode&&!cl)R.push(["asm-same","Такие же","same",true]);
@@ -32705,6 +32881,7 @@ if(!cl&&km)R.push(["km-red","Кромка","edge",!!kmRedOn()]);
 if(!cl)R.push(["dq-block","Блок","block",!!st.blockMode]);
 if(typeof asmWallsOn==="function"&&!(typeof realOn==="function"&&realOn()))R.push(["asm-walls","Стены","walls",asmWallsOn()]);
 if(typeof realOn==="function"&&realOn())R.push(["real-photo","Фото","photo",null]);
+if(!(typeof realOn==="function"&&realOn()))R.push(["asm-bg",typeof w3BgDark==="function"&&w3BgDark()?"Фон: тёмный":"Фон: светлый","bg",null]);
 if(cl)R.push(["dq-shot","Снимок","photo",null]);
 return R;}
 function dq3BtnHtml(x){return`<button type="button" class="dq3-b" data-act="${x[0]}"${x[3]!=null?` aria-pressed="${!!x[3]}"`:""}${x[4]||""} aria-label="${esc(x[1])}"><span class="dq3-c">${dq3Svg(x[2])}</span><span class="dq3-t">${esc(x[1])}</span></button>`;}
@@ -44081,7 +44258,7 @@ document.body.appendChild(m);
 });
 })();
 (function(){
-const BUILD="b44a72cb52";/*cehqr-build*/
+const BUILD="b5740b95b5";/*cehqr-build*/
 try{const u=new URL(location.href);if(u.searchParams.has("v")){u.searchParams.delete("v");history.replaceState(history.state,"",u.pathname+u.search+u.hash);}}catch(_){}
 window.__w24VerWait=0;
 if(/^__/.test(BUILD))return;
@@ -44164,7 +44341,7 @@ addEventListener("online",()=>{upd();try{if(typeof toast==="function")toast("И�
 <script>
 (function(){
 if(window.__w24obnov)return;window.__w24obnov=1;
-const BUILD="b44a72cb52";/*cehqr-build*/
+const BUILD="b5740b95b5";/*cehqr-build*/
 const SEEN="w24-upd-seen",CACHE="w24-upd-cache";
 const ls={get(k){try{return localStorage.getItem(k);}catch(_){return null;}},set(k,v){try{localStorage.setItem(k,v);}catch(_){}}};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
