@@ -1306,19 +1306,22 @@ for(let k=0;k<4;k++){const i=f*4+k,u=uv.getX(i),v=uv.getY(i);if(rot)uv.setXY(i,v
 uv.needsUpdate=true;
 }
 var W3M={col:{},src:{},pv:0};
-const W3F={on:true,px:1.0,aa:true,pof:3,pou:3,U:null,v2:null};
+const W3F={on:true,px:1.0,min:1.5,aa:true,pof:0,pou:1,pull:2.0,pullMax:0.002,U:null,v2:null};
 try{if(window.__w3thin)W3F.on=false;}catch(_){}
 function w3FatInit(){if(W3F.U||typeof THREE==="undefined")return;
-W3F.U={resolution:{value:new THREE.Vector2(1,1)},linewidth:{value:3},hw:{value:1.5}};W3F.v2=new THREE.Vector2();
-W3F.vs=`uniform vec2 resolution; uniform float linewidth; attribute vec3 aEnd; attribute vec2 aC; varying float vS;
+W3F.U={resolution:{value:new THREE.Vector2(1,1)},linewidth:{value:3},hw:{value:1.5},pull:{value:W3F.pull},pullMax:{value:W3F.pullMax}};W3F.v2=new THREE.Vector2();
+W3F.vs=`uniform vec2 resolution; uniform float linewidth; uniform float uPull; uniform float uPullMax; attribute vec3 aEnd; attribute vec2 aC; varying float vS;
 void trimSeg(const in vec4 a, inout vec4 b){ float n=-0.5*projectionMatrix[3][2]/projectionMatrix[2][2]; float t=(n-a.z)/(b.z-a.z); b.xyz=mix(a.xyz,b.xyz,t); }
+vec4 pullV(vec4 v, bool persp){ float px=(persp?max(-v.z,0.0):1.0)*2.0/(projectionMatrix[1][1]*resolution.y); float dd=min(uPull*px,uPullMax);
+  if(persp){ float L=length(v.xyz); if(L>1e-6) v.xyz*=max(0.0,1.0-dd/L); } else v.z+=dd; return v; }
 void main(){ float asp=resolution.x/resolution.y; vec4 s=modelViewMatrix*vec4(position,1.0); vec4 e=modelViewMatrix*vec4(aEnd,1.0);
   bool persp=projectionMatrix[2][3]==-1.0;
-  if(persp){ if(s.z<0.0&&e.z>=0.0) trimSeg(s,e); else if(e.z<0.0&&s.z>=0.0) trimSeg(e,s); s.xyz*=0.9997; e.xyz*=0.9997; }
+  if(persp){ if(s.z<0.0&&e.z>=0.0) trimSeg(s,e); else if(e.z<0.0&&s.z>=0.0) trimSeg(e,s); }
+  s=pullV(s,persp); e=pullV(e,persp);
   vec4 cs=projectionMatrix*s; vec4 ce=projectionMatrix*e; vec2 d=ce.xy/ce.w-cs.xy/cs.w; d.x*=asp; float L=length(d); d=L>1e-7?d/L:vec2(1.0,0.0);
   vec2 o=vec2(d.y,-d.x); d.x/=asp; o.x/=asp;
   vec4 c=aC.y<0.5?cs:ce; vec2 off=(o*aC.x+d*(aC.y<0.5?-1.0:1.0))*(linewidth/resolution.y);
-  c.xy+=off*c.w; if(!persp) c.z-=0.00004*c.w; vS=aC.x; gl_Position=c; }`;
+  c.xy+=off*c.w; vS=aC.x; gl_Position=c; }`;
 W3F.fs=`uniform vec3 diffuse; uniform float uOp; uniform float hw; varying float vS;
 void main(){
 #ifdef W3AA
@@ -1327,8 +1330,10 @@ void main(){
  gl_FragColor=vec4(diffuse,uOp);
 #endif
 }`;}
-function w3FatPre(r){if(!W3F.U||!r)return;r.getDrawingBufferSize(W3F.v2);W3F.U.resolution.value.copy(W3F.v2);const lw=W3F.px*(r.getPixelRatio()||1)+(W3F.aa?1:0);W3F.U.linewidth.value=lw;W3F.U.hw.value=lw/2;}
-function w3FatMat(col,op){w3FatInit();const m=new THREE.ShaderMaterial({uniforms:{diffuse:{value:new THREE.Color(col)},uOp:{value:op==null?1:op},resolution:W3F.U.resolution,linewidth:W3F.U.linewidth,hw:W3F.U.hw},
+function w3FatPre(r){if(!W3F.U||!r)return;r.getDrawingBufferSize(W3F.v2);W3F.U.resolution.value.copy(W3F.v2);
+const core=W3F.px>0?Math.max(W3F.min||0,W3F.px*(r.getPixelRatio()||1)):0,lw=core>0?core+(W3F.aa?1:0):0;
+W3F.U.linewidth.value=lw;W3F.U.hw.value=lw/2;W3F.U.pull.value=W3F.pull;W3F.U.pullMax.value=W3F.pullMax;}
+function w3FatMat(col,op){w3FatInit();const m=new THREE.ShaderMaterial({uniforms:{diffuse:{value:new THREE.Color(col)},uOp:{value:op==null?1:op},resolution:W3F.U.resolution,linewidth:W3F.U.linewidth,hw:W3F.U.hw,uPull:W3F.U.pull,uPullMax:W3F.U.pullMax},
 vertexShader:W3F.vs,fragmentShader:W3F.fs,transparent:W3F.aa||(op!=null&&op<0.99),depthWrite:!W3F.aa});if(W3F.aa)m.defines={W3AA:1};m.opacity=0.5;return m;}
 function w3FatGeo(arr){w3FatInit();const n=Math.floor(arr.length/6),P=new Float32Array(n*12),E=new Float32Array(n*12),C=new Float32Array(n*8),I=n*4>65535?new Uint32Array(n*6):new Uint16Array(n*6);
 for(let k=0;k<n;k++){const a=k*6;for(let v=0;v<4;v++){const o=(k*4+v)*3;P[o]=arr[a];P[o+1]=arr[a+1];P[o+2]=arr[a+2];E[o]=arr[a+3];E[o+1]=arr[a+4];E[o+2]=arr[a+5];C[(k*4+v)*2]=v&1?1:-1;C[(k*4+v)*2+1]=v>>1;}
@@ -1546,7 +1551,9 @@ const C=[(lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2],size=Math.max(hi[0]-lo
 const span=size;
 sun.position.set(span*0.9,span*1.6,span*1.2);scene.add(sun);
 const dk3=typeof thumbDark==="function"&&thumbDark(),w3v=(typeof window!=="undefined"&&window.__w3v)||1;
-const lineC=new THREE.Color(W3F.on?0x2a2d30:cssVar("--board-line"));if(!W3F.on)lineC.multiplyScalar(0.7);
+const lnDk=w3BgDark();
+const lineC=new THREE.Color(W3F.on?(lnDk?0x2a2d30:0x000000):cssVar("--board-line"));if(!W3F.on)lineC.multiplyScalar(0.7);
+const LOP=W3F.on?(lnDk?0.92:1):0.8;
 const wireC=new THREE.Color(dk3?(w3v===3?0x8a8a8a:0xffffff):0x2a2c2b);
 const hiC=new THREE.Color(cssVar("--accent"));
 const items=[];let anApply=null,anTap=null;
@@ -1564,7 +1571,7 @@ const mat=w3Part(tex?new THREE.MeshLambertMaterial({map:tex,color:0xffffff,trans
 const mesh=new THREE.Mesh(geo,mat);
 const cx=((b[0]+b[3])/2-C[0])*K,cy=((b[1]+b[4])/2-C[1])*K,cz=((b[2]+b[5])/2-C[2])*K;
 mesh.position.set(cx,cy,cz);
-const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo,sg?25:1),new THREE.LineBasicMaterial({color:lineC,transparent:true,opacity:W3F.on?0.92:0.8}));
+const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo,sg?25:1),new THREE.LineBasicMaterial({color:lineC,transparent:true,opacity:LOP}));
 mesh.add(edges);w3FatOf(edges);
 if(glass){mesh.renderOrder=2;edges.material.color=new THREE.Color(0x6f9aa6);}
 mesh.userData={code:p.code,glass,an:p.an==null?null:p.an,home:new THREE.Vector3(cx,cy,cz),facade:/фасад|дверь/i.test(p.name),dims:`${fmt(p.L)}×${fmt(p.W)}`,nm:String(p.name||"").replace(/\s+/g," ").trim(),art:String(p.art||"").trim(),mod:String(p.mod||"")};
@@ -1752,6 +1759,7 @@ const cp=Math.cos(st.pitch),r=st.ortho?size*4:st.dist;
 cam.position.set(st.target.x+r*cp*Math.sin(st.yaw),st.target.y+r*Math.sin(st.pitch),st.target.z+r*cp*Math.cos(st.yaw));
 if(Math.abs(st.pitch)>1.5)cam.up.set(-Math.sin(st.yaw),0,-Math.cos(st.yaw));else cam.up.set(0,1,0);
 cam.lookAt(st.target);
+if(!st.ortho&&!camP.userData.realNF){const nn=Math.min(0.1,Math.max(0.01,st.dist*0.004));if(Math.abs(camP.near-nn)>nn*0.05){camP.near=nn;camP.updateProjectionMatrix();}}
 if(WALLS)WALLS.face(cam.position);
 if(st.ortho){const w=canvas.clientWidth||1,h=canvas.clientHeight||1,hh=st.dist*TAN;camO.top=hh;camO.bottom=-hh;camO.left=-hh*w/h;camO.right=hh*w/h;camO.near=0.01;camO.far=size*10;camO.updateProjectionMatrix();}
 }
@@ -1780,7 +1788,7 @@ m.material.emissiveIntensity=sel?0.1:hov?0.18:0;
 m.children[0].material.color=sel?hiC:lineC;
 const wire=!!st.wire||(!!st.selected&&!sel&&!st.steps&&!dim);
 m.material.opacity=wire?(sel?0.6:(st.wire?(dk3?W3OP.d:W3OP.l):(dk3?0.0:0.06))):dim?(u.glass?0.1:0.18):u.glass?(sel?0.45:0.22):sel?0.72:1;if(sel)m.material.transparent=true;m.material.depthWrite=!(dim||wire||u.glass);
-m.children[0].material.opacity=wire?(dk3&&!sel?(w3v===3?0.5:0.7):0.95):dim?0.25:W3F.on?0.92:0.8;
+m.children[0].material.opacity=wire?(dk3&&!sel?(w3v===3?0.5:0.7):0.95):dim?0.25:LOP;
 if(wire&&!sel)m.children[0].material.color=wireC;
 if(m.children[1])m.children[1].visible=!wire&&!dim&&st.holes!==false;
 if(m.children[2])m.children[2].visible=(dk3?wire:((!!st.wire||sel)&&wire&&(!st.selected||sel||!foc())))&&st.holes!==false;
@@ -3116,6 +3124,7 @@ function catShare(){const L=catPickList();
 const tx="Подборка материалов:\n"+L.map((it,k)=>it.dec?`${k+1}. ${it.dec.b} ${it.dec.n}`:`${k+1}. ${it.n}${it.a?` (арт. ${it.a})`:""}`).join("\n");
 if(navigator.share)navigator.share({title:"Подборка материалов",text:tx}).catch(()=>{});
 else(navigator.clipboard?navigator.clipboard.writeText(tx):Promise.reject()).then(()=>toast("Список скопирован")).catch(()=>prompt("Скопируйте список:",tx));}
+const RABOTY_ZAKAZA_BAZISA=false;
 const WORK_KEYS=[
 ["cut_sheet","Раскрой","лист"],["cut_part","Раскрой — детали","шт"],
 ["edge_thin","Кромка 0,4–0,8 мм","м"],["edge_thick","Кромка 1–2 мм","м"],
@@ -3143,6 +3152,7 @@ const R=workRates();
 return WORK_KEYS.map(([k,name,unit])=>({k,name,unit,qty:q[k]||0,rate:+R[k]||0})).filter(r=>r.qty>0);
 }
 function workBlock(){
+if(!RABOTY_ZAKAZA_BAZISA)return"";
 const parts=cutParts();if(!parts||!parts.length)return"";
 if(!(S.canEdit||(typeof siteIsAdmin==="function"&&siteIsAdmin())))return"";
 const rows=workRows(parts),money=v=>Math.round(v).toLocaleString("ru-RU"),num=v=>String(v).replace(".",",");
@@ -13379,7 +13389,7 @@ T.push({k:"cut",t:"Раскрой",s:c.sheets==null?"листы":c.sheets+" "+op
 if(typeof buyOn==="function"&&buyOn())T.push({k:"buy",t:"Закупка",s:c.buySum?money(c.buySum):c.buy!=null?c.buy+" поз.":"что купить"});
 if(typeof sp3Staff==="function"&&sp3Staff()){const sc=sp3Need(oid)||{};if(sc.st!=="none")T.push({k:"spec",t:"Спецификация",s:sc.st==="ok"?(sc.rows||[]).length+" поз.":sc.st==="err"?"нет связи":"загружаю…",attr:`data-sp3="open" data-id="${esc(oid)}"`});}
 T.push({k:"iss",t:"Проверка",s:c.iss==null?"проверяю…":c.iss?`<em class="op-bad">${c.iss} ${opPl(c.iss,"замечание","замечания","замечаний")}</em>`:"всё в порядке",raw:1});
-T.push({k:"more",t:"Ещё",s:"фасады, стекло, работа…"});
+T.push({k:"more",t:"Ещё",s:(()=>{try{if(RABOTY_ZAKAZA_BAZISA===false)return"фасады, стекло, печать…";}catch(_){}return"фасады, стекло, работа…";})()});
 return T;}
 function opTileHtml(x){return`<button type="button" class="op-tile" ${x.attr||`data-op="${x.k}"`} data-tk="${x.k}">${opIc(x.k)}<b>${esc(x.t)}</b><span class="op-ts">${x.raw?x.s:esc(x.s)}</span></button>`;}
 function opTilesSync(){const g=document.querySelector(".op-tiles");if(!g||S.view!=="order")return;const oid=S.current.orderId;
@@ -19736,7 +19746,7 @@ const on=sum>0&&L.some(x=>x.own&&!x.au&&!x.off&&x.q>0)&&!L.some(x=>x.wait&&!x.of
 const hasW=L.some(x=>x.wait&&!x.off&&x.q>0);
 return{L,sum,zak,cl,clO:Math.round(clO),on,hasW,works:(on||hasW)?L.filter(x=>x.q>0).map(x=>[x.id,x.q]):L.filter(x=>x.q>0&&!x.own).map(x=>[x.id,x.q]),asm:L.some(x=>x.own&&!x.canAu&&!x.off&&x.q>0)};}
 function qkWrPick(sm,dirty,rend,after){const q=sm.data.qk;let o={};
-try{const c=smCalc(sm.data),A={},I={};((c.BW&&c.BW.L)||[]).forEach(x=>{if(x.canAu&&+x.auto>0)A[x.id]=+x.auto;});if(A["TM-09"]>0)A["S-02"]=A["TM-09"];
+try{const c=smCalc(sm.data),A={},I={};((c.BW&&(c.BW.L0||c.BW.L))||[]).forEach(x=>{if(x.canAu&&+x.auto>0)A[x.id]=+x.auto;});if(A["TM-09"]>0)A["S-02"]=A["TM-09"];
 Object.keys(q.bw||{}).forEach(k=>{const v=num(q.bw[k]);if(q.bw[k]!==""&&q.bw[k]!=null&&v>0)I[k]=v;});o={auto:A,inS:I,noMont:!!sm.data.noMont};}catch(_){}
 let snap=null;const names=[];
 return wrPickModal((code,n,w,more)=>{if(snap===null)snap=JSON.stringify(q.bw||{});q.bw=q.bw||{};q.bw[code]=Math.round((num(q.bw[code])+n)*100)/100;names.push(w?w[1]:code);if(more)return;
@@ -19746,12 +19756,15 @@ window.qkWrPick=qkWrPick;
 function qkBwRowHtml(x,q){const SRC=typeof wrSrcName==="function"?{a:wrSrcName("a"),r:wrSrcName("r")}:{a:"Азуми",r:"Ремстрой"};
 return`<div class="qk-r qk-r2${x.off?" qk-off":""}"><span class="qk-tl">${esc(x.n)}<small>${x.wait?"ждёт проверки директора — мастеру пока 0":x.own?N(x.r)+" ₽ мастеру за "+esc(x.u):esc(SRC[x.src]||"услуга")+": закупка "+N(x.r)+" ₽ за "+esc(x.u)}${x.au?" · само":""}${x.off?(x.dlvW?" · везёт водитель — бригаде не идёт":" · монтаж — не идёт"):x.dlvW?" · если в сделке выберут водителя — бригаде не идёт":""}</small></span>${inp("bw."+x.id,x.au?"":(q.bw[x.id]==null?"":q.bw[x.id]),"n",x.au?F(x.q):"0","qk-q","Сколько: "+x.n)}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${x.sum?N(x.sum):"—"}</b>${x.canAu?`<span class="qk-x" style="visibility:hidden" aria-hidden="true">×</span>`:`<button type="button" class="qk-x" data-qbw="del" data-c="${esc(x.id)}" aria-label="Убрать работу">×</button>`}</div>`;}
 function qkBwFootHtml(c){const B=c.BW,old=Math.round((c.M/0.45)*0.21);if(!B)return"";
+if(B.hid)return`<div class="qk-bwf"><div><span>Бригаде сейчас — 21 %</span><b>${N(old)} ₽</b></div>${B.zak?`<div><span>Услуги поставщиков (${esc(typeof wrSrcBoth==="function"?wrSrcBoth():"Азуми / Ремстрой")}) — закупка, входит в «М»</span><b>${N(B.zak)} ₽</b></div>`:""}</div>`;
 return`<div class="qk-bwf">${B.on?`<div><span>Бригаде по работам</span><b>${N(B.sum)} ₽</b></div>${c.M>0?`<div class="muted"><span>для сравнения: 21 % было бы</span><span>${N(old)} ₽</span></div>`:""}`:`<div><span>Бригаде сейчас — 21 %</span><b>${N(old)} ₽</b></div><div class="muted"><span>посчитано само, без сборки и установки</span><span>${N(B.sum)} ₽</span></div>`}${B.zak?`<div><span>Услуги поставщиков (${esc(typeof wrSrcBoth==="function"?wrSrcBoth():"Азуми / Ремстрой")}) — закупка, входит в «М»</span><b>${N(B.zak)} ₽</b></div>`:""}${B.cl?`<div class="muted"><span>эти же работы по цене «клиенту»</span><span>${N(B.cl)} ₽</span></div>`:""}</div>`;}
 function qkBwHtml(c,q){const B=c.BW;if(!B)return"";const op=S.qkBwOpen!==false,row=x=>qkBwRowHtml(x,q);
+if(B.hid&&!B.L.length)return`<section class="qk-card qk-bwno"><span>Работы пока не считаются</span><button type="button" class="qk-bwno-a" data-qbw="add">+ Вписать работу</button></section>`;
 return`<section class="qk-card qk-bw"><button type="button" class="qk-h qk-gh" data-qbw="1" aria-expanded="${op}"><b>${op?"▾":"▸"} Работы</b><span><b>${B.on?"бригаде "+N(B.sum)+" ₽":"бригаде пока 21 %"}</b></span></button>
   ${op?`<p class="qk-sub">${B.on?"Бригада получает сумму «мастеру» по этим работам — вместо 21 %.":"Добавьте сборку и установку кнопкой ниже — тогда бригада получит сумму «мастеру» по работам. Пока своих работ не вписали — бригаде 21 %, как раньше."} Пустое поле — посчитано само (листы, кромка, петли, ручки, направляющие); впишите своё — заменит.</p>${B.L.map(row).join("")}
     <button type="button" class="qk-add" data-qbw="add">+ Работа из справочника</button>
     ${qkBwFootHtml(c)}`:""}</section>`;}
+{const st=document.createElement("style");st.textContent=".qk-bwno{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:15px;color:var(--w-t2,rgba(60,60,67,.6))}.qk-bwno-a{flex:none;min-height:44px;padding:0 4px;border:0;background:none;color:var(--w-ink,inherit);opacity:.8;font:inherit;font-size:15px;font-weight:600;cursor:pointer}";document.head.appendChild(st);}
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-qbw]");if(!b)return;e.preventDefault();e.stopPropagation();const a=b.dataset.qbw,sm=S.shop&&S.shop.sm,q=sm&&sm.data&&sm.data.qk;
 if(a==="add"){if(!q||typeof wrPickModal!=="function")return;return qkWrPick(sm,qkDirty,shpRenderKeep,()=>{S.qkBwOpen=true;});}
 if(a==="del"){if(!q)return;delete q.bw[b.dataset.c];qkDirty();return shpRenderKeep();}
@@ -22015,7 +22028,7 @@ add("top","Столешница и фартук",lq(c,"top")>0||lq(c,"apron")>0,
 const nc=(+cut.hob||0)+(+cut.sink||0);add("cut","Мойка и вырезы под варку",nc>0,nc?"вырезов: "+nc:"");
 if(c.qk)add("deliv","Доставка и монтаж",true,"внутри цены");else add("deliv","Доставка и монтаж",(+c.deliv||0)>0&&ww.some(w=>/^U-/.test(w.c||"")&&w.q>0),(+c.deliv||0)>0?"доставка "+N(c.deliv)+" ₽":"");
 add("fix","Заглушки, стяжки, крепёж",false,"");
-if(c.qk&&c.BW&&!window.APP_DES)add("bw","Работы бригады: сборка и установка",!!c.BW.asm,c.BW.on?"бригаде по работам "+N(c.BW.sum)+" ₽"+(c.BW.asm?"":" — сборку и установку не вписали"):"сборку и установку не вписали — бригаде будет 21 %");
+if(c.qk&&c.BW&&!c.BW.hid&&!window.APP_DES)add("bw","Работы бригады: сборка и установка",!!c.BW.asm,c.BW.on?"бригаде по работам "+N(c.BW.sum)+" ₽"+(c.BW.asm?"":" — сборку и установку не вписали"):"сборку и установку не вписали — бригаде будет 21 %");
 ((SK.data&&SK.data.chk)||[]).forEach((t,i)=>add("x"+i+":"+t,t,false,"свой пункт директора"));
 const ch=d.chk||{};L.forEach(x=>{x.st=x.auto?"auto":ch[x.k]==="yes"?"yes":ch[x.k]==="no"?"no":"";});return L;}
 function skOpen(after){const sm=S.shop.sm;if(!sm)return after();const d=sm.data,c=smCalc(d),m=document.createElement("div");m.className="modal";m.id="skChkM";
@@ -23468,7 +23481,7 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
 (function(){const st=document.createElement("style");st.textContent=`.cpd-ov .cpd-r{fill:#DCEBFF;stroke:#0A84FF;stroke-width:2.5;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))}.cpd-ov[data-st="bad"] .cpd-r{fill:#FFE3E0;stroke:#FF453A}.cpd-ov[data-st="move"] .cpd-r{fill:#E3F8E9;stroke:#30D158}.cpd-ov .cpd-t{fill:#000;font-weight:700;font-family:system-ui,sans-serif}
 html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}.cpd-note{margin:4px 0}`;document.head.appendChild(st);})();
 const CHK_ON=false;
-const CHK_BUILD="4c6a4a235a";
+const CHK_BUILD="0481261996";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){try{return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{};}catch(_){return{};}}
@@ -28676,6 +28689,9 @@ B.set(id,{bd,yel});});
 if(B.size)h=h.replace(SV_TILE_RE,(all,cls,sty,id,inner)=>{const b=B.get(id);if(!b)return all;B.delete(id);
 return`<div class="smt-t${cls}${b.yel?" sv-y":""}"${sty}><button type="button" class="smt-tb" data-pl="open" data-t="${esc(id)}">${inner}${b.bd?`<span class="sv-bds">${b.bd}</span>`:""}</button>`;});}
 if(S.plOpen&&S.plOpen.id==="nr"&&S.plOpen.sm===sm)h=h.replace(/<p class="smt-empty">В плитке пока ничего нет[^<]*<\/p>/,svNrHtml(q));
+if(c.BW&&c.BW.hid){
+h=h.replace(/(<div class="smt-t[^"]*"[^>]*><button type="button" class="smt-tb" data-pl="open" data-t="works">[\s\S]*?<small class="smt-ts2">)нет(<\/small>)/,"$1пока не считаются$2");
+h=h.replace(/<p class="smt-empty">Сборку, установку и монтаж добавьте кнопкой выше[^<]*<\/p>/,'<p class="smt-empty sv-bwno">Работы пока не считаются. Вписать работу руками — кнопкой выше.</p>');}
 return h;}
 const _svWrap=window.__qkStepsWrap;
 window.__qkStepsWrap=function(fn,c,q,d,sm){let h=_svWrap?_svWrap(fn,c,q,d,sm):fn(c,q,d,sm);
@@ -28716,6 +28732,11 @@ x.innerHTML=`<span>${esc(txt)}</span>${undo?`<button type="button">Отмени�
 const off=()=>{x.classList.remove("on");setTimeout(()=>x.remove(),220);},tm=setTimeout(off,6000);
 if(undo)x.querySelector("button").addEventListener("click",()=>{clearTimeout(tm);off();undo();toast("Отменено");});}
 const SZ={fresh:{},busy:false,idx:0},SZ_LS="w24-smzak";
+function szWorkOn(){try{return RABOTY_ZAKAZA_BAZISA!==false;}catch(_){return true;}}
+function szNoWork(d,c){if(szWorkOn())return false;const s=d&&d.qk&&d.qk.src;if(!s||!s.oid||!c||!c.qk||!c.BW||!Array.isArray(c.BW.L))return false;
+const B=c.BW;if(B.on||B.hasW||(+c.wCl||0)>0)return false;return!B.L.some(x=>!x.au&&(+x.q||0)>0);}
+if(typeof smCalc==="function"){const _szC=smCalc;smCalc=function(d){const c=_szC.apply(this,arguments);
+try{if(d&&d.qk&&szNoWork(d,c)){const B=c.BW;c.BW=Object.assign({},B,{L:B.L.filter(x=>!(x.own&&x.au)),L0:B.L,hid:1});}}catch(_){}return c;};}
 function szMap(){try{const m=JSON.parse(localStorage.getItem(SZ_LS)||"{}");return m&&typeof m==="object"?m:{};}catch(_){return{};}}
 function szMapPut(oid,id){try{const m=szMap();if(id)m[oid]=id;else delete m[oid];const K=Object.keys(m);while(K.length>200)delete m[K.shift()];localStorage.setItem(SZ_LS,JSON.stringify(m));}catch(_){}}
 function szVer(oid){const o=(S.orders||{})[oid];return o?String(o.exportedAt||o.createdAt||"")+"|"+String(o.count||""):"";}
@@ -30477,7 +30498,7 @@ return"Технолог 3D · "+({orders:"заказы",order:"заказ",part:
 function otzDev(){const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)),ua=navigator.userAgent||"";
 const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
 return(w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":"");}
-function otzVer(){const b="4c6a4a235a";return/^__/.test(b)?"стенд":b;}
+function otzVer(){const b="0481261996";return/^__/.test(b)?"стенд":b;}
 function otzDet(){return{view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()};}
 function otzCss(){if(OTZ.css&&Date.now()-OTZ.cssAt<120000)return OTZ.css;let css="";for(const sh of Array.from(document.styleSheets)){try{for(const r of Array.from(sh.cssRules||[]))css+=r.cssText+"\n";}catch(_){}}
 OTZ.css=css.replace(/:root\b/g,"html").replace(/@font-face\s*\{[^}]*\}/g,"");OTZ.cssAt=Date.now();return OTZ.css;}
@@ -44271,7 +44292,7 @@ document.body.appendChild(m);
 });
 })();
 (function(){
-const BUILD="4c6a4a235a";/*cehqr-build*/
+const BUILD="0481261996";/*cehqr-build*/
 try{const u=new URL(location.href);if(u.searchParams.has("v")){u.searchParams.delete("v");history.replaceState(history.state,"",u.pathname+u.search+u.hash);}}catch(_){}
 window.__w24VerWait=0;
 if(/^__/.test(BUILD))return;
@@ -44354,7 +44375,7 @@ addEventListener("online",()=>{upd();try{if(typeof toast==="function")toast("И�
 <script>
 (function(){
 if(window.__w24obnov)return;window.__w24obnov=1;
-const BUILD="4c6a4a235a";/*cehqr-build*/
+const BUILD="0481261996";/*cehqr-build*/
 const SEEN="w24-upd-seen",CACHE="w24-upd-cache";
 const ls={get(k){try{return localStorage.getItem(k);}catch(_){return null;}},set(k,v){try{localStorage.setItem(k,v);}catch(_){}}};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
