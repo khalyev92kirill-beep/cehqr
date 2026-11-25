@@ -2864,9 +2864,84 @@ window.dzPrice = function (it) { try { return DZ.price.item(it).total; } catch (
 'use strict';
 (function () {
   const b64u = s => { s = String(s).replace(/-/g, '+').replace(/_/g, '/'); s += '='.repeat((4 - s.length % 4) % 4); return Uint8Array.from(atob(s), c => c.charCodeAt(0)); };
+/* ===== 25.11 сжатый заказ Базиса {v, iv, ct, z:1} (заказ 5,8 МБ на медленном интернете не успевал уйти на сайт; сжатый — ~0,6 МБ) =====
+   Скрипт Базиса сжимает текст заказа (JSON в UTF-8) gzip ДО шифрования. Здесь: расшифровали → z:1 — распаковали → дальше как раньше.
+   Без z — ровно как было (те же строки). Распаковка — DecompressionStream("gzip"); нет его (iPhone с iOS младше 16.4) — своя w24Inflate, без загрузок.
+   После распаковки сверяем длину и контрольную сумму gzip (CRC32): битый или недокачанный файл — понятная ошибка (e.bad), а не пустой заказ
+   и не «ключ не подошёл» (ключи при этом не стираем). Скрипт пишет один gzip-блок (zlib.gzipSync). Любая ошибка или несовпадение
+   у DecompressionStream → своя распаковка; «повреждён» — только если и она не смогла (26.11, строгая проверка: пути дают одно и то же).
+   Предел распакованного — W24_ZMAX (64 МБ): больше — понятная ошибка, а не падение вкладки. */
+function w24ZErr(m){ const e=new Error(m||"Файл заказа повреждён или загружен на сайт не до конца. Выгрузите заказ из Базиса ещё раз («2 Обновить сайт»)."); e.bad=true; return e; }
+const W24_ZMAX=64*1024*1024;
+function w24ZBig(){ const e=w24ZErr("Заказ слишком большой для открытия на телефоне (больше 64 МБ после распаковки). Разделите модель в Базисе на части."); e.big=true; return e; }
+let _w24Crc=null;
+function w24Crc32(u){ let T=_w24Crc; if(!T){ T=_w24Crc=new Int32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; T[n]=c; } }
+  let c=-1; for(let i=0,n=u.length;i<n;i++) c=T[(c^u[i])&255]^(c>>>8); return (c^-1)>>>0; }
+function w24GzHead(u,p){ if(u.length-p<18||u[p]!==0x1f||u[p+1]!==0x8b||u[p+2]!==8) throw w24ZErr(); const p0=p, f=u[p+3]; if(f&0xe0) throw w24ZErr(); p+=10;   // заголовок gzip (RFC 1952); запасные биты флагов — как zlib, отказ
+  if(f&4) p+=2+(u[p]|u[p+1]<<8); if(f&8){ while(p<u.length&&u[p]) p++; p++; } if(f&16){ while(p<u.length&&u[p]) p++; p++; }
+  if(f&2){ if(p+2>u.length||(w24Crc32(u.subarray(p0,p))&0xffff)!==(u[p]|u[p+1]<<8)) throw w24ZErr(); p+=2; }   // CRC заголовка — как zlib
+  if(p>=u.length) throw w24ZErr(); return p; }
+const W24_LB=[3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258], W24_LE=[0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0],
+  W24_DB=[1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577], W24_DE=[0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13],
+  W24_CLO=[16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];
+/* длины кодов Хаффмана → таблица: индекс — следующие m бит (младший первым), значение — символ<<4 | длина кода; 0 — такого кода нет (битые данные) */
+function w24Huff(L,n){ let m=0; for(let i=0;i<n;i++) if(L[i]>m) m=L[i];
+  const cnt=new Uint16Array(16), nx=new Uint16Array(16); for(let i=0;i<n;i++) cnt[L[i]]++; cnt[0]=0;
+  for(let b=1,code=0,left=1;b<16;b++){ left=(left<<1)-cnt[b]; if(left<0) throw w24ZErr(); code=(code+cnt[b-1])<<1; nx[b]=code; }
+  const t=new Uint16Array(1<<m);
+  for(let s=0;s<n;s++){ const l=L[s]; if(!l) continue; let c=nx[l]++, r=0; for(let k=0;k<l;k++){ r=(r<<1)|(c&1); c>>>=1; } const e=(s<<4)|l; for(let j=r;j<t.length;j+=1<<l) t[j]=e; }
+  return {t,m}; }
+let _w24FL=null, _w24FD=null;
+/* своя распаковка gzip (RFC 1951/1952) — для телефонов без DecompressionStream; проверяет длину и CRC32 каждого блока */
+function w24Inflate(u){ const n=u.length, lim=n*8; let p=0, op=0;
+  const isz=n>=4?(u[n-4]|u[n-3]<<8|u[n-2]<<16|u[n-1]<<24)>>>0:0;
+  let out=new Uint8Array(isz>0&&isz<=W24_ZMAX?isz:Math.min(W24_ZMAX,Math.max(1024,n*4)));
+  const grow=need=>{ if(need>W24_ZMAX) throw w24ZBig(); let s=out.length*2; while(s<need) s*=2; s=Math.min(s,W24_ZMAX); const o=new Uint8Array(s); o.set(out.subarray(0,op)); out=o; };
+  while(p<n){ const st=op; p=w24GzHead(u,p); let bp=p*8;
+    const rd=k=>{ const q=bp>>>3, v=((u[q]|u[q+1]<<8|u[q+2]<<16)>>>(bp&7))&((1<<k)-1); bp+=k; return v; };
+    for(let fin=0;!fin;){ if(bp+3>lim) throw w24ZErr(); fin=rd(1); const ty=rd(2); let lt, ld;
+      if(ty===0){ let q=(bp+7)>>>3; if(q+4>n) throw w24ZErr(); const len=u[q]|u[q+1]<<8, nl=u[q+2]|u[q+3]<<8; if((len^0xffff)!==nl||q+4+len>n) throw w24ZErr(); q+=4;
+        if(op+len>out.length) grow(op+len); out.set(u.subarray(q,q+len),op); op+=len; bp=(q+len)*8; continue; }
+      if(ty===1){ if(!_w24FL){ const L=new Uint8Array(288); L.fill(8,0,144); L.fill(9,144,256); L.fill(7,256,280); L.fill(8,280,288); _w24FL=w24Huff(L,288); _w24FD=w24Huff(new Uint8Array(30).fill(5),30); } lt=_w24FL; ld=_w24FD; }
+      else if(ty===2){ const hl=rd(5)+257, hd=rd(5)+1, hc=rd(4)+4; if(hl>286||hd>30) throw w24ZErr(); const cl=new Uint8Array(19); for(let i=0;i<hc;i++) cl[W24_CLO[i]]=rd(3);
+        const ct=w24Huff(cl,19), CM=(1<<ct.m)-1, N=hl+hd, L=new Uint8Array(N);
+        for(let i=0;i<N;){ if(bp>lim) throw w24ZErr(); const q=bp>>>3, e=ct.t[((u[q]|u[q+1]<<8|u[q+2]<<16)>>>(bp&7))&CM]; if(!e) throw w24ZErr(); bp+=e&15; const s=e>>>4;
+          if(s<16){ L[i++]=s; continue; } let r, v=0; if(s===16){ if(!i) throw w24ZErr(); v=L[i-1]; r=3+rd(2); } else if(s===17) r=3+rd(3); else r=11+rd(7);
+          if(i+r>N) throw w24ZErr(); L.fill(v,i,i+r); i+=r; }
+        if(!L[256]) throw w24ZErr(); lt=w24Huff(L.subarray(0,hl),hl); ld=w24Huff(L.subarray(hl),hd); }
+      else throw w24ZErr();
+      const T=lt.t, M=(1<<lt.m)-1, DT=ld.t, DM=(1<<ld.m)-1;
+      for(;;){ let q=bp>>>3, e=T[((u[q]|u[q+1]<<8|u[q+2]<<16)>>>(bp&7))&M]; if(!e||bp>lim) throw w24ZErr(); bp+=e&15; let s=e>>>4;
+        if(s<256){ if(op>=out.length) grow(op+1); out[op++]=s; continue; }
+        if(s===256) break;
+        s-=257; if(s>28) throw w24ZErr(); let len=W24_LB[s]; const le=W24_LE[s]; if(le){ q=bp>>>3; len+=((u[q]|u[q+1]<<8|u[q+2]<<16)>>>(bp&7))&((1<<le)-1); bp+=le; }
+        q=bp>>>3; e=DT[((u[q]|u[q+1]<<8|u[q+2]<<16)>>>(bp&7))&DM]; if(!e) throw w24ZErr(); bp+=e&15; s=e>>>4; if(s>29) throw w24ZErr();
+        let d=W24_DB[s]; const de=W24_DE[s]; if(de){ q=bp>>>3; d+=((u[q]|u[q+1]<<8|u[q+2]<<16)>>>(bp&7))&((1<<de)-1); bp+=de; }
+        if(d>op-st) throw w24ZErr(); if(op+len>out.length) grow(op+len);
+        for(let k=op-d,end=op+len;op<end;) out[op++]=out[k++]; } }
+    if(bp>lim) throw w24ZErr(); p=(bp+7)>>>3; if(p+8>n) throw w24ZErr();
+    const crc=(u[p]|u[p+1]<<8|u[p+2]<<16|u[p+3]<<24)>>>0, sz=(u[p+4]|u[p+5]<<8|u[p+6]<<16|u[p+7]<<24)>>>0; p+=8;
+    if(sz!==((op-st)>>>0)||w24Crc32(out.subarray(st,op))!==crc) throw w24ZErr();
+    while(p<n&&u[p]===0) p++; }   // нули в хвосте после последнего блока — не ошибка
+  return out.subarray(0,op); }
+function w24InflateSafe(u){ try{ return w24Inflate(u); }catch(e){ throw e&&e.bad?e:w24ZErr(); } }   // нехватка памяти и прочее — тоже «повреждён», а не «Проект закрыт»
+async function w24Gunzip(buf){ const u=buf instanceof Uint8Array?buf:new Uint8Array(buf), n=u.length;
+  if(n<18||u[0]!==0x1f||u[1]!==0x8b||u[2]!==8) throw w24ZErr();
+  if(typeof DecompressionStream!=="function") return w24InflateSafe(u);
+  let out=null;
+  try{ const rd=new Blob([u]).stream().pipeThrough(new DecompressionStream("gzip")).getReader(), L=[]; let tot=0;
+    for(;;){ const r=await rd.read(); if(r.done) break; tot+=r.value.length; if(tot>W24_ZMAX){ try{ rd.cancel(); }catch(_){} throw w24ZBig(); } L.push(r.value); }
+    out=new Uint8Array(tot); let o=0; for(const c of L){ out.set(c,o); o+=c.length; } }
+  catch(e){ if(e&&e.big) throw e; out=null; }   // поток не справился (по любой причине) — дальше своя распаковка
+  if(out){ const crc=(u[n-8]|u[n-7]<<8|u[n-6]<<16|u[n-5]<<24)>>>0, isz=(u[n-4]|u[n-3]<<8|u[n-2]<<16|u[n-1]<<24)>>>0;
+    if((out.length>>>0)===isz&&w24Crc32(out)===crc) return out; }
+  return w24InflateSafe(u); }   // ошибка или не сошлось (несколько блоков подряд, нули после конца, битый файл) — своя распаковка проверит каждый блок и скажет понятно
   async function decrypt(obj, key) {
     const k = await crypto.subtle.importKey('raw', b64u(key), 'AES-GCM', false, ['decrypt']);
-    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64u(obj.iv) }, k, b64u(obj.ct));
+    let pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64u(obj.iv) }, k, b64u(obj.ct));
+    if (obj.z != null && obj.z !== 0 && obj.z !== false) {   // 25.11: z:1 — заказ сжат gzip до шифрования (как в tools/site_secure.js)
+      if (obj.z !== 1 && obj.z !== '1') throw w24ZErr('Этот заказ записан новой версией скрипта Базиса — обновите страницу.');
+      pt = await w24Gunzip(pt); }
     return new TextDecoder().decode(pt).replace(/^﻿/, '');
   }
   const BASE = '../orders/';
@@ -2888,7 +2963,7 @@ window.dzPrice = function (it) { try { return DZ.price.item(it).total; } catch (
     const r = await fetch(BASE + encodeURIComponent(id) + '.json', { cache: 'no-cache' });
     if (!r.ok) throw new Error(r.status === 404 ? 'Заказ ' + id + ' не найден на сайте' : 'Сайт не ответил');
     let txt = await r.text(), obj = null; try { obj = JSON.parse(txt.replace(/^﻿/, '')); } catch (_) { throw new Error('Файл заказа повреждён'); }
-    if (obj && obj.ct) { const k = await keyFor(id, key); if (!k) throw new Error('Заказ закрыт. Откройте его один раз в «Технолог 3D» по QR-ссылке и повторите.'); try { obj = JSON.parse(await decrypt(obj, k)); } catch (_) { throw new Error('Ключ заказа не подошёл'); } }
+    if (obj && obj.ct) { const k = await keyFor(id, key); if (!k) throw new Error('Заказ закрыт. Откройте его один раз в «Технолог 3D» по QR-ссылке и повторите.'); try { obj = JSON.parse(await decrypt(obj, k)); } catch (e) { throw e && e.bad ? e : new Error('Ключ заказа не подошёл'); } }
     return cache[id] = obj;
   }
   // группа модуля заказа для 3D (вызывается из view3d)
