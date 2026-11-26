@@ -8382,7 +8382,21 @@ if(u==="лист")return b[2]?Math.round(b[0]*b[2]):b[0];const pk=u==="шт"&&ty
 const fmtN=v=>(Math.round((+v||0)*100)/100).toLocaleString("ru-RU");
 function smMont(d,need){const L=smLinEff(d);return need.mods.floor*1225+need.mods.up*1400+need.mods.tall*2100+((+L.top||0)>0?1500:0)+((+L.apron||0)>0?1050:0);}
 function smFmSlots(need){return Object.keys(need.fronts).filter(k=>k.startsWith("fm:")).map(k=>({k,n:"Фасады: "+k.slice(3),sec:"ldsp|plit",kind:"front",mm:need.fmMat[k],dyn:true}));}
-function smCalc(d){const need=smNeed(d),lines=SM_SLOTS.concat(smFmSlots(need),smFxSlots(need)).map(s=>Object.assign({s},smLine(s,d,need))).filter(l=>l.q>0||l.m);
+const SM_FPN={mat:"матовая",gl:"глянцевая",fr:"фрезерованная"};
+function smFrontSlotsAll(need){return SM_SLOTS.filter(s=>s.kind==="front").concat(smFmSlots(need));}
+function smFpSlots(d,need){const f=d&&d.fp;if(!f||typeof f!=="object")return[];const L=[],pt=f.pt||{};
+["mat","gl","fr"].forEach(k=>{const keys=Object.keys(pt).filter(s=>pt[s]===k);if(keys.length)L.push({k:"fp:pnt:"+k,n:"Покраска фасадов (сами), м² — "+SM_FPN[k],kind:"fp",fpT:"pnt",fpK:k,keys,dyn:true});});
+if(f.ih&&+f.ih.q>0)L.push({k:"fp:ih",n:"Интегрированная ручка, шт",kind:"fp",fpT:"ih",dyn:true});
+if(f.rad&&+f.rad.q>0)L.push({k:"fp:rad",n:"Радиусный фасад, шт",kind:"fp",fpT:"rad",dyn:true});
+if(f.tk)L.push({k:"fp:tk",n:"Доставка транспортной компанией",kind:"fp",fpT:"tk",dyn:true});
+return L;}
+function smFpLine(slot,d,need){const f=d.fp||{},num=v=>Math.min(1e7,Math.max(0,+String(v==null?"":v).replace(/\s/g,"").replace(",",".")||0));let q=0,u="шт",p=0,note="";
+if(slot.fpT==="pnt"){const FS=smFrontSlotsAll(need);slot.keys.forEach(k=>{const s=FS.find(z=>z.k===k);if(!s)return;const l=smLine(s,d,need);if(l.u==="м²")q+=+l.q||0;});q=Math.round(q*100)/100;u="м²";p=num((f.pp||{})[slot.fpK]);note=q?"м² фасадов «красим сами»"+(d.fm2?", с запасом":""):"у выбранных фасадов нет м² — фасады листами не красим";}
+else if(slot.fpT==="ih"){q=num(f.ih.q);p=num(f.ih.p);note="за фасад";}
+else if(slot.fpT==="rad"){q=num(f.rad.q);p=num(f.rad.p);note=p?"за фасад":"впишите цену радиусного фасада";}
+else if(slot.fpT==="tk"){q=1;u="";p=num(f.tk.s);note=p?"":"впишите сумму доставки";}
+return{q,u,p,sum:Math.round(q*(p||0)),note,m:{n:slot.n,p:p||""},fa:false};}
+function smCalc(d){const need=smNeed(d),lines=SM_SLOTS.concat(smFmSlots(need),smFxSlots(need),smFpSlots(d,need)).map(s=>Object.assign({s},s.kind==="fp"?smFpLine(s,d,need):smLine(s,d,need))).filter(l=>l.q>0||(l.m&&l.s.kind!=="fp"));
 const mats=lines.reduce((a,l)=>a+l.sum,0),k=Math.min(SM_KMAX,Math.max(SM_KMIN,+d.k||0.38)),deliv=+d.deliv||0,mk=Object.assign({},smCfg().mk,d.mk||{});
 let matsK=0,ldspA=0;lines.forEach(l=>{const g=smMkGrp(l);l.g=g;l.sumK=Math.round(l.sum*(1+(+mk[g]||0)/100));matsK+=l.sumK;if(l.s.kind==="sheet"&&l.s.k==="body")ldspA+=need.body;if(l.s.kind==="front"&&(l.u==="лист"||l.fa))ldspA+=need.fronts[l.s.k]||0;});
 const works=smWorks(d,need,ldspA),wC=works.reduce((a,x)=>a+x.sc,0),wM=works.reduce((a,x)=>a+x.sm,0);
@@ -8457,7 +8471,7 @@ function mgLv(p){const t=mgThr();return p>=t?"ok":p>=t-5?"warn":"bad";}
 function mgBanner(c){if(!mgSee()||!(c.furnD>0))return"";const t=mgThr();if(c.mgP>=t)return"";
 const byDisc=c.disc>0&&c.mgP0>=t;
 return`<div class="sm-mg ${mgLv(c.mgP)}" role="status"><b>Маржа ${esc(mgPct(c.mgP))} — ниже порога ${esc(mgPct(t))}.</b> Проверьте цену или скидку.${byDisc?`<small>Без скидки ${esc(String(c.disc))} % было бы ${esc(mgPct(c.mgP0))} — скидка опустила ниже порога.</small>`:""}${c.noPrice?`<small>У ${c.noPrice} материалов нет цены — маржа неточная.</small>`:""}</div>`;}
-function smMkGrp(l){const k=l.s.k;if(k==="body"||k==="back"||k==="edge"||k==="edgeF")return"ldsp";if(l.s.kind==="front")return l.u==="лист"?"ldsp":"front";return"furn";}
+function smMkGrp(l){const k=l.s.k;if(k==="body"||k==="back"||k==="edge"||k==="edgeF")return"ldsp";if(l.s.kind==="front")return l.u==="лист"?"ldsp":"front";if(l.s.kind==="fp")return l.s.fpT==="tk"?"furn":"front";return"furn";}
 function smWorks(d,need,ldspA){const W=need.w,L=smLinEff(d),q={};
 q["R-01"]=Math.round(ldspA*100)/100;q["R-04"]=Math.round(need.back*100)/100;q["K-01"]=Math.ceil(need.edge+(need.edgeF||0));q["PR-1"]=W.evro;q["PR-2"]=need.hinge;
 q["O-01"]=Math.round((ldspA+need.back)*100)/100;q["S-01"]=W.modS;q["S-03"]=W.modT;q["S-02"]=W.drw;q["S-04"]=W.fdoor;q["S-07"]=W.shelf;q["S-08"]=W.mods;
@@ -8489,7 +8503,7 @@ const o={client:sm.client,phone:sm.phone||"",kind:sm.kind||"",stage:"dogovor",ow
 const j=await shpPost({action:"shopSave",order:o});if(!j)return;sm.deal=j.id;sm.status="deal";await smSave(false,true);
 toast("Сделка № "+j.num+" создана");await shpLoad(true);if(!shpById(j.id))S.shop.orders.push(Object.assign({},o,{id:j.id,num:j.num}));shpRenderKeep();}
 async function smLost(){const sm=S.shop.sm;if(!(await appConfirm("Клиент отказался? Смета останется в списке «Отказ».","Отказ")))return;sm.status="lost";await smSave(false,true);toast("Отмечено: отказ");}
-const SM_GROUPS=[{k:"body",n:"Корпус",s:["body"]},{k:"front",n:"Фасады",s:["front","frontU"],dyn:true},{k:"top",n:"Столешница",s:["top"]},{k:"apron",n:"Фартук",s:["apron"]},
+const SM_GROUPS=[{k:"body",n:"Корпус",s:["body"]},{k:"front",n:"Фасады",s:["front","frontU"],dyn:true},{k:"fp",n:"Покраска и доп. к фасадам",s:[],dyn:true,dk:"fp",ic:"🖌"},{k:"top",n:"Столешница",s:["top"]},{k:"apron",n:"Фартук",s:["apron"]},
 {k:"furn",n:"Фурнитура",s:["hinge","slide","handle","push","gola","legs","hang"],ic:"⚙"},{k:"dry",n:"Сушилки",s:SM_DRYW.map(w=>"dry"+w),ic:"▤"},{k:"fx",n:"Своя фурнитура модулей",s:[],dyn:true,dk:"fx",ic:"✚"},{k:"led",n:"Подсветка",s:["led","ledp","psu","sw"],ic:"💡"},{k:"edge",n:"Кромка",s:["edge","edgeF"]},{k:"back",n:"Задняя стенка",s:["back"]},{k:"plinth",n:"Цоколь",s:["plinth"]}];
 const SM_ROWS=[{k:"up2",n:"Антресоль (3-й ярус)",t:["up2"]},{k:"up",n:"Верх",t:["cornU","up","upF"]},{k:"low",n:"Низ и пеналы",t:["cornL","low","sink","drw","tall"]},{k:"cab",n:"Шкафы",t:["cab"]}];
 function smHtml(){const sm=S.shop.sm,o=sm&&shpById(sm.deal);
@@ -8521,10 +8535,11 @@ const L0=d.lin||{};h+=`<button type="button" class="sm-room" data-act="sm-lin"><
 }
 if(tb==="mat"){
 h+=`<div class="sm-tiles">${SM_GROUPS.map(g=>{const ls=g.s.map(k=>{const s=SM_SLOTS.find(x=>x.k===k);return c.lines.find(x=>x.s.k===k)||Object.assign({s},smLine(s,d,c.need));}).concat(g.dyn?c.lines.filter(x=>x.s.dyn&&x.s.kind===(g.dk||"front")):[]),need=ls.some(l=>l.q>0),sum=ls.reduce((a,l)=>a+l.sum,0),bad=ls.filter(l=>l.q>0&&(!l.m||!l.p)).length;
-if(!need&&!ls.some(l=>l.m)&&!S.shop.smAll)return"";
-const one=g.s.length===1&&!g.dyn?ls[0]:null,m=one&&one.m,fm0=g.dyn?(ls[0].m||null):null,sw=(m||fm0)&&(m||fm0).n&&S.cat&&S.cat.data?smSw((m||fm0).n):"";
+if(!need&&!ls.some(l=>l.m)&&!S.shop.smAll&&!(g.k==="fp"&&c.need.front>0&&!cm))return"";
+if(g.k==="fp"&&cm&&!need)return"";
+const one=g.s.length===1&&!g.dyn?ls[0]:null,m=one&&one.m,fm0=g.dyn&&g.k!=="fp"?((ls[0]&&ls[0].m)||null):null,sw=(m||fm0)&&(m||fm0).n&&S.cat&&S.cat.data?smSw((m||fm0).n):"";
 const sub=one?(m&&m.n?esc(m.n):"не выбрано"):g.dyn?ls.filter(l=>l.q>0||l.m).map(l=>esc((l.m&&l.m.n)||"не выбрано")+" — "+fmtN(l.q)+" "+l.u).join("; "):ls.filter(l=>l.q>0).map(l=>esc(l.s.n.replace(/^Подсветка: /,"").replace(/ \(.*\)/,"").toLowerCase())+" "+fmtN(l.q)).join(", ");
-return`<button type="button" class="sm-tile${bad&&!cm?" bad":""}" data-act="${one?"sm-pick":"sm-grp"}" data-k="${one?one.s.k:g.k}">${sw?sw.replace('class="cat-sw','class="sm-tsw'):`<span class="sm-tsw none" aria-hidden="true">${g.ic||"▦"}</span>`}<b>${esc(g.n)}</b><small>${sub||"—"}</small><small class="sm-tq">${cm?(one&&one.q?esc(fmtN(one.q)+" "+one.u):(bad?"выберите":"")):`${one&&one.q?esc(fmtN(one.q)+" "+one.u)+" · ":""}${sum?esc(shpRub(sum)):bad?"⚠ выберите / цена":"—"}`}</small></button>`;}).join("")}
+return`<button type="button" class="sm-tile${bad&&!cm?" bad":""}" data-act="${one?"sm-pick":"sm-grp"}" data-k="${one?one.s.k:g.k}">${sw?sw.replace('class="cat-sw','class="sm-tsw'):`<span class="sm-tsw none" aria-hidden="true">${g.ic||"▦"}</span>`}<b>${esc(g.n)}</b><small>${sub||(g.k==="fp"?"красим сами · ручка · радиусные · доставка ТК":"—")}</small><small class="sm-tq">${cm?(one&&one.q?esc(fmtN(one.q)+" "+one.u):(bad?"выберите":"")):`${one&&one.q?esc(fmtN(one.q)+" "+one.u)+" · ":""}${sum?esc(shpRub(sum)):bad?"⚠ выберите / цена":"—"}`}</small></button>`;}).join("")}
     <button type="button" class="sm-tile sm-tmore" data-act="sm-more"><span class="sm-tsw none">${S.shop.smAll?"−":"+"}</span><b>${S.shop.smAll?"Скрыть пустые":"Ещё"}</b><small>${S.shop.smAll?"":"фартук, цоколь, кромка…"}</small></button></div>`;
 if(!cm)h+=`<button type="button" class="sm-room" data-act="sm-mk"><span>Наценка</span><b>ЛДСП и кромка ${esc(String(c.mk.ldsp))} % · фасады ${esc(String(c.mk.front))} % · фурнитура ${esc(String(c.mk.furn))} %</b><span class="sm-ed">✎</span></button>`;
 }
@@ -8571,7 +8586,35 @@ x.innerHTML=`<form class="modal-card" autocomplete="off" style="width:min(420px,
     <div style="display:flex;gap:8px;margin-top:14px"><button class="btn primary" type="submit">Готово</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
 document.body.appendChild(x);x.addEventListener("click",e=>{if(e.target===x||e.target.closest('[data-act="qr-close"]'))x.remove();});
 x.querySelector("form").addEventListener("submit",e=>{e.preventDefault();const f=e.target.elements,n=v=>Math.max(0,+String(v).replace(/\s/g,"").replace(",",".")||0);F.forEach(([k])=>{const v=n(f[k].value);L[k]=v>=50?Math.round(v)/1000:v;});d.deliv=Math.round(n(f.deliv.value));S.shop.sm.dirty=true;x.remove();shpRenderKeep();});}
-function smGrpModal(gk){const g=SM_GROUPS.find(x=>x.k===gk),d=S.shop.sm.data,c=smCalc(d);if(!g)return;document.getElementById("smGrpM")?.remove();
+async function smFpModal(){const sm=S.shop.sm,d=sm.data,QX=window.__qk&&window.__qk.x;if(QX&&QX.set&&(!QX.set()||QX.set().off)&&QX.load){try{await QX.load();}catch(_){}}
+const P=QX&&QX.pnt?QX.pnt():{mat:0,gl:0,fr:0,ih:0},SET=(QX&&QX.pntSet)||"Цена → «Настройки цены» → «для всей фирмы»",ro=!!S.shop.smClient;
+document.getElementById("smFpM")?.remove();const x=document.createElement("div");x.className="modal";x.id="smFpM";
+const draw=()=>{const c=smCalc(d),f=d.fp||{},pt=f.pt||{},FS=smFrontSlotsAll(c.need).map(s=>({s,l:c.lines.find(z=>z.s.k===s.k)})).filter(o=>o.l&&o.l.q>0);
+const opt=(k,cur)=>`<button type="button" class="btn sm${cur===k?" primary":""}" data-fpk="${esc(k)}" aria-pressed="${cur===k}">${k?SM_FPN[k][0].toUpperCase()+SM_FPN[k].slice(1)+(P[k]>0?" · "+shpRub(+(f.pp||{})[k]||P[k])+"/м²":" · нет цены"):"нет"}</button>`;
+const fpl=c.lines.filter(l=>l.s.kind==="fp");
+if(ro){x.innerHTML=`<div class="modal-card sm-fpm" style="width:min(520px,100%)"><h2 style="margin:0 0 6px">Покраска и доп. к фасадам</h2>${fpl.length?`<ul class="shp-zl sm-fpl">${fpl.map(l=>`<li><span><b>${esc(l.s.n)}</b>${l.s.fpT==="tk"?"":`<small class="muted">${esc(fmtN(l.q)+" "+l.u)}</small>`}</span></li>`).join("")}</ul>`:`<p class="muted">Ничего не выбрано.</p>`}<button class="btn primary" type="button" data-fpx="1" style="margin-top:12px;width:100%">Готово</button></div>`;return;}
+x.innerHTML=`<div class="modal-card sm-fpm" style="width:min(520px,100%)"><h2 style="margin:0 0 6px">Покраска и доп. к фасадам</h2>
+      <p class="sm-ml">Красим сами — у каких фасадов</p>${FS.length?FS.map(o=>{const m2=o.l.u==="м²";return`<div class="sm-fpr" data-fs="${esc(o.s.k)}"><b>${esc((o.l.m&&o.l.m.n)||o.s.n)}</b><small class="muted">${esc(fmtN(o.l.q)+" "+o.l.u)}${m2?"":" — листами: покраску считаем только у фасадов по м²"}</small>${m2?`<div class="sm-fpo">${["","mat","gl","fr"].map(k=>opt(k,pt[o.s.k]||"")).join("")}</div>`:""}</div>`;}).join(""):`<p class="muted">В смете пока нет фасадов — добавьте модули с дверями.</p>`}
+      ${["mat","gl","fr"].some(k=>!(P[k]>0))?`<p class="muted" style="margin:4px 0 10px">Цены покраски вписывает директор: ${esc(SET)}.</p>`:""}
+      <p class="sm-ml">Интегрированная ручка</p><label class="sm-fpi">На скольких фасадах<input class="sm-in" data-fpf="ih.q" inputmode="numeric" value="${esc(String((f.ih&&f.ih.q)||""))}" aria-label="Интегрированная ручка — сколько фасадов"></label><small class="muted">${P.ih>0||(f.ih&&+f.ih.p>0)?shpRub(+((f.ih&&f.ih.p)||P.ih))+" за фасад":"цена не вписана — "+esc(SET)}</small>
+      <p class="sm-ml">Радиусные фасады</p><div class="sm-grid" style="grid-template-columns:1fr 1fr"><label>Сколько, шт<input class="sm-in" data-fpf="rad.q" inputmode="numeric" value="${esc(String((f.rad&&f.rad.q)||""))}"></label><label>Цена за фасад, ₽<input class="sm-in" data-fpf="rad.p" inputmode="decimal" value="${esc(String((f.rad&&f.rad.p)||""))}" placeholder="впишите цену"></label></div>
+      <p class="sm-ml">Доставка транспортной компанией</p><label class="sm-fpi">Сумма, ₽<input class="sm-in" data-fpf="tk.s" inputmode="decimal" value="${esc(String((f.tk&&f.tk.s)||""))}" placeholder="впишите сумму доставки"></label>
+      ${fpl.length?`<ul class="shp-zl sm-fpl">${fpl.map(l=>`<li><span><b>${esc(l.s.n)}</b><small class="muted">${l.q?esc(fmtN(l.q)+" "+l.u):""}${l.p?" × "+esc(shpRub(l.p)):` · <span class="sm-need">${esc(l.note||"нет цены")}</span>`}</small></span><b>${l.sum?esc(shpRub(l.sum)):"—"}</b></li>`).join("")}</ul>`:""}
+      <button class="btn primary" type="button" data-fpx="1" style="margin-top:12px;width:100%">Готово</button></div>`;};
+const save=()=>{const f=d.fp||{};["pt","pp"].forEach(k=>{if(f[k]&&!Object.keys(f[k]).length)delete f[k];});["ih","rad","tk"].forEach(k=>{if(f[k]&&!Object.values(f[k]).some(v=>v!==""&&v!=null&&+v!==0))delete f[k];});
+if(Object.keys(f).length)d.fp=f;else delete d.fp;sm.dirty=true;};
+draw();document.body.appendChild(x);
+x.addEventListener("click",e=>{if(ro){if(e.target.closest("[data-fpx]")||e.target===x)x.remove();return;}const b=e.target.closest("[data-fpk]");if(b){const row=b.closest("[data-fs]"),k=b.dataset.fpk,f=d.fp=d.fp||{};if(!row)return;
+if(k&&!(P[k]>0)&&!(+(f.pp||{})[k]>0)){toast("Впишите цену покраски в настройках: "+SET);return;}
+f.pt=f.pt||{};if(k){f.pt[row.dataset.fs]=k;f.pp=f.pp||{};if(!(+f.pp[k]>0))f.pp[k]=P[k];}else delete f.pt[row.dataset.fs];
+Object.keys(f.pp||{}).forEach(v=>{if(!Object.values(f.pt).includes(v))delete f.pp[v];});
+save();draw();shpRenderKeep();return;}
+if(e.target.closest("[data-fpx]")||e.target===x){x.remove();shpRenderKeep();}});
+x.addEventListener("change",e=>{if(ro)return;const t=e.target.closest("[data-fpf]");if(!t)return;const[g,k]=t.dataset.fpf.split("."),f=d.fp=d.fp||{},raw=String(t.value).replace(/\s/g,"").replace(",","."),v=raw===""?"":Math.min(1e7,Math.max(0,+raw||0));
+if(g==="ih"&&k==="q"&&v>0&&!(P.ih>0)&&!(f.ih&&+f.ih.p>0)){toast("Впишите цену интегрированной ручки в настройках: "+SET);t.value="";return;}
+f[g]=f[g]||{};f[g][k]=g==="ih"&&k==="q"||g==="rad"&&k==="q"?(v===""?"":Math.round(v)):v;if(g==="ih"&&f.ih.q>0&&!(+f.ih.p>0))f.ih.p=P.ih;
+save();draw();shpRenderKeep();});}
+function smGrpModal(gk){if(gk==="fp")return smFpModal();const g=SM_GROUPS.find(x=>x.k===gk),d=S.shop.sm.data,c=smCalc(d);if(!g)return;document.getElementById("smGrpM")?.remove();
 const x=document.createElement("div");x.className="modal";x.id="smGrpM";
 x.innerHTML=`<div class="modal-card" style="width:min(480px,100%)"><h2 style="margin:0 0 10px">${esc(g.n)}</h2><ul class="shp-zl">${g.s.map(k=>{const s=SM_SLOTS.find(z=>z.k===k),l=c.lines.find(z=>z.s.k===k)||Object.assign({s},smLine(s,d,c.need)),m=l.m;if(k==="frontU"&&!m&&!l.q)return`<li><button type="button" class="shp-zli sm-sl" data-k="frontU"><span><b>Фасады верха другие?</b><small class="muted">нажмите и выберите — верх посчитается отдельно</small></span><b>+</b></button></li>`;
 return`<li><button type="button" class="shp-zli sm-sl" data-k="${k}"><span><b>${esc(s.n.replace(/^Подсветка: /,""))}</b><small class="muted">${m&&m.n?esc(m.n):"<span class=\"sm-need\">не выбрано — нажмите</span>"}</small><small class="muted">${l.q?esc(fmtN(l.q)+" "+l.u)+(S.shop.smClient?"":(l.p?" × "+esc(shpRub(l.p)):" · нет цены")):"не нужно по модулям"}</small></span><b>${S.shop.smClient?"":l.sum?esc(shpRub(l.sum)):"—"}</b></button>${m&&m.n&&smPriceEd()?`<button type="button" class="sm-pe sm-pe2" data-pe="${esc(m.n)}" data-u="${esc(l.u==="лист"?"лист":l.u||"шт")}" title="Изменить цену в прайсе — для всех смет" aria-label="Изменить цену: ${esc(m.n)}">✎ ₽</button>`:""}</li>`;}).join("")}${g.dyn?c.lines.filter(l=>l.s.dyn&&l.s.kind===(g.dk||"front")).map(l=>`<li><div class="shp-zli"><span><b>${esc(l.s.n)}</b><small class="muted">свой фасад у модуля · ${esc(fmtN(l.q)+" "+l.u)}${S.shop.smClient?"":(l.p?" × "+esc(shpRub(l.p)):" · нет цены")} · менять — в окошке модуля</small></span><b>${S.shop.smClient?"":l.sum?esc(shpRub(l.sum)):"—"}</b></div></li>`).join(""):""}</ul>
@@ -8806,6 +8849,7 @@ tm=setTimeout(()=>{stop();S.shop.smClient=false;try{localStorage.removeItem("ceh
 .sm-b span{font-weight:500;font-size:10.5px;color:var(--muted)}.sm-b:hover,.sm-b:focus-visible{border-color:var(--frame-strong);background:var(--w2-soft)}.sm-plus{width:30px;height:30px;border-style:dashed;color:var(--ink);font-size:18px;align-self:flex-end}.sm-addcab{margin-top:6px;font-size:12.5px}
 .sm-tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:0 0 10px}@media (min-width:700px){.sm-tiles{grid-template-columns:repeat(3,1fr)}}
 .sm-tile{display:flex;flex-direction:column;align-items:stretch;gap:2px;text-align:left;background:var(--surface);border:1.5px solid transparent;border-radius:12px;padding:8px;color:var(--ink);font:inherit;cursor:pointer;min-width:0}.sm-tile.bad{border-color:rgba(255,214,10,.45)}.sm-tile b{font-size:14px}.sm-tile small{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.sm-tile .sm-tq{color:var(--ink);font-weight:600}.sm-tile.bad .sm-tq{color:var(--w2-yt)}
+.sm-fpr{display:flex;flex-direction:column;gap:4px;padding:8px 0;border-bottom:1px solid var(--line,rgba(127,127,127,.2))}.sm-fpo{display:flex;flex-wrap:wrap;gap:6px}.sm-fpo .btn{min-height:44px}.sm-fpi{display:flex;align-items:center;justify-content:space-between;gap:8px}.sm-fpi .sm-in{max-width:140px}.sm-fpl{margin-top:10px}
 .sm-tsw{display:grid;place-items:center;height:38px;border-radius:7px;margin-bottom:4px;background-size:cover;font-size:18px}.sm-tsw.none{background:var(--sunk)}.sm-tmore{border:1.5px dashed #555}
 .sm-spacer{height:150px}.sm-dock{position:fixed;left:0;right:0;bottom:0;z-index:39;background:#1c1c1e;border-top:1px solid #000;padding:8px max(16px,env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 18px #0008}.sm-dock.vtx{bottom:calc(54px + env(safe-area-inset-bottom,0px));padding-bottom:10px}
 .sm-dock>*{max-width:900px;margin-left:auto;margin-right:auto}.sm-dr span{white-space:nowrap}.sm-cats .cat-chips{margin:6px 0 0;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}.sm-cats .chip{flex:none}.sm-gap{border-style:dashed;background:transparent;color:var(--muted)}.sm-gap span{font-size:10px;line-height:1.1;text-align:center}.sm-b.corn{border-color:rgba(255,214,10,.45);background:var(--warn-soft);color:var(--w2-yt)}.sm-b.w2{border-style:dotted}.sm-b.w3{border-style:double}.ok-btn{background:#30d15822!important;color:#7ee2a0!important}.sm-ml{margin:10px 0 4px;font-size:12px;color:var(--muted)}.sm-fm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.sm-seg2 button{font-size:12.5px}.sm-mv{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.sm-tsel{font-size:18px;font-weight:700;padding:6px 8px}.sm-vn{font-size:18px;font-weight:700}.sm-vid{flex-wrap:nowrap;margin:0 0 10px}.sm-vid button{flex:1 1 auto;min-width:0;padding:0 6px;font-size:13px;white-space:nowrap}
@@ -17087,10 +17131,11 @@ if(M.common>0||(d.lin&&(+d.lin.top||+d.lin.apron||+d.lin.plinth||+d.lin.led)))h+
 const L0=d.lin||{};h+=`<button type="button" class="sm-room" data-act="sm-lin"><span>Погонные</span><b>столешница ${smMM(L0.top)} · фартук ${smMM(L0.apron)} · цоколь ${smMM(L0.plinth)} · подсветка ${smMM(L0.led)}</b><span class="sm-ed">✎</span></button>`;
 return h;}
 function smnMatBody(d,c,cm){let h=`<div class="sm-tiles smn-mats">${SM_GROUPS.map(g=>{const ls=g.s.map(k=>{const s=SM_SLOTS.find(x=>x.k===k);return c.lines.find(x=>x.s.k===k)||Object.assign({s},smLine(s,d,c.need));}).concat(g.dyn?c.lines.filter(x=>x.s.dyn&&x.s.kind===(g.dk||"front")):[]),need=ls.some(l=>l.q>0),sum=ls.reduce((a,l)=>a+(l.sumK||0),0),sumR=ls.reduce((a,l)=>a+l.sum,0),bad=ls.filter(l=>l.q>0&&(!l.m||!l.p)).length;
-if(!need&&!ls.some(l=>l.m)&&!S.shop.smAll)return"";
-const one=g.s.length===1&&!g.dyn?ls[0]:null,m=one&&one.m,fm0=g.dyn?(ls[0].m||null):null,sw=(m||fm0)&&(m||fm0).n&&S.cat&&S.cat.data?smSw((m||fm0).n):"";
+if(!need&&!ls.some(l=>l.m)&&!S.shop.smAll&&!(g.k==="fp"&&c.need.front>0&&!cm))return"";
+if(g.k==="fp"&&cm&&!need)return"";
+const one=g.s.length===1&&!g.dyn?ls[0]:null,m=one&&one.m,fm0=g.dyn&&g.k!=="fp"?((ls[0]&&ls[0].m)||null):null,sw=(m||fm0)&&(m||fm0).n&&S.cat&&S.cat.data?smSw((m||fm0).n):"";
 const sub=one?(m&&m.n?esc(m.n):"не выбрано"):g.dyn?ls.filter(l=>l.q>0||l.m).map(l=>esc((l.m&&l.m.n)||"не выбрано")+" — "+fmtN(l.q)+" "+l.u).join("; "):ls.filter(l=>l.q>0).map(l=>esc(l.s.n.replace(/^Подсветка: /,"").replace(/ \(.*\)/,"").toLowerCase())+" "+fmtN(l.q)).join(", ");
-return`<button type="button" class="sm-tile smn-mt${bad&&!cm?" bad":""}" data-act="${one?"sm-pick":"sm-grp"}" data-k="${one?one.s.k:g.k}">${sw?sw.replace('class="cat-sw','class="sm-tsw'):`<span class="sm-tsw none" aria-hidden="true">${g.ic||"▦"}</span>`}<span class="smn-mtn"><b>${esc(g.n)}</b><small>${sub||"—"}</small></span><small class="sm-tq">${cm?(one&&one.q?esc(fmtN(one.q)+" "+one.u):(bad?"выберите":"")):`${one&&one.q?esc(fmtN(one.q)+" "+one.u)+"<br>":""}${sum?esc(smnRub(sum)):bad?"⚠ выберите / цена":"—"}${sumR&&sum!==sumR?`<i>закупка ${esc(smnRub(sumR))}</i>`:""}`}</small></button>`;}).join("")}
+return`<button type="button" class="sm-tile smn-mt${bad&&!cm?" bad":""}" data-act="${one?"sm-pick":"sm-grp"}" data-k="${one?one.s.k:g.k}">${sw?sw.replace('class="cat-sw','class="sm-tsw'):`<span class="sm-tsw none" aria-hidden="true">${g.ic||"▦"}</span>`}<span class="smn-mtn"><b>${esc(g.n)}</b><small>${sub||(g.k==="fp"?"красим сами · ручка · радиусные · доставка ТК":"—")}</small></span><small class="sm-tq">${cm?(one&&one.q?esc(fmtN(one.q)+" "+one.u):(bad?"выберите":"")):`${one&&one.q?esc(fmtN(one.q)+" "+one.u)+"<br>":""}${sum?esc(smnRub(sum)):bad?"⚠ выберите / цена":"—"}${sumR&&sum!==sumR?`<i>закупка ${esc(smnRub(sumR))}</i>`:""}`}</small></button>`;}).join("")}
     <button type="button" class="sm-tile sm-tmore smn-mt" data-act="sm-more"><span class="sm-tsw none">${S.shop.smAll?"−":"+"}</span><span class="smn-mtn"><b>${S.shop.smAll?"Скрыть пустые":"Ещё"}</b><small>${S.shop.smAll?"":"фартук, цоколь, кромка…"}</small></span></button></div>`;
 if(!cm)h+=`<button type="button" class="sm-room" data-act="sm-mk"><span>Наценка</span><b>ЛДСП и кромка ${esc(String(c.mk.ldsp))} % · фасады ${esc(String(c.mk.front))} % · фурнитура ${esc(String(c.mk.furn))} %</b><span class="sm-ed">✎</span></button>`;
 return h;}
@@ -18755,6 +18800,14 @@ document.addEventListener("click",ev=>{if(!(QK.fzW>0))return;const t=ev.target.c
 {const st=document.createElement("style");st.textContent="[data-fzw0]{opacity:.5;cursor:progress}";document.head.appendChild(st);}
 const qkFZneed=d=>!!d&&((d.qk&&d.qk.fm2&&d.qk.fzz==null)||(!d.qk&&d.fm2&&d.fzz==null));
 const QK_FZNO="Настройки фирмы не загрузились (запас на фасады) — сумма может быть неверной. Проверьте связь и нажмите ещё раз";
+const QK_PNT=[["mat","матовая"],["gl","глянцевая"],["fr","фрезерованная"]],QK_PNTN={mat:"матовая",gl:"глянцевая",fr:"фрезерованная"},QK_PNTSET="Цена → «Настройки цены» → «для всей фирмы»";
+function qkPnt(){const f=(QK.set&&QK.set.firm&&QK.set.firm.pcF)||{},P=f.pnt||{},ok=v=>v!==""&&v!=null&&isFinite(+v)&&+v>0?Math.round(+v):0;return{mat:ok(P.mat),gl:ok(P.gl),fr:ok(P.fr),ih:ok(f.ih)};}
+const qkIsPntSrc=y=>!!(y&&y.pt&&!y.sp&&!y.pvh&&!y.cz&&qkIsFa(y));
+function qkPntQ(q,x){const z=qkFZq(q);let s=0;((q&&q.it&&q.it.front)||[]).forEach(y=>{if(qkIsPntSrc(y)&&y.pt===x.pv)s+=qkFaQB(num(y.q),z);});return Math.round(s*100)/100;}
+const qkSpLim=v=>Math.min(1e7,Math.max(0,+v||0));
+if(typeof smSave==="function"){const _pnS=smSave;smSave=function(){try{const q=S.shop&&S.shop.sm&&S.shop.sm.data&&S.shop.sm.data.qk;if(q&&q.it&&Array.isArray(q.it.front))q.it.front.forEach(x=>{if(x&&x.sp==="pnt")x.q=qkPntQ(q,x);});}catch(_){}return _pnS.apply(this,arguments);};}
+function qkPntRow(k,p){return{n:"Покраска фасадов (сами), м² — "+QK_PNTN[k],u:"м²",p,q:0,sp:"pnt",pv:k,cz:1,sec:"fpx"};}
+function qkTkWhy(c){try{if((c.items||[]).some(x=>x.cat==="front"&&x.cz&&!x.sp&&(+x.q||0)>0))return"в смете заказные фасады";if(typeof supFarInfo==="function"){const f=(c.items||[]).find(x=>(+x.q||0)>0&&supFarInfo(x.n));if(f)return"«"+f.n+"» — "+supFarInfo(f.n).t;}}catch(_){}return"";}
 if(typeof smSave==="function"){const _fzS=smSave;smSave=async function(setSum){try{const sm=S.shop&&S.shop.sm,d=sm&&sm.data,o3=arguments[2],deal=!!(setSum||(o3&&o3.fz));
 if(d&&(deal||(sm.deal&&sm.status!=="trial"))&&qkFZneed(d)){if(qkFZbusy())return false;const got=await qkFZwait();
 if(got){const z=qkFZap();if(d.qk&&d.qk.fm2&&d.qk.fzz==null)d.qk.fzz=z;if(!d.qk&&d.fm2&&d.fzz==null)d.fzz=z;}
@@ -18843,14 +18896,15 @@ if(door&&num(s.pw.door))works.push({n:"Навес дверей",qq:door,u:"шт"
 return{items,works,gens,NEST};}
 function qkCalc(d){const q=d.qk,PR=qkProds(q);
 const sh=(q.it.ldsp||[]).filter(x=>/^л/.test(x.u||"")).reduce((a,x)=>a+num(x.q),0)+PR.items.filter(x=>x.cat!=="edge"&&/^л/.test(x.u)).reduce((a,x)=>a+x.q,0)+PR.items.filter(qkIsFa).reduce((a,x)=>a+qkFaSh(x),0),items=PR.items.slice();
-QK_CAT.forEach(([k])=>(q.it[k]||[]).forEach((x,i)=>{const qq=k==="edge"&&x.au?(x.for?Math.ceil((q.it.ldsp||[]).concat(q.it.front||[]).filter(y=>y.n===x.for).reduce((a,y)=>a+qkShQ(y),0)*12):Math.ceil(sh*12)):num(x.q);if(qkIsFa(x)){const z=qkFZq(q),qb=qkFaQB(qq,z);items.push(Object.assign({},x,{cat:k,i,q:qq,qb,zp:z,sum:Math.round(qb*num(x.p))}));return;}
+QK_CAT.forEach(([k])=>(q.it[k]||[]).forEach((x,i)=>{const qq=k==="edge"&&x.au?(x.for?Math.ceil((q.it.ldsp||[]).concat(q.it.front||[]).filter(y=>y.n===x.for).reduce((a,y)=>a+qkShQ(y),0)*12):Math.ceil(sh*12)):k==="front"&&x.sp==="pnt"?qkPntQ(q,x):num(x.q);if(qkIsFa(x)){const z=qkFZq(q),qb=qkFaQB(qq,z);items.push(Object.assign({},x,{cat:k,i,q:qq,qb,zp:z,sum:Math.round(qb*num(x.p))}));return;}
+if(k==="front"&&x.sp){const q1=qkSpLim(qq),p1=qkSpLim(x.p);items.push(Object.assign({},x,{cat:k,i,q:q1,p:p1,sum:Math.round(q1*p1)}));return;}
 items.push(Object.assign({},x,{cat:k,i,q:qq,sum:Math.round(qq*num(x.p))}));}));
 const em=items.filter(x=>x.cat==="edge").reduce((a,x)=>a+x.q,0),P=qkProf(q);
 const matB=items.reduce((a,x)=>a+x.sum,0),matP=P.L.reduce((a,x)=>a+x.sum,0),mat=matB+matP;
 const fz=items.filter(x=>x.cat==="front"&&x.cz).reduce((a,x)=>a+x.sum,0),fzCl=items.filter(x=>x.cat==="front"&&x.cz&&x.cl).reduce((a,x)=>a+x.sum,0),kF=qkKFq(q),fzP=fz>0?Math.round((fz-fzCl)/kF)+fzCl:0;
 const dlvOn=(()=>{try{const sm=S.shop&&S.shop.sm,o=sm&&sm.data===d&&sm.deal?shpById(sm.deal):null;return!!(o&&o.dlv);}catch(_){return false;}})();
 const BW=qkBwCalc(q,items,sh,em,!!d.noMont,dlvOn),br=BW.on?BW.sum:0,wZ=mat>0?BW.zak:0;
-const exF=mat>0?(q.ex||[]).reduce((a,x)=>a+num(x.s),0):0,exP=Math.round((mat-fz)*num(q.ep)/100),exS=exF+exP,GR=qkGroups(items,q),gW=GR.reduce((a,g)=>a+g.wk,0),M=mat-fz+exS+gW+wZ;
+const exF=mat>0?(q.ex||[]).reduce((a,x)=>a+(x&&x.sp==="tk"?qkSpLim(x.s):num(x.s)),0):0,exP=Math.round((mat-fz)*num(q.ep)/100),exS=exF+exP,GR=qkGroups(items,q),gW=GR.reduce((a,g)=>a+g.wk,0),M=mat-fz+exS+gW+wZ;
 const k=Math.min(0.6,Math.max(0.2,+d.k||0.38)),meb=M>0?Math.round(M/k):0;
 const W=(q.wk||[]).map((x,i)=>{const auto=x.a==="sheet"?sh:x.a==="edge"?em:null,qq=x.qm!=null&&x.qm!==""?num(x.qm):auto!=null?auto:num(x.q);return Object.assign({},x,{i,qq,auto,sum:Math.round(qq*num(x.p))});}).concat(P.W).concat(PR.works);
 const wk=W.reduce((a,x)=>a+x.sum,0);
@@ -18889,14 +18943,23 @@ function qkFaSrc(x){try{const p=Math.round(num(x.p)),n=x.n;if(!(p>0)||!n)return"
 const z=QK.set&&QK.set.mine&&QK.set.mine.pz;if(z&&Math.round(z[n+QK_PZM2])===p)return"ваша цена за м² (запомнена)";
 if(qkPriceM2D(n)===p)return"цена за м² из прайса";
 const ps=qkPrice(n,"л."),A=qkSheetA(n);if(ps>0&&A>0&&Math.round(ps/A)===p)return"лист "+N(ps)+" ₽ ÷ "+F(A)+" м² = "+N(p)+" ₽/м²";}catch(_){}return"";}
-function qkRowHtml(x,k){let h=qkRowHtml0(x,k);try{if(typeof window.__qkRowHook==='function')h=window.__qkRowHook(h,x,k);}catch(_){}
+function qkRowHtml(x,k){let h=qkRowHtml0(x,k);try{if(typeof window.__qkRowHook==='function'&&!(x&&x.sp))h=window.__qkRowHook(h,x,k);}catch(_){}
 if(k==="front"&&!x.prod&&h.slice(0,18)==='<div class="qk-r">')h='<div class="qk-r qk-rf">'+h.slice(18);
 return h;}
 function qkRowHtml0(x,k){const it=qkCatIt(x.n),sw=it&&typeof catSw==="function"?catSw(it,"cat-sw qk-sw"):`<span class="qk-sw0"></span>`;
 if(x.prod)return`<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="prod" data-i="${x.pi}"><b>${esc(x.n)}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u)+" · ":`<span class="qk-bad">нет цены</span> · `}из шкафа${x.sub?" · "+esc(x.sub):""}</small>${x.cut?`<span class="qk-cutl" data-qk="3d" data-i="-1">▦ 3D и раскрой</span>`:""}</button><span class="qk-ro">${F(x.q)}</span><span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>`;
+if(k==="front"&&x.sp)return qkSpRowHtml(x);
 const fa=qkIsFa(x),fsrc=fa?qkFaSrc(x):"",fq=fa&&x.fq!=null&&num(x.fq)===num(x.q);
 return`<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="ed" data-c="${k}" data-i="${x.i}"><b>${esc(x.n||"без названия")}</b><small>${num(x.p)>0?N(x.p)+" ₽ за "+esc(x.u):`<span class="qk-bad">нет цены — нажмите</span>`}${x.au?" · авто 12 м на лист":""}${fa?" · "+(x.qb!=null?qkFaTxt(x.q,x.qb,x.zp):"по м² фасадов"):""}${x.zs&&k==="ldsp"&&!QK_BACK.test(String(x.n||""))?" · задняя стенка":""}</small></button>${k==="front"?`<button type="button" class="qk-cz${x.cz?" on":""}" data-qk="cz" data-i="${x.i}" title="Заказной фасад от поставщика — своя наценка" aria-pressed="${!!x.cz}">${x.cz?"✓ заказной":"заказной?"}</button>`:""}
-    ${inp(`it.${k}.${x.i}.q`,x.au?"":x.q,"n",x.au?x.q:"0","qk-q","Количество: "+(x.n||""))}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>${fsrc||fq?`<p class="qk-sub qk-rn">${fsrc?`<i>Откуда цена: ${esc(fsrc)}</i>`:""}${fsrc&&fq?" · ":""}${fq?`<span class="qk-nt">впишите площадь фасадов, м²</span>`:""}</p>`:""}`;}
+    ${inp(`it.${k}.${x.i}.q`,x.au?"":x.q,"n",x.au?x.q:"0","qk-q","Количество: "+(x.n||""))}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>${fsrc||fq?`<p class="qk-sub qk-rn">${fsrc?`<i>Откуда цена: ${esc(fsrc)}</i>`:""}${fsrc&&fq?" · ":""}${fq?`<span class="qk-nt">впишите площадь фасадов, м²</span>`:""}</p>`:""}${k==="front"&&fa&&!x.cz&&!x.pvh?qkPtBtnHtml(x):""}`;}
+function qkPtBtnHtml(x){return`<p class="qk-sub qk-rn qk-ptl"><button type="button" class="qk-cz qk-pt${x.pt?" on":""}" data-qk="pt" data-i="${x.i}" aria-pressed="${!!x.pt}" aria-label="Красим сами: ${esc(x.n||"")}">${x.pt?"✓ красим сами — "+esc(QK_PNTN[x.pt]||x.pt):"красим сами?"}</button></p>`;}
+function qkSpRowHtml(x){const p=num(x.p),q=num(x.q),pn=x.sp==="pnt",nop=!(p>0);
+const sub=(nop?`<span class="qk-bad">${x.sp==="rad"?"впишите цену":"нет цены — нажмите"}</span>`:N(p)+" ₽ за "+esc(x.u))+(pn?" · м² фасадов «красим сами», с запасом":x.sp==="ih"?" · за фасад":x.sp==="rad"?" · за фасад":"");
+const qf=pn?`<span class="qk-ro">${F(q)}</span>`:inp(`it.front.${x.i}.q`,x.q,"n","0","qk-q","Количество: "+(x.n||""));
+const czOff=pn&&!(q>0)&&(((S.shop&&S.shop.sm&&S.shop.sm.data&&S.shop.sm.data.qk&&S.shop.sm.data.qk.it&&S.shop.sm.data.qk.it.front)||[]).some(y=>y&&!y.sp&&y.pt===x.pv&&y.cz));
+const hint=czOff?"покраска снята — фасад отмечен «заказной»":pn&&!(q>0)?"отметьте «красим сами» у фасада МДФ":x.sp==="ih"&&!(q>0)?"впишите, на скольких фасадах ручка":x.sp==="rad"&&nop?"цену радиусного фасада вписывают руками — нажмите на строку":"";
+return`<div class="qk-r qk-rf qk-sp" data-sp="${esc(x.sp)}"><span class="qk-sw0"></span><button type="button" class="qk-nm" data-qk="ed" data-c="front" data-i="${x.i}"><b>${esc(x.n||"")}</b><small>${sub}</small></button><button type="button" class="qk-cz${x.cz?" on":""}" data-qk="cz" data-i="${x.i}" title="Заказной фасад от поставщика — своя наценка" aria-pressed="${!!x.cz}">${x.cz?"✓ заказной":"заказной?"}</button>
+    ${qf}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b><button type="button" class="qk-x" data-qk="del" data-p="it.front.${x.i}" aria-label="Убрать: ${esc(x.n||"")}">×</button></div>${hint?`<p class="qk-sub qk-rn"><span class="qk-nt">${esc(hint)}</span></p>`:""}`;}
 function qkGroupsHtml(c,q,only){const GR=only||c.GR||[];if(!GR.length)return"";
 return GR.map(g=>{const op=qkGrpOpen(g.key),pin=(f,v,l)=>`<input class="qk-in qk-p qk-clsp" data-qcls="${esc(g.key)}|${f}" inputmode="decimal" value="${esc(String(v))}" aria-label="${esc(l)}">`;
 return`<section class="qk-card qk-grp${op?" on":""}"><button type="button" class="qk-h qk-gh" data-qkg="${esc(g.key)}" aria-expanded="${op}"><b>${op?"▾":"▸"} ${esc(g.key)}</b><span>${N(g.sum)} ₽</span></button>
@@ -18947,7 +19010,7 @@ const mat=[["m:ldsp","Корпус",P["m:ldsp"],rest("ldsp"),"ldsp","+ ЛДСП,
 const pvhL=c.items.filter(y=>y.cat==="front"&&y.pvh),pvhHid=!!cfg.hide["m:pvh"];
 mat.forEach(([k,n,PT,R0,cat,lab,ad])=>{const pv=k==="m:mdf"&&pvhHid?pvhL:[],rows=PT.flatMap(z=>z.rows).concat(R0,pv),cnt=rows.length,sum=PT.reduce((a,z)=>a+qkPartSum(z),0)+R0.reduce((a,x)=>a+x.sum,0)+pv.reduce((a,x)=>a+x.sum,0);const nm=cfg.names[k]||n;
 const kfR=k==="m:mdf"&&c.fz-(c.fzCl||0)>0&&(pvhHid||!pvhL.length);
-E[k]={cnt,sum,n:nm,G:[],rows,cat,add:ad,def:cnt>0||(empty&&k==="m:ldsp"),body:()=>qkPartsHtml(c,q,PT,k)+R0.map(x=>qkRowHtml(x,cat)).join("")+(pv.length?qkPvhRowsHtml(pv):"")+(kfR?qkKfRowHtml(c,q):"")+`<button type="button" class="qk-add" data-qk="add" data-c="${cat}"${ad}>${esc(lab)}</button>`+(k==="m:mdf"?QK_PVHB:"")};});
+E[k]={cnt,sum,n:nm,G:[],rows,cat,add:ad,def:cnt>0||(empty&&k==="m:ldsp"),body:()=>qkPartsHtml(c,q,PT,k)+R0.map(x=>qkRowHtml(x,cat)).join("")+(pv.length?qkPvhRowsHtml(pv):"")+(kfR?qkKfRowHtml(c,q):"")+`<button type="button" class="qk-add" data-qk="add" data-c="${cat}"${ad}>${esc(lab)}</button>`+(k==="m:mdf"?QK_PVHB+qkFpBtnsHtml(q):"")};});
 if(!pvhHid){const L=pvhL,sum=L.reduce((a,x)=>a+x.sum,0),nm=cfg.names["m:pvh"]||"Фасады ПВХ (заказные)";
 E["m:pvh"]={cnt:L.length,sum,n:nm,G:[],rows:L,cat:"front",def:L.length>0,body:()=>qkPvhSecHtml(c,q,L)};}
 const secs=qkSecAll(q).filter(x=>!/^m:/.test(x[0]));
@@ -19037,10 +19100,25 @@ return`<div class="qk-r">${sw}<button type="button" class="qk-nm" data-qk="ed" d
         ${inp(`it.${k}.${x.i}.q`,x.au?"":x.q,"n",x.au?x.q:"0","qk-q","Количество: "+(x.n||""))}<span class="qk-u">${esc(x.u)}</span><b class="qk-s">${N(x.sum)}</b></div>`;}).join("");
 const hint=k==="edge"&&c.sh>0?`<p class="qk-hint">На ${F(c.sh)} ${pl(c.sh,"лист","листа","листов")} ЛДСП обычно ≈ ${N(Math.ceil(c.sh*12))} м кромки</p>`:"";
 return`<section class="qk-card"><div class="qk-h"><b>${n}</b><span>${sum?N(sum)+" ₽":""}</span></div>${rows}${hint}<button type="button" class="qk-add" data-qk="add" data-c="${k}">+ Добавить</button></section>`;}).join("");}
-function qkExHtml(c,q){return`<section class="qk-card"><div class="qk-h"><b>Расходы</b><span>${N(c.exS)} ₽</span></div>
-  ${(q.ex||[]).map((x,i)=>`<div class="qk-r qk-r2">${inp(`ex.${i}.n`,x.n,"t","Расход","qk-tn","Название расхода")}${inp(`ex.${i}.s`,x.s,"n","0","qk-p","Сумма, ₽")}<span class="qk-u">₽</span><button type="button" class="qk-x" data-qk="del" data-p="ex.${i}" aria-label="Убрать">×</button></div>`).join("")}
+function qkExHtml(c,q){const tk=(q.ex||[]).some(x=>x&&x.sp==="tk"),why=tk?"":qkTkWhy(c);
+return`<section class="qk-card"><div class="qk-h"><b>Расходы</b><span>${N(c.exS)} ₽</span></div>
+  ${(q.ex||[]).map((x,i)=>`<div class="qk-r qk-r2${x.sp==="tk"?" qk-tk":""}">${inp(`ex.${i}.n`,x.n,"t","Расход","qk-tn","Название расхода")}${inp(`ex.${i}.s`,x.s,"n","0","qk-p","Сумма, ₽")}<span class="qk-u">₽</span><button type="button" class="qk-x" data-qk="del" data-p="ex.${i}" aria-label="Убрать">×</button></div>${x.sp==="tk"&&!(num(x.s)>0)?`<p class="qk-sub qk-rn"><span class="qk-nt">впишите сумму доставки</span></p>`:""}`).join("")}
   <div class="qk-r qk-r2"><span class="qk-tl">Общие расходы компании</span>${inp("ep",q.ep,"n","0","qk-p","Общие расходы, %")}<span class="qk-u">%</span><b class="qk-s">${N(c.exP)}</b></div>
-  <button type="button" class="qk-add" data-qk="exadd">+ Свой расход</button></section>`;}
+  <button type="button" class="qk-add" data-qk="exadd">+ Свой расход</button>${tk?"":`${why?`<p class="qk-sub qk-tkw"><span class="qk-nt">${esc(why)} — не забудьте доставку транспортной компанией</span></p>`:""}<button type="button" class="qk-add qk-tkb" data-qk="tkadd">+ Доставка транспортной компанией</button>`}</section>`;}
+function qkPtModal(i){const sm=S.shop.sm,q=sm.data.qk,x=((q.it&&q.it.front)||[])[i];if(!x||x.sp||x.pvh||x.cz)return;const P=qkPnt();
+const m=qkModal("qkPtM",`<h2 style="margin:0 0 4px">Красим сами</h2><p class="qk-sub" style="margin:0 0 10px">${esc(x.n||"")} — строка «Покраска фасадов (сами), м²»: м² этого фасада с запасом × цена вида. МДФ остаётся строкой материала.</p>
+    <div class="qk-ptl2">${QK_PNT.map(([k,n])=>`<button type="button" class="btn qk-ptk${x.pt===k?" primary":""}" data-pk="${k}" aria-pressed="${x.pt===k}"><span>${esc(n[0].toUpperCase()+n.slice(1))}</span><small>${P[k]>0?N(P[k])+" ₽ за м²":"цена не вписана"}</small></button>`).join("")}
+    ${x.pt?`<button type="button" class="btn qk-ptk" data-pk="">Не красим</button>`:""}</div>
+    ${QK_PNT.some(([k])=>!(P[k]>0))?`<p class="qk-sub" style="margin:10px 0 0">Цены покраски вписывает директор: ${esc(QK_PNTSET)}.</p>`:""}
+    <button type="button" class="btn" data-pk="x" style="margin-top:12px;width:100%">Отмена</button>`);
+m.addEventListener("click",e=>{const b=e.target.closest("[data-pk]");if(!b){if(e.target===m)m.remove();return;}const k=b.dataset.pk;if(k==="x"){m.remove();return;}
+if(k&&!(P[k]>0)){toast("Впишите цену покраски в настройках: "+QK_PNTSET);return;}
+const was=x.pt;if(k)x.pt=k;else delete x.pt;
+if(k&&!q.it.front.some(y=>y&&y.sp==="pnt"&&y.pv===k))q.it.front.push(qkPntRow(k,P[k]));
+if(was&&was!==k&&!q.it.front.some(y=>qkIsPntSrc(y)&&y.pt===was)){const j=q.it.front.findIndex(y=>y&&y.sp==="pnt"&&y.pv===was&&num(y.p)===P[was]);if(j>=0)q.it.front.splice(j,1);}
+S.qkSecOpen="m:mdf";m.remove();qkDirty();shpRenderKeep();toast(k?"Красим сами — "+QK_PNTN[k]+": строка «Покраска фасадов» в «МДФ и фасады»":"Не красим");});}
+function qkFpBtnsHtml(q){const F0=(q&&q.it&&q.it.front)||[],ih=F0.some(x=>x&&x.sp==="ih");
+return`${ih?"":`<button type="button" class="qk-add qk-fpb" data-qk="ihadd">+ Интегрированная ручка</button>`}<button type="button" class="qk-add qk-fpb" data-qk="radadd">+ Радиусный фасад</button>`;}
 function qkKHtml(c,d){const ks=[0.45,0.44,0.43,0.42,0.41,0.4,0.39,0.38,0.37,0.36,0.35,0.34,0.33],cur=Math.round(c.k*100)/100;
 return`<section class="qk-card"><div class="qk-h"><b>Материал + расходы (М)</b><span><b>${N(c.M)} ₽</b></span></div>
   <p class="qk-sub">материал ${N(Math.round(c.M)-Math.round(c.gW)-Math.round(c.exS)-Math.round(c.wZ))}${c.gW?` + распил и кромление ${N(c.gW)}`:""} + расходы ${N(c.exS)}${c.wZ?` + услуги поставщиков (${esc(typeof wrSrcBoth==="function"?wrSrcBoth():"Азуми / Ремстрой")}) ${N(c.wZ)}`:""} = <b>${N(c.M)}</b>${c.fz>0?`<br>заказные фасады (ПВХ и др.) ${N(c.fz)} — считаются отдельно, не в «М»: клиенту ${N(c.fz)} ÷ ${kf2(c.kF)} = ${N(c.fzP)}`:""}</p><p class="qk-lbl">Коэффициент — мебель = М ÷ коэффициент</p>
@@ -19186,7 +19264,7 @@ const m=qkModal("qkEdM",`<h2>${esc(QK_CN[cat])}</h2><div class="form qk-f"><labe
 m.addEventListener("click",e=>{const b=e.target.closest("[data-a]");if(e.target===m){m.remove();return;}if(!b)return;const a=b.dataset.a;if(a==="x"){m.remove();return;}
 if(a==="del")q.it[cat].splice(i,1);
 else{const g=n=>m.querySelector(`[name=${n}]`).value;const p0=num(x.p);x.n=g("n").trim()||x.n;x.u=g("u");x.p=num(g("p"));
-if(x.p>0&&x.p!==p0&&m.querySelector("[name=pz]").checked){QK.set=QK.set||{};const mn=QK.set.mine=QK.set.mine||{};mn.pz=Object.assign({},mn.pz||{},{[x.n+(qkIsFa(x)?QK_PZM2:"")]:x.p});qkSaveMine(true).then(ok=>{if(ok)toast("Цена запомнена: "+x.n+" — "+N(x.p)+" ₽");});}const qv=g("q").trim();if(x.au&&qv===""){}else{x.q=num(qv);delete x.au;}delete x.fq;}
+if(x.p>0&&x.p!==p0&&m.querySelector("[name=pz]").checked){QK.set=QK.set||{};const mn=QK.set.mine=QK.set.mine||{};mn.pz=Object.assign({},mn.pz||{},{[x.n+(qkIsFa(x)?QK_PZM2:"")]:x.p});qkSaveMine(true).then(ok=>{if(ok)toast("Цена запомнена: "+x.n+" — "+N(x.p)+" ₽");});}const qv=g("q").trim();if(x.au&&qv===""){}else{x.q=num(qv);delete x.au;}delete x.fq;if(x.sp){const p1=qkSpLim(x.p),q1=qkSpLim(x.q);if(p1!==x.p||q1!==x.q){x.p=p1;x.q=q1;toast("Впишите число от 0 до 10 000 000");}}}
 m.remove();qkDirty();shpRenderKeep();});}
 function qkWorkModal(){const s=qkSet(),q=S.shop.sm.data.qk,L=(s.wx||[]).map((x,i)=>Object.assign({i},x));
 const m=qkModal("qkWkM",`<h2>Работы</h2><p class="qk-sub">Ваши работы с ценами — нажмите, и работа встанет в смету.</p><input class="qk-srch" type="search" placeholder="Поиск: вырез, мойка, присадка…" aria-label="Поиск работы">
@@ -19365,6 +19443,7 @@ const a=p.split("."),last=a.pop();let o=q;for(const k of a){o=o[k];if(o==null)re
 const raw=t.value.trim();
 if((last==="qm"||a[0]==="bw")&&raw==="")delete o[last];else if(t.dataset.t==="t")o[last]=raw;else o[last]=num(raw);
 if(a[0]==="it"&&a[1]==="edge"&&last==="q"){if(raw===""){o.au=1;}else delete o.au;}
+if((o.sp&&(last==="q"||last==="p"))||(a[0]==="ex"&&o.sp==="tk"&&last==="s")){const c=qkSpLim(o[last]);if(c!==o[last]){o[last]=c;toast("Впишите число от 0 до 10 000 000");}}
 if(a[0]==="it"&&last==="q")delete o.fq;
 qkDirty();shpRenderKeep();},true);
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-qte]");if(!b)return;e.preventDefault();e.stopPropagation();const sm=S.shop.sm;if(!sm||!sm.data||!sm.data.qk)return;if(typeof catLoad==="function")catLoad();if(qkToneEdge(sm.data.qk,b.dataset.qte,true)){qkDirty();shpRenderKeep();toast("Кромка в тон добавлена");return;}
@@ -19405,7 +19484,13 @@ if(a==="pp"){q.pp=qkPP();qkDirty();toast("Цены профиля обновле
 if(a==="exadd"){q.ex=(q.ex||[]).concat([{n:"",s:0}]);qkDirty();shpRenderKeep();setTimeout(()=>{const el=document.querySelector(`[data-qf="ex.${q.ex.length-1}.n"]`);if(el)el.focus();},60);return;}
 if(a==="del"){const p=t.dataset.p.split("."),i=+p.pop();const arr=p.reduce((o,k)=>o&&o[k],q);if(Array.isArray(arr))arr.splice(i,1);qkDirty();return shpRenderKeep();}
 if(a==="k"){d.k=+t.dataset.v;qkDirty();return shpRenderKeep();}
-if(a==="cz"){const x=(q.it.front||[])[+t.dataset.i];if(x){x.cz=!x.cz;qkDirty();toast(x.cz?"Заказной фасад — цена клиенту ÷ "+kf2(qkKFq(q))+" (коэффициент фасадов — на шаге «Цена»)":"Обычный фасад — через коэффициент");}return shpRenderKeep();}
+if(a==="cz"){const x=(q.it.front||[])[+t.dataset.i];if(x){x.cz=!x.cz;qkDirty();if(x.cz&&x.pt&&!x.sp){toast("Покраска снята — фасад заказной (строка «Покраска фасадов» по нему — 0 м²)");return shpRenderKeep();}toast(x.cz?"Заказной фасад — цена клиенту ÷ "+kf2(qkKFq(q))+" (коэффициент фасадов — на шаге «Цена»)":"Обычный фасад — через коэффициент");}return shpRenderKeep();}
+if(a==="pt"){if(!QK.set||QK.set.off)await qkLoad();return qkPtModal(+t.dataset.i);}
+if(a==="ihadd"){if(!QK.set||QK.set.off)await qkLoad();const p=qkPnt().ih;if(!(p>0)){toast("Впишите цену интегрированной ручки в настройках: "+QK_PNTSET);return;}
+q.it.front=q.it.front||[];if(!q.it.front.some(x=>x&&x.sp==="ih"))q.it.front.push({n:"Интегрированная ручка, шт",u:"шт",p,q:0,sp:"ih",cz:1,sec:"fpx"});S.qkSecOpen="m:mdf";qkDirty();shpRenderKeep();
+setTimeout(()=>{const i=q.it.front.findIndex(x=>x&&x.sp==="ih"),el=document.querySelector(`[data-qf="it.front.${i}.q"]`);if(el)el.focus();},60);return;}
+if(a==="radadd"){(q.it.front=q.it.front||[]).push({n:"Радиусный фасад, шт",u:"шт",p:0,q:1,sp:"rad",cz:1,sec:"fpx"});S.qkSecOpen="m:mdf";qkDirty();shpRenderKeep();toast("Радиусный фасад — впишите цену: нажмите на строку");return;}
+if(a==="tkadd"){q.ex=(q.ex||[]).concat([{n:"Доставка транспортной компанией",s:"",sp:"tk"}]);qkDirty();shpRenderKeep();setTimeout(()=>{const el=document.querySelector(`[data-qf="ex.${q.ex.length-1}.s"]`);if(el)el.focus();},60);return;}
 if(a==="pvh")return qkPvhModal(+t.dataset.i);
 if(a==="mo"){q.mo=Object.assign({m:"pct",p:qkSet().mp,s:0},q.mo||{},{m:t.dataset.v});qkDirty();return shpRenderKeep();}
 if(a==="top"){const el=document.getElementById("qkSum");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});return;}},true);
@@ -19442,6 +19527,9 @@ const st=document.createElement("style");st.textContent=`
 .sm-dock .qk-npd .smn-dkr{display:none!important}.sm-dock .qk-npr{margin-left:auto;font-size:13px;line-height:1.3;opacity:.7;text-align:right;white-space:nowrap}
 /* 18.11 (доводка): строка фасада на узком экране — в два этажа: название и мелкий текст на всю ширину, ниже «заказной?» (44 px), количество, единица, сумма (см. qkRowHtml) */
 @media(max-width:560px){.qk-rf{flex-wrap:wrap;row-gap:4px}.qk-rf>.qk-nm{flex:1 1 calc(100% - 36px)}.qk-rf>.qk-cz{margin:0 auto 0 36px;min-height:44px;padding:4px 12px;font-size:13px}}
+.qk-ptl{margin-top:-2px}.qk-ptl .qk-pt{min-height:44px;padding:4px 12px;font-size:13px}.qk-pt.on{border-color:rgba(255,214,10,.45);color:var(--w2-yt);background:var(--warn-soft)}
+.qk-ptl2{display:grid;gap:8px}.qk-ptk{display:flex;justify-content:space-between;align-items:center;min-height:52px;text-align:left}.qk-ptk small{opacity:.7;font-weight:400}
+.qk-sp>.qk-x{flex:none;min-width:44px;min-height:44px}.qk-fpb,.qk-tkb{margin-top:6px}.qk-tkw{margin:8px 0 0}
 .qk-sec{border-top:1px solid rgba(127,127,127,.18)}.qk-sech{width:100%;display:flex;justify-content:space-between;gap:8px;padding:12px 2px;background:none;border:0;color:inherit;font:inherit;cursor:pointer;text-align:left}.qk-sech span{opacity:.7}
 .qk-spf{width:100%;box-sizing:border-box;margin:10px 0 6px;min-height:44px}.qk-spl{list-style:none;margin:6px 0 0;padding:0;max-height:62vh;overflow:auto}.qk-spl li button{width:100%;display:flex;justify-content:space-between;gap:10px;padding:11px 4px;border:0;border-bottom:1px solid rgba(127,127,127,.18);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.qk-spl li button b{white-space:nowrap}
 .qk-spb{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.qk-spb button{border:1px solid rgba(127,127,127,.4);border-radius:999px;padding:5px 11px;background:none;color:inherit;font:inherit;font-size:13px;cursor:pointer}.qk-spb button.on{background:var(--ink,#fff);color:var(--bg,#000)}
@@ -19776,7 +19864,7 @@ ward:(c,q)=>qkWardListHtml(c,q),kupe:(c,q)=>kpqListHtml(c,q),prof:(c,q,o)=>qkPro
 secPick:k=>qkSecPick(k),add:cat=>qkAddModal(cat),dirty:()=>qkDirty(),secAdd:()=>qkSecAddModal(),
 ex:(c,q)=>qkExHtml(c,q),fzH:(c,q)=>qkFzHtml(c,q),kf:()=>qkKF(),kf0:()=>qkKF0(),kfF:()=>qkKFfirm(),kfq:q=>qkKFq(q),sheetM2:QK_SHEET/QK_WASTE,pvh:{load:()=>qkPvhLoad(),get:()=>QK.pvh||null,raw:()=>QK.pvhRaw||null,can:()=>!!QK.pvhCan,reset:()=>{QK.pvh=null;QK.pvhP=null;QK.pvhErr=false;},setFas:FC=>{const des=!!window.APP_DES;if(QK.pvhRaw&&!des)QK.pvhRaw.fas=FC||null;if(QK.pvhRaw===undefined)return;QK.pvh=qkFasBuild(QK.pvhBase||null,FC||null,des);QK.pvhErr=!QK.pvh;},calc:(P,st,p,qq)=>qkFasCalc(P,st,p,qq),ms:(ms,R,qq,kF,cl)=>qkFasMs(ms,R,qq,kF,cl),price:(P,kn,t,c)=>qkPvhPrice(P,kn,t,c),name:(k,t,f,c)=>qkPvhName(k,t,f,c),hasT:k=>pvhHasT(k)},
 htype:n=>qkHType(n),dtype:(n,g)=>qkDType(n,g),
-fa:(x,a,own)=>qkFaConv(x,a,own),pm2:n=>qkPriceM2(n),fzap:()=>qkFZap(),fzap0:QK_FZAP0,fzw:d=>qkFZneed(d)?qkFZwait():Promise.resolve(true),fzno:QK_FZNO,sheetA:n=>qkSheetA(n),shq:x=>qkShQ(x),isFa:x=>qkIsFa(x),
+fa:(x,a,own)=>qkFaConv(x,a,own),pm2:n=>qkPriceM2(n),fzap:()=>qkFZap(),fzap0:QK_FZAP0,fzw:d=>qkFZneed(d)?qkFZwait():Promise.resolve(true),fzno:QK_FZNO,sheetA:n=>qkSheetA(n),shq:x=>qkShQ(x),isFa:x=>qkIsFa(x),pnt:()=>qkPnt(),pntN:QK_PNTN,pntSet:QK_PNTSET,
 secItems:k=>qkSecItems(k),brand:it=>qkBrand(it),cls:n=>qkCls(n),tone:(q,n)=>qkToneEdge(q,n,true),pushQ:(c,x)=>qkPush(c,x,true),own:()=>(qkSet().own||[]),saveMine:()=>qkSaveMine(),
 pvhHid:()=>!!qkSecCfg().hide["m:pvh"],pvhHide:async v=>{
 QK.set=QK.set||{};const mn=QK.set.mine=QK.set.mine||{},old=mn.pvhH;mn.pvhH=v?1:0;const send=Object.assign({},mn);delete send.mp;
@@ -23677,7 +23765,7 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
 (function(){const st=document.createElement("style");st.textContent=`.cpd-ov .cpd-r{fill:#DCEBFF;stroke:#0A84FF;stroke-width:2.5;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))}.cpd-ov[data-st="bad"] .cpd-r{fill:#FFE3E0;stroke:#FF453A}.cpd-ov[data-st="move"] .cpd-r{fill:#E3F8E9;stroke:#30D158}.cpd-ov .cpd-t{fill:#000;font-weight:700;font-family:system-ui,sans-serif}
 html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}.cpd-note{margin:4px 0}`;document.head.appendChild(st);})();
 const CHK_ON=false;
-const CHK_BUILD="08831bfd90";
+const CHK_BUILD="32ca19efa9";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){try{return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{};}catch(_){return{};}}
@@ -28094,13 +28182,16 @@ return`<div class="cn-mh"><b>Настройки цены</b>${tech?seg("scope",[
       ${scope==="firm"?`<p class="cn-hint">«Как раньше» для всей фирмы — у всех сметы откроются по-старому (откат без выкладки).</p>`:C.fOld?`<p class="cn-hint">Директор включил «как раньше» для всей фирмы.</p>`:""}
       ${window.APP_DES?`<div class="cn-row"><span>Заказные фасады ÷<small class="cn-rs">цена клиенту = закупка ÷ коэффициент · обычно 0,50</small></span><input class="cn-fi cn-fs" data-cf="kFd" value="${cK(cnKF())}" inputmode="decimal" aria-label="Коэффициент заказных фасадов"></div>`:""}
       ${window.APP_DES?"":`<div class="cn-row"><span>Заказные фасады ÷<small class="cn-rs">${scope==="firm"?"цена клиенту = закупка ÷ коэффициент":"для всей фирмы — меняет директор"}</small></span>${scope==="firm"?`<input class="cn-fi cn-fs" data-cf="kF" value="${cK(cnKF())}" inputmode="decimal" aria-label="Коэффициент заказных фасадов для всей фирмы">`:`<b>${cK(cnKF())}</b>`}</div>`}
-      ${!window.APP_DES&&scope==="firm"&&tech?`<div class="cn-row"><span>Запас на фасады, %<small class="cn-rs">фасады — по м² деталей, в цену — м² + запас</small></span><input class="cn-fi cn-fs" data-cf="fzap" value="${cF(cnFZap())}" inputmode="decimal" aria-label="Запас на фасады, процентов"></div>`:""}</div>
+      ${!window.APP_DES&&scope==="firm"&&tech?`<div class="cn-row"><span>Запас на фасады, %<small class="cn-rs">фасады — по м² деталей, в цену — м² + запас</small></span><input class="cn-fi cn-fs" data-cf="fzap" value="${cF(cnFZap())}" inputmode="decimal" aria-label="Запас на фасады, процентов"></div>`:""}
+      ${!window.APP_DES&&scope==="firm"&&tech?cnPntHtml():""}</div>
     <button type="button" class="cn-pay" data-cs="sch2"><span>Готовые схемы — квадратиками</span><span aria-hidden="true">›</span></button>
     <p class="cn-hint">Шкала ${cK(cnK().lMin)} / ${cK(cnK().k)} / ${cK(cnK().lTop)}, проценты и согласие — у директора («Разбор договоров»).</p><button type="button" class="btn cn-full" data-cs="x">Готово</button>`;}
 function cnSetModal(scope){scope=scope||"mine";if(!(X()&&X().set())){try{X().load();}catch(_){}toast("Загружаю настройки…");return;}
 const m=cnModal("cnSetM",cnSetHtml(scope),"cn-sheet"),card=m.querySelector(".cn-m"),redraw=()=>{card.innerHTML=cnSetHtml(scope);shpRenderKeep();};
 m.addEventListener("click",async e=>{const b=e.target.closest("[data-cs]");if(!b)return;const k=b.dataset.cs,v=b.dataset.v,C=cnCfg(scope);
 if(k==="x")return m.remove();if(k==="scope"){scope=v;card.innerHTML=cnSetHtml(scope);return;}if(k==="sch2"){m.remove();return cnSchModal();}
+if(k==="pnthint"){const n=Math.round(+v||0);if(!(n>0))return;if(!(await cnAsk("Покраска фасадов — "+cN(n)+" ₽ за м² (матовая, глянцевая и фрезерованная) для всей фирмы?")))return;if(await cnPntPut({mat:n,gl:n,fr:n}))toast("Покраска — "+cN(n)+" ₽ за м²");return redraw();}
+if(k==="nomload"){try{await window.__nom.load(true);}catch(_){}return redraw();}
 let p=null;if(k==="vis")p={hide:{[v]:C.hide[v]?0:1}};else if(k==="mB"||k==="cls"||k==="sch")p={[k]:v};else if(k==="rnd")p={rnd:+v};else if(k==="wk")p={wk:v};else if(k==="old")p={old:v==="1"};
 if(!p)return;if(k==="vis"&&!C.hide[v]&&["k","m","pm","t"].filter(x=>!C.hide[x]).length<=1)return toast("Хотя бы одно окошко оставьте");
 if(k==="wk"){if(C.wk===v)return;if(!(await cnAsk("Работы клиенту — «"+((CN_WK.find(x=>x[0]===v)||[])[1]||v)+"»"+(scope==="firm"?" для всей фирмы":"")+"?")))return;}
@@ -28115,6 +28206,7 @@ else if(/^pm\./.test(f)){const v=Math.round(cNum(t.value));if(!(v>0))return toas
 else if(f==="kF"){if(await cnKFSet(t.value))redraw();else t.value=cK(cnKF());return;}
 else if(f==="kFd"&&window.APP_DES){let v=cNum(t.value);if(v>1)v=v/100;if(!(v>=0.30&&v<=0.95)){t.value=cK(cnKF());return toast("Коэффициент фасадов — от 0,30 до 0,95");}v=Math.round(v*100)/100;p={kF:Math.abs(v-0.50)<1e-9?null:v};}
 else if(f==="fzap"){if(await cnFZapSet(t.value))redraw();else t.value=cF(cnFZap());return;}
+else if(/^pnt\.|^ih$/.test(f)){if(await cnPntSet(f,t.value))redraw();else redraw();return;}
 if(p&&await cnSave(scope,p)){toast("Сохранено");redraw();}});}
 function cnKF(){try{return X().kf();}catch(_){return 0.70;}}
 function cnKF0(){try{return X().kf0();}catch(_){return 0.70;}}
@@ -28138,6 +28230,23 @@ if(Math.abs(v-cnFZap())<1e-9)return true;const d0=(X()&&X().fzap0)||15;
 if(!(await cnAsk("Запас на фасады "+cF(v)+" % для всей фирмы (было "+cF(cnFZap())+" %)?")))return false;
 const ok=await cnSave("firm",{fzap:Math.abs(v-d0)<1e-9?null:v});if(ok){toast("Запас на фасады "+cF(v)+" % — для всей фирмы");shpRenderKeep();}return ok;}
 window.__cnFZap={get:()=>cnFZap(),can:()=>cnFirmOk(),set:v=>cnFZapSet(v)};
+function cnPntCur(){try{const s=X().set(),f=(s&&s.firm&&s.firm.pcF)||{};return{pnt:Object.assign({},f.pnt||{}),ih:f.ih};}catch(_){return{pnt:{},ih:null};}}
+function cnPntNom(re){try{const D=window.__nom&&window.__nom.data&&window.__nom.data();if(!D||!Array.isArray(D.items))return null;const L=[],vs={};
+D.items.forEach(x=>{if(!x||x.del)return;const n=String(x.name||""),hay=n+" "+String(x.grp||"")+" "+String(x.kind||"");if(!/фасад/i.test(n)||!re.test(hay))return;const p=+x.price||0,u=String(x.pu||x.uBuy||"");
+if(p>0&&/^(м²|м2|кв)/i.test(u)){L.push(p);if(x.vdef)vs[x.vdef]=1;}});
+if(!L.length)return{n:0,cnt:0};L.sort((a,b)=>a-b);const med=L.length%2?L[(L.length-1)/2]:(L[L.length/2-1]+L[L.length/2])/2;return{n:Math.round(med),cnt:L.length,v:Object.keys(vs).slice(0,2).join(", ")};}catch(_){return null;}}
+function cnPntHtml(){const C=cnPntCur(),P=C.pnt,film=cnPntNom(/пвх|плён|пленк|пленоч|пфф|pvc/i),paint=cnPntNom(/крашен|эмал/i),sug=film&&film.n>0?Math.round(film.n*1.2/10)*10:0;
+const inp=(k,l)=>`<label class="cn-pnti"><small>${l}</small><input class="cn-fi" data-cf="pnt.${k}" value="${P[k]>0?cN(P[k]):""}" placeholder="—" inputmode="numeric" aria-label="Покраска фасадов, ${l}, рублей за квадратный метр"></label>`;
+const allSug=sug>0&&["mat","gl","fr"].every(k=>+P[k]===sug);
+return`<div class="cn-row cn-wrap cn-pnt"><span>Покраска фасадов (сами), ₽ за м²<small class="cn-rs">строка «Покраска фасадов» в смете; пусто — не считается</small></span><span class="cn-pm3">${inp("mat","матовая")}${inp("gl","глянцевая")}${inp("fr","фрезеров.")}</span></div>
+    ${film===null?`<p class="cn-hint"><button type="button" class="linkbtn" data-cs="nomload">Подсказать цену из номенклатуры</button></p>`:sug>0&&!allSug?`<p class="cn-hint">≈ плёночный фасад +20 %: <b>${cN(sug)} ₽/м²</b> (плёночный ${cN(film.n)} ₽/м², позиций ${film.cnt}) <button type="button" class="btn sm" data-cs="pnthint" data-v="${sug}">Подставить</button></p>`:sug>0?"":`<p class="cn-hint">Плёночных фасадов с ценой за м² в номенклатуре нет — впишите цену сами.</p>`}
+    ${paint&&paint.n>0?`<p class="cn-hint">у поставщика${paint.v?" ("+esc(paint.v)+")":""}: крашеный фасад ${cN(paint.n)} ₽/м² <button type="button" class="btn sm" data-cs="pnthint" data-v="${paint.n}">Подставить</button></p>`:""}
+    <div class="cn-row"><span>Интегрированная ручка, ₽ за фасад<small class="cn-rs">строка «Интегрированная ручка» в смете</small></span><input class="cn-fi cn-fs" data-cf="ih" value="${+C.ih>0?cN(+C.ih):""}" placeholder="—" inputmode="numeric" aria-label="Интегрированная ручка, рублей за фасад"></div>`;}
+async function cnPntPut(patch){if(!cnFirmOk()){toast("Цены покраски для всей фирмы меняет директор");return false;}const C=cnPntCur(),P=Object.assign({},C.pnt),o={};
+let ih=C.ih;Object.keys(patch).forEach(k=>{if(k==="ih")ih=patch.ih;else P[k]=patch[k];});Object.keys(P).forEach(k=>{if(!(+P[k]>0))delete P[k];});
+o.pnt=Object.keys(P).length?P:null;o.ih=+ih>0?Math.round(+ih):null;return cnSave("firm",o);}
+async function cnPntSet(f,raw){const s=String(raw).replace(/\s/g,"").replace(",","."),v=s===""?0:Math.round(+s);if(s!==""&&!(v>=0&&v<=1000000)){toast("Впишите цену в рублях");return false;}
+const ok=await cnPntPut(f==="ih"?{ih:v}:{[f.slice(4)]:v});if(ok)toast(v>0?"Сохранено — для всей фирмы":"Цена убрана — строка не считается");return ok;}
 window.__cnKF={get:()=>cnKF(),def:()=>cnKF0(),can:()=>cnFirmOk(),set:v=>cnKFSet(v),open:()=>cnKFModal()};
 function cnPayModal(){const sm=cnSm();if(!sm)return;const c0=smCalc(sm.data),KK=cnK(),tech=!!S.shop.tech||!!window.APP_DES;
 const body=v=>{const c=c0,Mg=c.mats+(c.giftC||0),sumF=v-(c.fzF||0)-(c.wCl||0),k=sumF>0?Mg/sumF:Infinity,lv=isFinite(k)?cnLv(k):"ниже минимума",cl=k>KK.lMin+1e-4?"r":k>KK.kAsk+5e-4?"y":"g";
@@ -28276,6 +28385,7 @@ html.vt[data-vt="dark"] .qk.cn,html.vt[data-vt="dark"] .cn-mod,html.vt[data-vt="
 .cn-mi{display:block;width:100%;text-align:left;font:inherit;font-size:16px;color:inherit;padding:13px 12px;border:0;border-top:1px solid rgba(127,127,127,.18);background:none;cursor:pointer}.cn-mx{opacity:.7;text-align:center}
 .cn-ql{display:flex;flex-direction:column;gap:4px;font-size:13px;padding:8px 0}.cn-fi{font:inherit;font-size:15px;padding:8px 10px;border-radius:10px;border:0;background:rgba(127,127,127,.14);color:inherit;min-width:0;box-sizing:border-box;width:100%;max-width:260px;text-align:right}.cn-fs{max-width:90px}
 .cn-pm3{display:flex;gap:6px}.cn-pm3 .cn-fi{max-width:96px}
+.cn-pnti{display:flex;flex-direction:column;gap:2px;min-width:0}.cn-pnti small{font-size:11px;opacity:.7}.cn-pnt .cn-pm3 .cn-fi{max-width:88px}
 .cn-full{display:block;width:100%;margin-top:10px}
 .cn-big{display:block;width:100%;box-sizing:border-box;font:inherit;font-size:30px;font-weight:800;padding:12px 16px;border-radius:16px;border:0;background:rgba(127,127,127,.12);box-shadow:inset 0 0 0 2px var(--cn-ring);color:inherit;margin:4px 0 10px}
 .cn-pv{padding:14px 16px;border-radius:16px;margin:0 0 10px}.cn-pv b{display:block;font-size:24px;line-height:1.2}.cn-pv small{font-size:13px;opacity:.8}
@@ -30694,7 +30804,7 @@ return"Технолог 3D · "+({orders:"заказы",order:"заказ",part:
 function otzDev(){const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)),ua=navigator.userAgent||"";
 const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
 return(w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":"");}
-function otzVer(){const b="08831bfd90";return/^__/.test(b)?"стенд":b;}
+function otzVer(){const b="32ca19efa9";return/^__/.test(b)?"стенд":b;}
 function otzDet(){return{view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()};}
 function otzCss(){if(OTZ.css&&Date.now()-OTZ.cssAt<120000)return OTZ.css;let css="";for(const sh of Array.from(document.styleSheets)){try{for(const r of Array.from(sh.cssRules||[]))css+=r.cssText+"\n";}catch(_){}}
 OTZ.css=css.replace(/:root\b/g,"html").replace(/@font-face\s*\{[^}]*\}/g,"");OTZ.cssAt=Date.now();return OTZ.css;}
@@ -35047,6 +35157,7 @@ html:not(.pc) .zk-sh.rc .zk-rip{font-size:calc(15.2px / var(--v2k,1))}html:not(.
 .zk-ot .zk-oc{font-size:13px;line-height:1.2;font-weight:500;letter-spacing:0;color:var(--zk-t2)}.zk-ot .zk-on{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}   /* над номером — мелко «Закупка»: какой раздел открыт (закон K17 «заголовок = подпись кнопки») */
 html.v2 #view .zk-st .zk-stb small{font-size:13px!important;font-weight:500!important;line-height:1.2!important}html.v2 #view .zk-st .zk-stb b{font-size:19px!important}html.v2 #view .zk-st>.zk-stb{padding:4px 6px!important;min-height:52px!important;flex:1 1 auto!important}
 html.v2 body.zk-notop .top{display:none!important}html.v2 body.zk-notop{padding-top:0!important}html.v2 body.zk-notop .wrap{padding-top:calc(env(safe-area-inset-top,0px) + 8px)!important}html.v2 body.zk-notop:has(#v2FBar) .wrap{padding-top:calc(env(safe-area-inset-top,0px) + 68px)!important}
+html.v2 body.zk-notop #v2FBar .v2fbt{display:none!important}   /* snap211 (мастер: «Все разделы → Закупка» — две шапки «‹ Закупка» и «Закупка»): у первого экрана свой большой заголовок — в полосе остаётся только «‹» */
 html.v2 body:has(>.zk-sh):has(#view .zk-oh) #v2FBar{display:none!important}html.v2 body.v2notop:has(>.zk-sh):has(#view .zk-oh) .wrap{padding-top:calc(env(safe-area-inset-top,0px) + 8px)!important}   /* открыт лист поверх заказа — «‹» заказа под затемнением, полосу «‹ Назад» не вставляем (экран не прыгает вниз) */
 .zk-inf .zk-np{margin-left:0}
 html.v2:not(.pc):not(#zk1):not(#zk2):not(#zk3):not(#zk4) body.zk-sup #v2Cap .v2-ci{padding:0 2px!important}html.v2:not(.pc):not(#zk1):not(#zk2):not(#zk3):not(#zk4) body.zk-sup #v2Cap .v2-ci[aria-current="page"]{padding:0 8px!important}
@@ -45259,7 +45370,7 @@ document.body.appendChild(m);
 });
 })();
 (function(){
-const BUILD="08831bfd90";/*cehqr-build*/
+const BUILD="32ca19efa9";/*cehqr-build*/
 try{const u=new URL(location.href);if(u.searchParams.has("v")){u.searchParams.delete("v");history.replaceState(history.state,"",u.pathname+u.search+u.hash);}}catch(_){}
 window.__w24VerWait=0;
 if(/^__/.test(BUILD))return;
@@ -45342,7 +45453,7 @@ addEventListener("online",()=>{upd();try{if(typeof toast==="function")toast("И�
 <script>
 (function(){
 if(window.__w24obnov)return;window.__w24obnov=1;
-const BUILD="08831bfd90";/*cehqr-build*/
+const BUILD="32ca19efa9";/*cehqr-build*/
 const SEEN="w24-upd-seen",CACHE="w24-upd-cache";
 const ls={get(k){try{return localStorage.getItem(k);}catch(_){return null;}},set(k,v){try{localStorage.setItem(k,v);}catch(_){}}};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
