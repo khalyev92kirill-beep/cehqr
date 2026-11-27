@@ -5048,12 +5048,54 @@ if(o.z)buf=await new Response(new Blob([buf]).stream().pipeThrough(new Decompres
 const j=JSON.parse(new TextDecoder().decode(buf));S.sup.base=new Map(Object.keys(j.p).map(n=>[supPKey(n),j.p[n]]));S.sup.baseV=j.v;}catch(_){S.sup.base=null;}
 S.sup.baseBusy=false;}
 async function supMkLoad(){if(S.sup.base||S.sup.baseBusy)return;S.sup.baseBusy=true;
+try{if(bzFirm()&&await bzPriceLoad()){S.sup.baseBusy=false;return;}}catch(_){}
 try{const j=await(await fetch("catalog-market.json",{cache:"no-cache"})).json();if(j&&j.p){S.sup.base=new Map(Object.keys(j.p).map(n=>{const r=j.p[n];return[supPKey(n),r[2]>0?[r[0],r[1],r[2]]:[r[0],r[1]]];}));S.sup.baseV=j.v;S.sup.baseMk=1;S.sup.baseNote=j.note||"";setTimeout(()=>{try{window.__mkPut&&window.__mkPut();}catch(_){}},300);}}catch(_){S.sup.base=null;}
 S.sup.baseBusy=false;}
 const supMkNote=()=>S.sup&&S.sup.baseMk?"Цены базы Базиса — примерные рыночные (Якутск). Впишите свои цены в номенклатуре — они главнее.":"";
 (function(){let t=0;const SEL=".qk-card,.smn-acts,.sm-grid,.zk-chip,.zk-note,.sup-grp,.nm-v,#smLedM .modal-card,#kitPlM .modal-card";const put=()=>{t=0;if(!(S.sup&&S.sup.baseMk))return;const v=document.getElementById("view");const tg=[];if(v&&v.querySelector(SEL))tg.push(v);document.querySelectorAll("#smLedM .modal-card,#kitPlM .modal-card").forEach(m=>tg.push(m));tg.forEach(el=>{if(el.querySelector(":scope>.mk-strip"))return;const d=document.createElement("div");d.className="mk-strip";d.textContent="≈ "+supMkNote();el.insertBefore(d,el.firstChild);});};window.__mkPut=put;
 try{new MutationObserver(()=>{if(!t&&S.sup&&S.sup.baseMk)t=setTimeout(put,250);}).observe(document.body,{childList:true,subtree:true});}catch(_){}
 const st=document.createElement("style");st.textContent=".mk-strip{margin:8px 16px;padding:8px 12px;border-radius:12px;background:rgba(255,214,10,.16);color:inherit;font-size:13px;line-height:1.35}";document.head.appendChild(st);})();
+const bzFirm=()=>{try{return!!(window.APP_FIRM||(typeof licCo==="function"&&licCo()));}catch(_){return false;}};
+S.bz=S.bz||{st:null,data:null,busy:null};
+async function bzUnpack(parts){const s=(parts||[]).join(""),bin=atob(s),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+const buf=await new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();return JSON.parse(new TextDecoder().decode(buf));}
+async function bzPack(obj){const buf=await new Response(new Blob([JSON.stringify(obj)]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer(),u=new Uint8Array(buf);let s="";
+for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));const b=btoa(s),P=[];for(let i=0;i<b.length;i+=40000)P.push(b.slice(i,i+40000));return P;}
+async function bzLoad(force){if(!bzFirm())return null;if(S.bz.st&&!force&&!(S.bz.st.ok===false&&Date.now()-(S.bz.st.at||0)>45000))return S.bz.st;if(S.bz.busy)return S.bz.busy;
+S.bz.busy=(async()=>{try{const j=typeof shpGet==="function"?await shpGet("action=bzGet",true):null;if(j&&j.ok){let d=null;if(j.src==="own"&&Array.isArray(j.items)&&j.items.length){try{d=await bzUnpack(j.items);}catch(_){d=null;}}delete j.items;S.bz.st=j;S.bz.data=d&&Array.isArray(d.items)&&d.items.length?d:null;if(j.src==="own"&&!S.bz.data)j.bad=1;}else S.bz.st={ok:false,src:"",can:false,at:Date.now()};}catch(_){S.bz.st={ok:false,src:"",can:false,at:Date.now()};}
+S.bz.busy=null;return S.bz.st;})();return S.bz.busy;}
+function bzUse(){const j=S.bz.data;if(!j)return false;j.items.forEach((it,i)=>{it.i=i;it.s=(it.n+" "+(it.a||"")+" "+it.g).toLowerCase().replace(/ё/g,"е");});S.cat.data=j;S.cat.byName=null;S.cat.err=false;S.cat.loading=false;S.cat.bzOwn=1;return true;}
+if(typeof catLoad==="function"){const _bzCL=catLoad;catLoad=function(){if(!bzFirm()||S.cat.data||S.cat.loading)return _bzCL.apply(this,arguments);
+if(S.bz.st){if(S.bz.data&&bzUse()){try{render();}catch(_){}return;}return _bzCL.apply(this,arguments);}
+S.cat.loading=true;bzLoad().then(()=>{S.cat.loading=false;if(S.bz.data&&bzUse()){try{render();}catch(_){}}else _bzCL();});};}
+async function bzPriceLoad(){await bzLoad();if(!(S.bz.st&&S.bz.st.src==="own"&&S.bz.data))return false;const pin=supPricePin();if(!pin)return false;
+try{const j=await(await fetch(supUrl("action=bzPrice&pin="+encodeURIComponent(pin)),{cache:"no-cache"})).json();if(!(j&&j.ok&&j.own&&j.parts&&j.parts.length))return false;const d=await bzUnpack(j.parts);
+if(!d||!d.p||!Object.keys(d.p).length){S.bz.st.prBad=1;return false;}S.sup.base=new Map(Object.keys(d.p).map(n=>[supPKey(n),d.p[n]]));S.sup.baseMk=0;S.sup.baseOwn=1;S.sup.baseV=S.bz.st.v;return true;}catch(_){if(S.bz.st)S.bz.st.prBad=1;return false;}}
+async function bzReadFile(f){const buf=await f.arrayBuffer(),head=new TextDecoder("latin1").decode(new Uint8Array(buf,0,Math.min(300,buf.byteLength))),m=/encoding\s*=\s*["']([A-Za-z0-9_.:-]+)["']/i.exec(head);
+let enc=(m?m[1]:"utf-8").toLowerCase();if(/^(cp|win)-?1251$/.test(enc))enc="windows-1251";let tx="";try{tx=new TextDecoder(enc,{fatal:false}).decode(buf);}catch(_){throw new Error("Кодировка файла не понята («"+enc+"») — выгрузите XML ещё раз");}
+if(tx.indexOf("\uFFFD")>=0)throw new Error("Кодировка файла не понята — в названиях непонятные знаки. Выгрузите XML ещё раз");return tx;}
+function bzParse(xml){const doc=new DOMParser().parseFromString(String(xml||""),"application/xml");if(doc.getElementsByTagName("parsererror").length)throw new Error("Файл не похож на выгрузку Базиса (XML)");
+const M=[...doc.getElementsByTagName("Material")];if(!M.length)throw new Error("В файле нет материалов — выгрузите «Базу материалов» в XML");
+const tx=(m,t)=>{const e=m.getElementsByTagName(t)[0];return e?String(e.textContent||"").trim():"";},num=v=>{const f=parseFloat(String(v||"").replace(",","."));return isFinite(f)?f:0;};
+const clean=g=>g.split("/").map(x=>x.replace(/^\d+\.?\s*/,"").trim()).filter(Boolean).join("/"),ORD=g=>{const K=["01","02","03","04","Каталог","07","06"];for(let i=0;i<K.length;i++)if(g.indexOf(K[i])===0)return i;return 9;};
+const hexc=v=>{const c=parseInt(v,10);if(!(c>=0&&c<=0xFFFFFF))return"";return[c&255,(c>>8)&255,(c>>16)&255].map(x=>x.toString(16).padStart(2,"0")).join("");};
+const items=[],P={};let skip=0;
+M.forEach((m,k)=>{const g=tx(m,"Group_Name"),n=tx(m,"Name");if(!n){skip++;return;}const L=num(tx(m,"Length")),W=num(tx(m,"Width")),T=num(tx(m,"Thickness")),u=tx(m,"Unit_Measure"),p=num(tx(m,"Price"));
+if(g.indexOf("09 ")===0||g.indexOf("Корпуса")===0)skip++;
+else{const gc=clean(g),it={a:tx(m,"Article"),n:n.slice(0,200),g:gc,u};if(L)it.L=L;if(W)it.W=W;if(T)it.T=T;const c=hexc(tx(m,"Color"));if(c&&c!=="000000"&&c!=="f6b77f"&&/^(Листовой|Кромочные)/.test(gc))it.c=c;if(tx(m,"NoAvailable")==="Y")it.na=1;it._o=ORD(g)*1e6+k;items.push(it);}
+if(g.indexOf("08 ")!==0&&g.indexOf("09 ")!==0&&p>0){const r=[Math.round(p*100)/100,u];if(/^(кв\.м|м2|м²)$/.test(u)&&L>0&&W>0)r.push(Math.round(L*W/1e6*1e4)/1e4);P[n.slice(0,200)]=r;}});
+items.sort((a,b)=>a._o-b._o);items.forEach(it=>{delete it._o;});
+return{items,prices:P,skip,total:M.length};}
+function bzDiff(res){const D=S.cat&&S.cat.data,have=new Set(D?D.items.map(it=>supPKey(it.n)):[]),B=S.sup&&S.sup.base;let nw=0,ch=0,same=0;
+res.items.forEach(it=>{const k=supPKey(it.n);if(!have.has(k)){nw++;return;}const r=res.prices[it.n],b=B&&B.get(k);if(r&&b&&Math.round(+r[0])!==Math.round(+b[0]))ch++;else same++;});return{nw,ch,same};}
+async function bzUpload(res,onp){const up=Date.now().toString(36)+Math.random().toString(36).slice(2,8);const A=await bzPack({v:new Date().toISOString().slice(0,16).replace("T"," "),items:res.items}),B=await bzPack({p:res.prices});
+if(A.length+B.length>120)return{ok:false,msg:"Файл слишком большой"};const all=A.map((d,i)=>({kind:"items",part:i,of:A.length,data:d})).concat(B.map((d,i)=>({kind:"prices",part:i,of:B.length,data:d})));
+for(let i=0;i<all.length;i++){let j=null;for(let t=0;t<3&&!(j&&j.ok);t++){j=await shpPostRaw(Object.assign({action:"bzPut",up,itemsOf:A.length,n:res.items.length},all[i]));if(j&&j.error&&j.error!=="parts")break;}
+if(j&&j.error==="done")return{ok:true};
+if(!j||!j.ok)return j||{ok:false,msg:"Нет связи — загрузите ещё раз"};if(onp)onp((i+1)/all.length);}
+return{ok:true};}
+function bzReset(){S.bz.st=null;S.bz.data=null;if(S.cat){S.cat.data=null;S.cat.byName=null;S.cat.bzOwn=0;}if(S.sup){S.sup.base=null;S.sup.baseMk=0;S.sup.baseOwn=0;S.sup.priceTried=false;}
+try{catLoad();}catch(_){}try{if(typeof supPriceLoad==="function")supPriceLoad();}catch(_){}}
 const supRub=v=>Math.round(+v||0).toLocaleString("ru-RU")+" ₽";
 async function supPriceSave(items){const pin=supPricePin();
 try{const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"priceSet",pin,who:S.who||"Снабженец",items})});const j=await r.json();
@@ -7103,7 +7145,7 @@ h+=`<ul class="shp-zl">${line("Выручка",shpRub(P.rev),"",P.orders.length+
     ${line("− Разовые расходы",shpRubMinus(P.onceTotal),"neg",P.once.length?P.once.length+" "+shpPl(P.once.length,"запись","записи","записей"):"нет")}
     <li><div class="shp-zli tot"><span><b>= Прибыль</b></span><b class="${P.profit>=0?"okc":"badc"}">${esc(shpRub(P.profit))}</b></div></li></ul>`;
 h+=`<div class="shp-zpb"><button type="button" class="btn primary" data-act="shp-tab" data-v="exp">Расходы: каждый месяц и разовые</button></div>`;
-if(P.once.length)h+=`<p class="shp-zcap">Разовые расходы</p><ul class="shp-zl">${P.once.sort((a,b)=>b.when-a.when).map(e=>`<li><div class="shp-zli"><span>${esc(e.name)}<small class="muted">${esc(shpTime(e.when))}${e.text?" · "+esc(e.text):""}</small></span><b>${esc(shpRub(e.sum))}</b><button type="button" class="btn sm" data-act="shp-expdel" data-id="${esc(e.id)}" aria-label="Удалить расход">✕</button></div></li>`).join("")}</ul>`;
+if(P.once.length)h+=`<p class="shp-zcap">Разовые расходы</p><ul class="shp-zl">${P.once.sort((a,b)=>b.when-a.when).map(e=>`<li><div class="shp-zli"><span>${esc(e.name)}<small class="muted">${esc(shpTime(e.when))}${e.text?" · "+esc(e.text):""}</small></span><b>${esc(shpRub(e.sum))}</b>${e.id?`<button type="button" class="btn sm" data-act="shp-expdel" data-id="${esc(e.id)}" aria-label="Удалить расход">✕</button>`:""}</div></li>`).join("")}</ul>`;
 if(P.orders.length)h+=`<p class="shp-zcap">Закрытые заказы</p><ul class="shp-zl">${P.orders.sort((a,b)=>b.when-a.when).map(o=>`<li><button type="button" class="shp-zli" data-act="shp-open" data-id="${esc(o.id)}"><span>№ ${esc(o.num)} · ${esc(o.client||"")}${o.otype==="gift"?` <span class="shp-chip gift">подарок</span>`:o.otype==="repair"?` <span class="shp-chip rep">ремонт</span>`:""}<small class="muted">закупка ${esc(shpRub(o.buy))} · бригаде ${esc(shpRub(o.zp))}</small></span><b>${esc(shpRub(o.sum))}</b></button></li>`).join("")}</ul>`;
 return h;
 }
@@ -14346,8 +14388,12 @@ const lnk=(u,ico,t)=>hs(u)?`<a class="ks-pf" href="${ke(u)}" target="_blank" rel
 if(o.photo)L.push(lnk(o.photo,"chk","чек"));
 if(c.sg)L.push(lnk(c.sg,"sg","подпись"+(c.sn?" · "+ke(c.sn):"")));
 if(c.nc)L.push(`<span class="ks-pf ks-ncb">${ki("warn")}без чека: ${ke(c.nc)}</span>`);
-else if(!o.photo&&!c.sg&&(o.t==="out"||o.t==="move")&&(!o.zp||o.to))L.push(`<span class="ks-pf ks-old">без чека</span>`);
+else if(!o.photo&&!c.sg&&!c.hp&&(o.t==="out"||o.t==="move")&&(!o.zp||o.to))L.push(`<span class="ks-pf ks-old">без чека</span>`);
 return L.length?`<span class="ks-pfs">${L.join("")}</span>`:"";}
+const KS_VID={zak:"Расход по заказу",zp:"Зарплата",av:"Аванс",firm:"Расход фирмы",pay:"Выплата"};
+function ksVidLbl(o){if(!o||o.t!=="out"||o.zp)return"";const c=o.cf||{};if(!c.vid)return"без вида";return(KS_VID[c.vid]||"")+(c.pp?" · "+c.pp:"")+(c.vid==="zak"&&c.rc?" · есть чек":"");}
+function ksVidTitle(o,dl){const c=(o&&o.cf)||{};if(o&&o.t==="out"&&!o.zp&&!o.note&&(c.vid==="zp"||c.vid==="av"))return KS_VID[c.vid]+(c.pp?" — "+c.pp:"");if(o&&o.t==="out"&&c.vid==="pay")return"Выплата";return"";}
+window.ksVidLbl=ksVidLbl;window.ksVidTitle=ksVidTitle;
 function ksHtml(){const D=KS.data;
 let h=`<div class="ks-wrap"><div class="ks-head"><h2>${D&&D.all?"Деньги фирмы":"Касса"}</h2>${D&&D.dir?`<button type="button" class="btn sm" data-ks="places" aria-label="Куда приходят деньги">${ki("gear",18)}</button>`:""}<button type="button" class="btn sm" data-ks="reload" aria-label="Обновить">↻</button></div>`;
 if(!D)return h+(KS.err?`<p class="note">Не получилось загрузить кассу. <button type="button" class="linkbtn" data-ks="reload">Ещё раз</button></p>`:`<section class="ks-card ks-skel" aria-busy="true" aria-label="Загружаю кассу"><i></i><i></i><i></i></section>`)+`</div>`;
@@ -14367,7 +14413,8 @@ return`<div class="ks-op ks-fixr"><div class="ks-ot"><b>${ke(o.note||"Сверк
 const sg=o.t==="in"?"+":o.t==="out"?"−":"",cls=o.t==="in"?"ks-p":o.t==="out"?"ks-m":"ks-v";
 const who=o.t==="move"?`${ke(o.holder)} → ${ke(o.to)}`:(o.t==="in"?(c.pk&&c.pk!=="cash"?"принял "+ke(o.by)+" · "+ke(c.pl||o.holder):"принял "+ke(o.holder)):"выдал "+ke(o.holder))+(o.t==="out"&&c.w?(c.w==="card"?" · переводом":" · наличными"):"");
 const can=!noDel&&!o.zp&&((D.del!==undefined?D.del:D.all)||(shpNorm(o.by)===me&&new Date(o.when).toDateString()===new Date().toDateString()));
-return`<div class="ks-op${c.nc?" ks-nc":""}"><div class="ks-ot"><b>${ke(o.note||dl||(o.t==="in"?"Приход":o.t==="out"?"Расход":"Передача"))}</b><small>${ksWhen(o.when)} · ${who}${dl&&o.note?" · "+ke(dl):""}${o.zp?" · из выплат":""}</small>${ksProof(o)}</div><b class="${cls}">${sg}${(Math.round(o.sum)).toLocaleString("ru-RU")}</b>${can?`<button type="button" class="ks-x" data-ks="del" data-id="${ke(o.id)}" aria-label="Удалить запись">✕</button>`:""}</div>`;}
+const vl=ksVidLbl(o);
+return`<div class="ks-op${c.nc?" ks-nc":""}"><div class="ks-ot"><b>${ke(ksVidTitle(o)||o.note||dl||(o.t==="in"?"Приход":o.t==="out"?"Расход":"Передача"))}</b><small>${vl?`<span class="ks-vt">${ke(vl)}</span> · `:""}${ksWhen(o.when)} · ${who}${dl&&o.note?" · "+ke(dl):""}${o.zp?" · из выплат":""}</small>${ksProof(o)}</div><b class="${cls}">${sg}${(Math.round(o.sum)).toLocaleString("ru-RU")}</b>${can?`<button type="button" class="ks-x" data-ks="del" data-id="${ke(o.id)}" aria-label="Удалить запись">✕</button>`:""}</div>`;}
 const DF_LIM=20e6,DF_OLD=7;
 const dfNum=v=>(Math.round(+v||0)).toLocaleString("ru-RU");
 function dfFix(x){if(!x.pl)return"";const has=x.sum!==0||(+x.year||0)>0;
@@ -14459,6 +14506,8 @@ x.innerHTML=`<form class="modal-card ks-f" data-ksform="${t}" novalidate><h2 sty
     ${D.all?`<label>${t==="move"?"От кого":t==="in"?"Кто принял":"У кого деньги"}<select name="holder">${opt(t==="in"?names:holders,me)}</select></label>`:""}
     ${!D.all&&t!=="in"&&(D.hold||[]).some(x=>x.pl==="card")?`<label>Откуда<select name="holder">${opt([me].concat((D.hold||[]).filter(x=>x.pl==="card").map(x=>x.name)),me)}</select></label>`:""}
     ${t==="in"?`<fieldset class="ks-fs"><legend>Куда пришли деньги</legend><div class="ks-pls">${PL.map((p,i)=>`<label class="ks-pl"><input type="radio" name="pl" value="${ke(p.n)}"${i===0?" checked":""}><span><b>${ke(p.n)}</b><small>${p.k==="card"?"на руках у "+ke(p.who||"того, кто принял")+" — пока не передаст":p.k==="cash"?"на руках у того, кто принял":KPK[p.k]||""}</small></span></label>`).join("")}</div></fieldset>`:""}
+    ${t==="out"?`<fieldset class="ks-fs ks-vidf"><legend>Что это</legend><div class="ks-way ks-vid">${[["zak","Расход по заказу"],["zp","Зарплата"],["av","Аванс"],["firm","Расход фирмы"]].map(([k,n])=>`<label><input type="radio" name="vid" value="${k}"${pre.vid===k?" checked":""}><span>${n}</span></label>`).join("")}</div></fieldset>
+      <label class="ks-pers" hidden>Кому выдали<select name="pers"><option value="">— выберите —</option>${(D.people||[]).map(n=>`<option${pre.pers&&shpNorm(n)===shpNorm(pre.pers)?" selected":""}>${ke(n)}</option>`).join("")}</select></label>`:""}
     ${t==="out"?`<fieldset class="ks-fs"><legend>Как выдали</legend><div class="ks-way"><label><input type="radio" name="way" value="card"><span>Переводом</span></label><label><input type="radio" name="way" value="cash"><span>Наличными</span></label></div></fieldset>
       <label class="ks-rcv" hidden>Кто получил<input name="sn" maxlength="40" list="ksPpl" autocomplete="off" placeholder="имя получателя"></label><datalist id="ksPpl">${names.map(n=>`<option value="${ke(n)}">`).join("")}</datalist>`:""}
     ${t==="move"?`<label>Кому<select name="to"><option value="">— выберите —</option>${names.filter(n=>shpNorm(n)!==shpNorm(me)||D.all).map(n=>`<option>${ke(n)}</option>`).join("")}</select></label>`:""}
@@ -14466,32 +14515,68 @@ x.innerHTML=`<form class="modal-card ks-f" data-ksform="${t}" novalidate><h2 sty
       <div class="ks-sgrow"${t==="in"||t==="out"?" hidden":""}><button type="button" class="btn ks-sgbtn" data-ksf="sign">${ki("sg",18)} <span>Подпись ${t==="move"?"того, кто принял":"получателя"}</span></button><img class="ks-sgim" alt="Подпись" hidden></div>
       <label class="ks-ph"${t==="out"?" hidden":""}><span class="ks-phl">${t==="in"?"Фото: деньги, чек или скрин перевода":t==="move"?"или фото расписки":"Фото"}</span><span class="ks-phb">${ki("chk",18)}<span class="ks-pht">Сфотографировать или выбрать</span></span><input name="f" type="file" accept="image/*" class="ks-fi"></label>
     </div>
-    ${t!=="move"?`<label>Сделка <span class="muted">(если по заказу)</span><select name="deal"><option value="">— без сделки —</option>${deals.map(o=>`<option value="${ke(o.id)}"${pre.deal===o.id?" selected":""}>${ke(shpTitle(o))}</option>`).join("")}</select></label>`:""}
+    ${t==="in"?`<label>Сделка <span class="muted">(если по заказу)</span><select name="deal"><option value="">— без сделки —</option>${deals.map(o=>`<option value="${ke(o.id)}"${pre.deal===o.id?" selected":""}>${ke(shpTitle(o))}</option>`).join("")}</select></label>`:""}
+    ${t==="out"?`<label class="ks-dl" hidden><span>Договор <span class="muted ks-dlh">(по желанию)</span></span><select name="deal"><option value="">— без договора —</option>${deals.map(o=>`<option value="${ke(o.id)}"${pre.deal===o.id?" selected":""}>${ke(shpTitle(o))}</option>`).join("")}</select></label><div class="ks-rcw" hidden></div>`:""}
     ${t==="in"?`<label class="ks-chk"${pre.deal?"":" hidden"}><input type="checkbox" name="pay" checked> Засчитать в оплату сделки</label>`:""}
-    <label>Комментарий<input name="note" maxlength="200" placeholder="${t==="in"?"предоплата, остаток, из банка…":t==="out"?"на что: фурнитура, бензин…":"под отчёт на закупку…"}"></label>
+    <label><span class="ks-nlt">Комментарий</span><input name="note" maxlength="200" placeholder="${t==="in"?"предоплата, остаток, из банка…":t==="out"?"на что: фурнитура, бензин…":"под отчёт на закупку…"}"></label>
     ${D.dir?`<div class="ks-ncw"><button type="button" class="linkbtn ks-ncbtn" data-ksf="nc">Сохранить без чека</button><label class="ks-ncl" hidden>Почему без чека <span class="muted">(запись будет красной)</span><input name="nochk" maxlength="200" placeholder="например: чек потерян, отдал лично"></label></div>`:""}
     <p class="ks-err" role="alert" hidden></p>
     <div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" type="submit">Записать</button><button class="btn" type="button" data-act="qr-close">Отмена</button></div></form>`;
 document.body.appendChild(x);setTimeout(()=>{const i=x.querySelector("[name=sum]");i&&i.focus();},50);
 const f=x.querySelector("form"),dsel=f.querySelector("[name=deal]"),chk=f.querySelector(".ks-chk");if(dsel&&chk)dsel.addEventListener("change",()=>{chk.hidden=!dsel.value;});
 if(t==="out")f.addEventListener("change",e=>{if(e.target.name!=="way")return;const v=e.target.value,ph=f.querySelector(".ks-ph"),sr=f.querySelector(".ks-sgrow");
-ph.hidden=false;f.querySelector(".ks-phl").textContent=v==="card"?"Фото чека или скрин перевода":"или фото расписки";sr.hidden=v!=="cash";f.querySelector(".ks-rcv").hidden=v!=="cash";ksErr(f,"");});
+ph.hidden=false;f.querySelector(".ks-phl").textContent=v==="card"?"Фото чека или скрин перевода":"или фото расписки";sr.hidden=v!=="cash";ksOutSync(f);ksErr(f,"");});
+if(t==="out"){f.addEventListener("change",e=>{const n=e.target.name;if(n==="vid"||n==="pers"){ksOutSync(f);ksErr(f,"");}if(n==="vid"||n==="deal")ksRcDraw(f);});
+let rT=0;f.elements.sum.addEventListener("input",()=>{clearTimeout(rT);rT=setTimeout(()=>ksRcDraw(f,true),350);});ksOutSync(f);if(pre.vid)ksRcDraw(f);}
 f.addEventListener("change",e=>{if(e.target.name==="f"){const on=!!e.target.files[0],b=f.querySelector(".ks-phb");if(b){b.classList.toggle("ok",on);b.querySelector(".ks-pht").textContent=on?"Фото выбрано · заменить":"Сфотографировать или выбрать";}ksErr(f,"");}});
 x.addEventListener("click",async e=>{const s=e.target.closest('[data-ks="seg"]');if(s){e.preventDefault();x.remove();return ksForm(s.dataset.t,pre);}
 const k=e.target.closest("[data-ksf]");
 if(k&&k.dataset.ksf==="nc"){e.preventDefault();const l=f.querySelector(".ks-ncl");l.hidden=!l.hidden;if(!l.hidden)l.querySelector("input").focus();return;}
-if(k&&k.dataset.ksf==="sign"){e.preventDefault();const sum=(f.elements.sum.value||"").replace(/\s/g,"");const nm=t==="move"?(f.elements.to.value||""):(f.elements.sn.value||"").trim();
-if(!nm){ksErr(f,t==="move"?"Сначала выберите, кому передали":"Сначала впишите, кто получил");return;}
+if(k&&k.dataset.ksf==="sign"){e.preventDefault();const sum=(f.elements.sum.value||"").replace(/\s/g,"");const per=t==="out"&&ksPer(f),nm=t==="move"?(f.elements.to.value||""):per?(f.elements.pers.value||""):(f.elements.sn.value||"").trim();
+if(!nm){ksErr(f,t==="move"?"Сначала выберите, кому передали":per?"Сначала выберите, кому выдали":"Сначала впишите, кто получил");return;}
 const sg=await ksSignPad({name:nm,what:t==="move"?"принял(а)":"получил(а)",line:(t==="move"?"Принял(а) ":"Получил(а) ")+(+sum.replace(",",".")>0?(+sum.replace(",",".")).toLocaleString("ru-RU")+" ₽ · ":"")+ksNow()});
 if(sg){f._sign=sg;f._signFor=nm;const im=f.querySelector(".ks-sgim");im.src="data:image/jpeg;base64,"+sg;im.hidden=false;k.querySelector("span").textContent="Подпись есть · переподписать";k.classList.add("ok");ksErr(f,"");}return;}
 if(e.target===x||e.target.closest('[data-act="qr-close"]'))x.remove();});}
+const ksVidOf=f=>(f.querySelector("[name=vid]:checked")||{}).value||"";
+const ksPer=f=>/^(zp|av)$/.test(ksVidOf(f));
+function ksOutSync(f){const v=ksVidOf(f),per=ksPer(f),way=(f.querySelector("[name=way]:checked")||{}).value||"";
+const pp=f.querySelector(".ks-pers"),dl=f.querySelector(".ks-dl"),rv=f.querySelector(".ks-rcv"),nl=f.querySelector(".ks-nlt"),ni=f.elements.note,sb=f.querySelector('[data-ksf="sign"] span');
+if(pp)pp.hidden=!per;if(dl){dl.hidden=!(v==="zak"||v==="zp");const h=dl.querySelector(".ks-dlh");if(h)h.textContent=v==="zak"?"(обязательно)":"(по желанию)";}
+if(rv)rv.hidden=!(way==="cash"&&!per);
+if(nl)nl.textContent=v==="zak"?"Что купили":v==="firm"?"На что":"Комментарий";
+if(ni)ni.placeholder=v==="zak"?"+1 лист ЛДСП, такси, мелочь…":v==="firm"?"аренда, свет, интернет…":per?"за ноябрь, за неделю…":"на что: фурнитура, бензин…";
+if(sb&&!f._sign)sb.textContent=per?"Подпись"+(f.elements.pers.value?": "+f.elements.pers.value:" того, кому выдали"):"Подпись получателя";}
+const ksDay=ms=>{try{return new Date(+ms).toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"});}catch(_){return"";}};
+async function ksRcDraw(f){const w=f.querySelector(".ks-rcw");if(!w)return;const id=(f.elements.deal&&f.elements.deal.value)||"",v=ksVidOf(f);
+if(v!=="zak"||!id){w.hidden=true;w.innerHTML="";f._rcNeed=false;return;}
+let L=f._rcL&&f._rcL.id===id?f._rcL.L:null;
+if(!L){if(!w.querySelector("fieldset")){w.hidden=false;w.innerHTML=`<p class="muted" style="margin:0">Смотрю чеки договора…</p>`;}
+const j=await shpGet("action=receipts&order="+encodeURIComponent(id),true);if(!f.isConnected||((f.elements.deal&&f.elements.deal.value)||"")!==id)return;
+L=j&&j.ok&&Array.isArray(j.receipts)?j.receipts:[];f._rcL={id,L};if(ksVidOf(f)!=="zak")return ksRcDraw(f);}
+const o=typeof shpById==="function"?shpById(id):null,used=new Set(((o&&o.ksL)||[]).filter(x=>x.inRc&&x.rc).map(x=>String(x.rc)));
+const C=L.filter(r=>!used.has(String(r.id))).slice(0,8);
+if(!C.length){w.hidden=true;w.innerHTML="";f._rcNeed=false;return;}
+const sum=+String(f.elements.sum.value||"").replace(/\s/g,"").replace(",","."),same=sum>0&&C.some(r=>Math.abs((+r.sum||0)-sum)<0.5),chk=f.querySelector("[name=rc]:checked");
+const big=r=>sum>0&&(+r.sum||0)>sum+0.5,eq=r=>sum>0&&Math.abs((+r.sum||0)-sum)<0.5;
+let was=chk?chk.value:null;{const wr=C.find(r=>String(r.id)===was);if(wr&&big(wr))was=null;}
+const on=val=>was===null?(!same&&val===""):was===val;
+w.hidden=false;w.innerHTML=`<fieldset class="ks-fs"><legend>Этот расход уже есть чеком в договоре?</legend>${same?`<p class="ks-rch">В договоре есть чек на ту же сумму — это он? Тогда расход посчитается один раз.</p>`:""}<div class="ks-pls">
+    <label class="ks-pl"><input type="radio" name="rc" value=""${on("")?" checked":""}><span><b>Нет — это новый расход</b><small>вычтется из «фирме остаётся» договора</small></span></label>
+    ${C.map(r=>`<label class="ks-pl${big(r)?" ks-plx":""}"><input type="radio" name="rc" value="${ke(r.id)}"${on(String(r.id))&&!big(r)?" checked":""}${big(r)?" disabled":""}><span><b>Да — чек ${rub(r.sum)}${eq(r)?" · та же сумма":""}</b><small>${ke([big(r)?"больше выдачи — не тот расход":eq(r)?"":sum>0?"выдача больше чека — разница "+rub(sum-(+r.sum||0))+" вычтется":"",r.text,ksDay(r.when),r.who].filter(Boolean).join(" · ")||"чек договора")}</small></span></label>`).join("")}</div></fieldset>`;
+f._rcNeed=true;}
 function ksErr(f,m){const p=f.querySelector(".ks-err");if(!p)return;p.textContent=m;p.hidden=!m;if(m)p.scrollIntoView({block:"nearest",behavior:"smooth"});}
 async function ksSave(f){const t=f.dataset.ksform,g=n=>f.elements[n]&&f.elements[n].value!==undefined?String(f.elements[n].value||"").trim():"";
 const sum=g("sum").replace(/\s/g,"").replace(",",".");if(!(+sum>0)){ksErr(f,"Впишите сумму");f.elements.sum.focus();return;}
 if(t==="move"&&!g("to")){ksErr(f,"Кому передали?");return;}
+const vid=t==="out"?ksVidOf(f):"",per=vid==="zp"||vid==="av",rcp=per?g("pers"):g("sn");
+if(t==="out"&&!vid){ksErr(f,"Что это: расход по заказу, зарплата, аванс или расход фирмы?");return;}
+if(vid==="zak"&&!g("deal")){ksErr(f,"Расход по заказу — выберите договор");return;}
+if(vid==="zak"&&!g("note")){ksErr(f,"Что купили? Например: +1 лист ЛДСП, такси");f.elements.note.focus();return;}
+if(per&&!g("pers")){ksErr(f,"Кому выдали? Выберите человека");return;}
+if(vid==="zak"&&f._rcNeed&&!f.querySelector("[name=rc]:checked")){ksErr(f,"Этот расход уже есть чеком в договоре? Выберите «да» или «нет»");return;}
 const fi=f.elements.f&&f.elements.f.files[0],nc=g("nochk"),way=t==="out"?(f.querySelector("[name=way]:checked")||{}).value||"":"";
 let sign=f._sign||"";if(sign&&t==="move"&&shpNorm(f._signFor)!==shpNorm(g("to")))sign="";
-if(sign&&t==="out"&&shpNorm(f._signFor)!==shpNorm(g("sn")))sign="";
+if(sign&&t==="out"&&shpNorm(f._signFor)!==shpNorm(rcp))sign="";
 if(t==="out"&&!way){ksErr(f,"Как выдали: переводом или наличными?");return;}
 if(!nc){if(t==="out"&&way==="card"&&!fi){ksErr(f,"Переводом — приложите фото чека или скрин перевода");return;}
 if(t==="out"&&way==="cash"&&!fi&&!sign){ksErr(f,"Наличными — нужна подпись получателя или фото расписки");return;}
@@ -14500,11 +14585,14 @@ if(t==="in"&&!fi){ksErr(f,"Приложите фото: деньги, чек и�
 else if(nc.length<3){ksErr(f,"Напишите, почему без чека");return;}
 const btn=f.querySelector('[type="submit"]');btn.disabled=true;btn.textContent="Записываю…";
 let photo="";if(fi&&typeof siteShrink==="function"){try{photo=await siteShrink(fi);}catch(_){btn.disabled=false;btn.textContent="Записать";ksErr(f,"Не получилось открыть фото — выберите другое");return;}}
-const b={action:"kassaAdd",t,sum,note:g("note"),deal:g("deal"),holder:g("holder"),to:g("to")};if(t==="in"&&g("deal")&&f.elements.pay&&f.elements.pay.checked)b.pay=1;if(photo)b.photo=photo;
-if(t==="in")b.pl=(f.querySelector("[name=pl]:checked")||{}).value||"";if(way)b.way=way;if(sign){b.sign=sign;b.sn=t==="move"?g("to"):g("sn");}if(nc)b.nochk=nc;
+const b={action:"kassaAdd",t,sum,note:g("note"),deal:t==="out"&&!(vid==="zak"||vid==="zp")?"":g("deal"),holder:g("holder"),to:g("to")};if(t==="in"&&g("deal")&&f.elements.pay&&f.elements.pay.checked)b.pay=1;if(photo)b.photo=photo;
+if(vid){b.vid=vid;if(per)b.pers=g("pers");if(vid==="zak"){const rc=(f.querySelector("[name=rc]:checked")||{}).value||"";if(rc)b.rc=rc;}}
+if(t==="in")b.pl=(f.querySelector("[name=pl]:checked")||{}).value||"";if(way)b.way=way;if(sign){b.sign=sign;b.sn=t==="move"?g("to"):rcp;}if(nc)b.nochk=nc;
 const j=await shpPostRaw(b);if(!j||!j.ok){btn.disabled=false;btn.textContent="Записать";if(j&&j.error==="pin"){shpBadPin();return;}ksErr(f,!j?"Нет связи с таблицей. Не сохранилось — попробуйте ещё раз.":(j.msg||(j.error==="role"?"Нет прав на это действие":"Не сохранилось. Попробуйте ещё раз.")));return;}
-document.getElementById("ksM")?.remove();toast(b.pay?"Записано и засчитано в оплату сделки":"Записано");await ksLoad();if(b.pay&&typeof shpLoad==="function")try{shpLoad();}catch(_){}}
+const inDeal=(vid==="zak"||vid==="zp")&&!!b.deal;
+document.getElementById("ksM")?.remove();toast(b.pay?"Записано и засчитано в оплату сделки":per?"Записано и в «Выплаты» — "+b.pers:vid==="zak"?(b.rc?"Записано — тот же расход, что чек договора":"Записано в расходы договора"):"Записано");await ksLoad();if((b.pay||inDeal)&&typeof shpLoad==="function")try{shpLoad();}catch(_){}}
 window.ksOpenForm=async(t,pre)=>{if(!KS.data)await ksLoad();ksForm(t,pre);};
+window.ksCan=kOk;
 window.ksState=()=>KS;window.ksLoadNow=ksLoad;
 function ksPlaces(){const D=KS.data||{},L=(D.places||[{n:"Наличные",k:"cash"}]).map(p=>Object.assign({},p)),ppl=D.people||[];
 const x=document.createElement("div");x.className="modal";x.id="ksPl";
@@ -14540,7 +14628,8 @@ document.addEventListener("submit",ev=>{const f=ev.target.closest&&ev.target.clo
 document.addEventListener("click",async ev=>{const b=ev.target.closest&&ev.target.closest("[data-ks]");if(!b||b.dataset.ks==="seg"||b.closest("#ksM"))return;if(!(S.shop&&S.shop.mode==="kassa"))return;ev.preventDefault();
 const a=b.dataset.ks;if(a==="reload"){KS.data=null;ksRedraw();return ksLoad();}if(a==="add")return ksForm(b.dataset.t);if(a==="places")return ksPlaces();if(a==="place")return dfSheet(b.dataset.n);
 if(a==="del"){if(b.dataset.sure!=="1"){b.dataset.sure="1";b.textContent="Удалить?";b.classList.add("sure");setTimeout(()=>{if(b.isConnected){b.dataset.sure="";b.textContent="✕";b.classList.remove("sure");}},3000);return;}
-const j=await shpPost({action:"kassaDel",id:b.dataset.id});if(j){toast("Удалено");ksLoad();}}});
+const op=((KS.data&&KS.data.ops)||[]).find(o=>o.id===b.dataset.id),c=(op&&op.cf)||{};
+const j=await shpPost({action:"kassaDel",id:b.dataset.id});if(j){toast(c.pid?"Удалено — и из «Выплат»":"Удалено");ksLoad();if(op&&op.deal&&/^(zak|zp)$/.test(c.vid||"")&&typeof shpLoad==="function")try{shpLoad();}catch(_){}}}});
 if(typeof shpMoreHtml==="function"){const _ksMore=shpMoreHtml;shpMoreHtml=function(){const h=_ksMore.apply(this,arguments);if(!kOk())return h;
 const it=`<li><button type="button" class="shp-row" data-act="shp-tab" data-v="kassa"><span class="shp-av" aria-hidden="true">${shpIco("cash",20)}</span><span class="shp-rb"><b>Касса</b><span class="muted">Наличные: кто принял, выдал, у кого на руках</span></span><span class="shp-rr" aria-hidden="true">›</span></button></li>`;
 return h.indexOf('<ul class="shp-list">')>=0?h.replace('<ul class="shp-list">','<ul class="shp-list">'+it):h+`<ul class="shp-list">${it}</ul>`;};}
@@ -14552,6 +14641,8 @@ KS._last=S.shop.mode;
 if(S.shop.mode==="kassa"){if(!kOk()){S.shop.mode="more";return _ksView.apply(this,arguments);}return shpNavHtml()+ksHtml();}
 return _ksView.apply(this,arguments);};}
 const st=document.createElement("style");st.textContent=`
+#ksM .ks-f [hidden]{display:none!important}.ks-plx{opacity:.5;cursor:default}.ks-vt{color:var(--ink,#fff);font-weight:600}.ks-rch{margin:0 0 6px;font-size:13.5px;color:#ffd60a}:root[data-theme="light"] .ks-rch,:root[data-vt="light"] .ks-rch{color:var(--w2-yt)}
+.ks-vid span{font-size:15px;padding:0 6px;text-align:center}.k2-vt{font-weight:600}
 .ks-wrap{max-width:760px;margin:0 auto;padding:4px 14px 90px}.ks-head{display:flex;align-items:center;gap:10px;margin:6px 0 10px}.ks-head h2{margin:0;font-size:22px;flex:1}
 .ks-card{background:var(--surface,#fff);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin:0 0 10px}
 .ks-l{margin:0;font-size:13px}.ks-big{margin:2px 0 6px;font-size:32px;font-weight:800;letter-spacing:-.5px}
@@ -14674,8 +14765,34 @@ if(has&&(dir||disc))h+=`<div class="kz-om"><span>Сумма договора</sp
 +`<div class="kz-om kz-tot"><span>К оплате клиенту</span><b>${ze(zr(Math.max(0,sum-pre-disc)))}</b></div>${disc?`<p class="kz-os muted">Зарплата и проценты — от полной суммы договора. Клиент видит только «к оплате».</p>`:""}`;
 if(dir&&has)h+=`<div class="kz-obs"><button type="button" class="btn" data-kzo="disc" data-id="${ze(o.id)}">Скидка за срок</button><button type="button" class="btn" data-kzo="wait" data-id="${ze(o.id)}">Оплата до даты</button></div>`;
 return h+`</div>`;}
-if(typeof shpOrderHtml==="function"){const _kzO=shpOrderHtml;shpOrderHtml=function(){const h=_kzO.apply(this,arguments);try{const o=S.shop.cur&&typeof shpById==="function"?shpById(S.shop.cur):null,c=kzOrderCard(o);if(!c)return h;
-const i=h.indexOf('class="card shp-money"');if(i<0)return h;const e=h.indexOf("</details></div>",i);if(e<0)return h;const at=e+"</details></div>".length;return h.slice(0,at)+c+h.slice(at);}catch(err){console.error("расчёт с клиентом",err);return h;}};}
+const kdDay=ms=>{try{return new Date(+ms).toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"});}catch(_){return"";}};
+function kdHtml(o){const L=o&&Array.isArray(o.ksL)?o.ksL:[];if(!L.length)return"";
+const s=f=>L.filter(f).reduce((a,x)=>a+(+x.sum||0),0),ksOf=x=>x.ks!=null?+x.ks||0:(x.inRc?0:+x.sum||0);
+const exp=L.filter(x=>x.vid==="zak").reduce((a,x)=>a+ksOf(x),0),wRc=L.filter(x=>x.vid==="zak"&&x.inRc).reduce((a,x)=>a+(+x.sum||0)-ksOf(x),0),zp=s(x=>x.vid==="zp"||x.vid==="pay");
+const sum=+o.sum||0,has=o.sum!==""&&o.sum!=null&&sum>0,buy=+o.receiptsTotal||0,can=typeof window.ksCan==="function"&&window.ksCan();
+const rw=x=>{const t=x.vid==="zak"?(x.note||"Расход по заказу"):x.vid==="zp"?"Зарплата"+(x.pp?" — "+x.pp:""):"Выплата";
+const sub=[kdDay(x.when),x.by?"записал "+x.by:"",x.vid==="zak"?(x.inRc?(ksOf(x)>0?"есть чек — сверх чека "+zr(ksOf(x)):"есть чек — считается чеком"):"расход по заказу"):"зарплата по договору"].filter(Boolean).join(" · ");
+const sm=x.same&&!x.inRc?`<div class="kd-same"><p>Похоже, это тот же расход, что чек ${ze(zr(x.same.sum))} от ${ze(kdDay(x.same.when))}${x.same.text?" («"+ze(x.same.text)+"»)":""}. Тогда посчитаем один раз.</p>${can?`<div class="kd-sb"><button type="button" class="btn" data-kzl="link" data-id="${ze(x.id)}" data-rc="${ze(x.same.id)}">Это один расход</button><button type="button" class="btn" data-kzl="no" data-id="${ze(x.id)}" data-rc="${ze(x.same.id)}">Разные</button></div>`:""}</div>`:"";
+return`<div class="kd-r"><span class="kd-rt"><b>${ze(t)}</b><small>${ze(sub)}</small></span><b class="kd-rs">−${ze(Math.round(+x.sum||0).toLocaleString("ru-RU"))}</b></div>${sm}`;};
+let h=`<div class="card kd-card" aria-label="Расходы и выплаты по договору"><h2 class="kd-h">Расходы и выплаты по договору</h2>${L.map(rw).join("")}`;
+if(exp)h+=`<div class="kz-om kd-t"><span>Расходы по заказу из кассы<small>вычитаются из «фирме остаётся»; зарплата бригады не меняется</small></span><b>−${ze(zr(exp))}</b></div>`;
+if(wRc)h+=`<div class="kz-om kd-t"><span>С чеком договора<small>считаются один раз — в «Закупке по чекам»</small></span><b>${ze(zr(wRc))}</b></div>`;
+if(zp)h+=`<div class="kz-om kd-t"><span>Выдано зарплатой по договору<small>из начисленной — в «Выплатах» людей; «фирме остаётся» не меняет</small></span><b>${ze(zr(zp))}</b></div>`;
+if(has&&exp)h+=`<div class="kz-om kz-tot"><span>Остаётся (сумма − закупка − расходы из кассы)</span><b>${ze(zr(sum-buy-exp))}</b></div>`;
+if(can&&typeof ksOpenForm==="function")h+=`<button type="button" class="btn kd-add" data-kzo="ksout" data-id="${ze(o.id)}">− Выдал по договору</button>`;
+return h+`</div>`;}
+if(typeof shpOrderHtml==="function"){const _kzO=shpOrderHtml;shpOrderHtml=function(){const h=_kzO.apply(this,arguments);try{const o=S.shop.cur&&typeof shpById==="function"?shpById(S.shop.cur):null,c=kzOrderCard(o),d=kdHtml(o);if(!c&&!d)return h;
+const i=h.indexOf('class="card shp-money"');if(i<0)return h;const e=h.indexOf("</details></div>",i);
+if(e<0){if(!d)return h;const m=h.indexOf('class="muted shp-mh2"',i),p=m>=0?h.indexOf("</p>",m):-1;if(p<0)return h;return h.slice(0,p+4)+d+h.slice(p+4);}
+const at=e+"</details></div>".length;return h.slice(0,at)+c+d+h.slice(at);}catch(err){console.error("расчёт с клиентом",err);return h;}};}
+document.addEventListener("click",async ev=>{const b=ev.target.closest&&ev.target.closest("[data-kzl]");if(!b)return;ev.preventDefault();ev.stopPropagation();
+const o=S.shop.cur&&typeof shpById==="function"?shpById(S.shop.cur):null,x=o&&(o.ksL||[]).find(y=>y.id===b.dataset.id);if(!x)return;
+const was=JSON.stringify(x),link=b.dataset.kzl==="link",rc=b.dataset.rc;
+if(link){x.inRc=1;x.rc=rc;x.ks=Math.max(0,(+x.sum||0)-(+(x.same&&x.same.sum)||0));}delete x.same;if(link&&typeof o.ksExp==="number")o.ksExp=Math.max(0,o.ksExp-(+x.sum||0));if(typeof shpRenderKeep==="function")shpRenderKeep();
+const j=await shpPostRaw(link?{action:"kassaLink",id:x.id,rc}:{action:"kassaLink",id:x.id,no:rc});
+if(!j||!j.ok){const y=(o.ksL||[]).findIndex(z=>z.id===x.id);if(y>=0)o.ksL[y]=JSON.parse(was);if(link&&typeof o.ksExp==="number")o.ksExp+=(+x.sum||0);if(typeof shpRenderKeep==="function")shpRenderKeep();
+if(j&&j.error==="pin"){shpBadPin();return;}toast(!j?"Нет связи с таблицей — не сохранилось":(j.msg||"Не сохранилось. Попробуйте ещё раз."));return;}
+toast(link?"Посчитано один раз — как чек":"Хорошо, это разные расходы");if(typeof shpLoad==="function")try{shpLoad();}catch(_){}},true);
 function kzModal(title,body,onOk){const x=document.createElement("div");x.className="modal";x.id="kzM";
 x.innerHTML=`<form class="modal-card ks-f" novalidate><h2 style="margin:0 0 8px">${title}</h2>${body}<p class="ks-err" role="alert" hidden></p><div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" type="submit">Сохранить</button><button class="btn" type="button" data-kzm="x">Отмена</button></div></form>`;
 document.body.appendChild(x);const f=x.querySelector("form");setTimeout(()=>{const i=f.querySelector("input");i&&i.focus();},50);
@@ -14686,6 +14803,7 @@ b.disabled=true;b.textContent="Сохраняю…";const j=await shpPostRaw(m);
 x.remove();toast("Сохранено");if(typeof shpLoad==="function")try{await shpLoad(true);}catch(_){}if(typeof shpRenderKeep==="function"&&S.shop.mode==="order")shpRenderKeep();});}
 document.addEventListener("click",async ev=>{const b=ev.target.closest&&ev.target.closest("[data-kzo]");if(!b)return;ev.preventDefault();const a=b.dataset.kzo,id=b.dataset.id,o=id?shpById(id):null;
 if(a==="pay"){if(typeof ksOpenForm==="function")ksOpenForm("in",{deal:id,pay:1});return;}
+if(a==="ksout"){if(typeof ksOpenForm==="function")ksOpenForm("out",{deal:id,vid:"zak"});return;}
 if(a==="disc"){const rest=o?Math.max(0,(+o.sum||0)-(+o.prepay||0)-(+o.disc||0)):0;
 return kzModal("Скидка за срок",`<p class="muted" style="margin:0 0 6px">${ze(o?shpTitle(o):"")}. Уменьшает только остаток к оплате клиента (сейчас ${ze(zr(rest))}). Зарплата и проценты — от полной суммы договора. Клиент скидку не видит — только итог к оплате.</p><label>Сумма скидки, ₽<input name="sum" inputmode="decimal" maxlength="12" autocomplete="off"></label><label>Причина<input name="why" maxlength="200" placeholder="например: опоздали со сроком на 5 дней"></label>`,
 f=>{const s=String(f.elements.sum.value||"").replace(/\s/g,"").replace(",","."),w=String(f.elements.why.value||"").trim();if(!(+s>0))return"Впишите сумму скидки";if(+s>rest)return"Скидка больше остатка к оплате ("+zr(rest)+")";if(w.length<3)return"Напишите причину";return{action:"kassaDisc",id,sum:s,why:w};});}
@@ -14720,6 +14838,10 @@ html.kz-pulse::after{content:"";position:fixed;inset:0;z-index:9990;pointer-even
 .kz-oc{margin-top:10px}.kz-oc.due{position:relative}.kz-oc.due::after{content:"";position:absolute;inset:0;border-radius:inherit;border:2px solid #ff453a;pointer-events:none}.kz-ot{display:flex;align-items:center;gap:8px;margin:0 0 4px;font-size:16px}.kz-os{margin:0 0 8px;font-size:13.5px}
 .kz-ob{width:100%;min-height:50px;margin:0 0 8px}.kz-om{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--frame,var(--line));font-size:15px}.kz-om span{flex:1;min-width:0;display:flex;flex-direction:column}.kz-om small{font-size:12.5px;color:var(--muted)}
 .kz-dc b{color:#ff6b5e}.kz-tot b{font-size:17px}.kz-obs{display:flex;gap:8px;margin-top:8px}.kz-obs .btn{flex:1;min-height:46px}
+.kd-card{margin-top:10px}.kd-h{margin:0 0 4px;font-size:17px}.kd-r{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--frame,var(--line));font-size:15px}.kd-r:first-of-type{border-top:0}
+.kd-rt{flex:1;min-width:0;display:flex;flex-direction:column}.kd-rt b{font-size:15px;overflow-wrap:anywhere}.kd-rt small{font-size:13px;color:var(--muted)}.kd-rs{white-space:nowrap;color:#ff6b5e}:root[data-theme="light"] .kd-rs,:root[data-vt="light"] .kd-rs{color:#c0392b}
+.kd-same{margin:0 0 8px;padding:8px 10px;border-radius:12px;background:rgba(255,214,10,.10);box-shadow:inset 0 0 0 1px rgba(255,214,10,.45)}.kd-same p{margin:0 0 6px;font-size:13.5px}.kd-sb{display:flex;gap:8px}.kd-sb .btn{flex:1;min-height:44px}
+.kd-t small{font-size:13px}.kd-add{width:100%;min-height:46px;margin-top:8px}
 .kz-x{min-width:44px;min-height:40px;border:0;background:none;color:var(--muted);font:inherit;cursor:pointer;border-radius:8px}.kz-x.sure{color:#fff;background:#e0533f;font-size:12.5px}
 `;document.head.appendChild(st);
 })();
@@ -15274,7 +15396,8 @@ function dpCalc(d,ed){const k=K(),lines=d.lines.map((x,i)=>{if(x.fixed)return Ob
 const ex=d.S-(d.fzP||0)-d.norm,bon=ed&&ed.bon!=null?num(ed.bon):d.bon,ok=d.Mk&&d.S>=k.min&&ex>=1&&lines.some(x=>/дизайн/i.test(x.name)),prem=ok&&bon>0?Math.round(ex*bon/100):0;
 const pay=lines.reduce((a,x)=>a+(x.amt||0),0)+prem,fg=dpFg(d),F=fg.items.reduce((a,y)=>a+(+y.s||0),0),hold=d.designer||lines.some(x=>/дизайн/i.test(x.name))?Math.round(F*(+fg.hold||0)/100):0;
 const fzW=Math.min(d.fz||0,d.fzW||0);
-return{lines,bon,prem,ok,ex,pay,F,hold,fzW,firm:Math.round(d.S-d.M-(d.fz||0)+fzW-pay-F+hold)};}
+const ksx=Math.round(+d.ksx||0);
+return{lines,bon,prem,ok,ex,pay,F,hold,fzW,ksx,firm:Math.round(d.S-d.M-(d.fz||0)+fzW-pay-F+hold)-ksx};}
 function dpFg(d){if(!S.dp.fg||S.dp.fg.id!==d.id)S.dp.fg={id:d.id,items:((d.fg&&d.fg.items)||[]).map(y=>Object.assign({},y)),hold:(d.fg&&d.fg.hold)||0,dirty:false};return S.dp.fg;}
 function dpDealHtml(d){const st=dpState(d),c=dpCalc(d,S.dp.ed),k=K(),own=Object.keys(d.ov||{}).filter(x=>!/^_/.test(x)||x==="_bonus").length;
 let h=`<div class="head"><div><h1>№ ${esc(d.num)} ${esc(d.client||"")}</h1><p class="muted" style="margin:4px 0 0">${esc(d.kind||"")}${d.closed?" · закрыт":" · в работе"}${own?" · свои проценты":""}</p></div><div class="head-actions"><button type="button" class="btn" data-dp="back">← Назад</button></div></div>`;
@@ -15296,7 +15419,8 @@ h+=`<form class="dp-card dp-t" data-dp-form="deal" autocomplete="off">
     <div class="dp-tr dp-sum"><span>Всем выплатам</span><b>${N(c.pay)}</b></div>
     ${c.F?`<div class="dp-tr"><span>Забыли в смете<small>${esc(dpFg(d).items.map(y=>y.t).join(", "))}</small></span><b class="dp-y2">−${N(c.F)}</b></div>`:""}
     ${c.hold?`<div class="dp-tr"><span>Удержано с дизайнера<small>${nf(dpFg(d).hold)} % от забытого</small></span><b class="dp-g">+${N(c.hold)}</b></div>`:""}
-    <div class="dp-tr dp-big"><span>Фирме остаётся<small>продано − материал${(d.fz||0)-c.fzW>0?" − закупка фасадов":""} − выплаты${c.F?" − забытое":""}${c.hold?" + удержано":""}</small></span><b class="${c.firm<0?"dp-r":""}">${N(c.firm)}</b></div>
+    ${c.ksx?`<div class="dp-tr"><span>Расходы по заказу из кассы<small>«Выдал» по договору без чека · зарплату и проценты не меняют</small></span><b class="dp-y2">−${N(c.ksx)}</b></div>`:""}
+    <div class="dp-tr dp-big"><span>Фирме остаётся<small>продано − материал${(d.fz||0)-c.fzW>0?" − закупка фасадов":""} − выплаты${c.F?" − забытое":""}${c.hold?" + удержано":""}${c.ksx?" − расходы из кассы":""}</small></span><b class="${c.firm<0?"dp-r":""}">${N(c.firm)}</b></div>
     <div class="dp-btns"><button class="btn primary" type="submit">Сохранить проценты</button>${own?`<button class="btn" type="button" data-dp="reset">Вернуть общие</button>`:""}</div></form>`;
 {const fg=dpFg(d),F=c.F,over=d.Mk&&d.rc>d.M?d.rc-d.M:0;
 h+=`<div class="dp-card dp-fg"><div class="dp-fgh"><b>Забыли в смете</b><small>Дизайнер не учёл в смете — договор вышел дешевле. Решаете, кто платит.</small></div>
@@ -22595,8 +22719,8 @@ function ldspOk(it){if(LDSP_LOCAL.test(it.g))return true;
 if(/\/Увадрев/.test(it.g)){const m=String(it.n).match(/16 мм, (\S+)/);if(m&&LDSP_UV_OK.includes(m[1]))return true;}
 return ldspUsed().has(supPKey(it.n));}
 const _catSecOf0=catSecOf;
-catSecOf=function(it){const k=_catSecOf0(it);return k==="ldsp"&&!S.cat.ldspAll&&!ldspOk(it)?"hid":k;};
-function ldspHidN(){const d=S.cat.data;if(!d)return 0;return d.items.filter(it=>_catSecOf0(it)==="ldsp"&&!ldspOk(it)).length;}
+catSecOf=function(it){const k=_catSecOf0(it);return k==="ldsp"&&!S.cat.ldspAll&&!S.cat.bzOwn&&!ldspOk(it)?"hid":k;};
+function ldspHidN(){const d=S.cat.data;if(!d||S.cat.bzOwn)return 0;return d.items.filter(it=>_catSecOf0(it)==="ldsp"&&!ldspOk(it)).length;}
 function ldspToggle(on){S.cat.ldspAll=on;try{localStorage.setItem("cehqr-ldspall",on?"1":"");}catch(_){}}
 const _catBaseView1=catBaseView;
 catBaseView=function(h){const out=_catBaseView1(h),sec=S.cat.sec||"",n=ldspHidN();if(!n||(sec&&sec!=="ldsp"))return out;
@@ -23780,7 +23904,7 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
 (function(){const st=document.createElement("style");st.textContent=`.cpd-ov .cpd-r{fill:#DCEBFF;stroke:#0A84FF;stroke-width:2.5;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))}.cpd-ov[data-st="bad"] .cpd-r{fill:#FFE3E0;stroke:#FF453A}.cpd-ov[data-st="move"] .cpd-r{fill:#E3F8E9;stroke:#30D158}.cpd-ov .cpd-t{fill:#000;font-weight:700;font-family:system-ui,sans-serif}
 html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}.cpd-note{margin:4px 0}`;document.head.appendChild(st);})();
 const CHK_ON=false;
-const CHK_BUILD="12f3ca25d6";
+const CHK_BUILD="1106117a63";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){try{return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{};}catch(_){return{};}}
@@ -30821,7 +30945,7 @@ return"Технолог 3D · "+({orders:"заказы",order:"заказ",part:
 function otzDev(){const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)),ua=navigator.userAgent||"";
 const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
 return(w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":"");}
-function otzVer(){const b="12f3ca25d6";return/^__/.test(b)?"стенд":b;}
+function otzVer(){const b="1106117a63";return/^__/.test(b)?"стенд":b;}
 function otzDet(){return{view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()};}
 function otzCss(){if(OTZ.css&&Date.now()-OTZ.cssAt<120000)return OTZ.css;let css="";for(const sh of Array.from(document.styleSheets)){try{for(const r of Array.from(sh.cssRules||[]))css+=r.cssText+"\n";}catch(_){}}
 OTZ.css=css.replace(/:root\b/g,"html").replace(/@font-face\s*\{[^}]*\}/g,"");OTZ.cssAt=Date.now();return OTZ.css;}
@@ -38953,7 +39077,41 @@ const row=(nb,v,icn,t,sub,n)=>`<button type="button" class="nm-row rz-row nb-row
 return`<div class="nm-sec rz-gh nb-h"><span>База Базиса</span><span>${d.items.length.toLocaleString("ru-RU")}</span></div><div class="nm-grp nb-grp">`
 +CAT_SEC.filter(s=>!s.hidden).map(s=>row("sec",s.k,s.ic,s.n,"",(cnt[s.k]||0).toLocaleString("ru-RU"))).join("")
 +row("decor","","◐","Декоры по маркам","картинки цветов Egger, Kronospan, AGT…","")
-+row("pick","","★","Подборка для клиента",pk?"показать клиенту, отправить списком":"отмечайте ☆ у цветов и фурнитуры",pk||"")+`</div>`;}
++row("pick","","★","Подборка для клиента",pk?"показать клиенту, отправить списком":"отмечайте ☆ у цветов и фурнитуры",pk||"")+`</div>`+nbBzLine();}
+const nbBzOn=()=>typeof bzFirm==="function"&&bzFirm();
+function nbBzLine(){if(!nbBzOn())return"";const st=S.bz&&S.bz.st;if(!st||(st.ok===false&&Date.now()-(st.at||0)>45000)){if(!nbBzLine.t){nbBzLine.t=1;bzLoad(!!st).then(()=>{nbBzLine.t=0;if(S.bz.st&&S.bz.st.ok!==false)nmRedraw();});}return"";}
+if(st.ok===false)return"";
+if(st.bad||st.prBad)return`<div class="nm-sec nb-bzs"><span class="nm-y">Своя база ${st.bad?"":"(цены) "}не загрузилась — обновите страницу. Пока показаны готовая база и примерные цены.</span></div>`;
+const d=st.v?new Date(+st.v).toLocaleDateString("ru-RU"):"",t=st.src==="own"?`своя из Базиса · ${(+st.n||0).toLocaleString("ru-RU")} поз.${d?" · "+d:""}`:"готовая (цены — примерные рыночные)";
+setTimeout(nbBzAsk,400);
+return`<div class="nm-sec nb-bzs"><span>База: ${e(t)}</span></div>`+(st.can?`<div class="nm-grp"><button type="button" class="nm-row rz-row nb-row" data-nb="bzup"><span class="nm-sw nm-fi rz-ic nb-ic" aria-hidden="true">⇪</span><span class="nm-t"><b>${st.src==="own"?"Обновить свою базу из Базиса":"Загрузить свою базу из Базиса"}</b><small>файл .xml — «База материалов» → «Экспорт»</small></span><span class="nm-ch">${ic("chev",16)}</span></button>${st.src==="own"?`<button type="button" class="nm-row rz-row nb-row" data-nb="bzdef"><span class="nm-sw nm-fi rz-ic nb-ic" aria-hidden="true">↺</span><span class="nm-t"><b>Перейти на готовую базу</b><small>цены станут примерными рыночными</small></span></button>`:""}</div>`:"");}
+function nbBzAsk(){if(!nbBzOn()||!nbInNom())return;const st=S.bz&&S.bz.st;if(!st||st.src||!st.can||document.querySelector(".nm-sheet,.modal"))return;try{if(sessionStorage.getItem("w24-bzask"))return;sessionStorage.setItem("w24-bzask","1");}catch(_){}
+const m=nmSheet(`<div class="nm-shh"><b>Откуда взять базу материалов?</b><button type="button" class="nm-btn sm" data-nmx aria-label="Закрыть">${ic("x",16)}</button></div>
+    <p class="nm-note">Это справочник ЛДСП, кромки, фурнитуры для смет и закупки. Поменять можно потом: «Номенклатура → База Базиса».</p>
+    <button type="button" class="nb-card on" data-bz="def"><b>Готовая база <span class="nb-adv">советую</span></b><span>14 тысяч позиций: ЛДСП, кромка, столешницы, фурнитура, картинки декоров. Цены — примерные рыночные (Якутск); свои впишете в номенклатуре.</span></button>
+    <button type="button" class="nb-card" data-bz="own"><b>Своя база из Базиса</b><span>Файл .xml из вашего Базис-Мебельщика: ваши материалы, названия и цены. Цены видят директор, закупка и офис вашей фирмы.</span></button>
+    <button type="button" class="nm-wide" data-bz="def">Взять готовую базу</button><button type="button" class="nm-more" data-bz="later">Решу позже</button>`,"nb-bzsh");
+m.addEventListener("click",async ev=>{const b=ev.target.closest("[data-bz]");if(!b)return;const a=b.dataset.bz;m._close();
+if(a==="own")return setTimeout(nbBzUpload,230);
+if(a==="def"){const j=await shpPostRaw({action:"bzSrc",src:"def"});if(j&&j.ok){st.src=j.src;toast("Готовая база — цены примерные рыночные");nmRedraw();}else toast(j&&j.msg||"Не сохранилось — нет связи");}});}
+async function nbBzToDef(){if(!confirm("Перейти на готовую базу?\nСвоя база из Базиса будет удалена, цены базы станут примерными рыночными. Номенклатура и «Прайс» не меняются."))return;
+const j=await shpPostRaw({action:"bzSrc",src:"def"});if(j&&j.ok){toast("Готовая база — цены примерные рыночные");bzReset();setTimeout(()=>nmRedraw(),600);}else toast(j&&j.msg||"Не сохранилось — нет связи");}
+function nbBzUpload(){if(!nbBzOn())return;let res=null;
+const m=nmSheet(`<div class="nm-shh"><b>База из своего Базиса</b><button type="button" class="nm-btn sm" data-nmx aria-label="Закрыть">${ic("x",16)}</button></div>
+    <div class="nb-steps"><p><b>1</b> Базис-Мебельщик → «База материалов» → «Экспорт» → формат XML.</p><p><b>2</b> Перекиньте файл на телефон или откройте приложение на компьютере.</p></div>
+    <label class="nm-wide nb-file">📄 Выбрать файл .xml<input type="file" id="nbBzF" accept=".xml,text/xml,application/xml" hidden></label>
+    <div id="nbBzR"></div>`,"nb-bzsh");
+const R=m.querySelector("#nbBzR"),F=m.querySelector("#nbBzF");
+F.addEventListener("change",async()=>{const f=F.files&&F.files[0];if(!f)return;R.innerHTML=`<p class="nm-note">Читаю «${e(f.name)}»…</p>`;
+try{res=bzParse(await bzReadFile(f));}catch(err){res=null;R.innerHTML=`<p class="nm-note nm-y">${e(err&&err.message||"Не получилось прочитать файл")}</p>`;return;}
+const d=bzDiff(res),row=(t,v)=>`<div class="nb-rr"><span>${e(t)}</span><b>${(+v||0).toLocaleString("ru-RU")}</b></div>`;
+R.innerHTML=`<div class="nb-res">${row("Всего в файле",res.total)}${row("Новые позиции",d.nw)}${row("Изменилась цена",d.ch)}${row("Без изменений",d.same)}${row("Пропущены (метки работ, корпуса)",res.skip)}</div>
+      <p class="nm-note">Цены из файла — цены базы вашей фирмы (их видят директор, закупка, офис). Ваша номенклатура, «Прайс» и цены поставщиков не меняются. Загрузить ещё раз — заменит эту базу, двойников не будет.</p>
+      <button type="button" class="nm-wide" data-bzgo>Загрузить · ${res.items.length.toLocaleString("ru-RU")} позиций</button><div class="nm-prog nb-prog" hidden><i style="width:0%"></i></div>`;});
+m.addEventListener("click",async ev=>{if(!ev.target.closest("[data-bzgo]")||!res)return;const btn=ev.target.closest("[data-bzgo]"),pg=m.querySelector(".nb-prog"),bar=pg&&pg.querySelector("i");btn.disabled=true;btn.textContent="Загружаю…";if(pg)pg.hidden=false;
+const j=await bzUpload(res,p=>{if(bar)bar.style.width=Math.round(p*100)+"%";});
+if(j&&j.ok){m._close();toast("База загружена: "+res.items.length.toLocaleString("ru-RU")+" позиций");bzReset();setTimeout(()=>{nmRedraw();},600);}
+else{btn.disabled=false;btn.textContent="Загрузить ещё раз";toast(j&&j.msg||"Не загрузилось");}});}
 function nbCards(L,lim){return`<div class="cat-list nb-list">${L.slice(0,lim).map(catCard).join("")}</div>`;}
 function nbCrumb(t){return`<div class="nb-crumb"><button type="button" class="nm-chip" data-nb="home">${ic("back",15)} База Базиса</button><b>${t}</b></div>`;}
 function nbLibHtml(){catLoad();const d=S.cat&&S.cat.data;
@@ -39021,6 +39179,8 @@ else if(a==="th"){S.cat.th=v;S.cat.limit=80;}
 else if(a==="sort")S.cat.sort=v;
 else if(a==="op")S.cat.onlyPrice=!S.cat.onlyPrice;
 else if(a==="more"){S.cat.limit=(S.cat.limit||80)+80;nmListPaint();return;}
+else if(a==="bzup"){nbBzUpload();return;}
+else if(a==="bzdef"){nbBzToDef();return;}
 else if(a==="open"){document.getElementById("qrModal")?.remove();NM.open=v;NM.scr="card";nmRedraw();return nbTop();}
 else if(a==="tonom"){const it=S.cat.data&&S.cat.data.items[+v];if(!it)return;document.getElementById("qrModal")?.remove();const ex=nmByName(it.n);if(ex){NM.open=ex.id;NM.scr="card";nmRedraw();return nbTop();}
 const id=await nmSave(nmFromCat(it),{stay:true,quiet:true});if(id)toast("«"+it.n+"» — теперь в номенклатуре");nmRedraw();return;}
@@ -39029,7 +39189,7 @@ nmListPaint();},true);
 .nb-crumb{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 16px 10px}.nb-pad{padding:0 16px}.nm-v .nb-ldsp{margin-left:16px;margin-right:16px}.nb-crumb b{font-size:17px}.nb-crumb .nm-chip{display:inline-flex;align-items:center;gap:4px}
 .nb-ch{margin:0 0 8px}.nb-ch .nm-chip small{opacity:.6;font-size:11px;margin-left:4px}
 .nm-v .nb-list{margin:0 16px 10px}.nm-v .nb-list .cat-card{min-height:56px}
-.nb-h{margin-top:18px}.nm-libv .pv-entry{display:none}`;document.head.appendChild(st);})();
+.nb-h{margin-top:18px}.nb-card{display:block;width:calc(100% - 32px);text-align:left;margin:8px 16px;padding:14px;border-radius:16px;border:2px solid transparent;background:var(--w-l1);color:inherit;font:inherit;cursor:pointer}.nb-card.on{border-color:var(--w-t3,#888)}.nb-card b{display:block;font-size:16px;margin-bottom:4px}.nb-card span{color:var(--w-t2);font-size:14px;line-height:1.4}.nb-adv{float:right;font-size:11px;padding:2px 8px;border-radius:8px;background:var(--w-t3,#888);color:#fff}.nb-steps p{margin:8px 0;display:flex;gap:10px;font-size:14.5px}.nb-steps b{flex:none;width:24px;height:24px;border-radius:12px;background:var(--w-l1);display:flex;align-items:center;justify-content:center;font-size:13px}.nb-file{display:block;text-align:center;cursor:pointer}.nb-res{background:var(--w-l1);border-radius:14px;padding:4px 12px;margin:10px 0}.nb-rr{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--w-sep,rgba(128,128,128,.25));font-size:14.5px}.nb-rr:last-child{border:0}.nb-prog{margin:10px 0}.nb-bzsh .nb-steps,.nb-bzsh #nbBzR{padding:0 16px}.nm-libv .pv-entry{display:none}`;document.head.appendChild(st);})();
 window.__nm={itemHtml:(x,p,pv)=>rzItemHtml(x,p,pv),top:nmTop,ic,sheet:nmSheet,redraw:nmRedraw,byId:nmById,pl,rub,esc:e,kinds:KINDS};
 SHP_I.nom=SHP_I.nom||'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/>';
 {const _nmMore=shpMoreHtml;shpMoreHtml=function(){const h=_nmMore.apply(this,arguments);
@@ -43720,7 +43880,7 @@ const lnk=(u,ico,t)=>hs(u)?`<a class="k2-pf" href="${E(u)}" target="_blank" rel=
 if(o.photo)L.push(lnk(o.photo,"chk","чек"));
 if(c.sg)L.push(lnk(c.sg,"sg","подпись"+(c.sn?" · "+E(c.sn):"")));
 if(c.nc)L.push(`<span class="k2-pf k2-ncb">${ki("warn")}<span>без чека: ${E(c.nc)}</span></span>`);
-else if(!o.photo&&!c.sg&&(o.t==="out"||o.t==="move")&&(!o.zp||o.to))L.push(`<span class="k2-pf k2-t2"><span>без чека</span></span>`);
+else if(!o.photo&&!c.sg&&!c.hp&&(o.t==="out"||o.t==="move")&&(!o.zp||o.to))L.push(`<span class="k2-pf k2-t2"><span>без чека</span></span>`);
 return L.length?`<span class="k2-pfs">${L.join("")}</span>`:"";}
 function ksDeal(id){try{const o=id?shpById(id):null;return o?shpTitle(o):"";}catch(_){return"";}}
 function ksOpRow(o,D,me){const c=o.cf||{},all=D.del!==undefined?D.del:D.all;
@@ -43730,7 +43890,8 @@ return row({cls:"k2-op k2-fixr",t:o.note||"Сверка остатка",sub:E(ks
 const dl=ksDeal(o.deal),sg=o.t==="in"?"+":o.t==="out"?"−":"";
 const who=o.t==="move"?`${o.holder} → ${o.to}`:(o.t==="in"?(c.pk&&c.pk!=="cash"?"принял "+o.by+" · "+(c.pl||o.holder):"принял "+o.holder):"выдал "+o.holder)+(o.t==="out"&&c.w?(c.w==="card"?" · переводом":" · наличными"):"");
 const can=!o.zp&&(all||(nrm(o.by)===me&&new Date(o.when).toDateString()===new Date().toDateString()));
-return row({cls:"k2-op"+(c.nc?" k2-nc":""),t:o.note||dl||(o.t==="in"?"Приход":o.t==="out"?"Расход":"Передача"),sub:E(ksWhen(o.when)+" · "+who+(dl&&o.note?" · "+dl:"")+(o.zp?" · из выплат":"")),extra:ksProof(o),
+const vl=typeof window.ksVidLbl==="function"?window.ksVidLbl(o):"",vt=typeof window.ksVidTitle==="function"?window.ksVidTitle(o):"";
+return row({cls:"k2-op"+(c.nc?" k2-nc":""),t:vt||o.note||dl||(o.t==="in"?"Приход":o.t==="out"?"Расход":"Передача"),sub:(vl?`<span class="k2-vt">${E(vl)}</span> · `:"")+E(ksWhen(o.when)+" · "+who+(dl&&o.note?" · "+dl:"")+(o.zp?" · из выплат":"")),extra:ksProof(o),
 right:sg+(Math.round(o.sum)).toLocaleString("ru-RU"),rightCls:o.t==="in"?"k2-g":o.t==="move"?"k2-t2":"",after:del(can)});}
 function kassaHtml(){const KS=typeof window.ksState==="function"?window.ksState():null,D=KS&&KS.data;
 const B=[];if(D&&D.dir)B.push({attrs:{"data-ks":"places"},ic:"set",label:"Куда приходят деньги"});B.push({attrs:{"data-ks":"reload"},ic:"refresh",label:"Обновить"});
@@ -45504,7 +45665,7 @@ document.body.appendChild(m);
 });
 })();
 (function(){
-const BUILD="12f3ca25d6";/*cehqr-build*/
+const BUILD="1106117a63";/*cehqr-build*/
 try{const u=new URL(location.href);if(u.searchParams.has("v")){u.searchParams.delete("v");history.replaceState(history.state,"",u.pathname+u.search+u.hash);}}catch(_){}
 window.__w24VerWait=0;
 if(/^__/.test(BUILD))return;
@@ -45587,7 +45748,7 @@ addEventListener("online",()=>{upd();try{if(typeof toast==="function")toast("И�
 <script>
 (function(){
 if(window.__w24obnov)return;window.__w24obnov=1;
-const BUILD="12f3ca25d6";/*cehqr-build*/
+const BUILD="1106117a63";/*cehqr-build*/
 const SEEN="w24-upd-seen",CACHE="w24-upd-cache";
 const ls={get(k){try{return localStorage.getItem(k);}catch(_){return null;}},set(k,v){try{localStorage.setItem(k,v);}catch(_){}}};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
