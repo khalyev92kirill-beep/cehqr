@@ -5027,8 +5027,8 @@ return S.sup.needs[oid];}
 const supPKey=n=>String(n||"").toLowerCase().replace(/ё/g,"е").replace(/["'«»]/g,"").replace(/\s+/g," ").trim();
 function supPricePin(){return S.sup.pin||(typeof shpPin==="function"?shpPin():"")||"";}
 async function supPriceLoad(){const pin=supPricePin();if(!pin||!S.site||!S.site.stagesUrl)return;
-try{const r=await fetch(supUrl("action=price&pin="+encodeURIComponent(pin)),{cache:"no-cache"});const j=await r.json();
-if(j&&j.ok){S.sup.price={};(j.items||[]).forEach(x=>{S.sup.price[supPKey(x.name)]=x;});S.sup.priceOk=true;supPhotosLoad();if(j.bk)await supBaseLoad(j.bk);}else S.sup.priceOk=false;}catch(_){}}
+try{const r=await fetch(supUrl("action=price&k=2&pin="+encodeURIComponent(pin)),{cache:"no-cache"});const j=await r.json();
+if(j&&j.ok){S.sup.price={};(j.items||[]).forEach(x=>{S.sup.price[supPKey(x.name)]=x;});S.sup.priceOk=true;supPhotosLoad();if(Array.isArray(j.vs))S.cat.vs=j.vs;if(j.bk)await supBaseLoad(j.bk);else if(j.mk)await supMkLoad();}else S.sup.priceOk=false;}catch(_){}}
 async function supPhotosLoad(){const pin=supPricePin();if(!pin)return;try{const j=await(await fetch(supUrl("action=iphoto&pin="+encodeURIComponent(pin)),{cache:"no-cache"})).json();if(j&&j.ok){S.sup.photos=j.photos||{};S.sup.photosOwn=j.own&&typeof j.own==="object"?j.own:{};if(S.view==="supply"||S.view==="catalog"){if(typeof supPaint==="function"&&S.view==="supply")supPaint();else render();}}}catch(_){}}
 function supPhotoPick(name){if(!S.sup.priceOk){toast("Фото добавляют снабженец, технолог или офис");return;}const a=supArt(name);
 const m=document.createElement("div");m.className="modal";m.innerHTML=`<div class="modal-card" style="width:min(420px,100%)"><h2 style="margin:0 0 4px">Фото позиции</h2><p class="note" style="margin:0 0 12px">${esc(name)}${a?`<br>Артикул: <b class="mono">${esc(a)}</b> — фото привяжется к артикулу`:""}</p>
@@ -5048,6 +5048,13 @@ const k=await crypto.subtle.importKey("raw",b(key),"AES-GCM",false,["decrypt"]);
 if(o.z)buf=await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
 const j=JSON.parse(new TextDecoder().decode(buf));S.sup.base=new Map(Object.keys(j.p).map(n=>[supPKey(n),j.p[n]]));S.sup.baseV=j.v;}catch(_){S.sup.base=null;}
 S.sup.baseBusy=false;}
+async function supMkLoad(){if(S.sup.base||S.sup.baseBusy)return;S.sup.baseBusy=true;
+try{const j=await(await fetch("catalog-market.json",{cache:"no-cache"})).json();if(j&&j.p){S.sup.base=new Map(Object.keys(j.p).map(n=>{const r=j.p[n];return[supPKey(n),r[2]>0?[r[0],r[1],r[2]]:[r[0],r[1]]];}));S.sup.baseV=j.v;S.sup.baseMk=1;S.sup.baseNote=j.note||"";setTimeout(()=>{try{window.__mkPut&&window.__mkPut();}catch(_){}},300);}}catch(_){S.sup.base=null;}
+S.sup.baseBusy=false;}
+const supMkNote=()=>S.sup&&S.sup.baseMk?"Цены базы Базиса — примерные рыночные (Якутск). Впишите свои цены в номенклатуре — они главнее.":"";
+(function(){let t=0;const SEL=".qk-card,.smn-acts,.sm-grid,.zk-chip,.zk-note,.sup-grp,.nm-v,#smLedM .modal-card,#kitPlM .modal-card";const put=()=>{t=0;if(!(S.sup&&S.sup.baseMk))return;const v=document.getElementById("view");const tg=[];if(v&&v.querySelector(SEL))tg.push(v);document.querySelectorAll("#smLedM .modal-card,#kitPlM .modal-card").forEach(m=>tg.push(m));tg.forEach(el=>{if(el.querySelector(":scope>.mk-strip"))return;const d=document.createElement("div");d.className="mk-strip";d.textContent="≈ "+supMkNote();el.insertBefore(d,el.firstChild);});};window.__mkPut=put;
+try{new MutationObserver(()=>{if(!t&&S.sup&&S.sup.baseMk)t=setTimeout(put,250);}).observe(document.body,{childList:true,subtree:true});}catch(_){}
+const st=document.createElement("style");st.textContent=".mk-strip{margin:8px 16px;padding:8px 12px;border-radius:12px;background:rgba(255,214,10,.16);color:inherit;font-size:13px;line-height:1.35}";document.head.appendChild(st);})();
 const supRub=v=>Math.round(+v||0).toLocaleString("ru-RU")+" ₽";
 async function supPriceSave(items){const pin=supPricePin();
 try{const r=await fetch(S.site.stagesUrl,{method:"POST",body:JSON.stringify({action:"priceSet",pin,who:S.who||"Снабженец",items})});const j=await r.json();
@@ -5771,6 +5778,7 @@ const catU=u=>({"кв.м":"м²","м2":"м²","компл":"компл.","":"ш�
 function catPrice(it){const b=S.sup.base&&S.sup.base.get(supPKey(it.n)),r=(S.sup.price||{})[supPKey(it.n)],sheet=/^Листов/.test(it.g);
 if(r&&r.price>0)return[`${supRub(r.price)} за ${r.unit==="л."?"лист":catU(r.unit||"шт")}`,"по прайсу снабжения"];
 if(!b)return null;const u=catU(b[1]||it.u);
+if(S.sup.baseMk){if(b[2])return[`≈ ${supRub(Math.round(b[0]*b[2]))} за лист`,"примерная рыночная"];return[`≈ ${supRub(b[0])} за ${u}`,"примерная рыночная"];}
 if(b[2])return[`${supRub(Math.round(b[0]*b[2]))} за лист`,`${supRub(b[0])} за м²`];
 return[`${supRub(b[0])} за ${u}`,sheet?"цена за м², размер листа в базе не указан":""];}
 function catPriceTxt(it){const p=catPrice(it);return p?p.filter(Boolean).join(" · "):"";}
@@ -5782,6 +5790,7 @@ const _catSw0=catSw;catSw=function(it,cls){if(it&&!it.t&&it.n){const ph=supPhoto
 const _catModal=catModal;
 catModal=function(i){_catModal(i);const it=S.cat.data.items[i],m=document.getElementById("qrModal");if(!it||!m||!S.sup.priceOk)return;const t=catPriceTxt(it),tb=m.querySelector(".spec-t tbody"),act=m.querySelector(".spec-act");
 if(tb)tb.insertAdjacentHTML("afterbegin",`<tr><td>Цена</td><td><b>${esc(t||"нет цены")}</b></td></tr>`);
+if(tb&&it.vs&&Array.isArray(S.cat.vs)&&S.cat.vs[it.vs-1])tb.insertAdjacentHTML("beforeend",`<tr><td>Поставщик</td><td>${esc(S.cat.vs[it.vs-1])}</td></tr>`);
 if(act)act.insertAdjacentHTML("afterbegin",`<button class="btn primary" data-act="cat-addord" data-i="${it.i}">+ В заказ</button>`);
 if(act&&!it.t)act.insertAdjacentHTML("beforeend",`<button class="btn" data-act="cat-photo" data-n="${esc(it.n)}">📷 ${supPhotoOf(it.n)?"Заменить фото":"Добавить фото"}</button>`);};
 document.addEventListener("click",ev=>{const t=ev.target.closest&&ev.target.closest('[data-act="cat-photo"]');if(!t)return;ev.stopPropagation();supPhotoPick(t.dataset.n);},true);
@@ -5902,6 +5911,7 @@ let h=`<div class="head"><div><h1>Материалы и фурнитура</h1><
 h+=`<div class="cat-bar"><input id="catQ" type="search" placeholder="Поиск: цвет, название, артикул" value="${esc(S.cat.q)}" autocomplete="off" aria-label="Поиск по базе материалов">
     <button class="btn" data-act="cat-pickview">★ Подборка${S.catPick.length?` · ${S.catPick.length}`:""}</button></div>`;
 h+=`<div class="seg cat-mode"><button type="button" class="on" data-act="cat-mode" data-t="base">База Базиса</button><button type="button" data-act="cat-mode" data-t="decor">Декоры по маркам</button></div>`;
+if(supMkNote())h+=`<p class="muted mk-note ldsp-ln" style="margin:8px 2px">${esc(supMkNote())}</p>`;
 h=catBaseView(h);const c=S.catCart;
 return h+(c?`<button type="button" class="ca-cart" data-act="ca-cart" data-o="${esc(c.o)}"><b>Закупка · ${esc(catOrdTitle(c.o))}</b><span>${c.n} ${c.n===1?"позиция":c.n<5?"позиции":"позиций"}${c.sum?" · "+esc(supRub(c.sum)):""} — открыть заказ в снабжении</span></button>`:"");};
 document.addEventListener("click",ev=>{const t=ev.target.closest&&ev.target.closest("[data-act^='cat2-']");if(!t)return;ev.stopPropagation();const a=t.dataset.act,v=t.dataset.t;
@@ -22510,7 +22520,7 @@ const _vendLoad0=supVendLoad;
 supVendLoad=async function(force){const j=await _vendLoad0(force);if(!S.sup.vend)S.sup.vend={vendors:[],binds:{},log:[],nopin:true};return S.sup.vend;};
 function vendHit(w,n){return w.split("+").every(p=>n.includes(supNorm(p)));}
 function supVendWhy(name){const V=vendAll(),B=(S.sup.vend||{}).binds||{},b=B[supPKey(name)];if(b&&V.some(v=>v.id===b))return{id:b,why:"выбрано вручную"};
-const c=supCatFind(name),g=c?c.g:"",cm=c&&c.cm?String(c.cm).replace(/^Поставщик:\s*/i,"").trim():"",n=supNorm(name),br=c&&typeof catBrand==="function"?catBrand(c):"";
+const c=supCatFind(name),g=c?c.g:"",cm=c&&c.cm?String(c.cm).replace(/^Поставщик:\s*/i,"").trim():(c&&c.vs&&Array.isArray(S.cat.vs)?String(S.cat.vs[c.vs-1]||""):""),n=supNorm(name),br=c&&typeof catBrand==="function"?catBrand(c):"";
 const grp=x=>g&&g.indexOf(x)===0;
 for(const v of V)if((v.only||[]).some(x=>x.includes("/")?grp(x):vendHit(x,n)))return{id:v.id,why:"только у него"};
 const strong=cm&&V.find(v=>!v.main&&(v.cm||[]).includes(cm));if(strong)return{id:strong.id,why:"по базе Базиса"};
@@ -23771,7 +23781,7 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
 (function(){const st=document.createElement("style");st.textContent=`.cpd-ov .cpd-r{fill:#DCEBFF;stroke:#0A84FF;stroke-width:2.5;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))}.cpd-ov[data-st="bad"] .cpd-r{fill:#FFE3E0;stroke:#FF453A}.cpd-ov[data-st="move"] .cpd-r{fill:#E3F8E9;stroke:#30D158}.cpd-ov .cpd-t{fill:#000;font-weight:700;font-family:system-ui,sans-serif}
 html.cpd-on,html.cpd-on body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}.cpd-note{margin:4px 0}`;document.head.appendChild(st);})();
 const CHK_ON=false;
-const CHK_BUILD="8e889a5e95";
+const CHK_BUILD="7ad5f16551";
 const CHK_LS="cehqr-chk-sent";
 const CHK={done:{},last:null,run:false};
 function chkSent(){try{return JSON.parse(localStorage.getItem(CHK_LS)||"{}")||{};}catch(_){return{};}}
@@ -30812,7 +30822,7 @@ return"Технолог 3D · "+({orders:"заказы",order:"заказ",part:
 function otzDev(){const w=Math.round(Math.min(window.innerWidth,(screen&&screen.width)||9999)),ua=navigator.userAgent||"";
 const os=/iPhone|iPad/.test(ua)?"iPhone":/Android/.test(ua)?"Android":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":"";
 return(w<900?"телефон":"компьютер")+(os?" ("+os+")":"")+", ширина "+w+(window.matchMedia&&matchMedia("(display-mode: standalone)").matches?", как приложение":"");}
-function otzVer(){const b="8e889a5e95";return/^__/.test(b)?"стенд":b;}
+function otzVer(){const b="7ad5f16551";return/^__/.test(b)?"стенд":b;}
 function otzDet(){return{view:otzView(),role:otzRole(),ver:otzVer(),dev:otzDev()};}
 function otzCss(){if(OTZ.css&&Date.now()-OTZ.cssAt<120000)return OTZ.css;let css="";for(const sh of Array.from(document.styleSheets)){try{for(const r of Array.from(sh.cssRules||[]))css+=r.cssText+"\n";}catch(_){}}
 OTZ.css=css.replace(/:root\b/g,"html").replace(/@font-face\s*\{[^}]*\}/g,"");OTZ.cssAt=Date.now();return OTZ.css;}
@@ -37764,7 +37774,7 @@ function nmPriceLoad(){try{if(!NM.data||!nmPr()||NM.data.prices===undefined&&!NM
 const nmRedrawSoon=()=>setTimeout(nmRedraw,230);
 function nmRedraw(){if(S.view==="shop"&&S.shop&&S.shop.mode==="nom"&&!document.querySelector(".modal, .nm-sheet")&&typeof shpRenderKeep==="function"){shpRenderKeep();setTimeout(()=>{nmLibWatch();rzWatch();},0);}}
 function nmPrice(x){if(!x)return null;if(x.price>0)return{p:+x.price,u:x.pu||UB_SHORT[x.uBuy]||"",src:"прайс",at:x.pat||0};
-try{if(S.sup&&S.sup.base&&typeof supBaseOf==="function"){const u=x.uBuy?(UB_SHORT[x.uBuy]||x.uBuy):(catIt(x)&&typeof catUnitFor==="function"?catUnitFor(catIt(x)):"шт");const b=supBaseOf(smName(x),u);if(b>0)return{p:b,u,src:"база Базиса",at:0};}}catch(_){}
+try{if(S.sup&&S.sup.base&&typeof supBaseOf==="function"){const u=x.uBuy?(UB_SHORT[x.uBuy]||x.uBuy):(catIt(x)&&typeof catUnitFor==="function"?catUnitFor(catIt(x)):"шт");const b=supBaseOf(smName(x),u);if(b>0)return{p:b,u,src:S.sup.baseMk?"рынок":"база Базиса",at:0};}}catch(_){}
 try{if(typeof NL!=="undefined"){const m=NL.market(smName(x))||NL.market(x.name);if(m){const sheet=x.uBuy==="лист"&&m.ps>0;return{p:sheet?m.ps:m.p,u:sheet?"л.":(m.u==="кв.м"?"м²":m.u||UB_SHORT[x.uBuy]||"шт"),src:"рынок",at:0,mk:m};}}}catch(_){}
 return null;}
 const uWord=u=>u==="л."?"лист":u==="компл."?"компл.":u||"шт";
@@ -45493,7 +45503,7 @@ document.body.appendChild(m);
 });
 })();
 (function(){
-const BUILD="8e889a5e95";/*cehqr-build*/
+const BUILD="7ad5f16551";/*cehqr-build*/
 try{const u=new URL(location.href);if(u.searchParams.has("v")){u.searchParams.delete("v");history.replaceState(history.state,"",u.pathname+u.search+u.hash);}}catch(_){}
 window.__w24VerWait=0;
 if(/^__/.test(BUILD))return;
@@ -45576,7 +45586,7 @@ addEventListener("online",()=>{upd();try{if(typeof toast==="function")toast("И�
 <script>
 (function(){
 if(window.__w24obnov)return;window.__w24obnov=1;
-const BUILD="8e889a5e95";/*cehqr-build*/
+const BUILD="7ad5f16551";/*cehqr-build*/
 const SEEN="w24-upd-seen",CACHE="w24-upd-cache";
 const ls={get(k){try{return localStorage.getItem(k);}catch(_){return null;}},set(k,v){try{localStorage.setItem(k,v);}catch(_){}}};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
